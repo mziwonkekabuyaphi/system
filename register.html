@@ -1,0 +1,1968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Rands · Create Your Passport</title>
+
+    <!-- Dashboard fonts (Space Grotesk + Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Font Awesome 6 (Free) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+
+    <style>
+        /* ========== REGISTRATION – RANDS COMMAND CENTRE STYLE ========== */
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* ── Dashboard design tokens ── */
+        :root {
+            --red: #E30613;
+            --red-glow: rgba(227, 6, 19, 0.35);
+            --red-dim: rgba(227, 6, 19, 0.12);
+            --red-border: rgba(227, 6, 19, 0.25);
+            --bg: #09090b;
+            --surface: #111114;
+            --surface-2: #18181c;
+            --surface-3: #1e1e24;
+            --border: rgba(255, 255, 255, 0.07);
+            --border-bright: rgba(255, 255, 255, 0.13);
+            --text: #f4f4f5;
+            --text-muted: #71717a;
+            --text-dim: #3f3f46;
+            --green: #3ddc84;
+            --ease: cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        html,
+        body {
+            height: 100%;
+            background: var(--bg);
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        /* Background layers */
+        .bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(120, 0, 200, 0.25) 0%, transparent 70%),
+                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(200, 0, 60, 0.18) 0%, transparent 60%),
+                radial-gradient(ellipse 50% 50% at 20% 60%, rgba(60, 0, 120, 0.15) 0%, transparent 60%),
+                var(--bg);
+        }
+
+        .bg-noise {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+            opacity: 0.4;
+        }
+
+        .steps-outer {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            height: 100dvh;
+            overflow: hidden;
+        }
+
+        /* ── Step views ── */
+        .step-view {
+            position: absolute;
+            inset: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 20px 48px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(40px);
+            transition: opacity 0.42s var(--ease), transform 0.42s var(--ease);
+            will-change: transform, opacity;
+        }
+        .step-view::-webkit-scrollbar {
+            display: none;
+        }
+        .step-view.active {
+            opacity: 1;
+            pointer-events: all;
+            transform: translateX(0);
+        }
+        .step-view.exit-left {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-40px);
+            transition: opacity 0.32s var(--ease), transform 0.32s var(--ease);
+        }
+        .step-view.enter-right {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(40px);
+        }
+
+        /* ── Navigation bar ── */
+        .nav {
+            width: 100%;
+            max-width: 520px;
+            padding: 20px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .back-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+            color: var(--text-muted);
+        }
+        .back-btn:hover {
+            background: var(--surface-2);
+            border-color: var(--border-bright);
+        }
+        .back-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+        }
+        .back-btn.hidden {
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .step-pill {
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--red);
+            background: var(--red-dim);
+            border: 1px solid var(--red-border);
+            border-radius: 99px;
+            padding: 4px 14px;
+        }
+        .nav-spacer {
+            width: 38px;
+        }
+
+        /* ── Hero ── */
+        .hero {
+            width: 100%;
+            max-width: 520px;
+            padding: 30px 0 0;
+            text-align: left;
+        }
+        .hero-display {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2.2rem, 7vw, 3.4rem);
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            color: var(--text);
+        }
+        .hero-display span {
+            color: var(--red);
+            text-shadow: 0 0 40px var(--red-glow);
+        }
+        .hero-sub {
+            font-size: 0.9rem;
+            font-weight: 400;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin-top: 8px;
+            max-width: 400px;
+        }
+
+        /* ── Progress bar ── */
+        .progress-track {
+            width: 100%;
+            height: 3px;
+            background: var(--surface-3);
+            border-radius: 99px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--red);
+            border-radius: 99px;
+            box-shadow: 0 0 8px var(--red-glow);
+            transition: width 0.6s var(--ease);
+            width: 0%;
+        }
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 0.6rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .progress-label span:first-child {
+            color: var(--text-muted);
+        }
+
+        /* ── Cards (step 1) ── */
+        .cards-wrap {
+            width: 100%;
+            max-width: 520px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .acc-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 16px;
+            padding: 24px 22px 20px;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            transition: border-color 0.3s, transform 0.2s var(--ease), box-shadow 0.3s;
+            user-select: none;
+        }
+        .acc-card:active {
+            transform: scale(0.98);
+        }
+        .acc-card.general.selected {
+            border-color: var(--border-bright);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+        .acc-card.vip.selected {
+            border-color: var(--red);
+            box-shadow: 0 0 0 1px var(--red-border), 0 16px 50px rgba(227, 6, 19, 0.2);
+        }
+
+        .card-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .card-identity {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .card-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .vip .card-icon {
+            background: var(--red-dim);
+            border-color: var(--red-border);
+            color: var(--red);
+        }
+        .card-type-label {
+            font-size: 0.6rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .card-name {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text);
+            line-height: 1.2;
+        }
+        .card-check {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 1.5px solid var(--border);
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s var(--ease);
+            flex-shrink: 0;
+        }
+        .general.selected .card-check {
+            background: var(--text);
+            border-color: var(--text);
+        }
+        .vip.selected .card-check {
+            background: var(--red);
+            border-color: var(--red);
+            box-shadow: 0 0 12px var(--red-glow);
+        }
+        .check-tick {
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.25s var(--ease);
+            width: 11px;
+            height: 11px;
+        }
+        .acc-card.selected .check-tick {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .card-tagline {
+            font-size: 0.82rem;
+            line-height: 1.5;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+        .feat-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+        .feat-pill {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 12px;
+            border-radius: 99px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .vip .feat-pill {
+            border-color: var(--red-border);
+            background: var(--red-dim);
+            color: rgba(255, 180, 185, 0.9);
+        }
+        .feat-pill-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+        .vip .feat-pill-dot {
+            background: var(--red);
+            box-shadow: 0 0 4px var(--red-glow);
+        }
+
+        .card-price-row {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            margin-top: 4px;
+        }
+        .price-tag {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 700;
+            line-height: 1;
+            color: var(--text);
+        }
+        .vip .price-tag {
+            color: var(--red);
+        }
+        .price-desc {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+        .price-badge {
+            padding: 4px 14px;
+            border-radius: 99px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .vip .price-badge {
+            background: var(--red-dim);
+            border-color: var(--red-border);
+            color: var(--red);
+        }
+
+        /* ── Compare button ── */
+        .compare-row {
+            width: 100%;
+            max-width: 520px;
+            display: flex;
+            justify-content: center;
+            margin-top: 14px;
+        }
+        .compare-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 0;
+            transition: color 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+        .compare-btn:hover {
+            color: var(--text);
+        }
+        .compare-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+        }
+
+        /* ── Form (step 2) ── */
+        .form-wrap {
+            width: 100%;
+            max-width: 520px;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .field-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .field-row {
+            display: flex;
+            gap: 14px;
+        }
+        .field-row .field-group {
+            flex: 1;
+        }
+        .field-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding-left: 2px;
+        }
+        .field-input {
+            width: 100%;
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 9px 14px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+            -webkit-appearance: none;
+        }
+        .field-input::placeholder {
+            color: var(--text-dim);
+        }
+        .field-input:focus {
+            border-color: var(--red);
+            box-shadow: 0 0 0 3px var(--red-dim);
+            background: var(--surface-2);
+        }
+        .field-input.has-error {
+            border-color: var(--red);
+            box-shadow: 0 0 0 3px rgba(227, 6, 19, 0.15);
+        }
+        .field-error {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--red);
+            padding-left: 4px;
+            display: none;
+        }
+        .field-error.visible {
+            display: block;
+        }
+
+        /* Terms checkbox */
+        .terms-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 4px 0;
+        }
+        .custom-check {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            border: 1.5px solid var(--border);
+            background: var(--surface-3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: all 0.25s;
+        }
+        .custom-check.checked {
+            background: var(--red);
+            border-color: var(--red);
+            box-shadow: 0 0 12px var(--red-glow);
+        }
+        .custom-check svg {
+            width: 12px;
+            height: 12px;
+            stroke: #fff;
+            fill: none;
+            stroke-width: 2.5;
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.2s;
+        }
+        .custom-check.checked svg {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .terms-text {
+            font-size: 0.78rem;
+            line-height: 1.5;
+            color: var(--text-muted);
+        }
+        .terms-text a {
+            color: var(--red);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .terms-text a:hover {
+            text-decoration: underline;
+        }
+
+        /* ── CTA Buttons ── */
+        .cta-wrap {
+            width: 100%;
+            max-width: 520px;
+            margin-top: 24px;
+        }
+        .cta-btn {
+            width: 100%;
+            padding: 14px 24px;
+            border-radius: 8px;
+            border: none;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.15s var(--ease), box-shadow 0.3s, background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .cta-btn:active {
+            transform: scale(0.97);
+        }
+        .cta-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .red-cta {
+            background: var(--red);
+            color: white;
+            box-shadow: 0 0 16px var(--red-glow);
+        }
+        .red-cta:hover:not(:disabled) {
+            background: #c8050f;
+            box-shadow: 0 0 24px var(--red-glow);
+        }
+
+        .cta-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -110%;
+            width: 60%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+            transform: skewX(-20deg);
+        }
+        .cta-btn:not(:disabled):hover::before {
+            animation: sheen 0.55s forwards;
+        }
+        @keyframes sheen {
+            to {
+                left: 160%;
+            }
+        }
+
+        .cta-btn svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+        }
+
+        .cta-note {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+        }
+
+        /* ── Success: virtual card reveal ── */
+        .card-stage {
+            margin: 6px auto 0;
+            width: min(88vw, 380px);
+            aspect-ratio: 1 / 0.628;
+            animation: dropIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both, floatCard 4s ease-in-out 1s infinite;
+            position: relative;
+        }
+        @keyframes dropIn {
+            0% {
+                transform: translateY(-100px) scale(0.9);
+                opacity: 0;
+            }
+            65% {
+                transform: translateY(12px) scale(1.01);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+        }
+        @keyframes floatCard {
+            0%,
+            100% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-6px);
+            }
+        }
+        .card-shadow {
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            height: 30px;
+            background: radial-gradient(ellipse, rgba(227, 6, 19, 0.25) 0%, transparent 70%);
+            filter: blur(12px);
+            border-radius: 50%;
+            animation: shadowFloat 4s ease-in-out 1s infinite;
+            pointer-events: none;
+        }
+        @keyframes shadowFloat {
+            0%,
+            100% {
+                transform: translateX(-50%) scaleX(1);
+                opacity: 0.5;
+            }
+            50% {
+                transform: translateX(-50%) scaleX(0.85);
+                opacity: 0.25;
+            }
+        }
+        .card-flipper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+        }
+        .card-face {
+            position: absolute;
+            inset: 0;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .card-front {
+            background: linear-gradient(135deg, #1a0038, #2d0050);
+            z-index: 2;
+        }
+        .card-front::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.04) 45%, rgba(180, 100, 255, 0.07) 50%, rgba(255, 60, 100, 0.06) 55%, transparent 65%),
+                radial-gradient(ellipse 120% 80% at 70% 10%, rgba(200, 100, 255, 0.12) 0%, transparent 55%),
+                radial-gradient(ellipse 60% 60% at 10% 90%, rgba(255, 50, 80, 0.12) 0%, transparent 50%);
+            border-radius: 16px;
+            pointer-events: none;
+        }
+        .card-gloss {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.03) 40%, transparent 100%);
+            border-radius: 16px 16px 0 0;
+            z-index: 2;
+            pointer-events: none;
+        }
+        .card-content {
+            position: relative;
+            z-index: 3;
+            padding: 5% 6%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .card-name {
+            font-size: clamp(10px, 2.2vw, 14px);
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .card-name-sub {
+            font-size: clamp(7px, 1.6vw, 10px);
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.35);
+        }
+        .contactless svg {
+            width: clamp(28px, 6vw, 40px);
+            height: auto;
+        }
+        .card-mid {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .emv-chip {
+            width: clamp(34px, 8vw, 50px);
+            height: clamp(26px, 6vw, 38px);
+            border-radius: 5px;
+            background: linear-gradient(135deg, #c8922a 0%, #f0d060 25%, #c8922a 50%, #f5e070 75%, #b8801e 100%);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+        .emv-chip::before {
+            content: '';
+            position: absolute;
+            inset: 15% 20%;
+            background: repeating-linear-gradient(90deg, transparent 0, transparent 28%, rgba(100, 60, 0, 0.4) 28%, rgba(100, 60, 0, 0.4) 30%, transparent 30%),
+                repeating-linear-gradient(0deg, transparent 0, transparent 28%, rgba(100, 60, 0, 0.35) 28%, rgba(100, 60, 0, 0.35) 30%, transparent 30%);
+            border-radius: 2px;
+        }
+        .card-number {
+            font-family: 'Space Grotesk', monospace;
+            font-size: clamp(12px, 3.2vw, 18px);
+            letter-spacing: clamp(2px, 0.6vw, 4px);
+            color: rgba(255, 255, 255, 0.95);
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+            width: 100%;
+            text-align: left;
+        }
+        .card-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        .card-holder-label {
+            font-size: clamp(6px, 1.4vw, 9px);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.3);
+        }
+        .card-holder-name {
+            font-size: clamp(9px, 2.4vw, 14px);
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.88);
+        }
+        .card-expiry {
+            font-family: 'Space Grotesk', monospace;
+            font-size: clamp(9px, 2vw, 13px);
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .visa-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .visa-text {
+            font-family: 'Inter', sans-serif;
+            font-weight: 800;
+            font-size: clamp(16px, 4vw, 24px);
+            font-style: italic;
+            background: linear-gradient(135deg, #fff 20%, rgba(255, 255, 255, 0.65));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── Success step ── */
+        .success-wrap {
+            width: 100%;
+            max-width: 520px;
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .success-ring {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            margin-bottom: 20px;
+        }
+        .success-ring::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: conic-gradient(var(--red) 0%, rgba(227, 6, 19, 0.2) 60%, transparent 100%);
+            animation: spin 3s linear infinite;
+        }
+        .success-ring::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: var(--bg);
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .success-icon {
+            position: relative;
+            z-index: 1;
+            font-size: 2.2rem;
+            color: var(--red);
+        }
+        .success-icon img {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            display: block;
+        }
+        .success-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2.2rem, 7vw, 3.2rem);
+            font-weight: 700;
+            line-height: 1.1;
+            text-align: center;
+            color: var(--text);
+        }
+        .success-title span {
+            color: var(--red);
+        }
+        .success-sub {
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+            text-align: center;
+            max-width: 320px;
+            margin: 10px 0 24px;
+        }
+        .success-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 12px;
+        }
+        .success-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 99px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            background: var(--red-dim);
+            border: 1px solid var(--red-border);
+            color: rgba(255, 180, 185, 0.9);
+        }
+        .success-pill-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--red);
+            box-shadow: 0 0 4px var(--red-glow);
+        }
+
+        /* Redirect countdown */
+        .redirect-note {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 4px;
+            font-size: 0.76rem;
+            color: var(--text-dim);
+        }
+        .redirect-spinner {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--border-bright);
+            border-top-color: var(--red);
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* Trust signals */
+        .trust-signals {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin: 16px 0 10px;
+        }
+        .trust-signal {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.7rem;
+            background: var(--surface-3);
+            padding: 4px 14px;
+            border-radius: 99px;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .trust-signal i {
+            color: var(--red);
+        }
+
+        /* ── Bottom sheet ── */
+        .backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .backdrop.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .sheet {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 51;
+            background: var(--surface);
+            border-radius: 24px 24px 0 0;
+            border-top: 1px solid var(--red-border);
+            padding: 0 20px max(20px, env(safe-area-inset-bottom));
+            transform: translateY(100%);
+            transition: transform 0.45s var(--ease);
+            max-height: 78dvh;
+            overflow-y: auto;
+        }
+        .sheet.open {
+            transform: translateY(0);
+        }
+        .sheet-handle {
+            width: 36px;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--border);
+            margin: 12px auto 16px;
+        }
+        .sheet-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .sheet-title span {
+            color: var(--red);
+        }
+        .cmp-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        .cmp-table th {
+            padding: 10px 8px;
+            text-align: left;
+            font-size: 0.6rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border);
+        }
+        .cmp-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .cmp-table .yes {
+            color: var(--red);
+            font-weight: 600;
+        }
+        .cmp-table .no {
+            color: var(--text-dim);
+        }
+
+        /* ── Modal override ── */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(12px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0.2s, opacity 0.25s var(--ease);
+        }
+        .modal-overlay.active {
+            visibility: visible;
+            opacity: 1;
+        }
+        .modal-container {
+            background: var(--surface);
+            border-radius: 24px;
+            max-width: 90vw;
+            width: 380px;
+            padding: 28px 24px 24px;
+            text-align: center;
+            border: 1px solid var(--red-border);
+            box-shadow: 0 30px 50px rgba(0, 0, 0, 0.6);
+            transform: scale(0.95);
+            transition: transform 0.2s var(--ease);
+            position: relative;
+        }
+        .modal-overlay.active .modal-container {
+            transform: scale(1);
+        }
+        .modal-icon {
+            font-size: 2.8rem;
+            margin-bottom: 12px;
+            color: var(--red);
+        }
+        .modal-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+        .modal-message {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        .modal-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            font-family: 'Inter', sans-serif;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.2s;
+        }
+        .modal-btn:active {
+            transform: scale(0.97);
+        }
+        .modal-btn-primary {
+            background: var(--red);
+            color: white;
+            box-shadow: 0 4px 12px var(--red-glow);
+        }
+        .modal-btn-primary:hover {
+            background: #c8050f;
+        }
+        .modal-btn-secondary {
+            background: var(--surface-3);
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        .modal-btn-secondary:hover {
+            background: var(--surface-2);
+        }
+        .modal-close-x {
+            position: absolute;
+            top: 14px;
+            right: 18px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.4rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .modal-close-x:hover {
+            color: var(--red);
+        }
+
+        /* ── Animations ── */
+        @keyframes up {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .step-view.active .hero {
+            animation: up 0.6s var(--ease) 0.10s both;
+        }
+        .step-view.active .cards-wrap {
+            animation: up 0.6s var(--ease) 0.18s both;
+        }
+        .step-view.active .form-wrap {
+            animation: up 0.6s var(--ease) 0.20s both;
+        }
+        .step-view.active .cta-wrap {
+            animation: up 0.6s var(--ease) 0.32s both;
+        }
+        .step-view.active .success-wrap {
+            animation: up 0.6s var(--ease) 0.20s both;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 600px) {
+            .hero-display {
+                font-size: 2.4rem;
+            }
+            .field-row {
+                flex-direction: column;
+                gap: 14px;
+            }
+            .card-stage {
+                width: 88vw;
+            }
+            .trust-signals {
+                gap: 12px;
+            }
+        }
+        @media (max-width: 400px) {
+            .hero-display {
+                font-size: 2rem;
+            }
+            .card-name {
+                font-size: 0.95rem;
+            }
+            .price-tag {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Background -->
+    <div class="bg"></div>
+    <div class="bg-noise"></div>
+
+    <div class="steps-outer">
+
+        <!-- ======== STEP 1 – CHOOSE PASSPORT ======== -->
+        <div class="step-view active" id="step1">
+            <nav class="nav">
+                <div class="back-btn hidden"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></div>
+                <div class="step-pill">Step 1 of 2</div>
+                <div class="nav-spacer"></div>
+            </nav>
+
+            <div class="hero">
+                <div class="hero-display">Choose Your<br><span>Passport</span></div>
+                <p class="hero-sub">Pick the Passport that matches your vibe.</p>
+                <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:50%;"></div></div>
+                <div class="progress-label"><span>Account type</span><span>Step 1 / 2</span></div>
+            </div>
+
+            <div class="cards-wrap" id="cardsWrap">
+                <!-- Rands Passport (general) -->
+                <div class="acc-card general selected" id="cardGeneral" data-type="general">
+                    <div class="card-top-row">
+                        <div class="card-identity">
+                            <div class="card-icon"><i class="fas fa-ticket-alt"></i></div>
+                            <div>
+                                <div class="card-type-label">General Passport</div>
+                                <div class="card-name">Rands Passport</div>
+                            </div>
+                        </div>
+                        <div class="card-check" id="checkGeneral">
+                            <svg class="check-tick" viewBox="0 0 11 11" fill="none"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5" stroke="#0c0a0a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                    </div>
+                    <div class="card-tagline">Discover and book events, buy tickets, and manage your guest list — all in one place.</div>
+                    <div class="feat-row">
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>VIP Tickets</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>General Tickets</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>sifaka apha</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Hubbly Station</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>sifaka apha</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Passport Balance</div>
+                    </div>
+                    <div class="card-price-row">
+                        <div><div class="price-tag">FREE</div><div class="price-desc">No cost to open</div></div>
+                        <div class="price-badge">Always Mahala</div>
+                    </div>
+                </div>
+
+                <!-- Rands VIP Passport -->
+                <div class="acc-card vip" id="cardVip" data-type="vip">
+                    <div class="card-top-row">
+                        <div class="card-identity">
+                            <div class="card-icon"><i class="fas fa-crown"></i></div>
+                            <div>
+                                <div class="card-type-label">Premium Passport</div>
+                                <div class="card-name">Rands VVIP Passport</div>
+                            </div>
+                        </div>
+                        <div class="card-check" id="checkVip">
+                            <svg class="check-tick" viewBox="0 0 11 11" fill="none"><polyline points="1.5,5.5 4.5,8.5 9.5,2.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </div>
+                    </div>
+                    <div class="card-tagline">Skip queues, VVIP access, dedicated waiter, parking & shuttle — the full VIP experience.</div>
+                    <div class="feat-row">
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Skip the queue</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>VVIP access tags</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Parking at Joe Slovo High School</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Tab credit</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Dedicated waiter</div>
+                        <div class="feat-pill"><span class="feat-pill-dot"></span>Shuttle from Joe Slovo</div>
+                    </div>
+                    <div class="card-price-row">
+                        <div><div class="price-tag">R1500</div><div class="price-desc">One-time to open</div></div>
+                        <div class="price-badge">Pay once</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="compare-row">
+                <button class="compare-btn" id="compareBtn"><svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>Compare Passports</button>
+            </div>
+
+            <div class="cta-wrap">
+                <button class="cta-btn red-cta" id="s1Cta">
+                    <span id="s1CtaText">CREATE MY PASSPORT</span>
+                    <svg viewBox="0 0 24 24" stroke="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </button>
+                <div class="cta-note" id="s1CtaNote">Crafted by Mziwonke KaBuyaphi</div>
+            </div>
+        </div>
+
+        <!-- ======== STEP 2 – FILL DETAILS ======== -->
+        <div class="step-view" id="step2">
+            <nav class="nav">
+                <div class="back-btn" id="s2Back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></div>
+                <div class="step-pill">Step 2 of 2</div>
+                <div class="nav-spacer"></div>
+            </nav>
+
+            <div class="hero">
+                <div class="hero-display">Create Your<br><span>Passport</span></div>
+                <p class="hero-sub">Create your Rands Passport and get ready for the experience.</p>
+                <div class="progress-track"><div class="progress-fill" style="width:100%;"></div></div>
+                <div class="progress-label"><span>Passport Details</span><span>Step 2 / 2</span></div>
+            </div>
+
+            <div class="form-wrap" id="formWrap">
+                <div class="field-group">
+                    <label class="field-label" for="fullName">Full Name</label>
+                    <input class="field-input" type="text" id="fullName" placeholder="Mzonke Buyaphi" autocomplete="name">
+                    <span class="field-error" id="err-fullName">Enter your first and last name</span>
+                </div>
+
+                <div class="field-group">
+                    <label class="field-label" for="email">Email Address</label>
+                    <input class="field-input" type="email" id="email" placeholder="mzo@example.com" autocomplete="email">
+                    <span class="field-error" id="err-email">Enter a valid email address</span>
+                </div>
+
+                <div class="field-group">
+                    <label class="field-label" for="phone">WhatsApp Number</label>
+                    <input class="field-input" type="tel" id="phone" placeholder="0631234567" autocomplete="tel" maxlength="10" inputmode="numeric">
+                    <span class="field-error" id="err-phone">Enter a valid Mzansi mobile number</span>
+                </div>
+
+                <div class="field-group">
+                    <label class="field-label" for="password">Passport Key</label>
+                    <input class="field-input" type="password" id="password" placeholder="Create your Passport Key" autocomplete="new-password">
+                    <span class="field-error" id="err-password">Your Passport Key must be at least 6 characters</span>
+                </div>
+
+                <div class="field-group">
+                    <label class="field-label" for="confirmPassword">Confirm Passport Key</label>
+                    <input class="field-input" type="password" id="confirmPassword" placeholder="Confirm your Passport Key" autocomplete="new-password">
+                    <span class="field-error" id="err-confirmPassword">Passport Keys do not match</span>
+                </div>
+
+                <div class="terms-row">
+                    <div class="custom-check" id="termsCheck" role="checkbox" aria-checked="false" tabindex="0">
+                        <svg viewBox="0 0 12 12" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,6 4.5,9 10.5,3"/></svg>
+                    </div>
+                    <div class="terms-text">
+                        I agree to the <a href="#">Rands Passport Terms</a> and <a href="#">Privacy Policy</a>, and confirm that I am 21 years or older.
+                    </div>
+                </div>
+                <span class="field-error" id="err-terms">You must accept the terms to continue</span>
+            </div>
+
+            <div class="cta-wrap">
+                <button class="cta-btn red-cta" id="s2Cta">
+                    <span id="s2CtaText">ACTIVATE MY PASSPORT</span>
+                    <svg viewBox="0 0 24 24" stroke="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </button>
+                <div class="cta-note">Crafted by Mziwonke KaBuyaphi</div>
+            </div>
+        </div>
+
+        <!-- ======== STEP 3 – SUCCESS ======== -->
+        <div class="step-view" id="stepSuccess">
+            <nav class="nav">
+                <div class="back-btn hidden"></div>
+                <div class="step-pill" style="background:rgba(61,220,132,0.12);border-color:rgba(61,220,132,0.25);color:#3ddc84;">Passport activated</div>
+                <div class="nav-spacer"></div>
+            </nav>
+
+            <!-- Virtual card reveal -->
+            <div class="card-stage" id="cardStage">
+                <div class="card-shadow"></div>
+                <div class="card-flipper">
+                    <div class="card-face card-front" id="dynamicCardFront">
+                        <div class="card-gloss"></div>
+                        <div class="card-content">
+                            <div class="card-top">
+                                <div>
+                                    <div class="card-name">Rands Vibe Passport</div>
+                                    <div class="card-name-sub">#SeeYourVibe</div>
+                                </div>
+                                <div class="contactless"><svg viewBox="0 0 30 30" fill="none"><path d="M15 5 A14 14 0 0 1 15 25" stroke="rgba(255,255,255,0.7)" stroke-width="2.2"/><path d="M15 9 A10 10 0 0 1 15 21" stroke="rgba(255,255,255,0.6)" stroke-width="2.2"/><path d="M15 13 A6 6 0 0 1 15 17" stroke="rgba(255,255,255,0.5)" stroke-width="2.2"/><circle cx="15" cy="15" r="1.5" fill="rgba(255,255,255,0.8)"/></svg></div>
+                            </div>
+                            <div class="card-mid">
+                                <div class="emv-chip"></div>
+                                <div class="card-number" id="dynamicCardNumber">5399 2130 6376 1365</div>
+                            </div>
+                            <div class="card-bottom">
+                                <div>
+                                    <div class="card-holder-label">Card Holder</div>
+                                    <div class="card-holder-name" id="dynamicCardHolder">MZIWONKE KABUYAPHI</div>
+                                </div>
+                                <div>
+                                    <div class="card-holder-label">Expires</div>
+                                    <div class="card-expiry" id="dynamicExpiry">04/29</div>
+                                </div>
+                                <div class="visa-logo"><div class="visa-text">VISA</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="success-wrap">
+                <div class="success-ring">
+                    <div class="success-icon" id="successIcon"><img src="assets/images/rands-logo.png" alt="Rands logo"></div>
+                </div>
+                <div class="success-title">Your<br><span>Passport is Ready</span></div>
+                <p class="success-sub" id="successSub">Molo you're in, <strong id="userNamePlaceholder">friend</strong>! Your <strong id="passportTypePlaceholder">Rands Passport</strong> is now active.</p>
+                <div class="success-pill-row" id="successPills">
+                    <div class="success-pill"><div class="success-pill-dot"></div>Booze Lockers</div>
+                    <div class="success-pill"><div class="success-pill-dot"></div>Hubbly Station</div>
+                    <div class="success-pill"><div class="success-pill-dot"></div>The Butcher Shop</div>
+                </div>
+                <div class="trust-signals">
+                    <span class="trust-signal"><i class="fas fa-crown"></i>VVIP Tab</span>
+                    <span class="trust-signal"><i class="fas fa-wallet"></i> Passport Balance ready</span>
+                    <span class="trust-signal"><i class="fas fa-shield-alt"></i> 2FA enabled</span>
+                </div>
+                <div class="cta-wrap" style="margin-top:8px;">
+                    <button class="cta-btn red-cta" id="exploreBtn">
+                        <span>ENTER RANDS NOW</span>
+                        <svg viewBox="0 0 24 24" stroke="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </button>
+                    <div class="redirect-note" id="redirectNote">
+                        <span class="redirect-spinner"></span>
+                        <span id="redirectText">Taking you to Rands in 3…</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== BOTTOM SHEET ===== -->
+    <div class="backdrop" id="backdrop"></div>
+    <div class="sheet" id="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">COMPARE <span>PASSPORTS</span></div>
+        <table class="cmp-table">
+            <thead><tr><th>What you get</th><th>Rands</th><th>VIP</th></tr></thead>
+            <tbody>
+                <tr><td>Account fee</td><td>Free</td><td>R1500 once</td></tr>
+                <tr><td>Browse events</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Buy tickets</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Passport Balance</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Event reminders</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Friends list</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                <tr><td>Skip the queue</td><td class="no">✗</td><td class="yes">✓</td></tr>
+                <tr><td>VVIP access tags</td><td class="no">✗</td><td class="yes">✓</td></tr>
+                <tr><td>Parking at Joe Slovo</td><td class="no">✗</td><td class="yes">✓</td></tr>
+                <tr><td>Tab credit</td><td class="no">✗</td><td class="yes">✓</td></tr>
+                <tr><td>Dedicated waiter</td><td class="no">✗</td><td class="yes">✓</td></tr>
+                <tr><td>Shuttle from Joe Slovo</td><td class="no">✗</td><td class="yes">✓</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ===== MODAL SYSTEM ===== -->
+    <div id="globalModal" class="modal-overlay" style="display:none;">
+        <div class="modal-container">
+            <button class="modal-close-x" id="modalCloseX">✕</button>
+            <div class="modal-icon" id="modalIcon"><i class="fas fa-info-circle"></i></div>
+            <div class="modal-title" id="modalTitle">Notice</div>
+            <div class="modal-message" id="modalMessage">Message</div>
+            <div class="modal-buttons" id="modalButtons">
+                <button class="modal-btn modal-btn-primary" id="modalOkBtn">YEBO</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SCRIPTS ===== -->
+    <script type="module">
+        import { supabase } from './config/supabase.js';
+        import { registerAsTenantCustomer } from './config/auth.js';
+        window.supabase = supabase;
+        window.registerAsTenantCustomer = registerAsTenantCustomer;
+    </script>
+    <script>
+        (function() {
+            'use strict';
+
+            // ---- DOM refs ----
+            const step1 = document.getElementById('step1');
+            const step2 = document.getElementById('step2');
+            const stepSuccess = document.getElementById('stepSuccess');
+            const steps = [step1, step2, stepSuccess];
+
+            const s1Cta = document.getElementById('s1Cta');
+            const s2Back = document.getElementById('s2Back');
+            const s2Cta = document.getElementById('s2Cta');
+            const s2CtaText = document.getElementById('s2CtaText');
+            const exploreBtn = document.getElementById('exploreBtn');
+            const compareBtn = document.getElementById('compareBtn');
+            const backdrop = document.getElementById('backdrop');
+            const sheet = document.getElementById('sheet');
+
+            const cardGeneral = document.getElementById('cardGeneral');
+            const cardVip = document.getElementById('cardVip');
+            const fullName = document.getElementById('fullName');
+            const email = document.getElementById('email');
+            const phone = document.getElementById('phone');
+            const password = document.getElementById('password');
+            const confirmPassword = document.getElementById('confirmPassword');
+            const termsCheck = document.getElementById('termsCheck');
+
+            const dynamicCardNumber = document.getElementById('dynamicCardNumber');
+            const dynamicCardHolder = document.getElementById('dynamicCardHolder');
+            const dynamicExpiry = document.getElementById('dynamicExpiry');
+
+            const userNamePlaceholder = document.getElementById('userNamePlaceholder');
+            const passportTypePlaceholder = document.getElementById('passportTypePlaceholder');
+            const redirectText = document.getElementById('redirectText');
+
+            const HOME_URL = 'passport/home.html';
+
+            // ---- State ----
+            let selectedType = 'general'; // 'general' | 'vip'
+            let redirectTimer = null;
+
+            // ---- Helper: split "Full Name" into { name, surname } ----
+            // The DB schema has separate `name` and `surname` columns (no
+            // `full_name` column), so we collect ONE field in the UI for a
+            // simpler sign-up, then split it here before it ever reaches
+            // Supabase. First word -> name, everything else -> surname.
+            function splitFullName(value) {
+                const parts = value.trim().replace(/\s+/g, ' ').split(' ');
+                const name = parts.shift() || '';
+                const surname = parts.join(' ') || name;
+                return { name, surname };
+            }
+
+            // ---- Helper: navigate to step ----
+            function goToStep(n) {
+                steps.forEach((el) => el.classList.remove('active', 'exit-left', 'enter-right'));
+                const target = steps[n - 1];
+                if (target) target.classList.add('active');
+                if (target) target.scrollTop = 0;
+            }
+
+            // ---- Card selection ----
+            function selectCard(type) {
+                selectedType = type;
+                cardGeneral.classList.toggle('selected', type === 'general');
+                cardVip.classList.toggle('selected', type === 'vip');
+            }
+
+            // ---- Populate the virtual card + copy on the success screen ----
+            function populateSuccessCard(displayName, isVip) {
+                const accNum = '5399 ' + Array.from({ length: 12 }, () => Math.floor(Math.random() * 10)).join('').replace(
+                    /(.{4})/g, '$1 ').trim();
+                dynamicCardNumber.textContent = accNum;
+                dynamicCardHolder.textContent = displayName.toUpperCase();
+
+                const d = new Date();
+                const expMonth = String(d.getMonth() + 1).padStart(2, '0');
+                const expYear = String(d.getFullYear() + 3).slice(2);
+                dynamicExpiry.textContent = expMonth + '/' + expYear;
+
+                userNamePlaceholder.textContent = displayName;
+                passportTypePlaceholder.textContent = isVip ? 'Rands VIP Passport' : 'Rands Passport';
+            }
+
+            // ---- Form validation ----
+            function validateField(id, condition, errorId) {
+                const input = document.getElementById(id);
+                const err = document.getElementById(errorId);
+                if (!input || !err) return condition;
+                if (!condition) {
+                    input.classList.add('has-error');
+                    err.classList.add('visible');
+                    return false;
+                } else {
+                    input.classList.remove('has-error');
+                    err.classList.remove('visible');
+                    return true;
+                }
+            }
+
+            function validateStep2() {
+                const nameVal = fullName.value.trim();
+                const em = email.value.trim();
+                const ph = phone.value.trim();
+                const pw = password.value;
+                const cpw = confirmPassword.value;
+                const terms = termsCheck.classList.contains('checked');
+
+                let ok = true;
+                ok = validateField('fullName', nameVal.split(/\s+/).filter(Boolean).length >= 2, 'err-fullName') && ok;
+                ok = validateField('email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em), 'err-email') && ok;
+                ok = validateField('phone', /^[0-9]{10}$/.test(ph), 'err-phone') && ok;
+                ok = validateField('password', pw.length >= 6, 'err-password') && ok;
+                ok = validateField('confirmPassword', cpw === pw && cpw.length >= 6, 'err-confirmPassword') && ok;
+                const termsErr = document.getElementById('err-terms');
+                if (!terms) {
+                    termsErr.classList.add('visible');
+                    ok = false;
+                } else {
+                    termsErr.classList.remove('visible');
+                }
+                return ok;
+            }
+
+            // ---- Modal system ----
+            const modalEl = document.getElementById('globalModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalMessage = document.getElementById('modalMessage');
+            const modalIcon = document.getElementById('modalIcon');
+            const modalButtonsDiv = document.getElementById('modalButtons');
+            let confirmCallback = null;
+
+            function closeModal() {
+                modalEl.style.display = 'none';
+                modalEl.classList.remove('active');
+                if (confirmCallback) { confirmCallback(false);
+                    confirmCallback = null; }
+            }
+
+            function showModal({ title, message, type = 'info', showConfirm = false, onConfirm = null }) {
+                modalTitle.innerText = title;
+                modalMessage.innerText = message;
+                let iconHtml = '<i class="fas fa-circle-info"></i>';
+                if (type === 'error') iconHtml = '<i class="fas fa-circle-exclamation"></i>';
+                else if (type === 'success') iconHtml = '<i class="fas fa-check-circle"></i>';
+                else if (type === 'warning') iconHtml = '<i class="fas fa-triangle-exclamation"></i>';
+                modalIcon.innerHTML = iconHtml;
+                modalButtonsDiv.innerHTML = '';
+                if (showConfirm && onConfirm) {
+                    const confirmBtn = document.createElement('button');
+                    confirmBtn.className = 'modal-btn modal-btn-primary';
+                    confirmBtn.innerText = 'Yes';
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.className = 'modal-btn modal-btn-secondary';
+                    cancelBtn.innerText = 'Cancel';
+                    modalButtonsDiv.appendChild(confirmBtn);
+                    modalButtonsDiv.appendChild(cancelBtn);
+                    confirmCallback = onConfirm;
+                    confirmBtn.onclick = () => {
+                        if (confirmCallback) confirmCallback(true);
+                        closeModal();
+                    };
+                    cancelBtn.onclick = closeModal;
+                } else {
+                    const okBtn = document.createElement('button');
+                    okBtn.className = 'modal-btn modal-btn-primary';
+                    okBtn.innerText = 'OK';
+                    okBtn.onclick = closeModal;
+                    modalButtonsDiv.appendChild(okBtn);
+                }
+                modalEl.style.display = 'flex';
+                setTimeout(() => modalEl.classList.add('active'), 10);
+            }
+
+            window.showSuccessModal = (msg) => showModal({ title: 'Success', message: msg, type: 'success' });
+            window.showErrorModal = (msg) => showModal({ title: 'Error', message: msg, type: 'error' });
+            window.showWarningModal = (msg) => showModal({ title: 'Warning', message: msg, type: 'warning' });
+            window.showConfirmModal = (msg, onConfirm) => showModal({ title: 'Confirm', message: msg, type: 'warning',
+                showConfirm: true, onConfirm });
+
+            // Override native alert
+            window.originalAlert = window.alert;
+            window.alert = function(msg) { showModal({ title: 'Alert', message: msg, type: 'error' }); };
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && modalEl.style.display === 'flex') closeModal();
+            });
+            document.getElementById('modalCloseX').addEventListener('click', closeModal);
+            modalEl.addEventListener('click', (e) => { if (e.target === modalEl) closeModal(); });
+
+            // ---- Bottom sheet ----
+            function openSheet() {
+                backdrop.classList.add('open');
+                sheet.classList.add('open');
+            }
+
+            function closeSheet() {
+                backdrop.classList.remove('open');
+                sheet.classList.remove('open');
+            }
+
+            backdrop.addEventListener('click', closeSheet);
+
+            // ---- Step navigation ----
+            // Step 1 → Step 2
+            s1Cta.addEventListener('click', function() {
+                if (!selectedType) selectCard('general');
+                goToStep(2);
+            });
+
+            // Step 2 back → Step 1
+            s2Back.addEventListener('click', () => goToStep(1));
+
+            // Step 2 → activate account directly (simplest possible flow)
+            s2Cta.addEventListener('click', function() {
+                if (!validateStep2()) {
+                    showModal({
+                        title: 'Please fix errors',
+                        message: 'Check all fields and try again.',
+                        type: 'error'
+                    });
+                    return;
+                }
+
+                const isVip = selectedType === 'vip';
+                if (isVip) {
+                    showConfirmModal('Your VIP Passport costs R1500 once-off. Proceed with activation?', function(confirmed) {
+                        if (confirmed) activateAccount(true);
+                    });
+                } else {
+                    activateAccount(false);
+                }
+            });
+
+            async function activateAccount(isVip) {
+                if (!window.supabase) {
+                    showModal({ title: 'Error', message: 'Could not connect to the server. Please refresh and try again.', type: 'error' });
+                    return;
+                }
+
+                s2Cta.disabled = true;
+                const originalCtaText = s2CtaText.textContent;
+                s2CtaText.textContent = 'Activating...';
+
+                const { name: fn, surname: ln } = splitFullName(fullName.value);
+                const displayName = (fn + ' ' + ln).trim();
+                const em = email.value.trim();
+                const ph = phone.value.trim();
+                const pw = password.value;
+
+                try {
+                    let userId;
+                    let session;
+
+                    // 1. Create the auth user. The DB trigger `handle_new_auth_user`
+                    // creates the `profiles` row (profiles.id === auth.users.id,
+                    // always) in the same transaction. Do NOT insert into
+                    // `profiles` directly from the client — that's the trigger's
+                    // job, and RLS only allows a user to select/update their own
+                    // profile row, not insert one.
+                    const { data: signUpData, error: signUpError } = await window.supabase.auth.signUp({
+                        email: em,
+                        password: pw,
+                        options: {
+                            data: {
+                                // Sent both ways so the trigger can use whichever
+                                // shape it was written against.
+                                full_name: displayName,
+                                name: fn,
+                                surname: ln,
+                                phone: ph,
+                                account_type: isVip ? 'vip' : 'general'
+                            }
+                        }
+                    });
+
+                    if (signUpError) {
+                        // SELF-HEALING: "already registered" here almost always means a
+                        // PREVIOUS attempt got this far (auth user created) and then
+                        // the connection dropped before we could confirm it below.
+                        // There's no way to retry signUp() with the same email, so
+                        // instead of failing forever, sign in with what was just typed.
+                        const alreadyRegistered = /already registered|already exists/i.test(signUpError.message || '');
+                        if (!alreadyRegistered) throw signUpError;
+
+                        const { data: signInData, error: signInError } = await window.supabase.auth.signInWithPassword({ email: em, password: pw });
+                        if (signInError) {
+                            throw new Error('An account with this email already exists, but that password doesn\'t match it. Try logging in instead, or use "Forgot password".');
+                        }
+                        userId = signInData?.user?.id;
+                        session = signInData?.session;
+                    } else {
+                        userId = signUpData?.user?.id;
+                        session = signUpData?.session;
+
+                        // If signUp didn't return a session, sign in explicitly.
+                        if (!session) {
+                            const { data: signInData, error: signInError } = await window.supabase.auth.signInWithPassword({
+                                email: em,
+                                password: pw
+                            });
+                            if (signInError) throw signInError;
+                            session = signInData?.session;
+                            userId = signInData?.user?.id || userId;
+                        }
+                    }
+
+                    if (!userId) throw new Error('Account created but no user ID was returned.');
+
+                    // 2. Register this auth user as a tenant_customer of whichever
+                    // venue owns the CURRENT domain. tenant_id is resolved
+                    // server-side from tenant_domains — this page never sends a
+                    // tenant_id and there is no venue picker. Idempotent: safe
+                    // even if this account already has a customer row here
+                    // (e.g. started on WhatsApp) — it just updates the details.
+                    // NOTE: Wallet/Passport-card issuance is a Phase 2+ module
+                    // and isn't created here yet; this step only establishes the
+                    // customer↔tenant relationship.
+                    const { customer, error: registerError } = await window.registerAsTenantCustomer({
+                        fullName: displayName,
+                        phone: ph,
+                        email: em,
+                    });
+                    if (registerError) {
+                        throw new Error(registerError.message || 'Account created, but we could not register you as a customer of this venue.');
+                    }
+                    if (!customer) {
+                        throw new Error('Account created, but your venue registration could not be confirmed. Please contact support.');
+                    }
+
+                    // Populate the success screen + card reveal, then go there.
+                    populateSuccessCard(displayName || 'Mziwonke Kabuyaphi', isVip);
+                    goToStep(3);
+                    startRedirectCountdown();
+
+                } catch (err) {
+                    console.error('Activation error:', err);
+                    showModal({
+                        title: 'Activation Failed',
+                        message: err?.message || 'Something went wrong creating your Passport. Please try again.',
+                        type: 'error'
+                    });
+                } finally {
+                    s2Cta.disabled = false;
+                    s2CtaText.textContent = originalCtaText;
+                }
+            }
+
+            // ---- Auto-redirect home after a short celebratory pause ----
+            function goHome() {
+                if (redirectTimer) clearInterval(redirectTimer);
+                window.location.href = HOME_URL;
+            }
+
+            function startRedirectCountdown() {
+                let secondsLeft = 3;
+                redirectText.textContent = 'Taking you to Rands in ' + secondsLeft + '…';
+                redirectTimer = setInterval(() => {
+                    secondsLeft -= 1;
+                    if (secondsLeft <= 0) {
+                        goHome();
+                        return;
+                    }
+                    redirectText.textContent = 'Taking you to Rands in ' + secondsLeft + '…';
+                }, 1000);
+            }
+
+            exploreBtn.addEventListener('click', goHome);
+
+            // ---- Card click ----
+            cardGeneral.addEventListener('click', () => selectCard('general'));
+            cardVip.addEventListener('click', () => selectCard('vip'));
+
+            // ---- Compare button ----
+            compareBtn.addEventListener('click', openSheet);
+
+            // ---- Terms checkbox ----
+            termsCheck.addEventListener('click', function() {
+                this.classList.toggle('checked');
+                const isChecked = this.classList.contains('checked');
+                this.setAttribute('aria-checked', isChecked);
+                const err = document.getElementById('err-terms');
+                if (isChecked) err.classList.remove('visible');
+            });
+
+            // ---- Phone input: digits only ----
+            phone.addEventListener('input', function() {
+                this.value = this.value.replace(/\D/g, '').slice(0, 10);
+            });
+
+            // ---- Real-time validation on blur ----
+            const fieldMap = [
+                ['fullName', 'err-fullName', (v) => v.trim().split(/\s+/).filter(Boolean).length >= 2],
+                ['email', 'err-email', (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())],
+                ['phone', 'err-phone', (v) => /^[0-9]{10}$/.test(v.trim())],
+                ['password', 'err-password', (v) => v.length >= 6],
+                ['confirmPassword', 'err-confirmPassword', (v) => v === password.value && v.length >= 6],
+            ];
+
+            fieldMap.forEach(([id, errId, test]) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('blur', function() {
+                    const val = this.value;
+                    const ok = test(val);
+                    const err = document.getElementById(errId);
+                    if (!ok) {
+                        this.classList.add('has-error');
+                        if (err) err.classList.add('visible');
+                    } else {
+                        this.classList.remove('has-error');
+                        if (err) err.classList.remove('visible');
+                    }
+                });
+                el.addEventListener('input', function() {
+                    const err = document.getElementById(errId);
+                    if (err) err.classList.remove('visible');
+                    this.classList.remove('has-error');
+                });
+            });
+
+            // ---- Confirm password: real-time sync ----
+            confirmPassword.addEventListener('input', function() {
+                const pw = password.value;
+                const cpw = this.value;
+                const err = document.getElementById('err-confirmPassword');
+                if (cpw.length > 0 && cpw !== pw) {
+                    this.classList.add('has-error');
+                    err.classList.add('visible');
+                } else {
+                    this.classList.remove('has-error');
+                    err.classList.remove('visible');
+                }
+            });
+
+            password.addEventListener('input', function() {
+                const err = document.getElementById('err-password');
+                if (this.value.length >= 6) {
+                    this.classList.remove('has-error');
+                    err.classList.remove('visible');
+                }
+                if (confirmPassword.value.length > 0) {
+                    const cErr = document.getElementById('err-confirmPassword');
+                    if (confirmPassword.value !== this.value) {
+                        confirmPassword.classList.add('has-error');
+                        cErr.classList.add('visible');
+                    } else {
+                        confirmPassword.classList.remove('has-error');
+                        cErr.classList.remove('visible');
+                    }
+                }
+            });
+
+            // ---- Init ----
+            selectCard('general');
+            goToStep(1);
+
+            // ---- Keyboard shortcut: Escape closes sheet ----
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet();
+            });
+
+            // ---- Click outside sheet to close ----
+            sheet.addEventListener('click', (e) => e.stopPropagation());
+
+            console.log('✅ Rands Passport registration ready (simplified 2-step flow).');
+        })();
+    </script>
+
+</body>
+</html>
