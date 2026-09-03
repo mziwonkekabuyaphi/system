@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Rands · Create Your Passport</title>
+    <title>QLess · Create Your Passport</title>
 
     <!-- Dashboard fonts (Space Grotesk + Inter) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
 
     <style>
-        /* ========== REGISTRATION – RANDS COMMAND CENTRE STYLE ========== */
+        /* ========== REGISTRATION – QLESS COMMAND CENTRE STYLE ========== */
 
         *,
         *::before,
@@ -1240,14 +1240,14 @@
             </div>
 
             <div class="cards-wrap" id="cardsWrap">
-                <!-- Rands Passport (general) -->
+                <!-- QLess Passport (general) -->
                 <div class="acc-card general selected" id="cardGeneral" data-type="general">
                     <div class="card-top-row">
                         <div class="card-identity">
                             <div class="card-icon"><i class="fas fa-ticket-alt"></i></div>
                             <div>
                                 <div class="card-type-label">General Passport</div>
-                                <div class="card-name">Rands Passport</div>
+                                <div class="card-name">QLess Passport</div>
                             </div>
                         </div>
                         <div class="card-check" id="checkGeneral">
@@ -1269,14 +1269,14 @@
                     </div>
                 </div>
 
-                <!-- Rands VIP Passport -->
+                <!-- QLess VIP Passport -->
                 <div class="acc-card vip" id="cardVip" data-type="vip">
                     <div class="card-top-row">
                         <div class="card-identity">
                             <div class="card-icon"><i class="fas fa-crown"></i></div>
                             <div>
                                 <div class="card-type-label">Premium Passport</div>
-                                <div class="card-name">Rands VVIP Passport</div>
+                                <div class="card-name">QLess VVIP Passport</div>
                             </div>
                         </div>
                         <div class="card-check" id="checkVip">
@@ -1322,7 +1322,7 @@
 
             <div class="hero">
                 <div class="hero-display">Create Your<br><span>Passport</span></div>
-                <p class="hero-sub">Create your Rands Passport and get ready for the experience.</p>
+                <p class="hero-sub">Create your QLess Passport and get ready for the experience.</p>
                 <div class="progress-track"><div class="progress-fill" style="width:100%;"></div></div>
                 <div class="progress-label"><span>Passport Details</span><span>Step 2 / 2</span></div>
             </div>
@@ -1363,7 +1363,7 @@
                         <svg viewBox="0 0 12 12" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5,6 4.5,9 10.5,3"/></svg>
                     </div>
                     <div class="terms-text">
-                        I agree to the <a href="#">Rands Passport Terms</a> and <a href="#">Privacy Policy</a>, and confirm that I am 21 years or older.
+                        I agree to the <a href="#">QLess Passport Terms</a> and <a href="#">Privacy Policy</a>, and confirm that I am 21 years or older.
                     </div>
                 </div>
                 <span class="field-error" id="err-terms">You must accept the terms to continue</span>
@@ -1394,9 +1394,13 @@
                         <div class="card-gloss"></div>
                         <div class="card-content">
                             <div class="card-top">
+                                <!-- NOTE: unlike dynamicCardNumber/dynamicCardHolder below, these
+                                     two fields have no id and are not populated dynamically.
+                                     Ideally this should show the resolved tenant's display_name
+                                     once wired up in register's JS (not provided for this audit). -->
                                 <div>
-                                    <div class="card-name">Rands Vibe Passport</div>
-                                    <div class="card-name-sub">#SeeYourVibe</div>
+                                    <div class="card-name" id="dynamicCardBrand">QLess Passport</div>
+                                    <div class="card-name-sub">#QLess</div>
                                 </div>
                                 <div class="contactless"><svg viewBox="0 0 30 30" fill="none"><path d="M15 5 A14 14 0 0 1 15 25" stroke="rgba(255,255,255,0.7)" stroke-width="2.2"/><path d="M15 9 A10 10 0 0 1 15 21" stroke="rgba(255,255,255,0.6)" stroke-width="2.2"/><path d="M15 13 A6 6 0 0 1 15 17" stroke="rgba(255,255,255,0.5)" stroke-width="2.2"/><circle cx="15" cy="15" r="1.5" fill="rgba(255,255,255,0.8)"/></svg></div>
                             </div>
@@ -1422,10 +1426,10 @@
 
             <div class="success-wrap">
                 <div class="success-ring">
-                    <div class="success-icon" id="successIcon"><img src="assets/images/rands-logo.png" alt="Rands logo"></div>
+                    <div class="success-icon" id="successIcon"><img src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='none' stroke='white' stroke-width='4'/%3E%3Ctext x='50' y='63' font-family='Segoe UI, sans-serif' font-size='42' font-weight='700' fill='white' text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E" alt="QLess logo"></div>
                 </div>
                 <div class="success-title">Your<br><span>Passport is Ready</span></div>
-                <p class="success-sub" id="successSub">Molo you're in, <strong id="userNamePlaceholder">friend</strong>! Your <strong id="passportTypePlaceholder">Rands Passport</strong> is now active.</p>
+                <p class="success-sub" id="successSub">Molo you're in, <strong id="userNamePlaceholder">friend</strong>! Your <strong id="passportTypePlaceholder">QLess Passport</strong> is now active.</p>
                 <div class="success-pill-row" id="successPills">
                     <div class="success-pill"><div class="success-pill-dot"></div>Booze Lockers</div>
                     <div class="success-pill"><div class="success-pill-dot"></div>Hubbly Station</div>
@@ -1438,12 +1442,12 @@
                 </div>
                 <div class="cta-wrap" style="margin-top:8px;">
                     <button class="cta-btn red-cta" id="exploreBtn">
-                        <span>ENTER RANDS NOW</span>
+                        <span>ENTER NOW</span>
                         <svg viewBox="0 0 24 24" stroke="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                     </button>
                     <div class="redirect-note" id="redirectNote">
                         <span class="redirect-spinner"></span>
-                        <span id="redirectText">Taking you to Rands in 3…</span>
+                        <span id="redirectText">Taking you in 3…</span>
                     </div>
                 </div>
             </div>
@@ -1456,7 +1460,7 @@
         <div class="sheet-handle"></div>
         <div class="sheet-title">COMPARE <span>PASSPORTS</span></div>
         <table class="cmp-table">
-            <thead><tr><th>What you get</th><th>Rands</th><th>VIP</th></tr></thead>
+            <thead><tr><th>What you get</th><th>General</th><th>VIP</th></tr></thead>
             <tbody>
                 <tr><td>Account fee</td><td>Free</td><td>R1500 once</td></tr>
                 <tr><td>Browse events</td><td class="yes">✓</td><td class="yes">✓</td></tr>
@@ -1576,7 +1580,7 @@
                 dynamicExpiry.textContent = expMonth + '/' + expYear;
 
                 userNamePlaceholder.textContent = displayName;
-                passportTypePlaceholder.textContent = isVip ? 'Rands VIP Passport' : 'Rands Passport';
+                passportTypePlaceholder.textContent = isVip ? 'QLess VIP Passport' : 'QLess Passport';
             }
 
             // ---- Form validation ----
@@ -1851,14 +1855,14 @@
 
             function startRedirectCountdown() {
                 let secondsLeft = 3;
-                redirectText.textContent = 'Taking you to Rands in ' + secondsLeft + '…';
+                redirectText.textContent = 'Taking you in ' + secondsLeft + '…';
                 redirectTimer = setInterval(() => {
                     secondsLeft -= 1;
                     if (secondsLeft <= 0) {
                         goHome();
                         return;
                     }
-                    redirectText.textContent = 'Taking you to Rands in ' + secondsLeft + '…';
+                    redirectText.textContent = 'Taking you in ' + secondsLeft + '…';
                 }, 1000);
             }
 
@@ -1960,7 +1964,7 @@
             // ---- Click outside sheet to close ----
             sheet.addEventListener('click', (e) => e.stopPropagation());
 
-            console.log('✅ Rands Passport registration ready (simplified 2-step flow).');
+            console.log('✅ QLess Passport registration ready (simplified 2-step flow).');
         })();
     </script>
 

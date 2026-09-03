@@ -51,15 +51,21 @@
         <div class="flip-back">
           <i class="fas fa-crown"></i>
           <span id="tenantLogoText">QLESS</span>
-          <small>Vibe Pass</small>
+          <small>Passport</small>
         </div>
       </div>
       <div class="pulse-ring"></div>
     </div>
 
     <!-- Branding -->
-    <h1 id="tenantHeading">Vibe Pass</h1>
-    <div class="version">✦ Africa's Premier Destination✦</div>
+    <!-- "QLess" is a neutral placeholder shown before tenant resolution completes;
+         index.js swaps this for the resolved tenant's display_name. Never hardcode
+         a specific tenant's name here. -->
+    <h1 id="tenantHeading">QLess</h1>
+    <!-- NOTE: no tagline/campaign field currently exists on get_tenant_by_domain,
+         so this is neutral platform copy rather than tenant-specific marketing text.
+         Report to product: if per-tenant taglines are wanted, this needs a schema field. -->
+    <div class="version">✦ Powered by QLess ✦</div>
 
     <!-- Loading Bar -->
     <div class="loading-bar">
@@ -73,14 +79,15 @@
 
     <!-- Status -->
     <div class="status-message" id="statusMessage">
-      <span>Initializing your Vibe Passport</span>
+      <span>Initializing your QLess Passport</span>
     </div>
 
     <!-- Percentage -->
     <div class="percentage" id="percentage">0%</div>
 
-    <!-- Tagline -->
-    <div class="tagline">#SeeYourVibe</div>
+    <!-- Tagline: neutral placeholder — no campaign-hashtag field exists on
+         get_tenant_by_domain yet. Report to product if per-tenant hashtags are wanted. -->
+    <div class="tagline">#QLess</div>
   </div>
 
   <!-- Unknown / inactive / disabled tenant -->
