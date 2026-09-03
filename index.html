@@ -51,21 +51,22 @@
         <div class="flip-back">
           <i class="fas fa-crown"></i>
           <span id="tenantLogoText">QLESS</span>
-          <small>Passport</small>
+          <small>Vibe Passport</small>
         </div>
       </div>
       <div class="pulse-ring"></div>
     </div>
 
     <!-- Branding -->
-    <!-- "QLess" is a neutral placeholder shown before tenant resolution completes;
-         index.js swaps this for the resolved tenant's display_name. Never hardcode
-         a specific tenant's name here. -->
+    <!-- "QLess" is a neutral placeholder shown before tenant resolution completes.
+         The inline script below (tenant resolution) swaps this for the resolved
+         tenant's display_name/tenant_name, falling back to "QLess" if neither
+         exists or resolution fails. Never hardcode a specific tenant's name here. -->
     <h1 id="tenantHeading">QLess</h1>
-    <!-- NOTE: no tagline/campaign field currently exists on get_tenant_by_domain,
-         so this is neutral platform copy rather than tenant-specific marketing text.
-         Report to product: if per-tenant taglines are wanted, this needs a schema field. -->
-    <div class="version">✦ Powered by QLess ✦</div>
+    <!-- "Vibe Passport" is the QLess platform's product name — it is intentionally
+         static and NOT tenant-specific (never "QLess Passport", "Rands Passport",
+         or "Test Venue Passport"). The tenant identity lives in tenantHeading above. -->
+    <div class="version">✦ Vibe Passport ✦</div>
 
     <!-- Loading Bar -->
     <div class="loading-bar">
@@ -79,7 +80,7 @@
 
     <!-- Status -->
     <div class="status-message" id="statusMessage">
-      <span>Initializing your QLess Passport</span>
+      <span>Initializing your Vibe Passport</span>
     </div>
 
     <!-- Percentage -->
@@ -129,6 +130,145 @@
 
   <!-- Main JS (module — imports the existing Supabase client) -->
   <script type="module" src="assets/js/index.js"></script>
+
+  <!-- ============================================================
+       Splash tenant resolution
+       ------------------------------------------------------------
+       Resolves the current tenant from window.location.hostname via
+       the existing get_tenant_by_domain(p_domain) RPC and applies
+       tenant branding (name, logo, colors) to the splash UI.
+
+       NOTE: assets/js/index.js was not available for inspection when
+       this was written, so this logic is kept as its own small module
+       here rather than merged into it, to avoid guessing at (and
+       possibly breaking) whatever that file already does. If
+       index.js already performs tenant resolution, this block should
+       be merged into it / deduped rather than left running twice.
+       The Supabase client is imported from the existing
+       config/supabase.js — no new paths invented.
+  ============================================================ -->
+  <script type="module">
+    import { supabase } from './config/supabase.js';
+
+    const FALLBACK_NAME = 'QLess';
+
+    // Must match the placeholder already in the img[src] above — kept as a
+    // constant so the "no logo configured" fallback is guaranteed identical
+    // whether it's the initial paint or a later revert (e.g. broken logo_url).
+    const NEUTRAL_LOGO_SRC =
+      "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='48' fill='none' stroke='white' stroke-width='4'/%3E%3Ctext x='50' y='63' font-family='Segoe UI, sans-serif' font-size='42' font-weight='700' fill='white' text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E";
+
+    const els = {
+      heading: document.getElementById('tenantHeading'),
+      logoImg: document.getElementById('tenantLogoImg'),
+      statusMessage: document.querySelector('#statusMessage span'),
+      themeColorMeta: document.getElementById('themeColorMeta'),
+      splashRoot: document.getElementById('splashRoot'),
+      stateUnavailable: document.getElementById('stateUnavailable'),
+      stateError: document.getElementById('stateError'),
+      retryUnavailableBtn: document.getElementById('retryUnavailableBtn'),
+      retryErrorBtn: document.getElementById('retryErrorBtn'),
+    };
+
+    function showSplash() {
+      if (els.splashRoot) els.splashRoot.hidden = false;
+      if (els.stateUnavailable) els.stateUnavailable.hidden = true;
+      if (els.stateError) els.stateError.hidden = true;
+    }
+
+    function showUnavailable() {
+      // Neutral unavailable state only — never assume/show Rands, never
+      // expose a tenant_id, never redirect anywhere.
+      if (els.splashRoot) els.splashRoot.hidden = true;
+      if (els.stateError) els.stateError.hidden = true;
+      if (els.stateUnavailable) els.stateUnavailable.hidden = false;
+    }
+
+    function showConnectionError() {
+      // RPC/network failure — neutral error state, no tenant assumed.
+      if (els.splashRoot) els.splashRoot.hidden = true;
+      if (els.stateUnavailable) els.stateUnavailable.hidden = true;
+      if (els.stateError) els.stateError.hidden = false;
+    }
+
+    function applyTenantBranding(tenant) {
+      const name = tenant?.display_name || tenant?.tenant_name || FALLBACK_NAME;
+
+      // Tenant identity only. "Vibe Passport" (the product name) is static
+      // markup elsewhere in this file and is never touched here.
+      if (els.heading) els.heading.textContent = name;
+
+      // Logo: use tenant.logo_url when present; fall back to (and recover to,
+      // on load failure) the neutral QLess mark already in the HTML. Never
+      // falls back to a tenant-specific asset.
+      if (els.logoImg) {
+        els.logoImg.onerror = function () {
+          this.onerror = null;
+          this.src = NEUTRAL_LOGO_SRC;
+        };
+        els.logoImg.src = tenant?.logo_url ? tenant.logo_url : NEUTRAL_LOGO_SRC;
+      }
+
+      // Colors: only applied when the tenant actually has them configured;
+      // otherwise the existing neutral QLess styling in assets/css/index.css
+      // is left completely untouched. Exposed as CSS custom properties for
+      // that stylesheet to consume — assets/css/index.css was not available
+      // for inspection here, so confirm/wire these property names
+      // (--tenant-primary-color / --tenant-secondary-color) into the actual
+      // splash styles to see a visual effect from this. The theme-color meta
+      // tag (browser chrome color) is a plain attribute, so it's updated
+      // directly and works regardless of the stylesheet.
+      if (tenant?.primary_color) {
+        document.documentElement.style.setProperty('--tenant-primary-color', tenant.primary_color);
+        if (els.themeColorMeta) els.themeColorMeta.setAttribute('content', tenant.primary_color);
+      }
+      if (tenant?.secondary_color) {
+        document.documentElement.style.setProperty('--tenant-secondary-color', tenant.secondary_color);
+      }
+    }
+
+    async function resolveTenant() {
+      try {
+        const hostname = window.location.hostname;
+
+        // Single lightweight lookup — no wallet/customer/order/ticket/admin
+        // data, no auth context. Tenant identity comes only from this RPC.
+        const { data, error } = await supabase.rpc('get_tenant_by_domain', {
+          p_domain: hostname,
+        });
+
+        if (error) {
+          console.error('get_tenant_by_domain failed:', error);
+          showConnectionError();
+          return;
+        }
+
+        // RPC returns a table (array of rows); no matching row means no
+        // tenant owns this hostname.
+        const tenant = Array.isArray(data) ? data[0] : data;
+
+        if (!tenant) {
+          showUnavailable();
+          return;
+        }
+
+        applyTenantBranding(tenant);
+        showSplash();
+      } catch (err) {
+        console.error('Tenant resolution error:', err);
+        showConnectionError();
+      }
+    }
+
+    if (els.retryUnavailableBtn) {
+      els.retryUnavailableBtn.addEventListener('click', () => window.location.reload());
+    }
+    if (els.retryErrorBtn) {
+      els.retryErrorBtn.addEventListener('click', () => window.location.reload());
+    }
+
+    resolveTenant();
+  </script>
 
 </body>
 
