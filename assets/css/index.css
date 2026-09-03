@@ -1,360 +1,294 @@
-:root {
-  /* Neutral QLess defaults — used until a tenant resolves.
-     These must NEVER be Rands' colors; they're the platform fallback only. */
-  --qless-primary: #0057B7;
-  --qless-primary-rgb: 0, 87, 183;
-  --qless-secondary: #FFFFFF;
-}
+ * { margin: 0; padding: 0; box-sizing: border-box; }
+  body, html {
+    height: 100%;
+    font-family: 'Segoe UI', system-ui, -apple-system, 'Inter', sans-serif;
+    background: linear-gradient(135deg, #E31B23, #8B0000, #FFFFFF);
+    background-size: 200% 200%;
+    animation: gradientShift 3s ease infinite;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
 
-body, html {
-  height: 100%;
-  font-family: 'Segoe UI', system-ui, -apple-system, 'Inter', sans-serif;
-  background: linear-gradient(135deg, var(--qless-primary), var(--qless-secondary), #FFFFFF);
-  background-size: 200% 200%;
-  animation: gradientShift 3s ease infinite;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  overflow: hidden;
-}
+  .splash {
+    text-align: center;
+    animation: fadeInUp 0.8s ease-out;
+    padding: 1rem;
+  }
 
-@keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 
-.splash {
-  text-align: center;
-  animation: fadeInUp 0.8s ease-out;
-  padding: 1rem;
-}
+  /* 3D Flip Logo Container */
+  .logo-3d {
+    width: 130px;
+    height: 130px;
+    margin: 0 auto 20px;
+    perspective: 1000px;
+    cursor: pointer;
+  }
 
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+  .flip-card {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
+    transform-style: preserve-3d;
+    border-radius: 50%;
+  }
 
-/* 3D Flip Logo Container */
-.logo-3d {
-  width: 130px;
-  height: 130px;
-  margin: 0 auto 20px;
-  perspective: 1000px;
-  cursor: pointer;
-}
+  .logo-3d:hover .flip-card {
+    transform: rotateY(180deg);
+  }
 
-.flip-card {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  text-align: center;
-  transition: transform 0.8s cubic-bezier(0.4, 0.2, 0.2, 1);
-  transform-style: preserve-3d;
-  border-radius: 50%;
-}
+  .flip-front, .flip-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
-.logo-3d:hover .flip-card {
-  transform: rotateY(180deg);
-}
+  .flip-front {
+    background: linear-gradient(145deg, #E30613, #8B0000);
+    box-shadow: 0 20px 35px -10px rgba(0,0,0,0.3);
+    transform: rotateY(0deg);
+  }
 
-.flip-front, .flip-back {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  backface-visibility: hidden;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+  .flip-front img {
+    width: 75%;
+    height: auto;
+    object-fit: contain;
+  }
 
-.flip-front {
-  background: linear-gradient(145deg, var(--qless-primary), var(--qless-secondary));
-  box-shadow: 0 20px 35px -10px rgba(0,0,0,0.3);
-  transform: rotateY(0deg);
-}
+  .flip-back {
+    background: linear-gradient(145deg, #E30613, #8B0000);
+    transform: rotateY(180deg);
+    color: white;
+    font-weight: bold;
+    font-size: 1.2rem;
+    flex-direction: column;
+    gap: 5px;
+    box-shadow: 0 20px 35px -10px rgba(227,6,19,0.4);
+  }
 
-.flip-front img {
-  width: 75%;
-  height: auto;
-  object-fit: contain;
-}
+  .flip-back i {
+    font-size: 2rem;
+  }
 
-.flip-back {
-  background: linear-gradient(145deg, var(--qless-primary), var(--qless-secondary));
-  transform: rotateY(180deg);
-  color: white;
-  font-weight: bold;
-  font-size: 1.2rem;
-  flex-direction: column;
-  gap: 5px;
-  box-shadow: 0 20px 35px -10px rgba(var(--qless-primary-rgb), 0.4);
-}
+  /* Pulse Ring Animation */
+  .pulse-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: transparent;
+    pointer-events: none;
+    z-index: -1;
+  }
 
-.flip-back i {
-  font-size: 2rem;
-}
+  .pulse-ring::before,
+  .pulse-ring::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.4);
+    animation: pulseRing 2s ease-out infinite;
+  }
 
-/* Pulse Ring Animation */
-.pulse-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 150px;
-  height: 150px;
-  border-radius: 50%;
-  background: transparent;
-  pointer-events: none;
-  z-index: -1;
-}
+  .pulse-ring::after {
+    animation-delay: 1s;
+  }
 
-.pulse-ring::before,
-.pulse-ring::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.4);
-  animation: pulseRing 2s ease-out infinite;
-}
+  @keyframes pulseRing {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
 
-.pulse-ring::after {
-  animation-delay: 1s;
-}
+  .splash h1 {
+    font-size: 2.8rem;
+    background: linear-gradient(135deg, #fff, #ffe0e0);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+    letter-spacing: -0.5px;
+    font-weight: 800;
+  }
 
-@keyframes pulseRing {
-  0% { transform: scale(0.8); opacity: 0.8; }
-  100% { transform: scale(1.5); opacity: 0; }
-}
+  .version {
+    margin-top: 16px;
+    margin-bottom: 24px;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.9);
+    letter-spacing: 1px;
+    font-weight: 500;
+    text-transform: uppercase;
+    background: rgba(255,255,255,0.15);
+    display: inline-block;
+    padding: 6px 20px;
+    border-radius: 40px;
+    backdrop-filter: blur(4px);
+  }
 
-.splash h1 {
-  font-size: 2.8rem;
-  background: linear-gradient(135deg, #fff, #ffe0e0);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: none;
-  letter-spacing: -0.5px;
-  font-weight: 800;
-}
+  .loading-bar {
+    width: 380px;
+    height: 4px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 auto;
+  }
 
-.version {
-  margin-top: 16px;
-  margin-bottom: 24px;
-  font-size: 0.75rem;
-  color: rgba(255,255,255,0.9);
-  letter-spacing: 1px;
-  font-weight: 500;
-  text-transform: uppercase;
-  background: rgba(255,255,255,0.15);
-  display: inline-block;
-  padding: 6px 20px;
-  border-radius: 40px;
-  backdrop-filter: blur(4px);
-}
+  .progress {
+    width: 0;
+    height: 100%;
+    background: linear-gradient(90deg, #fff, #ffcccb);
+    border-radius: 4px;
+    transition: width 0.05s linear;
+  }
 
-.loading-bar {
-  width: 380px;
-  height: 4px;
-  background: rgba(255,255,255,0.25);
-  border-radius: 4px;
-  overflow: hidden;
-  margin: 0 auto;
-}
+  .loading-circle {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+  }
 
-.progress {
-  width: 0;
-  height: 100%;
-  background: linear-gradient(90deg, #fff, #ffcccb);
-  border-radius: 4px;
-  transition: width 0.05s linear;
-}
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top: 3px solid white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
 
-.loading-circle {
-  margin-top: 20px;
-  display: flex;
-  justify-content: center;
-}
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255,255,255,0.3);
-  border-top: 3px solid white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
+  .status-message {
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.9);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+  .pulse-dots { display: inline-flex; gap: 4px; }
+  .pulse-dots span {
+    width: 5px; height: 5px; background: white; border-radius: 50%;
+    animation: pulseDot 1.4s infinite;
+  }
+  .pulse-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .pulse-dots span:nth-child(3) { animation-delay: 0.4s; }
 
-.status-message {
-  margin-top: 20px;
-  font-size: 0.9rem;
-  color: rgba(255,255,255,0.9);
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
+  @keyframes pulseDot {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
 
-.pulse-dots { display: inline-flex; gap: 4px; }
-.pulse-dots span {
-  width: 5px; height: 5px; background: white; border-radius: 50%;
-  animation: pulseDot 1.4s infinite;
-}
-.pulse-dots span:nth-child(2) { animation-delay: 0.2s; }
-.pulse-dots span:nth-child(3) { animation-delay: 0.4s; }
+  .percentage {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.6);
+    font-family: monospace;
+  }
 
-@keyframes pulseDot {
-  0%, 100% { opacity: 0.3; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.2); }
-}
+  .tagline {
+    margin-top: 24px;
+    font-size: 1rem;
+    color: rgba(255,255,255,0.9);
+    font-weight: 500;
+    animation: gentlePulse 2s ease-in-out infinite;
+  }
 
-.percentage {
-  margin-top: 8px;
-  font-size: 0.7rem;
-  color: rgba(255,255,255,0.6);
-  font-family: monospace;
-}
+  @keyframes gentlePulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; text-shadow: 0 0 5px rgba(255,255,255,0.5); }
+  }
 
-.tagline {
-  margin-top: 24px;
-  font-size: 1rem;
-  color: rgba(255,255,255,0.9);
-  font-weight: 500;
-  animation: gentlePulse 2s ease-in-out infinite;
-}
+  @media (max-width: 550px) {
+    .splash h1 { font-size: 2.2rem; }
+    .loading-bar { width: 280px; }
+    .logo-3d { width: 100px; height: 100px; }
+    .pulse-ring { width: 120px; height: 120px; }
+  }
 
-@keyframes gentlePulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; text-shadow: 0 0 5px rgba(255,255,255,0.5); }
-}
+  /* Install prompt styling */
+  .install-banner {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(20px);
+    border-radius: 20px;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 1000;
+    animation: slideUp 0.5s ease;
+    border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+  }
 
-@media (max-width: 550px) {
-  .splash h1 { font-size: 2.2rem; }
-  .loading-bar { width: 280px; }
-  .logo-3d { width: 100px; height: 100px; }
-  .pulse-ring { width: 120px; height: 120px; }
-}
+  @keyframes slideUp {
+    from { transform: translateY(100px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
 
-/* Install prompt styling */
-.install-banner {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  right: 20px;
-  background: rgba(0,0,0,0.85);
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 1000;
-  animation: slideUp 0.5s ease;
-  border: 1px solid rgba(255,255,255,0.2);
-  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
-}
+  .install-banner p {
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin: 0;
+  }
 
-@keyframes slideUp {
-  from { transform: translateY(100px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+  .install-banner button {
+    background: #E31B23;
+    border: none;
+    color: white;
+    padding: 8px 20px;
+    border-radius: 40px;
+    font-weight: bold;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
 
-.install-banner p {
-  color: white;
-  font-size: 0.85rem;
-  font-weight: 500;
-  margin: 0;
-}
+  .install-banner button:hover {
+    background: #ff2a33;
+    transform: scale(1.02);
+  }
 
-.install-banner button {
-  background: var(--qless-primary);
-  border: none;
-  color: white;
-  padding: 8px 20px;
-  border-radius: 40px;
-  font-weight: bold;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.install-banner button:hover {
-  filter: brightness(1.15);
-  transform: scale(1.02);
-}
-
-.close-install {
-  background: transparent !important;
-  padding: 8px !important;
-  font-size: 1.2rem !important;
-  margin-left: 8px;
-}
-
-/* --------------------
-   Unavailable / Error states
-   Same centered layout as .splash, shown instead of it — never together.
-   -------------------- */
-.splash-state {
-  text-align: center;
-  animation: fadeInUp 0.8s ease-out;
-  padding: 1.5rem;
-  max-width: 420px;
-  color: white;
-}
-
-.splash-state .state-icon {
-  font-size: 2.6rem;
-  margin-bottom: 18px;
-  color: rgba(255,255,255,0.9);
-}
-
-.splash-state h2 {
-  font-size: 1.4rem;
-  font-weight: 700;
-  margin-bottom: 10px;
-  line-height: 1.3;
-}
-
-.splash-state p {
-  font-size: 0.9rem;
-  color: rgba(255,255,255,0.8);
-  margin-bottom: 24px;
-}
-
-.state-retry {
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.35);
-  backdrop-filter: blur(4px);
-  color: white;
-  padding: 10px 28px;
-  border-radius: 40px;
-  font-weight: 600;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.state-retry:hover {
-  background: rgba(255,255,255,0.25);
-  transform: scale(1.02);
-}
-
-.noscript-warning {
-  color: white;
-  text-align: center;
-  padding: 2rem;
-  font-size: 1rem;
-}
+  .close-install {
+    background: transparent !important;
+    padding: 8px !important;
+    font-size: 1.2rem !important;
+    margin-left: 8px;
