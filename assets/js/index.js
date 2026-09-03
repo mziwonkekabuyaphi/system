@@ -11,8 +11,8 @@
 // Scope: this file only resolves and displays tenant branding. It never
 // performs authentication and never invents/hardcodes a fallback tenant.
 //
+import { supabase } from '../../config/supabase.js';
 
-import { supabase } from './config/supabase.js';
 
 // --------------------
 // Service Worker Registration
