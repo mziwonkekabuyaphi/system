@@ -15,6 +15,9 @@
  *   - bookingService.handleState   — StatefulService.handleState for any
  *     in-progress "booking_*" conversation state.
  *
+ * All customer-facing copy lives in lib/services/messages/booking.ts — this
+ * file only owns state transitions, availability logic, and data access.
+ *
  * ============================================================================
  * ASSUMPTIONS — adjust these to match your real schema before wiring up
  * ============================================================================
@@ -52,6 +55,31 @@ import { ensureCustomer, updateCustomer } from "@/lib/services/customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
 
+import {
+  CANCEL_BUTTON,
+  ENTRY_CHOICE_BUTTONS,
+  entryChoicePromptMessage,
+  entryChoiceInvalidMessage,
+  servicesListMessage,
+  dateOptionsMessage,
+  slotsListMessage,
+  confirmationMessage,
+  invalidSelectionMessage,
+  startOverMessage,
+  noServicesMessage,
+  servicesLoadErrorMessage,
+  noSlotsMessage,
+  availabilityErrorMessage,
+  slotStaleMessage,
+  bookingCancelledMessage,
+  missingBookingDataMessage,
+  confirmYesNoReminderMessage,
+  bookingErrorMessage,
+  bookingConfirmedMessage,
+  nameCollectionRetryMessage,
+  nameCollectionThanksMessage,
+} from "@/lib/services/messages/booking"
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -67,8 +95,6 @@ const SHOP_OPEN_HOUR = 9 // 09:00
 const SHOP_CLOSE_HOUR = 18 // 18:00
 const SLOT_INTERVAL_MINUTES = 30 // granularity of offered start times
 const DAYS_AHEAD_OFFERED = 6 // "today" + next 6 days
-
-const CANCEL_BUTTON = ["📅 Book again"]
 
 function getClientOrThrow(): SupabaseClient {
   const supabase = getSupabaseServerClient()
@@ -92,7 +118,9 @@ function rawReplyText(message: IncomingMessage): string {
 // catalog helper moved to services-catalog.ts.
 type BookingServiceOffer = CatalogService
 
-interface BookingSlot {
+// Exported so lib/services/messages/booking.ts can type its slot-related
+// message builders without duplicating this shape.
+export interface BookingSlot {
   /** ISO start time, e.g. "2026-09-15T10:30:00.000Z" */
   start: string
   /** Human display, e.g. "Tue 15 Sep, 10:30" */
@@ -233,58 +261,6 @@ async function claimStaffForSlot(
 }
 
 // ============================================================================
-// MESSAGE BUILDERS (inline for the prototype — split into
-// lib/messages/booking.ts once copy stabilizes, matching vvip.ts's convention)
-// ============================================================================
-
-function servicesListMessage(services: BookingServiceOffer[]): string {
-  const lines = services.map(
-    (s, i) => `${i + 1}. *${s.name}* — R${s.price} (${s.durationMinutes} min)`,
-  )
-  return `Here's what we offer 💈\n\n${lines.join("\n")}\n\nReply with a number to pick a service.`
-}
-
-function dateOptionsMessage(dateOptions: Array<{ label: string }>): string {
-  const lines = dateOptions.map((d, i) => `${i + 1}. ${d.label}`)
-  return `Which day works for you? 📅\n\n${lines.join("\n")}\n\nReply with a number.`
-}
-
-function slotsListMessage(serviceName: string, dateLabel: string, slots: BookingSlot[]): string {
-  const lines = slots.map((s, i) => `${i + 1}. ${s.label}`)
-  return `Available times for *${serviceName}* on ${dateLabel}:\n\n${lines.join("\n")}\n\nReply with a number.`
-}
-
-function confirmationMessage(service: BookingServiceOffer, dateLabel: string, slot: BookingSlot): string {
-  return (
-    `Just to confirm ✅\n\n` +
-    `*Service:* ${service.name}\n` +
-    `*Price:* R${service.price}\n` +
-    `*When:* ${dateLabel} at ${slot.label}\n\n` +
-    `Reply *yes* to confirm, or *no* to cancel.`
-  )
-}
-
-function noServicesMessage(): string {
-  return "We don't have any bookable services set up right now — please check back shortly, or reply *support* for help."
-}
-
-function noSlotsMessage(): string {
-  return "No open slots on that day, sorry! Reply with another day, or type *menu* to start over."
-}
-
-function slotStaleMessage(): string {
-  return "Sorry, that slot was just taken. Let's find you another one — reply *menu* to start over."
-}
-
-function bookingCancelledMessage(): string {
-  return "No problem, your booking wasn't made. Reply *menu* any time to book again."
-}
-
-function invalidSelectionMessage(max: number): string {
-  return `Please reply with a number between 1 and ${max}.`
-}
-
-// ============================================================================
 // ENTRY POINT — fresh "booking" intent
 // ============================================================================
 //
@@ -295,13 +271,9 @@ function invalidSelectionMessage(max: number): string {
 // (queue_* states) is owned entirely by queue.ts, registered as its own
 // StatefulService in action-router.ts's stateHandlers.
 
-const ENTRY_CHOICE_BOOK_BUTTON = "📅 Book a time"
-const ENTRY_CHOICE_QUEUE_BUTTON = "🚶 Join the queue"
-const ENTRY_CHOICE_BUTTONS = [ENTRY_CHOICE_BOOK_BUTTON, ENTRY_CHOICE_QUEUE_BUTTON]
-
 async function handleBooking(_intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
   return {
-    reply: "Would you like to book a specific time, or join today's walk-in queue? 💈",
+    reply: entryChoicePromptMessage(),
     buttons: ENTRY_CHOICE_BUTTONS,
     nextState: { state: BOOKING_STATE_ENTRY_CHOICE, data: {} },
   }
@@ -323,7 +295,7 @@ async function handleEntryChoice(message: IncomingMessage): Promise<ActionResult
   }
 
   return {
-    reply: "Sorry, I didn't catch that — reply *book* for a specific time, or *queue* to join today's walk-in queue.",
+    reply: entryChoiceInvalidMessage(),
     buttons: ENTRY_CHOICE_BUTTONS,
     nextState: { state: BOOKING_STATE_ENTRY_CHOICE, data: {} },
   }
@@ -335,7 +307,7 @@ async function presentServices(): Promise<ActionResult> {
     services = await getBookableServices()
   } catch (error) {
     console.error("[booking] Error loading services", { error })
-    return { reply: "Sorry, something went wrong loading our services. Please try again shortly.", buttons: [], nextState: null }
+    return { reply: servicesLoadErrorMessage(), buttons: [], nextState: null }
   }
 
   if (services.length === 0) {
@@ -401,7 +373,7 @@ async function handleDateSelection(state: ConversationState, message: IncomingMe
   const index = Number(rawReplyText(message)) - 1
 
   if (!selectedService) {
-    return { reply: "Let's start over — reply *menu*.", buttons: [], nextState: null }
+    return { reply: startOverMessage(), buttons: [], nextState: null }
   }
 
   if (!Number.isInteger(index) || index < 0 || index >= dateOptions.length) {
@@ -415,7 +387,7 @@ async function handleDateSelection(state: ConversationState, message: IncomingMe
     slots = await getAvailableSlots(chosen.date, selectedService.durationMinutes)
   } catch (error) {
     console.error("[booking] Error loading slots", { date: chosen.date, error })
-    return { reply: "Sorry, something went wrong checking availability. Please try again.", buttons: [], nextState: null }
+    return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
   }
 
   if (slots.length === 0) {
@@ -450,7 +422,7 @@ async function handleTimeSelection(state: ConversationState, message: IncomingMe
   const dateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate ?? ""
 
   if (!selectedService) {
-    return { reply: "Let's start over — reply *menu*.", buttons: [], nextState: null }
+    return { reply: startOverMessage(), buttons: [], nextState: null }
   }
 
   return {
@@ -476,12 +448,12 @@ async function handleConfirm(state: ConversationState, message: IncomingMessage)
   }
 
   if (text !== "yes" && !text.includes("confirm")) {
-    return { reply: "Reply *yes* to confirm, or *no* to cancel.", buttons: [], nextState: state }
+    return { reply: confirmYesNoReminderMessage(), buttons: [], nextState: state }
   }
 
   const { selectedService, selectedDate, selectedSlot } = data
   if (!selectedService || !selectedDate || !selectedSlot) {
-    return { reply: "Something's missing — let's start over. Reply *menu*.", buttons: [], nextState: null }
+    return { reply: missingBookingDataMessage(), buttons: [], nextState: null }
   }
 
   const supabase = getClientOrThrow()
@@ -515,16 +487,13 @@ async function handleConfirm(state: ConversationState, message: IncomingMessage)
 
     if (error) throw new Error(error.message)
 
-    const greetingName = customer.name ? `, ${customer.name}` : ""
-
     return {
-      reply:
-        `You're booked${greetingName}! 🎉\n\n` +
-        `*${selectedService.name}* on ${selectedSlot.label}\n` +
-        `Reference: *${bookingReference}*\n\n` +
-        (customer.name
-          ? "See you then!"
-          : "One more thing — what name should we book this under? (Reply with your name and we'll save it for next time.)"),
+      reply: bookingConfirmedMessage({
+        customerName: customer.name,
+        serviceName: selectedService.name,
+        slotLabel: selectedSlot.label,
+        bookingReference,
+      }),
       buttons: customer.name ? CANCEL_BUTTON : [],
       // If we don't have a name yet, stay in a lightweight "collect name"
       // state — NOT the full registration.ts flow (no email, no age-gate).
@@ -537,7 +506,7 @@ async function handleConfirm(state: ConversationState, message: IncomingMessage)
       return { reply: slotStaleMessage(), buttons: [], nextState: null }
     }
     console.error("[booking] Error creating booking", { error })
-    return { reply: "Sorry, something went wrong confirming your booking. Please try again.", buttons: [], nextState: null }
+    return { reply: bookingErrorMessage(), buttons: [], nextState: null }
   }
 }
 
@@ -550,7 +519,7 @@ async function handleNameCollection(message: IncomingMessage): Promise<ActionRes
 
   if (!name || name.length < 2) {
     return {
-      reply: "Sorry, didn't catch that — what name should we save this booking under?",
+      reply: nameCollectionRetryMessage(),
       buttons: [],
       nextState: { state: BOOKING_STATE_AWAITING_NAME, data: {} },
     }
@@ -565,7 +534,7 @@ async function handleNameCollection(message: IncomingMessage): Promise<ActionRes
   }
 
   return {
-    reply: `Thanks, ${name}! See you then 👋`,
+    reply: nameCollectionThanksMessage(name),
     buttons: CANCEL_BUTTON,
     nextState: null,
   }

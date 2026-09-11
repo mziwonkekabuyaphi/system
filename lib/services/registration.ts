@@ -50,11 +50,16 @@
  * continueRegistration() as before (so partial progress survives a dropped
  * conversation).
  *
- * Dependency direction: this file only imports from customer.ts and
- * state.ts. It deliberately does NOT import anything from orders.ts,
- * vvip.ts, or wallet.ts (see StatefulService contract in action-router.ts)
- * — callers pass in everything needed to resume as plain data
- * (`PendingResumeAction`), not as a callback into their own module.
+ * Dependency direction: this file only imports from customer.ts, state.ts,
+ * and its own message-copy module. It deliberately does NOT import
+ * anything from orders.ts, vvip.ts, or wallet.ts (see StatefulService
+ * contract in action-router.ts) — callers pass in everything needed to
+ * resume as plain data (`PendingResumeAction`), not as a callback into
+ * their own module.
+ *
+ * All customer-facing copy lives in lib/services/messages/registration.ts
+ * — this file only owns state transitions and the smart multi-field
+ * extraction logic.
  */
 
 import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
@@ -71,6 +76,29 @@ import type { StatefulService } from "@/lib/whatsapp/action-router"
 import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
+
+import {
+  CONFIRM_BUTTON,
+  EDIT_BUTTON,
+  AGE_CONFIRM_YES_BUTTON,
+  AGE_CONFIRM_NO_BUTTON,
+  EDIT_NAME_BUTTON,
+  EDIT_SURNAME_BUTTON,
+  EDIT_EMAIL_BUTTON,
+  WELCOME_MENU_BUTTONS,
+  DIDNT_CATCH_THAT,
+  AGE_RESTRICTION_DECLINED,
+  errorMessage,
+  promptForField,
+  firstPromptExtra,
+  reRaskWithError,
+  confirmationSummary,
+  ageConfirmationPrompt,
+  editChoicePromptMessage,
+  editChoiceRetryMessage,
+  ageConfirmedWithResumeMessage,
+  welcomeMenuMessage,
+} from "@/lib/services/messages/registration"
 
 // ============================================================================
 // TYPES
@@ -97,8 +125,11 @@ export interface PendingResumeAction {
  * Answers collected so far this registration session. All persisted via
  * continueRegistration() as they're collected — there's no longer a
  * password field held only in memory.
+ *
+ * Exported so lib/services/messages/registration.ts can type
+ * confirmationSummary() without duplicating this shape.
  */
-interface RegistrationDraft {
+export interface RegistrationDraft {
   name?: string
   surname?: string
   email?: string
@@ -124,24 +155,6 @@ const EDIT_CHOICE_STATE = `${REGISTRATION_STATE_PREFIX}edit_choice`
 // in orders.ts; removed there in favor of asking it here, once).
 const AGE_CONFIRMATION_STATE = `${REGISTRATION_STATE_PREFIX}age_confirmation`
 
-// ============================================================================
-// BUTTON COPY
-// ============================================================================
-
-const WEB_REGISTER_URL = "https://mzonke-six.vercel.app/register.html"
-
-const CONFIRM_BUTTON = "✅ Confirm"
-const EDIT_BUTTON = "✏️ Edit something"
-
-const AGE_CONFIRM_YES_BUTTON = "✅ Yes, I'm 21+"
-const AGE_CONFIRM_NO_BUTTON = "❌ No"
-
-const ALCOHOL_MINIMUM_AGE = 21 // mirrors messages/orders.ts's ALCOHOL_MINIMUM_AGE — keep in sync
-
-const EDIT_NAME_BUTTON = "✏️ Name"
-const EDIT_SURNAME_BUTTON = "✏️ Surname"
-const EDIT_EMAIL_BUTTON = "✏️ Email"
-
 const EDIT_BUTTON_TO_FIELD: Record<string, CustomerField> = {
   [EDIT_NAME_BUTTON]: "name",
   [EDIT_SURNAME_BUTTON]: "surname",
@@ -150,76 +163,6 @@ const EDIT_BUTTON_TO_FIELD: Record<string, CustomerField> = {
 
 function matchesButton(rawValue: string, button: string): boolean {
   return rawValue.trim().toLowerCase() === button.trim().toLowerCase()
-}
-
-// ============================================================================
-// PROMPT COPY
-// ============================================================================
-
-function promptForField(field: CustomerField): string {
-  switch (field) {
-    case "name":
-      return "Let's get you set up 🙌 First, what's your first name?"
-    case "surname":
-      return "And your *surname*?"
-    case "email":
-      return "What's your *email address*? We'll use this for receipts and account recovery — and later, if you want to log in on the web app, we'll send a code to this WhatsApp number to set up your Passport Key."
-    default:
-      return "Let's finish setting up your account."
-  }
-}
-
-/**
- * Appended only to the very first prompt of a registration session (see
- * beginRegistration) — not repeated on every subsequent field, edit, or
- * error re-ask. Shows the customer they don't have to answer one question
- * at a time (feeds trySmartRegistrationEntry above) and that the web app is
- * an option, without a WEB_LINK_BUTTON tap now that it's just a plain URL
- * — short replies like "web" are handled upstream by the AI intent
- * classifier, not by exact button-text matching here.
- */
-function firstPromptExtra(field: CustomerField): string {
-  const webMention = `Rather do this on your phone browser or install Rands Web App? ${WEB_REGISTER_URL}`
-  if (field !== "name") return `\n\n${webMention}`
-  return (
-    `\n\nBtw, no need to go one at a time — you can just fire it all off in one message, ` +
-    `e,g Mziwonke KaBuyaphi mzo@gmail.com and I'll pull it apart myself.\n\n` +
-    webMention
-  )
-}
-
-function reRaskWithError(field: CustomerField, errorText: string): string {
-  return `⚠️ ${errorText}\n\n${promptForField(field)}`
-}
-
-function confirmationSummary(draft: RegistrationDraft): string {
-  return (
-    `Please double-check your details before we submit:\n\n` +
-    `*Name:* ${draft.name ?? "—"}\n` +
-    `*Surname:* ${draft.surname ?? "—"}\n` +
-    `*Email:* ${draft.email ?? "—"}\n\n` +
-    `Look good? Your passport will be created as soon as you confirm — no passport key needed. ` +
-    `You can set up web login (a Passport Key) any time from the Rands Vibe web app.`
-  )
-}
-
-const DIDNT_CATCH_THAT = "Sorry, I didn't catch that. "
-
-/** The last question of registration — see AGE_CONFIRMATION_STATE above. */
-function ageConfirmationPrompt(): string {
-  return (
-    `One last thing — Rands serves alcohol on-site, so by law we can only open a Passport for customers ` +
-    `${ALCOHOL_MINIMUM_AGE} or older.\n\n` +
-    `Are you ${ALCOHOL_MINIMUM_AGE} or older?`
-  )
-}
-
-const AGE_RESTRICTION_DECLINED =
-  "Sorry, we're not able to open a Rands Passport for anyone under 21 — it's a legal requirement, since alcohol is served on-site. Come back and register once you turn 21!"
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message
-  return "Something went wrong with that, please try again."
 }
 
 function rawTextOf(message: IncomingMessage): string {
@@ -519,7 +462,7 @@ async function handleConfirmation(
 
   if (matchesButton(rawValue, EDIT_BUTTON)) {
     return {
-      reply: "Sure — what would you like to fix?",
+      reply: editChoicePromptMessage(),
       buttons: [EDIT_NAME_BUTTON, EDIT_SURNAME_BUTTON, EDIT_EMAIL_BUTTON],
       nextState: { state: EDIT_CHOICE_STATE, data: { resume, draft } },
     }
@@ -559,18 +502,15 @@ async function handleAgeConfirmation(
 
     if (resume) {
       return {
-        reply: `🎉 You're all set — Enkosi for choosing Rands Cape Town! Let's finish that up:\n\n${resume.replyText}`,
+        reply: ageConfirmedWithResumeMessage(resume.replyText),
         buttons: resume.buttons ?? [],
         nextState: resume.targetState,
       }
     }
 
     return {
-      reply:
-        "🎉 You're all set — welcome to Rands Cape Town! Your Passport is ready to go. " +
-        "Want to log in on the web app too? Just head to the login page and enter your WhatsApp number or email — " +
-        "we'll text you a code here to set up your Passport Key. Enkosi for choosing Rands\n\nWhat would you like to do?",
-      buttons: ["🪪 My Rands Passport", "🎟️ Buy Tickets", "🍾 Order Menu"],
+      reply: welcomeMenuMessage(),
+      buttons: WELCOME_MENU_BUTTONS,
       nextState: null,
     }
   }
@@ -604,7 +544,7 @@ async function handleEditChoice(
 
   if (!field) {
     return {
-      reply: DIDNT_CATCH_THAT + "What would you like to fix?",
+      reply: DIDNT_CATCH_THAT + editChoiceRetryMessage(),
       buttons: [EDIT_NAME_BUTTON, EDIT_SURNAME_BUTTON, EDIT_EMAIL_BUTTON],
       nextState: state,
     }

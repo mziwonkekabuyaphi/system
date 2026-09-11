@@ -14,6 +14,9 @@
  * shape every other service already uses, just entered from inside
  * booking.ts instead of from intentHandlers directly.
  *
+ * All customer-facing copy lives in lib/services/messages/queue.ts — this
+ * file only owns state transitions and data access.
+ *
  * ============================================================================
  * ASSUMPTIONS
  * ============================================================================
@@ -55,6 +58,14 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer } from "@/lib/services/customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 
+import {
+  servicesListMessage,
+  noServicesMessage,
+  invalidSelectionMessage,
+  joinedQueueMessage,
+  queueErrorMessage,
+} from "@/lib/services/messages/queue"
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -81,37 +92,6 @@ interface QueueStateData {
 
 function getQueueData(state: ConversationState): QueueStateData {
   return (state.data ?? {}) as QueueStateData
-}
-
-// ============================================================================
-// MESSAGE BUILDERS
-// ============================================================================
-
-function servicesListMessage(services: CatalogService[]): string {
-  const lines = services.map((s, i) => `${i + 1}. *${s.name}* — R${s.price} (${s.durationMinutes} min)`)
-  return `What are you here for? 🚶\n\n${lines.join("\n")}\n\nReply with a number to join the queue.`
-}
-
-function noServicesMessage(): string {
-  return "We don't have any services set up right now — please check back shortly, or reply *support* for help."
-}
-
-function invalidSelectionMessage(max: number): string {
-  return `Please reply with a number between 1 and ${max}.`
-}
-
-function joinedQueueMessage(service: CatalogService, position: number, etaMinutes: number): string {
-  const etaLine = position === 1 ? "You're next!" : `Estimated wait: about ${etaMinutes} min`
-  return (
-    `You're in the queue for *${service.name}* 🚶\n\n` +
-    `*Position:* ${position}\n` +
-    `${etaLine}\n\n` +
-    `We'll message you the moment we're ready for you. Reply *menu* any time to see other options.`
-  )
-}
-
-function queueErrorMessage(): string {
-  return "Sorry, something went wrong joining the queue. Please try again, or reply *support* for help."
 }
 
 // ============================================================================
