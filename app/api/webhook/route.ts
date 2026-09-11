@@ -17,17 +17,12 @@
  * since messages.tenant_id is NOT NULL and there's nothing valid to put
  * there. Still always returns 200 to Meta regardless.
  *
- * ⚠️ NOT YET DONE: sendWhatsAppTextMessage/ButtonsMessage/etc (imported
- * from send-message.ts below) still use ONE GLOBAL WHATSAPP_ACCESS_TOKEN /
- * WHATSAPP_PHONE_NUMBER_ID env var pair, not the resolved tenant's own
- * credentials from tenant_whatsapp_integrations (token lives in Supabase
- * Vault, referenced via access_token_secret_id). Tenant resolution now
- * correctly identifies WHICH shop a message belongs to and scopes all
- * reads/writes/state to it — but every outbound send still goes out
- * through whichever single WhatsApp number the env vars point at,
- * regardless of tenant. This works fine for developing against ONE tenant
- * (e.g. the seeded "Test Venue"), but is not yet correct for two tenants
- * live at once. send-message.ts needs a per-tenant credential lookup next.
+ * Tenant resolution correctly identifies WHICH shop a message belongs to,
+ * and every outbound send below now goes through that resolved tenant's
+ * OWN WhatsApp credentials (send-message.ts resolves phone_number_id +
+ * access token per tenantId via get_tenant_whatsapp_credentials(), not a
+ * global env var pair). Two tenants live at once now route correctly to
+ * their own numbers.
  */
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
@@ -170,11 +165,14 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         await escalateToHumanAndNotify(supabase, tenantId, message.from, "ai_low_confidence_or_explicit_request", {
           teamPhones,
-          sendWhatsAppTextMessage,
+          // handover.ts's notifyAgentViaWhatsApp callback is tenant-agnostic
+          // by design — bind tenantId here rather than teaching that file
+          // about credentials.
+          sendWhatsAppTextMessage: (to: string, text: string) => sendWhatsAppTextMessage(tenantId, to, text),
         })
 
         const handoffText = "I'm looping in a team member to help with this — they'll be with you shortly."
-        await sendWhatsAppTextMessage(message.from, handoffText)
+        await sendWhatsAppTextMessage(tenantId, message.from, handoffText)
 
         if (stored.ok && stored.conversationId) {
           const handoffStore = await storeOutboundMessage(tenantId, stored.conversationId, handoffText, null)
@@ -192,9 +190,9 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
 
       if (result.buttons && result.buttons.length > 0) {
-        await sendWhatsAppButtonsMessage(message.from, result.reply, result.buttons)
+        await sendWhatsAppButtonsMessage(tenantId, message.from, result.reply, result.buttons)
       } else {
-        await sendWhatsAppTextMessage(message.from, result.reply)
+        await sendWhatsAppTextMessage(tenantId, message.from, result.reply)
       }
 
       if (stored.ok && stored.conversationId) {
@@ -212,7 +210,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       if (result.media) {
         for (const media of result.media) {
           try {
-            await sendWhatsAppImageMessage(message.from, media.url, media.caption)
+            await sendWhatsAppImageMessage(tenantId, message.from, media.url, media.caption)
           } catch (mediaError) {
             console.error("[webhook] Error sending media reply", {
               tenantId,
@@ -229,11 +227,11 @@ export async function POST(request: Request): Promise<NextResponse> {
         for (const followUp of result.followUp) {
           try {
             if (followUp.list) {
-              await sendWhatsAppListMessage(message.from, followUp.reply, followUp.list.buttonText, followUp.list.sections)
+              await sendWhatsAppListMessage(tenantId, message.from, followUp.reply, followUp.list.buttonText, followUp.list.sections)
             } else if (followUp.buttons && followUp.buttons.length > 0) {
-              await sendWhatsAppButtonsMessage(message.from, followUp.reply, followUp.buttons)
+              await sendWhatsAppButtonsMessage(tenantId, message.from, followUp.reply, followUp.buttons)
             } else {
-              await sendWhatsAppTextMessage(message.from, followUp.reply)
+              await sendWhatsAppTextMessage(tenantId, message.from, followUp.reply)
             }
 
             if (stored.ok && stored.conversationId) {
