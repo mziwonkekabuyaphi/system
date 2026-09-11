@@ -3,25 +3,24 @@
 /**
  * Server Actions for the admin Inbox tab.
  *
- * Ported from the old standalone whatsapp-admin.html/admin.js panel, which
- * ran as a separate static page (hosted at mzonke-six.vercel.app) talking
- * to this app over two things:
- *   1. A direct Supabase client in the browser (anon key) for reads.
- *   2. A cross-origin fetch to /api/admin/handover (with an x-admin-secret
- *      header) for the one write conversation_states' service-role-only
- *      RLS policy required.
+ * Access protection: same as actions.ts — requireTenantMember() first,
+ * tenantId stamped on every insert and used to scope every
+ * read/update, so one tenant's admin can't read or act on another
+ * tenant's conversations/messages even by guessing a UUID or a phone
+ * number that happens to collide across tenants.
  *
- * Now that the admin view lives inside this same Next.js app, both
- * collapse into ordinary Server Actions — no anon key, no CORS headers,
- * no shared secret. getConversationThread is a *read*, but it's still a
- * Server Action (not a query in page.tsx) because it's fetched on demand
- * when the owner taps a conversation, not up front with the rest of the
- * page.
+ * NOTE: requireTenantMember() is always called BEFORE the try/catch in
+ * each action below, never inside it. It redirects (via Next's
+ * redirect(), which throws internally) when there's no session or no
+ * active membership — if that throw happened inside a try/catch here,
+ * the catch would swallow it and return a generic error instead of
+ * actually redirecting to /login.
  */
 
 import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 
 import type { AdminMessage } from "./types"
@@ -40,12 +39,15 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export async function getConversationThread(conversationId: string): Promise<ThreadResult> {
+  const { tenantId } = await requireTenantMember()
+
   try {
     const supabase = client()
     const { data, error } = await supabase
       .from("messages")
       .select("id, direction, message_text, created_at")
       .eq("conversation_id", conversationId)
+      .eq("tenant_id", tenantId) // can't read another tenant's thread by guessing a conversationId
       .order("created_at", { ascending: true })
       .limit(200)
 
@@ -67,13 +69,18 @@ export async function getConversationThread(conversationId: string): Promise<Thr
 
 /**
  * Sends a message as the human agent: out over WhatsApp, then stored so
- * the thread shows both sides. Mirrors store.ts's storeOutboundMessage —
- * waMessageId is always null here (sendWhatsAppTextMessage doesn't parse
- * Meta's response for one), same as every other outbound send in this
- * app; meta_message_id's uniqueness constraint only matters for inbound
- * de-duplication, so multiple NULLs here are fine.
+ * the thread shows both sides.
+ *
+ * TODO: sendWhatsAppTextMessage(phone, text) doesn't yet know which
+ * tenant it's sending for — it needs to look up the tenant's own row in
+ * tenant_whatsapp_integrations (phone_number_id + access token) instead
+ * of using one global sender, or every tenant's outbound messages go out
+ * from the same WhatsApp number. Pass tenantId through once that's
+ * wired up.
  */
 export async function sendAgentMessage(conversationId: string, phone: string, body: string): Promise<ActionResult> {
+  const { tenantId } = await requireTenantMember()
+
   const text = body.trim()
   if (!text) return { success: false, error: "Message can't be empty" }
 
@@ -82,6 +89,7 @@ export async function sendAgentMessage(conversationId: string, phone: string, bo
 
     const supabase = client()
     const { error } = await supabase.from("messages").insert({
+      tenant_id: tenantId,
       conversation_id: conversationId,
       meta_message_id: null,
       direction: "outgoing",
@@ -93,10 +101,13 @@ export async function sendAgentMessage(conversationId: string, phone: string, bo
     })
     if (error) throw new Error(error.message)
 
-    await supabase
+    const { error: convError } = await supabase
       .from("conversations")
       .update({ last_message_at: new Date().toISOString() })
       .eq("id", conversationId)
+      .eq("tenant_id", tenantId) // can't touch another tenant's conversation via a guessed id
+
+    if (convError) throw new Error(convError.message)
 
     revalidatePath("/admin")
     return { success: true }
@@ -113,16 +124,22 @@ const AI_STATE_BY_ACTION: Record<"pause" | "resume" | "resolve", string> = {
 }
 
 /**
- * Replaces the old /api/admin/handover route: same three actions
- * (pause/resume/resolve), same conversation_states upsert, just called
- * directly instead of over a cross-origin fetch with a shared secret.
+ * conversation_states is uniquely keyed on (tenant_id, phone), not phone
+ * alone — the same phone number can belong to different customers at
+ * different tenants, so the upsert's onConflict target has to be the
+ * composite key, and tenant_id has to be part of the row itself, or this
+ * would silently flip another tenant's conversation state for a
+ * customer who happens to share a phone number.
  */
 export async function setConversationAiState(phone: string, action: "pause" | "resume" | "resolve"): Promise<ActionResult> {
+  const { tenantId } = await requireTenantMember()
+
   try {
     const supabase = client()
-    const { error } = await supabase
-      .from("conversation_states")
-      .upsert({ phone, state: AI_STATE_BY_ACTION[action], updated_at: new Date().toISOString() }, { onConflict: "phone" })
+    const { error } = await supabase.from("conversation_states").upsert(
+      { tenant_id: tenantId, phone, state: AI_STATE_BY_ACTION[action], updated_at: new Date().toISOString() },
+      { onConflict: "tenant_id,phone" },
+    )
 
     if (error) throw new Error(error.message)
 
