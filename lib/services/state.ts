@@ -7,32 +7,11 @@ import { getSupabaseServerClient } from "@/lib/supabase/server"
  */
 export type ConversationData = Record<string, unknown>
 
-// ✅ KEEP THIS ONE - Object version with state field
 export type ConversationState = {
   readonly state: string
   readonly data?: ConversationData
   readonly updatedAt?: string
 }
-
-// ❌ DELETE THIS ENTIRE BLOCK - The string union version:
-/*
-export type ConversationState = 
-  | "idle"
-  | "selecting_service"
-  | "entering_amount"
-  | "confirming_payment"
-  | "payment_processing"
-  | "payment_complete"
-  | "payment_failed"
-*/
-
-// ✅ Add ServiceType here
-export type ServiceType =
-  | "wallet"
-  | "ticket"
-  | "order"
-  | "vvip"
-  
 
 export interface ActionResult {
   reply: string
@@ -53,19 +32,16 @@ type CacheEntry = {
 // ---------------------------------------------------------------------------
 // Why this cache exists
 // ---------------------------------------------------------------------------
-// Vercel serverless functions reuse "warm" instances between invocations.
-// When an instance is warm, this in-memory Map lets us skip a network round
-// trip to Supabase for state we already fetched recently. This is a pure
-// performance optimization:
-//   - It is NOT guaranteed to be present (cold starts, new instances,
-//     multiple concurrent instances, and deploys all reset it to empty).
-//   - It is NEVER treated as the source of truth.
-// Supabase remains authoritative so that:
-//   - Conversation state survives server restarts / cold starts / redeploys.
-//   - State is consistent across concurrent serverless instances.
-// The code below must behave correctly even if the cache is empty on every
-// single call (i.e. as if this were a no-op cache), since that's exactly
-// what happens on a cold start.
+// Same reasoning as the single-tenant version: a pure performance layer over
+// warm Vercel instances, never the source of truth, and must behave
+// correctly even if empty on every call (cold start).
+//
+// TENANCY NOTE: the cache/write-queue key is now a composite
+// `${tenantId}::${phone}` string built by cacheKey() below, since the same
+// phone number can legitimately have independent, simultaneous
+// conversations under different tenants. Every public method below takes
+// tenantId and phone as SEPARATE parameters (not a pre-joined string) so
+// callers can't accidentally swap the delimiter or forget one half.
 const stateStore = new Map<string, CacheEntry>()
 
 /** How long a cached entry is considered fresh before we re-check Supabase. */
@@ -80,25 +56,29 @@ const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
  */
 const MAX_CACHE_ENTRIES_BEFORE_SWEEP = 500
 
+/**
+ * Builds the composite cache/queue key for a (tenantId, phone) pair. "::"
+ * is used as the delimiter since neither a UUID nor a phone number can
+ * contain it, so this can't collide across different (tenantId, phone)
+ * inputs the way naive concatenation could.
+ */
+function cacheKey(tenantId: string, phone: string): string {
+  return `${tenantId}::${phone}`
+}
+
 // ---------------------------------------------------------------------------
-// Per-user write serialization
+// Per-(tenant, phone) write serialization
 // ---------------------------------------------------------------------------
-// If two updates for the same user race (e.g. two webhook deliveries firing
-// close together), we want the *last-issued* write to win, and we want each
-// write to be based on the freshest possible read - not on a read that
-// started before a previous write finished. We do this by chaining all
-// mutating operations for a given userId onto a single promise queue, so
-// they execute strictly in call order instead of resolution order.
+// Same reasoning as the single-tenant version: chain mutating operations
+// for a given (tenant, phone) pair onto a single promise queue so writes
+// apply in call order, not resolution order. Queue key = cache key.
 const writeQueues = new Map<string, Promise<unknown>>()
 
-function enqueueWrite<T>(userId: string, task: () => Promise<T>): Promise<T> {
-  const previous = writeQueues.get(userId) ?? Promise.resolve()
-  // Swallow the previous task's own rejection here so one failed write
-  // doesn't permanently jam the queue for that user; the failure itself
-  // was already logged where it happened.
+function enqueueWrite<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = writeQueues.get(key) ?? Promise.resolve()
   const next = previous.catch(() => undefined).then(task)
   writeQueues.set(
-    userId,
+    key,
     next.catch(() => undefined),
   )
   return next
@@ -120,9 +100,9 @@ function logError(message: string, error: unknown, context?: Record<string, unkn
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
-function assertValidUserId(userId: string): void {
-  if (typeof userId !== "string" || userId.trim().length === 0) {
-    throw new Error("[state] Invalid userId: expected a non-empty string")
+function assertValidId(value: string, label: string): void {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`[state] Invalid ${label}: expected a non-empty string`)
   }
 }
 
@@ -138,22 +118,21 @@ function assertValidConversationState(state: ConversationState | undefined): ass
 // ---------------------------------------------------------------------------
 // Cache helpers
 // ---------------------------------------------------------------------------
-function readFromCache(userId: string): ConversationState | null {
-  const entry = stateStore.get(userId)
+function readFromCache(key: string): ConversationState | null {
+  const entry = stateStore.get(key)
   if (!entry) return null
 
   if (Date.now() >= entry.expiresAt) {
-    // Lazily evict expired entries as soon as we notice them.
-    stateStore.delete(userId)
+    stateStore.delete(key)
     return null
   }
 
   return entry.state
 }
 
-function writeToCache(userId: string, state: ConversationState): void {
+function writeToCache(key: string, state: ConversationState): void {
   try {
-    stateStore.set(userId, {
+    stateStore.set(key, {
       state,
       expiresAt: Date.now() + CACHE_TTL_MS,
     })
@@ -162,10 +141,7 @@ function writeToCache(userId: string, state: ConversationState): void {
       sweepExpiredCacheEntries()
     }
   } catch (error) {
-    // Memory cache is a convenience layer only. If, for any reason, writing
-    // to it fails, that must never prevent database persistence from
-    // happening - the caller continues on to Supabase regardless.
-    logError("Failed to write to memory cache (continuing without cache)", error, { userId })
+    logError("Failed to write to memory cache (continuing without cache)", error, { key })
   }
 }
 
@@ -173,9 +149,9 @@ function writeToCache(userId: string, state: ConversationState): void {
 function sweepExpiredCacheEntries(): void {
   const now = Date.now()
   let removed = 0
-  for (const [userId, entry] of stateStore) {
+  for (const [key, entry] of stateStore) {
     if (now >= entry.expiresAt) {
-      stateStore.delete(userId)
+      stateStore.delete(key)
       removed++
     }
   }
@@ -184,10 +160,6 @@ function sweepExpiredCacheEntries(): void {
   }
 }
 
-// Periodically sweep expired entries so idle warm instances don't hold onto
-// stale data indefinitely between reads. Guarded so repeated module
-// evaluation (hot reload / multiple imports) never stacks up intervals, and
-// `unref()`'d so it can't keep a serverless process alive on its own.
 const globalForCleanup = globalThis as typeof globalThis & {
   __stateServiceCleanupTimer?: ReturnType<typeof setInterval>
 }
@@ -213,10 +185,10 @@ function mapRowToState(row: {
   }
 }
 
-async function loadFromDatabase(userId: string): Promise<ConversationState | null> {
+async function loadFromDatabase(tenantId: string, phone: string): Promise<ConversationState | null> {
   const supabase = getSupabaseServerClient()
   if (!supabase) {
-    logInfo("Supabase client unavailable, skipping database load", { userId })
+    logInfo("Supabase client unavailable, skipping database load", { tenantId, phone })
     return null
   }
 
@@ -224,34 +196,30 @@ async function loadFromDatabase(userId: string): Promise<ConversationState | nul
     const { data, error } = await supabase
       .from("conversation_states")
       .select("*")
-      .eq("phone", userId)
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
       .single()
 
     if (error) {
       // PGRST116 = no rows found for .single() - this is an expected "no
       // state yet" case, not a failure, so we don't log it as an error.
       if (error.code !== "PGRST116") {
-        logError("Database error while loading state", error, { userId })
+        logError("Database error while loading state", error, { tenantId, phone })
       }
       return null
     }
 
-    if (!data) return null
-
-    logInfo("Loaded from database", { userId })
     return mapRowToState(data)
   } catch (error) {
-    // Database is not reachable, malformed response, etc. This must never
-    // crash the caller (e.g. a webhook handler) - degrade to "no state".
-    logError("Unexpected error while loading state from database", error, { userId })
+    logError("Unexpected error while loading state from database", error, { tenantId, phone })
     return null
   }
 }
 
-async function persistToDatabase(userId: string, state: ConversationState): Promise<void> {
+async function persistToDatabase(tenantId: string, phone: string, state: ConversationState): Promise<void> {
   const supabase = getSupabaseServerClient()
   if (!supabase) {
-    logInfo("Supabase client unavailable, skipping database persist", { userId })
+    logInfo("Supabase client unavailable, skipping database persist", { tenantId, phone })
     return
   }
 
@@ -260,35 +228,35 @@ async function persistToDatabase(userId: string, state: ConversationState): Prom
       .from("conversation_states")
       .upsert(
         {
-          phone: userId,
+          tenant_id: tenantId,
+          phone,
           state: state.state,
           data: state.data ?? {},
           updated_at: state.updatedAt ?? new Date().toISOString(),
         },
         {
-          onConflict: "phone",
-        }
+          // Matches conversation_states' unique(tenant_id, phone)
+          // constraint — NOT "phone" alone, which no longer uniquely
+          // identifies a conversation on its own.
+          onConflict: "tenant_id,phone",
+        },
       )
 
     if (error) {
-      logError("Database error while saving state", error, { userId })
+      logError("Database error while saving state", error, { tenantId, phone })
       return
     }
 
-    logInfo("Saved to database", { userId })
+    logInfo("Saved to database", { tenantId, phone })
   } catch (error) {
-    // Database failures must never crash the caller. The memory cache has
-    // already been updated by this point, so the current instance stays
-    // consistent even though persistence failed; we just make sure the
-    // failure is visible in logs instead of being swallowed silently.
-    logError("Unexpected error while saving state to database", error, { userId })
+    logError("Unexpected error while saving state to database", error, { tenantId, phone })
   }
 }
 
-async function deleteFromDatabase(userId: string): Promise<void> {
+async function deleteFromDatabase(tenantId: string, phone: string): Promise<void> {
   const supabase = getSupabaseServerClient()
   if (!supabase) {
-    logInfo("Supabase client unavailable, skipping database delete", { userId })
+    logInfo("Supabase client unavailable, skipping database delete", { tenantId, phone })
     return
   }
 
@@ -296,37 +264,29 @@ async function deleteFromDatabase(userId: string): Promise<void> {
     const { error } = await supabase
       .from("conversation_states")
       .delete()
-      .eq("phone", userId)
+      .eq("tenant_id", tenantId)
+      .eq("phone", phone)
 
     if (error) {
-      logError("Database error while clearing state", error, { userId })
+      logError("Database error while clearing state", error, { tenantId, phone })
       return
     }
 
-    logInfo("Cleared", { userId })
+    logInfo("Cleared", { tenantId, phone })
   } catch (error) {
-    logError("Unexpected error while clearing state from database", error, { userId })
+    logError("Unexpected error while clearing state from database", error, { tenantId, phone })
   }
 }
 
 /**
  * Finds every conversation whose state hasn't been touched in over
- * `olderThanMs`. Used exclusively by the inactivity-sweep cron
- * (see app/api/cron/inactivity-sweep) to find candidates for the
- * "you've gone quiet" nudge + auto-close.
- *
- * Deliberately bypasses the in-memory cache and goes straight to Supabase:
- * this only ever runs from a cron invocation (a cold, one-off request), so
- * there's no warm-instance cache to benefit from, and correctness here
- * matters more than shaving one round trip.
- *
- * Returns `[]` (never throws) if Supabase is unreachable or misconfigured,
- * consistent with every other read in this file — a failed sweep should
- * skip this run quietly and try again next tick, not crash the cron route.
+ * `olderThanMs`, across ALL tenants — the inactivity-sweep cron isn't
+ * tenant-scoped itself, so each result now carries its own tenantId
+ * alongside phone for the caller to act on correctly.
  */
 async function findStaleConversations(
   olderThanMs: number,
-): Promise<{ phone: string; state: ConversationState }[]> {
+): Promise<{ tenantId: string; phone: string; state: ConversationState }[]> {
   const supabase = getSupabaseServerClient()
   if (!supabase) {
     logInfo("Supabase client unavailable, skipping stale-conversation lookup")
@@ -347,6 +307,7 @@ async function findStaleConversations(
     }
 
     return (data ?? []).map((row) => ({
+      tenantId: row.tenant_id as string,
       phone: row.phone as string,
       state: mapRowToState(row),
     }))
@@ -361,67 +322,60 @@ async function findStaleConversations(
 // ---------------------------------------------------------------------------
 export const stateService = {
   /**
-   * Gets the current state for a user.
+   * Gets the current state for a (tenant, phone) pair.
    * Priority: fresh memory cache → Supabase → null.
-   *
-   * Memory misses (including expired entries) always fall through to
-   * Supabase, which is the source of truth. This keeps behavior correct
-   * even on a cold start where the cache is guaranteed to be empty.
    */
-  async getState(userId: string): Promise<ConversationState | null> {
-    assertValidUserId(userId)
+  async getState(tenantId: string, phone: string): Promise<ConversationState | null> {
+    assertValidId(tenantId, "tenantId")
+    assertValidId(phone, "phone")
+    const key = cacheKey(tenantId, phone)
 
-    const cached = readFromCache(userId)
+    const cached = readFromCache(key)
     if (cached) {
-      logInfo("Cache hit", { userId })
+      logInfo("Cache hit", { tenantId, phone })
       return cached
     }
 
-    logInfo("Cache miss", { userId })
+    logInfo("Cache miss", { tenantId, phone })
 
-    const fromDb = await loadFromDatabase(userId)
+    const fromDb = await loadFromDatabase(tenantId, phone)
     if (fromDb) {
-      writeToCache(userId, fromDb)
+      writeToCache(key, fromDb)
     }
     return fromDb
   },
 
   /**
-   * Sets the full state for a user.
-   * Updates both memory cache and Supabase. Writes for the same userId are
-   * serialized so a slower, earlier-issued call can't clobber the result of
-   * a faster, later-issued one.
+   * Sets the full state for a (tenant, phone) pair. Updates both memory
+   * cache and Supabase, serialized per (tenant, phone) so a slower,
+   * earlier-issued call can't clobber a faster, later-issued one.
    */
-  async setState(userId: string, state: ConversationState): Promise<void> {
-    assertValidUserId(userId)
+  async setState(tenantId: string, phone: string, state: ConversationState): Promise<void> {
+    assertValidId(tenantId, "tenantId")
+    assertValidId(phone, "phone")
     assertValidConversationState(state)
+    const key = cacheKey(tenantId, phone)
 
-    await enqueueWrite(userId, async () => {
+    await enqueueWrite(key, async () => {
       const next: ConversationState = {
         state: state.state,
         data: state.data ?? {},
         updatedAt: state.updatedAt ?? new Date().toISOString(),
       }
 
-      // Memory first for fast subsequent reads on this warm instance...
-      writeToCache(userId, next)
-      // ...but the database write always happens regardless of cache outcome.
-      await persistToDatabase(userId, next)
+      writeToCache(key, next)
+      await persistToDatabase(tenantId, phone, next)
     })
   },
 
   /**
-   * Updates specific fields of the state for a user.
-   * Reads the latest known state, then shallow-merges `data` without
-   * mutating the previous state object, and never drops existing keys that
-   * the caller didn't explicitly overwrite.
-   *
-   * Serialized per-user (see enqueueWrite) so that concurrent updates for
-   * the same user apply in call order and the most recently issued update
-   * wins, instead of racing on stale reads.
+   * Updates specific fields of the state for a (tenant, phone) pair.
+   * Shallow-merges `data` without dropping existing keys the caller didn't
+   * explicitly overwrite. Serialized per (tenant, phone).
    */
-  async updateState(userId: string, updates: Partial<ConversationState>): Promise<void> {
-    assertValidUserId(userId)
+  async updateState(tenantId: string, phone: string, updates: Partial<ConversationState>): Promise<void> {
+    assertValidId(tenantId, "tenantId")
+    assertValidId(phone, "phone")
     if (updates === undefined || updates === null) {
       throw new Error("[state] Invalid updates: updates object must be defined")
     }
@@ -429,10 +383,12 @@ export const stateService = {
       throw new Error("[state] Invalid updates: 'state' field must be a non-empty string when provided")
     }
 
-    await enqueueWrite(userId, async () => {
+    const key = cacheKey(tenantId, phone)
+
+    await enqueueWrite(key, async () => {
       // Read inside the queued task (not before enqueueing) so this read
-      // reflects any writes for this user that were queued earlier.
-      const current = await this.getState(userId)
+      // reflects any writes for this (tenant, phone) queued earlier.
+      const current = await this.getState(tenantId, phone)
 
       const next: ConversationState = {
         state: updates.state ?? current?.state ?? "default",
@@ -443,39 +399,40 @@ export const stateService = {
         updatedAt: new Date().toISOString(),
       }
 
-      writeToCache(userId, next)
-      await persistToDatabase(userId, next)
+      writeToCache(key, next)
+      await persistToDatabase(tenantId, phone, next)
     })
   },
 
   /**
-   * Clears the state for a user.
-   * Removes from both memory cache and Supabase, serialized behind any
-   * pending writes for that user so a clear can't be immediately
-   * resurrected by an in-flight update.
+   * Clears the state for a (tenant, phone) pair. Serialized behind any
+   * pending writes so a clear can't be immediately resurrected by an
+   * in-flight update.
    */
-  async clearState(userId: string): Promise<void> {
-    assertValidUserId(userId)
+  async clearState(tenantId: string, phone: string): Promise<void> {
+    assertValidId(tenantId, "tenantId")
+    assertValidId(phone, "phone")
+    const key = cacheKey(tenantId, phone)
 
-    await enqueueWrite(userId, async () => {
-      stateStore.delete(userId)
-      await deleteFromDatabase(userId)
+    await enqueueWrite(key, async () => {
+      stateStore.delete(key)
+      await deleteFromDatabase(tenantId, phone)
     })
   },
 
   /**
-   * Gets the current state without hitting the DB.
-   * Useful for when you only want to check memory. Respects TTL: an expired
-   * entry is treated the same as a miss and is evicted on read.
+   * Gets the current state without hitting the DB. Respects TTL: an
+   * expired entry is treated the same as a miss and is evicted on read.
    */
-  getCachedState(userId: string): ConversationState | null {
-    assertValidUserId(userId)
-    return readFromCache(userId)
+  getCachedState(tenantId: string, phone: string): ConversationState | null {
+    assertValidId(tenantId, "tenantId")
+    assertValidId(phone, "phone")
+    return readFromCache(cacheKey(tenantId, phone))
   },
 
   /**
-   * Finds conversations idle longer than `olderThanMs`. See
-   * {@link findStaleConversations} above for details.
+   * Finds conversations idle longer than `olderThanMs`, across all
+   * tenants. See {@link findStaleConversations} above for details.
    */
   findStaleConversations,
 }
