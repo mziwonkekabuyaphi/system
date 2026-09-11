@@ -8,15 +8,14 @@
  * every state/customer call.
  *
  * Uses lib/services/tenant-customer.ts, NOT lib/services/customer.ts — see
- * that file's header for why. This means this pipeline currently only
- * supports intents that don't depend on Rands' wallet/profiles system
- * (i.e. booking.ts and queue.ts). If action-router.ts still has
- * wallet/vvip/tickets/etc wired into its intentHandlers/stateHandlers for
- * this deployment, calling into those from here would break — they expect
- * customer.ts's profiles-based identity, not tenant_customers. Worth a
- * deliberate decision on whether those intents are even part of this
- * QLess-hosted bot before this ships (see the multi-tenant summary this
- * file accompanies).
+ * that file's header for why.
+ *
+ * RESOLVED: action-router.ts has been stripped down to only registration,
+ * booking, and queue — wallet/passport/events/tickets/orders/vvip/shisha/
+ * support are no longer wired into its stateHandlers/intentHandlers for
+ * this deployment, so the identity-system mismatch flagged here
+ * previously no longer applies. routeAction() now also takes `tenantId`
+ * as an explicit fourth argument, threaded through from here.
  */
 
 import { type RoutedIntent } from "@/lib/whatsapp/intent-router"
@@ -87,7 +86,7 @@ export async function processIncomingMessage(
     const intent = await routeIntent(toIntentRouterMessage(message))
 
     // STEP 4: Route the message to the appropriate handler.
-    const result = await routeAction(intent, state, message)
+    const result = await routeAction(intent, state, message, tenantId)
 
     // STEP 5: Save or clear the new state — see the single-tenant version's
     // comment for why the null-nextState branch matters (a completed flow
@@ -132,7 +131,7 @@ export async function processWithState(
   try {
     await ensureCustomer(tenantId, message.from)
 
-    const result = await routeAction(intent, state, message)
+    const result = await routeAction(intent, state, message, tenantId)
 
     if (result.nextState) {
       await stateService.setState(tenantId, message.from, result.nextState)
