@@ -1,6 +1,7 @@
 // app/admin/layout.tsx
 import type { ReactNode } from "react"
 import { Fraunces, Inter } from "next/font/google"
+import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
 /**
  * Fonts scoped to /admin only, not added to the root layout — the
@@ -21,11 +22,18 @@ const inter = Inter({
   display: "swap",
 })
 
-// ⚠️ TODO: this route has NO ACCESS PROTECTION yet — no login, no password
-// gate, nothing. Every action in actions.ts is reachable by anyone who
-// loads this URL. Do not link this route from anywhere customer-facing,
-// and do not ship to production without adding auth first.
-export default function AdminLayout({ children }: { children: ReactNode }) {
+// Access protection: every /admin page and Server Action now requires a
+// signed-in user with an active tenant_members row (see
+// lib/tenant/current-tenant-member.ts). requireTenantMember() redirects
+// to /login when either condition fails — nothing under /admin renders
+// for a signed-out or tenant-less visitor.
+//
+// This only covers /admin's own React tree. If middleware.ts exists at
+// the repo root, add "/admin/:path*" to its matcher too, so a signed-out
+// request never even reaches this layout — see the auth module's README.
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  await requireTenantMember()
+
   return (
     <div
       className={`${fraunces.variable} ${inter.variable} min-h-screen bg-[#F0EEE6] [font-family:var(--font-inter)] antialiased`}

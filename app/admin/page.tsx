@@ -1,19 +1,23 @@
 // app/admin/page.tsx
 //
-// TODO(security): this route has NO access protection — anyone with the
-// URL can see customer names/phone numbers and edit services/staff.
-// This is deliberate for this prototype pass (see project constraints),
-// but this page MUST NOT go to production without at least an env-var
-// shared-password gate before this TODO is removed.
+// Access protection lives in layout.tsx (requireTenantMember) — every
+// query below additionally filters by .eq("tenant_id", tenantId) as a
+// second, independent guard: even if a bug ever let this Server
+// Component render without the layout's check, it still couldn't return
+// another shop's data. Belt and suspenders on purpose, since this reads
+// through the service-role client and bypasses RLS entirely.
 //
-// Shop-owner-facing admin view for the WhatsApp booking bot.
-// Read path: this Server Component uses the service-role Supabase client
-// directly (same pattern as booking.ts) since Server Components never
-// ship to the browser. Write path: every mutation goes through the
-// Server Actions in ./actions.ts instead, so the service-role key stays
-// server-only even as the UI adds more interactive editing later.
+// Schema fix vs the previous version: bookings.customer_id and
+// queue_entries.customer_id point at tenant_customers, not profiles —
+// profiles is the platform-wide identity (1:1 with auth.users);
+// tenant_customers is the per-shop customer record (name/phone/email as
+// given to *this* shop). The two can diverge, and a booking may not even
+// have a linked profiles row. This now joins tenant_customers, which
+// also means no more splitting a nonexistent name/surname pair — it's
+// one full_name column.
 
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
 import { AdminView } from "./AdminView"
 import type {
@@ -27,14 +31,6 @@ import type {
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
-// ASSUMPTIONS
-// "Today" is computed as a UTC calendar day — the same day-boundary
-// convention booking.ts's getBookingsForDate() already uses for slot
-// generation, so a booking that's "today" here is "today" from the bot's
-// perspective too. If the shop's local timezone is far from UTC this can
-// clip an hour or two off either end of the *real* local day. Swap for a
-// shop-local timezone constant (the same way SHOP_OPEN_HOUR is a flat
-// constant in booking.ts) before production.
 function todayUtcRange(): { start: string; end: string } {
   const dateISO = new Date().toISOString().slice(0, 10)
   return {
@@ -43,20 +39,18 @@ function todayUtcRange(): { start: string; end: string } {
   }
 }
 
-async function getTodaysBookings(supabase: ServerClient): Promise<AdminBooking[]> {
+async function getTodaysBookings(supabase: ServerClient, tenantId: string): Promise<AdminBooking[]> {
   const { start, end } = todayUtcRange()
 
-  // Embeds services/staff/profiles in one round trip via their FK
-  // relationships (bookings.service_id, bookings.staff_id,
-  // bookings.customer_id -> profiles.id) rather than N+1 queries.
   const { data, error } = await supabase
     .from("bookings")
     .select(
       `id, start_time, end_time, status, booking_reference,
        services ( name ),
        staff ( name ),
-       profiles ( name, surname, phone )`,
+       tenant_customers ( full_name, phone )`,
     )
+    .eq("tenant_id", tenantId)
     .gte("start_time", start)
     .lte("start_time", end)
     .order("start_time", { ascending: true })
@@ -71,23 +65,20 @@ async function getTodaysBookings(supabase: ServerClient): Promise<AdminBooking[]
     bookingReference: b.booking_reference,
     serviceName: b.services?.name ?? "Unknown service",
     staffName: b.staff?.name ?? "Unassigned",
-    customerName: b.profiles ? [b.profiles.name, b.profiles.surname].filter(Boolean).join(" ") || null : null,
-    customerPhone: b.profiles?.phone ?? "",
+    customerName: b.tenant_customers?.full_name ?? null,
+    customerPhone: b.tenant_customers?.phone ?? "",
   }))
 }
 
-// Only "waiting" and "called" — this is the actionable, in-progress
-// queue. Entries that are "done" or "cancelled" have nothing left for the
-// owner to do, so they're left out rather than adding a filter toggle for
-// a prototype's single admin view.
-async function getTodaysQueue(supabase: ServerClient): Promise<AdminQueueEntry[]> {
+async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise<AdminQueueEntry[]> {
   const { data, error } = await supabase
     .from("queue_entries")
     .select(
       `id, status, joined_at,
        services ( name ),
-       profiles ( name, surname, phone )`,
+       tenant_customers ( full_name, phone )`,
     )
+    .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
     .order("joined_at", { ascending: true })
 
@@ -98,15 +89,16 @@ async function getTodaysQueue(supabase: ServerClient): Promise<AdminQueueEntry[]
     status: q.status,
     joinedAt: q.joined_at,
     serviceName: q.services?.name ?? "Unknown service",
-    customerName: q.profiles ? [q.profiles.name, q.profiles.surname].filter(Boolean).join(" ") || null : null,
-    customerPhone: q.profiles?.phone ?? "",
+    customerName: q.tenant_customers?.full_name ?? null,
+    customerPhone: q.tenant_customers?.phone ?? "",
   }))
 }
 
-async function getAllServices(supabase: ServerClient): Promise<AdminService[]> {
+async function getAllServices(supabase: ServerClient, tenantId: string): Promise<AdminService[]> {
   const { data, error } = await supabase
     .from("services")
     .select("id, name, price, duration_minutes, active")
+    .eq("tenant_id", tenantId)
     .order("name", { ascending: true })
 
   if (error) throw new Error(`Failed to load services: ${error.message}`)
@@ -120,8 +112,12 @@ async function getAllServices(supabase: ServerClient): Promise<AdminService[]> {
   }))
 }
 
-async function getAllStaff(supabase: ServerClient): Promise<AdminStaff[]> {
-  const { data, error } = await supabase.from("staff").select("id, name, active").order("name", { ascending: true })
+async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<AdminStaff[]> {
+  const { data, error } = await supabase
+    .from("staff")
+    .select("id, name, active")
+    .eq("tenant_id", tenantId)
+    .order("name", { ascending: true })
 
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
 
@@ -129,8 +125,7 @@ async function getAllStaff(supabase: ServerClient): Promise<AdminStaff[]> {
 }
 
 // ============================================================================
-// INBOX — ported from the old whatsapp-admin.html/admin.js panel (see
-// InboxManager.tsx's file header for the full kept-vs-cut list).
+// INBOX
 // ============================================================================
 
 type ConversationRow = {
@@ -140,12 +135,6 @@ type ConversationRow = {
   last_message_at: string | null
 }
 
-/**
- * Buckets a raw conversation_states.state value the same way admin.js's
- * AI_OFF_STATES/CLOSED_STATES did, collapsed to the 4 states this UI acts
- * on. A missing row (customer has never triggered a handover) means the
- * bot is still handling things normally, i.e. "active".
- */
 function bucketAiState(state: string | null | undefined): AdminConversationSummary["aiState"] {
   const s = (state ?? "").toLowerCase()
   if (s === "resolved" || s === "closed") return "resolved"
@@ -154,30 +143,24 @@ function bucketAiState(state: string | null | undefined): AdminConversationSumma
   return "active"
 }
 
-/**
- * Both the inbox list and the analytics dashboard are built from one
- * shared fetch: conversations + conversation_states + a bounded recent-
- * message sample. The sample (last 1000 messages across ALL
- * conversations, not per-conversation) replaces admin.js's original
- * approach of fetching every message for every conversation individually
- * (a real N+1) — this is one query instead of N, at the cost of preview/
- * count/volume numbers being a floor rather than an exact lifetime total
- * for any conversation with more history than the sample covers. Good
- * enough for a prototype's "what needs my attention today" view.
- */
 async function getInboxData(
   supabase: ServerClient,
+  tenantId: string,
 ): Promise<{ conversations: AdminConversationSummary[]; stats: AdminInboxStats }> {
   const [conversationsResult, statesResult, messagesResult] = await Promise.all([
     supabase
       .from("conversations")
       .select("id, phone, customer_name, last_message_at")
+      .eq("tenant_id", tenantId)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(100),
-    supabase.from("conversation_states").select("phone, state"),
+    // conversation_states is keyed on (tenant_id, phone) precisely because
+    // phone numbers repeat across tenants — this filter isn't optional.
+    supabase.from("conversation_states").select("phone, state").eq("tenant_id", tenantId),
     supabase
       .from("messages")
       .select("id, conversation_id, direction, message_text, created_at")
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
       .limit(1000),
   ])
@@ -190,9 +173,6 @@ async function getInboxData(
   const stateByPhone = new Map((statesResult.data ?? []).map((s) => [s.phone, s.state as string | null]))
   const messages = messagesResult.data ?? []
 
-  // messages are fetched newest-first, so the first one seen per
-  // conversation is the latest — matches admin.js's lastMsg() without
-  // needing a second sort pass.
   const previewByConversation = new Map<string, { text: string | null; at: string }>()
   const countByConversation = new Map<string, number>()
   for (const m of messages) {
@@ -212,7 +192,6 @@ async function getInboxData(
     messageCount: countByConversation.get(c.id) ?? 0,
   }))
 
-  // ── Volume by day (last 7 days, from the same message sample) ──
   const dayBuckets = new Map<string, { incoming: number; outgoing: number }>()
   const days: string[] = []
   for (let i = 6; i >= 0; i--) {
@@ -225,13 +204,12 @@ async function getInboxData(
   for (const m of messages) {
     const key = m.created_at.slice(0, 10)
     const bucket = dayBuckets.get(key)
-    if (!bucket) continue // outside the 7-day window
+    if (!bucket) continue
     if (m.direction === "incoming") bucket.incoming += 1
     else bucket.outgoing += 1
   }
   const volumeByDay = days.map((date) => ({ date, ...dayBuckets.get(date)! }))
 
-  // ── Top customers by message count within the sample ──
   const topCustomers = [...conversations]
     .sort((a, b) => b.messageCount - a.messageCount)
     .slice(0, 5)
@@ -250,6 +228,11 @@ async function getInboxData(
 }
 
 export default async function AdminPage() {
+  // Redirects to /login if there's no session or no active tenant
+  // membership — see layout.tsx, which already calls this once per
+  // request; React's cache() means this call is free.
+  const { tenantId } = await requireTenantMember()
+
   const supabase = getSupabaseServerClient()
 
   if (!supabase) {
@@ -266,11 +249,11 @@ export default async function AdminPage() {
   }
 
   const [bookings, queue, services, staff, inbox] = await Promise.all([
-    getTodaysBookings(supabase),
-    getTodaysQueue(supabase),
-    getAllServices(supabase),
-    getAllStaff(supabase),
-    getInboxData(supabase),
+    getTodaysBookings(supabase, tenantId),
+    getTodaysQueue(supabase, tenantId),
+    getAllServices(supabase, tenantId),
+    getAllStaff(supabase, tenantId),
+    getInboxData(supabase, tenantId),
   ])
 
   return (
