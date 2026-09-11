@@ -67,22 +67,24 @@
  * this file (in reply.ts / action-router.ts), not be re-derived here from
  * the message itself.
  *
- * So `StatefulService.handleState()` now takes a third `tenantId`
- * parameter (already resolved by the caller) instead of this file reading
- * `message.tenantId`. That's a change to the `StatefulService` contract
- * itself (defined in action-router.ts), which this file does NOT own —
- * action-router.ts's call site, and every other implementer of
- * StatefulService (booking.ts, queue.ts), need the matching update. I
- * don't have those files' current content, so I've made the change here
- * and left the signature as `(state, message, tenantId)` — flag if
- * action-router.ts should be threading it differently (e.g. attaching
- * tenantId onto ConversationState instead, since conversation_states
- * already has a tenant_id column and is looked up before handleState is
- * ever called).
+ * RESOLVED: confirmed against the actual action-router.ts and reply.ts —
+ * `StatefulService.handleState()` now takes `(state, message, tenantId)`,
+ * with `tenantId` resolved once in action-router.ts's `routeAction()` and
+ * threaded down through `delegateState()`. action-router.ts and
+ * bookingService/queueService are updated to match.
  *
- * Dependency direction: this file only imports from customer.ts, state.ts,
- * and its own message-copy module. It deliberately does NOT import
- * anything from orders.ts, vvip.ts, or wallet.ts (see StatefulService
+ * ALSO CORRECTED: this file (and customer.ts) previously conflated two
+ * separate identity systems. `lib/services/customer.ts` still owns the
+ * Rands profiles/wallet/Passport Key system for orders.ts/vvip.ts/
+ * wallet.ts — it was NOT rebuilt. The tenant_customers-backed rebuild
+ * lives in a new, separate file, `lib/services/tenant-customer.ts` (see
+ * its header), which is what this file now imports from. reply.ts (the
+ * tenant-scoped entry point) only ever calls into tenant-customer.ts, and
+ * this file matches that.
+ *
+ * Dependency direction: this file only imports from tenant-customer.ts,
+ * state.ts, and its own message-copy module. It deliberately does NOT
+ * import anything from orders.ts, vvip.ts, or wallet.ts (see StatefulService
  * contract in action-router.ts) — callers pass in everything needed to
  * resume as plain data (`PendingResumeAction`), not as a callback into
  * their own module.
@@ -99,7 +101,7 @@ import {
   continueRegistration,
   completeWhatsAppRegistration,
   type RegistrationGate,
-} from "@/lib/services/customer"
+} from "@/lib/services/tenant-customer"
 import type { StatefulService } from "@/lib/whatsapp/action-router"
 
 import {
