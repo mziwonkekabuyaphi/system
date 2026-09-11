@@ -55,17 +55,30 @@
  * every one of its exports takes `tenantId` as its first argument —
  * tenant_customers has no unique-on-phone constraint, so (tenant_id,
  * phone) is the only safe identity key, same as conversation_states.
- * This file now threads `message.tenantId` through to every
- * checkRegistrationGate() / continueRegistration() /
- * completeWhatsAppRegistration() call.
  *
- * ASSUMPTION (flagging, unverified): `IncomingMessage` already carries a
- * `tenantId` field by the time it reaches this service — resolved
- * upstream from the webhook's phone_number_id, the same precondition
- * conversation_states already depends on. If IncomingMessage doesn't yet
- * expose that field, it needs adding in lib/whatsapp/parse-webhook first;
- * this file has no other safe way to know which tenant a message belongs
- * to.
+ * CORRECTION: an earlier version of this file assumed `IncomingMessage`
+ * carried a `tenantId` field and read `message.tenantId` directly. Checked
+ * against the actual parser (lib/whatsapp/parse-webhook.ts) — it doesn't.
+ * `IncomingMessage` only carries `phoneNumberId` (Meta's WhatsApp Business
+ * number id), with its own doc comment saying that's deliberately the join
+ * key back to `tenant_whatsapp_integrations.phone_number_id`, "used to
+ * resolve which tenant owns this conversation before anything else runs."
+ * In other words: tenant resolution is meant to happen ONCE, upstream of
+ * this file (in reply.ts / action-router.ts), not be re-derived here from
+ * the message itself.
+ *
+ * So `StatefulService.handleState()` now takes a third `tenantId`
+ * parameter (already resolved by the caller) instead of this file reading
+ * `message.tenantId`. That's a change to the `StatefulService` contract
+ * itself (defined in action-router.ts), which this file does NOT own —
+ * action-router.ts's call site, and every other implementer of
+ * StatefulService (booking.ts, queue.ts), need the matching update. I
+ * don't have those files' current content, so I've made the change here
+ * and left the signature as `(state, message, tenantId)` — flag if
+ * action-router.ts should be threading it differently (e.g. attaching
+ * tenantId onto ConversationState instead, since conversation_states
+ * already has a tenant_id column and is looked up before handleState is
+ * ever called).
  *
  * Dependency direction: this file only imports from customer.ts, state.ts,
  * and its own message-copy module. It deliberately does NOT import
@@ -204,7 +217,11 @@ function toConfirmation(draft: RegistrationDraft, resume: PendingResumeAction | 
 // STATE HANDLERS
 // ============================================================================
 
-async function handleFullName(state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+async function handleFullName(
+  state: ConversationState,
+  message: IncomingMessage,
+  tenantId: string,
+): Promise<ActionResult> {
   const resume = getResume(state)
   const rawValue = rawTextOf(message)
 
@@ -218,9 +235,10 @@ async function handleFullName(state: ConversationState, message: IncomingMessage
 
   try {
     // See file-header ASSUMPTION: "name" is the field id that persists to
-    // tenant_customers.full_name, and tenantId is required now that
-    // customer.ts is keyed on (tenant_id, phone) rather than phone alone.
-    await continueRegistration(message.tenantId, message.from, "name", rawValue)
+    // tenant_customers.full_name. `tenantId` is passed in by the caller
+    // (resolved upstream from message.phoneNumberId) rather than read off
+    // the message itself — see file-header CORRECTION.
+    await continueRegistration(tenantId, message.from, "name", rawValue)
   } catch (err) {
     return {
       reply: reRaskWithError(errorMessage(err)),
@@ -235,6 +253,7 @@ async function handleFullName(state: ConversationState, message: IncomingMessage
 async function handleConfirmation(
   state: ConversationState,
   message: IncomingMessage,
+  tenantId: string,
 ): Promise<ActionResult> {
   const resume = getResume(state)
   const draft = getDraft(state)
@@ -252,7 +271,7 @@ async function handleConfirmation(
     }
 
     try {
-      await completeWhatsAppRegistration(message.tenantId, message.from)
+      await completeWhatsAppRegistration(tenantId, message.from)
     } catch (err) {
       return {
         reply: `⚠️ ${errorMessage(err)}\n\n${confirmationSummary(draft)}`,
@@ -294,12 +313,13 @@ async function handleConfirmation(
 async function handleState(
   state: ConversationState,
   message: IncomingMessage,
+  tenantId: string,
 ): Promise<ActionResult | null> {
   if (state.state === CONFIRMATION_STATE) {
-    return handleConfirmation(state, message)
+    return handleConfirmation(state, message, tenantId)
   }
   if (state.state === FULL_NAME_STATE) {
-    return handleFullName(state, message)
+    return handleFullName(state, message, tenantId)
   }
 
   return null // Not a registration state — defer to the next service.
@@ -311,6 +331,6 @@ export const registrationService: StatefulService = {
 
 // Convenience re-export so callers only need one import for both the gate
 // check and the hand-off, e.g.:
-//   const gate = await checkRegistrationGate(phone)
+//   const gate = await checkRegistrationGate(tenantId, phone)
 //   if (!gate.allowed) return beginRegistration(gate, { ...resume })
 export { checkRegistrationGate }
