@@ -69,14 +69,9 @@ export async function getConversationThread(conversationId: string): Promise<Thr
 
 /**
  * Sends a message as the human agent: out over WhatsApp, then stored so
- * the thread shows both sides.
- *
- * TODO: sendWhatsAppTextMessage(phone, text) doesn't yet know which
- * tenant it's sending for — it needs to look up the tenant's own row in
- * tenant_whatsapp_integrations (phone_number_id + access token) instead
- * of using one global sender, or every tenant's outbound messages go out
- * from the same WhatsApp number. Pass tenantId through once that's
- * wired up.
+ * the thread shows both sides. sendWhatsAppTextMessage resolves this
+ * tenant's own phone_number_id + access token via
+ * get_tenant_whatsapp_credentials() — see lib/whatsapp/send-message.ts.
  */
 export async function sendAgentMessage(conversationId: string, phone: string, body: string): Promise<ActionResult> {
   const { tenantId } = await requireTenantMember()
@@ -85,7 +80,7 @@ export async function sendAgentMessage(conversationId: string, phone: string, bo
   if (!text) return { success: false, error: "Message can't be empty" }
 
   try {
-    await sendWhatsAppTextMessage(phone, text)
+    await sendWhatsAppTextMessage(tenantId, phone, text)
 
     const supabase = client()
     const { error } = await supabase.from("messages").insert({
