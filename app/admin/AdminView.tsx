@@ -1,50 +1,65 @@
-// app/admin/AdminView.tsx
 "use client"
 
 import { useState } from "react"
-import { TodayBookings } from "./TodayBookings"
+
+import { InboxManager } from "./InboxManager"
+import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
 import { StaffManager } from "./StaffManager"
-import type { AdminBooking, AdminService, AdminStaff } from "./types"
+import { TodayBookings } from "./TodayBookings"
+import type {
+  AdminBooking,
+  AdminConversationSummary,
+  AdminInboxStats,
+  AdminQueueEntry,
+  AdminService,
+  AdminStaff,
+} from "./types"
 
-type Tab = "today" | "services" | "staff"
+type Tab = "today" | "queue" | "inbox" | "services" | "staff"
 
-const TABS: { id: Tab; label: string; heading: string }[] = [
-  { id: "today", label: "Today", heading: "Today's book" },
-  { id: "services", label: "Services", heading: "Services" },
-  { id: "staff", label: "Staff", heading: "Staff" },
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "today", label: "Today" },
+  { id: "queue", label: "Queue" },
+  { id: "inbox", label: "Inbox" },
+  { id: "services", label: "Services" },
+  { id: "staff", label: "Staff" },
 ]
 
 export function AdminView({
   initialBookings,
+  initialQueue,
   initialServices,
   initialStaff,
+  initialConversations,
+  initialInboxStats,
 }: {
   initialBookings: AdminBooking[]
+  initialQueue: AdminQueueEntry[]
   initialServices: AdminService[]
   initialStaff: AdminStaff[]
+  initialConversations: AdminConversationSummary[]
+  initialInboxStats: AdminInboxStats
 }) {
   const [tab, setTab] = useState<Tab>("today")
-  const active = TABS.find((t) => t.id === tab)!
 
   return (
-    <div className="mx-auto max-w-2xl px-5 pb-24 pt-10 sm:px-8">
-      <header className="mb-8">
-        <p className="text-sm text-[#8A8375]">Shop admin</p>
-        <h1 className="mt-1 text-[2rem] leading-tight text-[#1C1A17] [font-family:var(--font-fraunces)]">
-          {active.heading}
+    <div className="min-h-screen bg-[#FAF7F2] pb-24 text-stone-900">
+      <header className="px-5 pb-3 pt-6">
+        <h1 className="font-[family-name:var(--font-admin-serif)] text-2xl tracking-tight text-stone-900">
+          Shop admin
         </h1>
+        <p className="mt-1 text-sm text-stone-500">Bookings, queue, inbox, services and staff</p>
       </header>
 
-      <nav className="mb-8 flex gap-6 border-b border-[#D9D3C3]">
+      <nav className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-stone-200 bg-[#FAF7F2]/95 px-3 py-2 backdrop-blur">
         {TABS.map((t) => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 pb-3 text-[0.95rem] transition-colors ${
-              tab === t.id
-                ? "border-[#7A2E2E] text-[#1C1A17]"
-                : "border-transparent text-[#8A8375] hover:text-[#1C1A17]"
+            className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+              tab === t.id ? "bg-[#7A2E3A] text-white" : "text-stone-600 hover:bg-stone-100"
             }`}
           >
             {t.label}
@@ -52,9 +67,15 @@ export function AdminView({
         ))}
       </nav>
 
-      {tab === "today" && <TodayBookings bookings={initialBookings} />}
-      {tab === "services" && <ServicesManager services={initialServices} />}
-      {tab === "staff" && <StaffManager staff={initialStaff} />}
+      <main className="px-4 pt-4">
+        {tab === "today" && <TodayBookings initialBookings={initialBookings} />}
+        {tab === "queue" && <QueueManager initialQueue={initialQueue} />}
+        {tab === "inbox" && (
+          <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
+        )}
+        {tab === "services" && <ServicesManager initialServices={initialServices} />}
+        {tab === "staff" && <StaffManager initialStaff={initialStaff} />}
+      </main>
     </div>
   )
 }
