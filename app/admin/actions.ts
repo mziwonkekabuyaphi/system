@@ -4,25 +4,25 @@
 /**
  * Server Actions for the shop-owner admin view.
  * -----------------------------------------------
- * Deliberately thin — one write each, basic input validation, then
- * revalidate so page.tsx's Server Component re-fetches fresh data on the
- * next render. No business logic beyond validation lives here, mirroring
- * the "pure dispatcher" discipline the WhatsApp action-router follows.
- *
- * ⚠️ This route has NO ACCESS PROTECTION yet (see layout.tsx's TODO).
- * These actions are reachable by anyone who can load /admin — don't link
- * this route anywhere customer-facing, and add auth before production.
+ * Access protection: every action below starts with requireTenantMember()
+ * (same helper layout.tsx uses), so a Server Action reference sitting in
+ * a signed-out browser tab can't be used to write data — it redirects
+ * instead. tenantId then gets stamped onto every insert and used to
+ * scope every update/delete, so one tenant's admin can't act on another
+ * tenant's row even by guessing a UUID.
  */
 
 import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 
-function getClientOrError() {
+async function getTenantScopedClient() {
+  const { tenantId } = await requireTenantMember()
   const supabase = getSupabaseServerClient()
-  if (!supabase) return { supabase: null as const, error: "Supabase isn't configured." }
-  return { supabase, error: undefined as string | undefined }
+  if (!supabase) return { supabase: null as const, tenantId: null, error: "Supabase isn't configured." }
+  return { supabase, tenantId, error: undefined as string | undefined }
 }
 
 // ============================================================================
@@ -30,13 +30,14 @@ function getClientOrError() {
 // ============================================================================
 
 export async function cancelBooking(bookingId: string): Promise<ActionResult> {
-  const { supabase, error } = getClientOrError()
+  const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
   const { error: updateError } = await supabase
     .from("bookings")
     .update({ status: "cancelled" })
     .eq("id", bookingId)
+    .eq("tenant_id", tenantId) // can't cancel another tenant's booking by ID-guessing
 
   if (updateError) return { ok: false, error: updateError.message }
 
@@ -64,7 +65,7 @@ function validateServiceInput(input: ServiceInput): string | null {
 }
 
 export async function addService(input: ServiceInput): Promise<ActionResult> {
-  const { supabase, error } = getClientOrError()
+  const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
   const validationError = validateServiceInput(input)
@@ -72,6 +73,7 @@ export async function addService(input: ServiceInput): Promise<ActionResult> {
 
   const { error: insertError } = await supabase.from("services").insert([
     {
+      tenant_id: tenantId,
       name: input.name.trim(),
       price: input.price,
       duration_minutes: input.durationMinutes,
@@ -86,7 +88,7 @@ export async function addService(input: ServiceInput): Promise<ActionResult> {
 }
 
 export async function updateService(id: string, input: ServiceInput): Promise<ActionResult> {
-  const { supabase, error } = getClientOrError()
+  const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
   const validationError = validateServiceInput(input)
@@ -100,6 +102,7 @@ export async function updateService(id: string, input: ServiceInput): Promise<Ac
       duration_minutes: input.durationMinutes,
     })
     .eq("id", id)
+    .eq("tenant_id", tenantId)
 
   if (updateError) return { ok: false, error: updateError.message }
 
@@ -107,17 +110,15 @@ export async function updateService(id: string, input: ServiceInput): Promise<Ac
   return { ok: true }
 }
 
-/**
- * Soft delete only — see booking_schema.sql's comment on why services are
- * never hard-deleted (a service with existing bookings would orphan the
- * booking's `services(name)` join). Deactivating just hides it from the
- * WhatsApp bot's `getBookableServices()` listing (`.eq("active", true)`).
- */
 export async function toggleServiceActive(id: string, active: boolean): Promise<ActionResult> {
-  const { supabase, error } = getClientOrError()
+  const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
-  const { error: updateError } = await supabase.from("services").update({ active }).eq("id", id)
+  const { error: updateError } = await supabase
+    .from("services")
+    .update({ active })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
   if (updateError) return { ok: false, error: updateError.message }
 
   revalidatePath("/admin")
@@ -129,30 +130,30 @@ export async function toggleServiceActive(id: string, active: boolean): Promise<
 // ============================================================================
 
 export async function addStaff(name: string): Promise<ActionResult> {
-  const { supabase, error } = getClientOrError()
+  const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
   const trimmed = name.trim()
   if (!trimmed) return { ok: false, error: "Name is required." }
 
-  const { error: insertError } = await supabase.from("staff").insert([{ name: trimmed, active: true }])
+  const { error: insertError } = await supabase
+    .from("staff")
+    .insert([{ tenant_id: tenantId, name: trimmed, active: true }])
   if (insertError) return { ok: false, error: insertError.message }
 
   revalidatePath("/admin")
   return { ok: true }
 }
 
-/**
- * Soft delete only, same reasoning as toggleServiceActive — deactivating
- * removes this staff member from booking.ts's getActiveStaff() pool
- * (`.eq("active", true)`) without breaking existing bookings' staff_id
- * foreign key.
- */
 export async function toggleStaffActive(id: string, active: boolean): Promise<ActionResult> {
-  const { supabase, error } = getClientOrError()
+  const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
-  const { error: updateError } = await supabase.from("staff").update({ active }).eq("id", id)
+  const { error: updateError } = await supabase
+    .from("staff")
+    .update({ active })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
   if (updateError) return { ok: false, error: updateError.message }
 
   revalidatePath("/admin")
