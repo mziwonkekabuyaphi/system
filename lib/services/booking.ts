@@ -1,44 +1,36 @@
 // lib/services/booking.ts
 /**
- * Salon/Barbershop Appointment Booking Service
- * ---------------------------------------------
- * Lets a WhatsApp customer:
- *   1. Browse bookable services (haircut, beard trim, colour, etc.)
- *   2. Pick a date, then a time slot
- *   3. Confirm — an available staff member is auto-assigned (the shop has
- *      multiple staff, but the customer doesn't choose which one — see
- *      ASSUMPTIONS below).
+ * Salon/Barbershop Appointment Booking Service — tenant-scoped.
+ * ---------------------------------------------------------------
+ * Same three-step flow as before (browse services, pick a date then a
+ * time slot, confirm — auto-assigned staff). All customer-facing copy
+ * lives in lib/services/messages/booking.ts — this file only owns state
+ * transitions and data access. `BookingSlot` is exported from here since
+ * messages/booking.ts imports it as a type (slots/dates are booking's
+ * own data shape, not copy).
  *
- * Implements the same two contracts action-router.ts expects from every
- * domain service (mirrors vvipService / ticketsService exactly):
- *   - bookingService.handleBooking — entry point for a fresh "booking" intent.
- *   - bookingService.handleState   — StatefulService.handleState for any
- *     in-progress "booking_*" conversation state.
+ * What changed for multi-tenancy (vs the version this replaces):
+ *   1. Every exported function and internal data-access helper now takes
+ *      `tenantId` as its first argument, and every raw Supabase query
+ *      against `staff`/`bookings` now filters `.eq("tenant_id", tenantId)`.
+ *      Previously none of them did — without it, "don't care who"
+ *      availability could pull in a different tenant's staff/bookings.
+ *   2. Switched from `@/lib/services/customer` (profiles-based, can't
+ *      create a row for an anonymous WhatsApp customer at all) to
+ *      `@/lib/services/tenant-customer` (tenant_customers-based, built
+ *      for exactly this). `customer.name` is now `tenant_customers.
+ *      full_name` under the hood — still called `.name` on the returned
+ *      object, so nothing downstream needed to change.
+ *   3. `getBookableServices` (services-catalog.ts) now also needs a
+ *      `tenantId` argument — that file wasn't part of this rewrite pass,
+ *      so it's called here as `getBookableServices(tenantId)`. If that
+ *      file hasn't been updated to accept it yet, this won't compile
+ *      until it is.
  *
- * All customer-facing copy lives in lib/services/messages/booking.ts — this
- * file only owns state transitions, availability logic, and data access.
- *
- * ============================================================================
- * ASSUMPTIONS — adjust these to match your real schema before wiring up
- * ============================================================================
- * 1. `services` table: id, name, price, duration_minutes, active (bool)
- * 2. `staff` table: id, name, active (bool)
- * 3. `bookings` table: id, customer_id, service_id, staff_id, start_time,
- *    end_time, status ('confirmed'|'cancelled'), booking_reference
- * 4. Shop hours are a flat constant (SHOP_OPEN_HOUR / SHOP_CLOSE_HOUR) —
- *    swap for a real `business_hours` table if hours vary by day.
- * 5. "Don't care who" booking: a time slot is offered if AT LEAST ONE
- *    active staff member has no overlapping booking in that window. At
- *    confirm time, the first free staff member is assigned — re-checked
- *    right before insert (same best-effort-with-fallback pattern
- *    vvip.ts uses for table assignment), not a hard DB-level lock. Good
- *    enough for a prototype; add a unique constraint on
- *    (staff_id, start_time) as a hard backstop against double-booking
- *    before going to production.
- * 6. No payment step. Booking confirms immediately on "yes". If you want
- *    a deposit later, insert a payment-method step here the same way
- *    vvip.ts's buildPaymentMethodStep does, reusing debitWallet/initiatePayment.
- * ============================================================================
+ * ASSUMPTIONS — unchanged from the original:
+ *   - `services`/`staff`/`bookings` tables, shop hours as a flat
+ *     constant, "don't care who" staff assignment (best-effort re-check
+ *     at confirm time, no DB-level lock), no payment step.
  */
 
 import crypto from "node:crypto"
@@ -51,7 +43,7 @@ import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 
-import { ensureCustomer, updateCustomer } from "@/lib/services/customer"
+import { ensureCustomer, updateCustomer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
 
@@ -111,19 +103,17 @@ function rawReplyText(message: IncomingMessage): string {
 }
 
 // ============================================================================
-// STATE DATA — typed get/merge, same pattern as vvip.ts's getVvipData
+// STATE DATA
 // ============================================================================
 
-// Local alias so the rest of this file reads the same as before the
-// catalog helper moved to services-catalog.ts.
 type BookingServiceOffer = CatalogService
 
-// Exported so lib/services/messages/booking.ts can type its slot-related
-// message builders without duplicating this shape.
+/** Exported: messages/booking.ts imports this as a type for its message
+ * builder signatures (slotsListMessage, confirmationMessage). */
 export interface BookingSlot {
   /** ISO start time, e.g. "2026-09-15T10:30:00.000Z" */
   start: string
-  /** Human display, e.g. "Tue 15 Sep, 10:30" */
+  /** Human display, e.g. "10:30" */
   label: string
 }
 
@@ -145,7 +135,7 @@ function mergeBookingData(current: BookingStateData, patch: Partial<BookingState
 }
 
 // ============================================================================
-// DATA ACCESS — availability
+// DATA ACCESS — availability, tenant-scoped
 // ============================================================================
 
 interface ActiveStaff {
@@ -153,19 +143,24 @@ interface ActiveStaff {
   name: string
 }
 
-async function getActiveStaff(supabase: SupabaseClient): Promise<ActiveStaff[]> {
-  const { data, error } = await supabase.from("staff").select("id, name").eq("active", true)
+async function getActiveStaff(supabase: SupabaseClient, tenantId: string): Promise<ActiveStaff[]> {
+  const { data, error } = await supabase
+    .from("staff")
+    .select("id, name")
+    .eq("tenant_id", tenantId)
+    .eq("active", true)
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
   return data ?? []
 }
 
 /**
  * Returns booked (staff_id, start_time, end_time) rows for the given date,
- * across all active staff, so slot generation can check overlaps in memory
- * rather than one query per candidate slot.
+ * scoped to this tenant, across all active staff, so slot generation can
+ * check overlaps in memory rather than one query per candidate slot.
  */
 async function getBookingsForDate(
   supabase: SupabaseClient,
+  tenantId: string,
   dateISO: string,
 ): Promise<Array<{ staffId: string; start: Date; end: Date }>> {
   const dayStart = new Date(`${dateISO}T00:00:00.000Z`)
@@ -174,6 +169,7 @@ async function getBookingsForDate(
   const { data, error } = await supabase
     .from("bookings")
     .select("staff_id, start_time, end_time")
+    .eq("tenant_id", tenantId)
     .eq("status", "confirmed")
     .gte("start_time", dayStart.toISOString())
     .lte("start_time", dayEnd.toISOString())
@@ -193,16 +189,15 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
 
 /**
  * Generates candidate slots for the date at SLOT_INTERVAL_MINUTES
- * granularity within shop hours, and keeps only slots where at least one
- * active staff member is free for the full service duration. "Don't care
- * who" means we never expose which staff member — just that a slot works.
+ * granularity within shop hours, keeping only slots where at least one
+ * of THIS TENANT's active staff is free for the full service duration.
  */
-async function getAvailableSlots(dateISO: string, durationMinutes: number): Promise<BookingSlot[]> {
+async function getAvailableSlots(tenantId: string, dateISO: string, durationMinutes: number): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
-  const staff = await getActiveStaff(supabase)
+  const staff = await getActiveStaff(supabase, tenantId)
   if (staff.length === 0) return []
 
-  const existingBookings = await getBookingsForDate(supabase, dateISO)
+  const existingBookings = await getBookingsForDate(supabase, tenantId, dateISO)
 
   const slots: BookingSlot[] = []
   const dayBase = new Date(`${dateISO}T00:00:00.000Z`)
@@ -211,7 +206,6 @@ async function getAvailableSlots(dateISO: string, durationMinutes: number): Prom
     const slotStart = new Date(dayBase.getTime() + minutes * 60_000)
     const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
 
-    // Don't offer slots already in the past for "today".
     if (slotStart.getTime() < Date.now()) continue
 
     const anyStaffFree = staff.some((member) => {
@@ -232,19 +226,18 @@ async function getAvailableSlots(dateISO: string, durationMinutes: number): Prom
 
 /**
  * Re-checks and claims a staff member for the exact slot right before
- * insert — best-effort with fallback, same reasoning as vvip.ts's table
- * reservation: minutes may have passed since the slot was offered, so the
- * first-choice staff member might now be booked. Throws if genuinely
- * nobody is free anymore (slot went stale between offer and confirm).
+ * insert — best-effort with fallback. Throws if genuinely nobody on
+ * THIS TENANT is free anymore.
  */
 async function claimStaffForSlot(
   supabase: SupabaseClient,
+  tenantId: string,
   dateISO: string,
   slot: BookingSlot,
   durationMinutes: number,
 ): Promise<ActiveStaff> {
-  const staff = await getActiveStaff(supabase)
-  const existingBookings = await getBookingsForDate(supabase, dateISO)
+  const staff = await getActiveStaff(supabase, tenantId)
+  const existingBookings = await getBookingsForDate(supabase, tenantId, dateISO)
   const slotStart = new Date(slot.start)
   const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
 
@@ -263,15 +256,8 @@ async function claimStaffForSlot(
 // ============================================================================
 // ENTRY POINT — fresh "booking" intent
 // ============================================================================
-//
-// Offers "book a time" vs "join the queue" up front, before either flow
-// starts. There's no separate top-level "queue" intent — queueing lives
-// inside the booking intent's entry choice, so this is the only place in
-// the app that knows queue.ts exists at all. Everything past this point
-// (queue_* states) is owned entirely by queue.ts, registered as its own
-// StatefulService in action-router.ts's stateHandlers.
 
-async function handleBooking(_intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
+async function handleBooking(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
   return {
     reply: entryChoicePromptMessage(),
     buttons: ENTRY_CHOICE_BUTTONS,
@@ -279,19 +265,14 @@ async function handleBooking(_intent: RoutedIntent, message: IncomingMessage): P
   }
 }
 
-/**
- * Matched with `.includes()` against the button title / typed text, same
- * loose-matching convention as action-router.ts's GLOBAL_INTERRUPT_KEYWORDS
- * — "📅 Book a time" and a plain typed "book" both need to land here.
- */
-async function handleEntryChoice(message: IncomingMessage): Promise<ActionResult> {
+async function handleEntryChoice(tenantId: string, message: IncomingMessage): Promise<ActionResult> {
   const text = normalizedReplyText(message)
 
   if (text.includes("queue")) {
-    return queueService.startQueueFlow()
+    return queueService.startQueueFlow(tenantId)
   }
   if (text.includes("book")) {
-    return presentServices()
+    return presentServices(tenantId)
   }
 
   return {
@@ -301,12 +282,12 @@ async function handleEntryChoice(message: IncomingMessage): Promise<ActionResult
   }
 }
 
-async function presentServices(): Promise<ActionResult> {
+async function presentServices(tenantId: string): Promise<ActionResult> {
   let services: BookingServiceOffer[]
   try {
-    services = await getBookableServices()
+    services = await getBookableServices(tenantId)
   } catch (error) {
-    console.error("[booking] Error loading services", { error })
+    console.error("[booking] Error loading services", { tenantId, error })
     return { reply: servicesLoadErrorMessage(), buttons: [], nextState: null }
   }
 
@@ -340,7 +321,7 @@ function buildDateOptions(): Array<{ date: string; label: string }> {
   return options
 }
 
-async function handleServiceSelection(state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+async function handleServiceSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const services = data.services ?? []
   const index = Number(rawReplyText(message)) - 1
@@ -366,7 +347,7 @@ async function handleServiceSelection(state: ConversationState, message: Incomin
 // STEP 3: date → time slots
 // ============================================================================
 
-async function handleDateSelection(state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+async function handleDateSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const dateOptions = data.dateOptions ?? []
   const selectedService = data.selectedService
@@ -384,9 +365,9 @@ async function handleDateSelection(state: ConversationState, message: IncomingMe
 
   let slots: BookingSlot[]
   try {
-    slots = await getAvailableSlots(chosen.date, selectedService.durationMinutes)
+    slots = await getAvailableSlots(tenantId, chosen.date, selectedService.durationMinutes)
   } catch (error) {
-    console.error("[booking] Error loading slots", { date: chosen.date, error })
+    console.error("[booking] Error loading slots", { tenantId, date: chosen.date, error })
     return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
   }
 
@@ -408,7 +389,7 @@ async function handleDateSelection(state: ConversationState, message: IncomingMe
 // STEP 4: time slot → confirmation summary
 // ============================================================================
 
-async function handleTimeSelection(state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+async function handleTimeSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const slots = data.pendingSlots ?? []
   const index = Number(rawReplyText(message)) - 1
@@ -439,7 +420,7 @@ async function handleTimeSelection(state: ConversationState, message: IncomingMe
 // STEP 5: confirm → create the booking
 // ============================================================================
 
-async function handleConfirm(state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+async function handleConfirm(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const text = normalizedReplyText(message)
   const data = getBookingData(state)
 
@@ -459,15 +440,11 @@ async function handleConfirm(state: ConversationState, message: IncomingMessage)
   const supabase = getClientOrThrow()
 
   try {
-    const staff = await claimStaffForSlot(supabase, selectedDate, selectedSlot, selectedService.durationMinutes)
+    const staff = await claimStaffForSlot(supabase, tenantId, selectedDate, selectedSlot, selectedService.durationMinutes)
 
-    // Creates a minimal (phone-only) profile if this is a brand-new
-    // customer — no name/email required to book. Unlike Rands' wallet/VVIP
-    // flows, appointment booking is deliberately NOT gated behind full
-    // registration (see registration.ts's file header before reusing it
-    // elsewhere — it collects email and an alcohol age-gate that don't
-    // apply here).
-    const customer = await ensureCustomer(message.from)
+    // Minimal (phone-only) tenant_customers row if this is a brand-new
+    // customer — no name/email required to book.
+    const customer = await ensureCustomer(tenantId, message.from)
 
     const startTime = new Date(selectedSlot.start)
     const endTime = new Date(startTime.getTime() + selectedService.durationMinutes * 60_000)
@@ -475,6 +452,7 @@ async function handleConfirm(state: ConversationState, message: IncomingMessage)
 
     const { error } = await supabase.from("bookings").insert([
       {
+        tenant_id: tenantId,
         customer_id: customer.id,
         service_id: selectedService.id,
         staff_id: staff.id,
@@ -495,26 +473,22 @@ async function handleConfirm(state: ConversationState, message: IncomingMessage)
         bookingReference,
       }),
       buttons: customer.name ? CANCEL_BUTTON : [],
-      // If we don't have a name yet, stay in a lightweight "collect name"
-      // state — NOT the full registration.ts flow (no email, no age-gate).
-      // The booking itself is already confirmed either way; this only
-      // improves the record for the shop owner.
       nextState: customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
     }
   } catch (error) {
     if (error instanceof Error && error.message === "BOOKING_SLOT_NO_LONGER_AVAILABLE") {
       return { reply: slotStaleMessage(), buttons: [], nextState: null }
     }
-    console.error("[booking] Error creating booking", { error })
+    console.error("[booking] Error creating booking", { tenantId, error })
     return { reply: bookingErrorMessage(), buttons: [], nextState: null }
   }
 }
 
 // ============================================================================
-// POST-BOOKING: lightweight name collection (NOT registration.ts)
+// POST-BOOKING: lightweight name collection
 // ============================================================================
 
-async function handleNameCollection(message: IncomingMessage): Promise<ActionResult> {
+async function handleNameCollection(tenantId: string, message: IncomingMessage): Promise<ActionResult> {
   const name = rawReplyText(message)
 
   if (!name || name.length < 2) {
@@ -526,11 +500,9 @@ async function handleNameCollection(message: IncomingMessage): Promise<ActionRes
   }
 
   try {
-    await updateCustomer(message.from, { name })
+    await updateCustomer(tenantId, message.from, { name })
   } catch (error) {
-    // Non-fatal — the appointment is already booked either way; the name
-    // is just a nice-to-have for the shop's records.
-    console.error("[booking] Failed to save customer name", { error })
+    console.error("[booking] Failed to save customer name", { tenantId, error })
   }
 
   return {
@@ -544,20 +516,20 @@ async function handleNameCollection(message: IncomingMessage): Promise<ActionRes
 // STATE DISPATCH
 // ============================================================================
 
-async function handleState(state: ConversationState, message: IncomingMessage): Promise<ActionResult | null> {
+async function handleState(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult | null> {
   switch (state.state) {
     case BOOKING_STATE_ENTRY_CHOICE:
-      return handleEntryChoice(message)
+      return handleEntryChoice(tenantId, message)
     case BOOKING_STATE_SERVICE_SELECTION:
-      return handleServiceSelection(state, message)
+      return handleServiceSelection(tenantId, state, message)
     case BOOKING_STATE_DATE_SELECTION:
-      return handleDateSelection(state, message)
+      return handleDateSelection(tenantId, state, message)
     case BOOKING_STATE_TIME_SELECTION:
-      return handleTimeSelection(state, message)
+      return handleTimeSelection(tenantId, state, message)
     case BOOKING_STATE_CONFIRM:
-      return handleConfirm(state, message)
+      return handleConfirm(tenantId, state, message)
     case BOOKING_STATE_AWAITING_NAME:
-      return handleNameCollection(message)
+      return handleNameCollection(tenantId, message)
     default:
       return null
   }
