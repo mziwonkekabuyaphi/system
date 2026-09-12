@@ -16,7 +16,7 @@
 // also means no more splitting a nonexistent name/surname pair — it's
 // one full_name column.
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
 import { AdminView } from "./AdminView"
