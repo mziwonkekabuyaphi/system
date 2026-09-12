@@ -35,7 +35,7 @@ export function LoginForm() {
       return;
     }
 
-    const next = searchParams.get("next") || "/app";
+    const next = searchParams.get("next") || "/admin";
     router.push(next);
     router.refresh();
   }
