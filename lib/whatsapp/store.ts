@@ -11,7 +11,7 @@
  * server code (route handlers, server actions).
  */
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 
 const SUPABASE_UNCONFIGURED_ERROR = "Supabase server client is not configured."
