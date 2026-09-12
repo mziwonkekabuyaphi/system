@@ -9,7 +9,7 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
-export function TodayBookings({ bookings }: { bookings: AdminBooking[] }) {
+export function TodayBookings({ initialBookings }: { initialBookings: AdminBooking[] }) {
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   // Optimistic local overlay — page.tsx will confirm this on the next
@@ -30,13 +30,13 @@ export function TodayBookings({ bookings }: { bookings: AdminBooking[] }) {
     })
   }
 
-  if (bookings.length === 0) {
+  if (initialBookings.length === 0) {
     return <p className="text-[#8A8375]">Nothing on the book today.</p>
   }
 
   return (
     <ul className="divide-y divide-[#E6E1D4]">
-      {bookings.map((b) => {
+      {initialBookings.map((b) => {
         const cancelled = b.status === "cancelled" || locallyCancelled.has(b.id)
         return (
           <li key={b.id} className="flex items-start justify-between gap-4 py-4">
