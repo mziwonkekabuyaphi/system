@@ -41,7 +41,7 @@
  *   tenant_customers row outside these functions.
  */
 
-import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getSupabaseServerClient } from '@/lib/supabase/admin';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 // -----------------------------------------------------------------------------
