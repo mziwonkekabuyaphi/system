@@ -126,6 +126,7 @@ export async function toggleServiceActive(id: string, active: boolean): Promise<
 }
 
 
+
 // ============================================================================
 // Queue
 // ============================================================================
@@ -152,7 +153,7 @@ export async function markQueueEntryDone(id: string): Promise<ActionResult> {
 
   const { error: updateError } = await supabase
     .from("queue_entries")
-    .update({ status: "done", done_at: new Date().toISOString() })
+    .update({ status: "done", completed_at: new Date().toISOString() })
     .eq("id", id)
     .eq("tenant_id", tenantId)
 
