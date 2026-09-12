@@ -19,7 +19,7 @@
 
 import { revalidatePath } from "next/cache"
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 
