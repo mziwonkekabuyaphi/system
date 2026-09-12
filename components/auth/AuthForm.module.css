@@ -1,1 +1,120 @@
 /* AuthForm styles */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  color: var(--qless-ink-soft);
+}
+
+.field input {
+  appearance: none;
+  border: none;
+  border-bottom: 1.5px solid var(--qless-line);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.55rem 0.1rem;
+  font-size: 1rem;
+  font-family: var(--qless-font-body);
+  color: var(--qless-ink);
+  transition: border-color 0.15s ease;
+}
+
+.field input::placeholder {
+  color: rgba(23, 26, 31, 0.35);
+}
+
+.field input:hover {
+  border-bottom-color: var(--qless-amber-dim);
+}
+
+.field input:focus {
+  outline: none;
+  border-bottom-color: var(--qless-focus);
+  box-shadow: 0 1.5px 0 0 var(--qless-focus);
+}
+
+.field input[aria-invalid="true"] {
+  border-bottom-color: var(--qless-error);
+}
+
+.submit {
+  margin-top: 0.5rem;
+  border: none;
+  border-radius: 3px;
+  padding: 0.8rem 1.25rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--qless-navy-deep);
+  background: var(--qless-amber);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.05s ease;
+}
+
+.submit:hover:not(:disabled) {
+  background: var(--qless-amber-dim);
+}
+
+.submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.submit:focus-visible {
+  outline: 2px solid var(--qless-focus);
+  outline-offset: 2px;
+}
+
+.submit:disabled {
+  background: var(--qless-line);
+  color: var(--qless-ink-soft);
+  cursor: not-allowed;
+}
+
+.error {
+  margin: -0.5rem 0 0;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--qless-error);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--qless-error);
+}
+
+.success {
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--qless-success);
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: var(--qless-ink);
+}
+
+.success strong {
+  color: var(--qless-navy);
+}
+
+.footerLine {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--qless-ink-soft);
+}
+
+.footerLine a {
+  color: var(--qless-navy);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--qless-amber);
+  text-underline-offset: 3px;
+}
+
+.footerLine a:hover {
+  color: var(--qless-focus);
+}
