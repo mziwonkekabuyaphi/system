@@ -8,9 +8,10 @@
     "start": "next start",
     "lint": "next lint"
   },
-  "dependencies": {
+    "dependencies": {
     "@ai-sdk/openai": "^4.0.18",
     "@resvg/resvg-js": "^2.6.2",
+    "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.108.2",
     "ai": "^7.0.8",
     "next": "^16.0.0",
