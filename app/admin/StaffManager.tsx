@@ -5,7 +5,7 @@ import { useState, useTransition, type FormEvent } from "react"
 import { addStaff, toggleStaffActive } from "./actions"
 import type { AdminStaff } from "./types"
 
-export function StaffManager({ staff }: { staff: AdminStaff[] }) {
+export function StaffManager({ staff: staffMembers }: { staff: AdminStaff[] }) {
   const [name, setName] = useState("")
   const [isAdding, startAdd] = useTransition()
   const [togglingId, setTogglingId] = useState<string | null>(null)
