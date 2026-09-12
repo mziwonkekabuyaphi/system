@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SignupForm } from "@/components/auth/SignupForm";
 
@@ -11,7 +12,9 @@ export default function SignupPage() {
       heading="Create your account"
       subheading="Start with your own sign-in — you can create or join a business next."
     >
-      <SignupForm />
+      <Suspense fallback={null}>
+        <SignupForm />
+      </Suspense>
     </AuthShell>
   );
 }
