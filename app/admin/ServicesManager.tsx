@@ -84,7 +84,7 @@ function ServiceRow({ service }: { service: AdminService }) {
   )
 }
 
-export function ServicesManager({ services }: { services: AdminService[] }) {
+export function ServicesManager({ initialServices: services }: { initialServices: AdminService[] }) {
   const [name, setName] = useState("")
   const [price, setPrice] = useState("")
   const [duration, setDuration] = useState("")
