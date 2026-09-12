@@ -41,7 +41,7 @@
  * ahead, no parallelism awareness).
  */
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
