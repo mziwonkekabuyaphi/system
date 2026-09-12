@@ -11,7 +11,7 @@
  * duration_minutes, active.
  */
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
 export interface CatalogService {
   id: string
