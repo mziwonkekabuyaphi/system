@@ -1,4 +1,4 @@
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
 /**
  * Free-form payload attached to a conversation state.
