@@ -26,7 +26,7 @@
 import { notFound } from "next/navigation"
 import { Manrope } from "next/font/google"
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
 import { KioskApp } from "@/components/kiosk/KioskApp"
 
