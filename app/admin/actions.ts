@@ -125,6 +125,58 @@ export async function toggleServiceActive(id: string, active: boolean): Promise<
   return { ok: true }
 }
 
+
+// ============================================================================
+// Queue
+// ============================================================================
+
+export async function callQueueEntry(id: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  const { error: updateError } = await supabase
+    .from("queue_entries")
+    .update({ status: "called", called_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+
+  if (updateError) return { ok: false, error: updateError.message }
+
+  revalidatePath("/admin")
+  return { ok: true }
+}
+
+export async function markQueueEntryDone(id: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  const { error: updateError } = await supabase
+    .from("queue_entries")
+    .update({ status: "done", done_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+
+  if (updateError) return { ok: false, error: updateError.message }
+
+  revalidatePath("/admin")
+  return { ok: true }
+}
+
+export async function removeFromQueue(id: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  const { error: deleteError } = await supabase
+    .from("queue_entries")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+
+  if (deleteError) return { ok: false, error: deleteError.message }
+
+  revalidatePath("/admin")
+  return { ok: true }
+}
 // ============================================================================
 // Staff
 // ============================================================================
