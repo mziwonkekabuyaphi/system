@@ -15,9 +15,18 @@
  * clear, tenant-identified error rather than silently sending with an
  * empty/undefined Authorization header (which would otherwise surface as
  * a confusing 401 from Meta with no indication of which tenant caused it).
+ *
+ * PHONE NORMALIZATION: now delegates to lib/utils/phone.ts's
+ * normalizePhoneNumber() instead of keeping its own private copy
+ * (previously `normalizeWhatsAppNumber`, defined only in this file).
+ * tenant-customer.ts needed the exact same SA-specific rule to keep kiosk
+ * and WhatsApp customers from splitting into two rows — rather than
+ * copy-pasting the regex a second time and risking the two drifting
+ * apart, both files now import the one implementation.
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { normalizePhoneNumber } from "@/lib/utils/phone"
 
 const GRAPH_API_VERSION = "v21.0"
 
@@ -79,21 +88,6 @@ async function getTenantCredentials(tenantId: string): Promise<TenantWhatsAppCre
   return credentials
 }
 
-/**
- * Normalizes a phone number to the E.164-without-"+" format the WhatsApp
- * Cloud API requires. Unchanged from the single-tenant version — still
- * South-Africa-specific (leading "0" -> "27"); see the original file's
- * note if this ever needs to support other countries.
- */
-function normalizeWhatsAppNumber(raw: string): string {
-  const digits = raw.replace(/\D/g, "")
-
-  if (digits.startsWith("27")) return digits
-  if (digits.startsWith("0")) return `27${digits.slice(1)}`
-
-  return digits
-}
-
 function graphMessagesUrl(phoneNumberId: string): string {
   return `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`
 }
@@ -114,7 +108,7 @@ async function logAndThrowGraphError(kind: string, response: Response, to: strin
  */
 export async function sendWhatsAppTextMessage(tenantId: string, to: string, body: string): Promise<void> {
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
-  const normalizedTo = normalizeWhatsAppNumber(to)
+  const normalizedTo = normalizePhoneNumber(to)
 
   const response = await fetch(graphMessagesUrl(phoneNumberId), {
     method: "POST",
@@ -146,7 +140,7 @@ export async function sendWhatsAppImageMessage(
   caption?: string,
 ): Promise<void> {
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
-  const normalizedTo = normalizeWhatsAppNumber(to)
+  const normalizedTo = normalizePhoneNumber(to)
 
   const response = await fetch(graphMessagesUrl(phoneNumberId), {
     method: "POST",
@@ -194,7 +188,7 @@ export async function sendWhatsAppListMessage(
   sections: WhatsAppListSection[],
 ): Promise<void> {
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
-  const normalizedTo = normalizeWhatsAppNumber(to)
+  const normalizedTo = normalizePhoneNumber(to)
 
   const truncatedButtonText = buttonText.substring(0, 20)
 
@@ -258,7 +252,7 @@ export async function sendWhatsAppListMessage(
  */
 export async function sendWhatsAppButtonsMessage(tenantId: string, to: string, body: string, buttons: string[]): Promise<void> {
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
-  const normalizedTo = normalizeWhatsAppNumber(to)
+  const normalizedTo = normalizePhoneNumber(to)
 
   const seen = new Set<string>()
   const uniqueButtons: string[] = []
