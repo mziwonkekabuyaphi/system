@@ -25,7 +25,7 @@
  * apart, both files now import the one implementation.
  */
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { normalizePhoneNumber } from "@/lib/utils/phone"
 
 const GRAPH_API_VERSION = "v21.0"
