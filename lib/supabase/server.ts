@@ -1,28 +1,13 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-export async function getSupabaseServerClient() {
-  const cookieStore = await cookies();
-
-  return createServerClient(
+/**
+ * Server-only Supabase client using the service-role key.
+ * Bypasses RLS, so every query must be explicitly scoped by tenant_id.
+ * Never import this into client components — the service key would leak.
+ */
+export function getSupabaseServerClient() {
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // setAll called from a Server Component — safe to ignore
-            // because middleware refreshes the session on every request.
-          }
-        },
-      },
-    }
-  );
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 }
