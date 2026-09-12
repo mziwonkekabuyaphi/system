@@ -30,15 +30,9 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Gate anything under /app (your tenant admin shell) or /admin (the
-  // WhatsApp-booking module, mounted separately from the shell) behind a
-  // session. This is an early, cheap rejection at the edge — the real
-  // enforcement for /admin still lives in layout.tsx's
-  // requireTenantMember(), which additionally checks for an active
-  // tenant_members row, not just a signed-in user. Keep both: this check
-  // only knows "is there a session," not "is there a tenant."
-  const gatedPrefixes = ["/app", "/admin"]
-  if (!user && gatedPrefixes.some((prefix) => request.nextUrl.pathname.startsWith(prefix))) {
+  // Gate /admin behind a session. The real enforcement for tenant
+  // membership lives in app/admin/layout.tsx's requireTenantMember().
+  if (!user && request.nextUrl.pathname.startsWith("/admin")) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("next", request.nextUrl.pathname);
