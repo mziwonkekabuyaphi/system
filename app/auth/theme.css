@@ -1,1 +1,40 @@
-/* Auth theme */
+/* Auth theme — QLess */
+
+.qless-auth-page {
+  --qless-navy: #131b2e;
+  --qless-navy-deep: #0c1220;
+  --qless-amber: #f5a623;
+  --qless-amber-dim: #c97f12;
+  --qless-paper: #faf7f0;
+  --qless-paper-dim: #f2eee3;
+  --qless-line: #e4ddc9;
+  --qless-ink: #171a1f;
+  --qless-ink-soft: rgba(23, 26, 31, 0.62);
+  --qless-error: #b3402a;
+  --qless-success: #3f7a56;
+  --qless-focus: #2557a7;
+
+  --qless-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --qless-font-body: "Inter", -apple-system, "Segoe UI", sans-serif;
+
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  min-height: 100vh;
+  background: var(--qless-paper);
+  color: var(--qless-ink);
+  font-family: var(--qless-font-body);
+}
+
+@media (max-width: 860px) {
+  .qless-auth-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qless-auth-page * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
