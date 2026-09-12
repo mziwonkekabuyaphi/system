@@ -45,7 +45,7 @@
 
 import crypto from "node:crypto"
 
-import { getSupabaseServerClient } from "@/lib/supabase/server"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { RoutedIntent } from "@/lib/whatsapp/intent-router"
