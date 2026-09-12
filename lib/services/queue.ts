@@ -10,6 +10,15 @@
  * file only owns state transitions and data access, same convention as
  * booking.ts.
  *
+ * KIOSK REFACTOR (new): the "join and get position" logic that used to
+ * live inline inside handleServiceSelection() is now its own exported
+ * function, joinQueue(). handleServiceSelection() calls it and builds
+ * the WhatsApp reply around the result. The kiosk's Server Action calls
+ * the exact same function — one source of truth for what "join the
+ * queue" means, so a kiosk walk-in and a WhatsApp walk-in land in
+ * `queue_entries` identically and both get an accurate position/ETA
+ * computed the same way.
+ *
  * What changed for multi-tenancy (vs the version this replaces):
  *   1. `startQueueFlow` and `handleState` now take `tenantId` as their
  *      first argument (matching the StatefulService/IntentService shape
@@ -39,7 +48,7 @@ import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 
-import { ensureCustomer } from "@/lib/services/tenant-customer"
+import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 
 import {
@@ -103,10 +112,11 @@ async function startQueueFlow(tenantId: string): Promise<ActionResult> {
 }
 
 // ============================================================================
-// STEP: service selection → join immediately
+// SHARED CORE — join + position. Called by handleServiceSelection
+// (WhatsApp) AND the kiosk's Server Action.
 // ============================================================================
 
-interface QueuePositionInfo {
+export interface QueuePositionInfo {
   position: number
   etaMinutes: number
 }
@@ -133,6 +143,55 @@ async function getQueuePosition(supabase: SupabaseClient, tenantId: string, join
   return { position: ahead.length + 1, etaMinutes }
 }
 
+export interface JoinQueueParams {
+  /** The full catalog entry, not just an id — both callers already have
+   *  it in hand. */
+  service: CatalogService
+  /** Raw or normalized — ensureCustomer() normalizes internally. */
+  phone: string
+}
+
+export interface JoinQueueResult {
+  customer: Customer
+  position: number
+  etaMinutes: number
+}
+
+/**
+ * Creates the tenant_customers row if needed, inserts the queue_entries
+ * row, and returns this customer's position + naive ETA. The one place a
+ * `queue_entries` row gets created from a customer-facing flow.
+ */
+export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
+  const { service, phone } = params
+  const supabase = getClientOrThrow()
+
+  // Same minimal (phone-only) customer creation as booking.ts's
+  // createBooking() — queueing isn't gated behind full registration
+  // either.
+  const customer = await ensureCustomer(tenantId, phone)
+  const joinedAt = new Date().toISOString()
+
+  const { error } = await supabase.from("queue_entries").insert([
+    {
+      tenant_id: tenantId,
+      customer_id: customer.id,
+      service_id: service.id,
+      status: "waiting",
+      joined_at: joinedAt,
+    },
+  ])
+  if (error) throw new Error(error.message)
+
+  const { position, etaMinutes } = await getQueuePosition(supabase, tenantId, joinedAt)
+
+  return { customer, position, etaMinutes }
+}
+
+// ============================================================================
+// STEP: service selection → join immediately
+// ============================================================================
+
 async function handleServiceSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getQueueData(state)
   const services = data.services ?? []
@@ -143,27 +202,9 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
   }
 
   const selectedService = services[index]
-  const supabase = getClientOrThrow()
 
   try {
-    // Same minimal (phone-only) customer creation as booking.ts's
-    // handleConfirm — queueing isn't gated behind full registration
-    // either.
-    const customer = await ensureCustomer(tenantId, message.from)
-    const joinedAt = new Date().toISOString()
-
-    const { error } = await supabase.from("queue_entries").insert([
-      {
-        tenant_id: tenantId,
-        customer_id: customer.id,
-        service_id: selectedService.id,
-        status: "waiting",
-        joined_at: joinedAt,
-      },
-    ])
-    if (error) throw new Error(error.message)
-
-    const { position, etaMinutes } = await getQueuePosition(supabase, tenantId, joinedAt)
+    const { position, etaMinutes } = await joinQueue(tenantId, { service: selectedService, phone: message.from })
 
     return {
       reply: joinedQueueMessage(selectedService, position, etaMinutes),

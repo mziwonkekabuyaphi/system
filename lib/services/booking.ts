@@ -9,6 +9,18 @@
  * messages/booking.ts imports it as a type (slots/dates are booking's
  * own data shape, not copy).
  *
+ * KIOSK REFACTOR (new): the actual "claim a slot and insert" logic that
+ * used to live inline inside handleConfirm() is now its own exported
+ * function, createBooking(). handleConfirm() calls it and does nothing
+ * else with the DB itself. This is the single source of truth for what
+ * "create a booking" means — the kiosk's Server Action calls the exact
+ * same function, so there's no way for WhatsApp and kiosk bookings to
+ * drift apart on staff-claiming, reference generation, or insert shape.
+ * Likewise buildDateOptions() and getAvailableSlots() are now exported:
+ * the kiosk's date/time screens need the identical "today + next 6 days"
+ * and "which slots are actually free" logic WhatsApp uses, not a
+ * lookalike reimplementation.
+ *
  * What changed for multi-tenancy (vs the version this replaces):
  *   1. Every exported function and internal data-access helper now takes
  *      `tenantId` as its first argument, and every raw Supabase query
@@ -22,10 +34,8 @@
  *      full_name` under the hood — still called `.name` on the returned
  *      object, so nothing downstream needed to change.
  *   3. `getBookableServices` (services-catalog.ts) now also needs a
- *      `tenantId` argument — that file wasn't part of this rewrite pass,
- *      so it's called here as `getBookableServices(tenantId)`. If that
- *      file hasn't been updated to accept it yet, this won't compile
- *      until it is.
+ *      `tenantId` argument — see that file for the fresh implementation
+ *      this now calls.
  *
  * ASSUMPTIONS — unchanged from the original:
  *   - `services`/`staff`/`bookings` tables, shop hours as a flat
@@ -43,7 +53,7 @@ import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 
-import { ensureCustomer, updateCustomer } from "@/lib/services/tenant-customer"
+import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
 
@@ -88,6 +98,12 @@ const SHOP_CLOSE_HOUR = 18 // 18:00
 const SLOT_INTERVAL_MINUTES = 30 // granularity of offered start times
 const DAYS_AHEAD_OFFERED = 6 // "today" + next 6 days
 
+/** Thrown by createBooking() when nobody's free anymore by confirm time.
+ *  Exported so callers outside this file (the kiosk action) can match on
+ *  it without string-comparing error.message. handleConfirm below still
+ *  checks the message string too, for zero behavior change there. */
+export const BOOKING_SLOT_NO_LONGER_AVAILABLE = "BOOKING_SLOT_NO_LONGER_AVAILABLE"
+
 function getClientOrThrow(): SupabaseClient {
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Supabase server client is unavailable")
@@ -109,7 +125,9 @@ function rawReplyText(message: IncomingMessage): string {
 type BookingServiceOffer = CatalogService
 
 /** Exported: messages/booking.ts imports this as a type for its message
- * builder signatures (slotsListMessage, confirmationMessage). */
+ * builder signatures (slotsListMessage, confirmationMessage), and the
+ * kiosk's Server Actions import it as the shape returned by
+ * getAvailableSlots() / passed into createBooking(). */
 export interface BookingSlot {
   /** ISO start time, e.g. "2026-09-15T10:30:00.000Z" */
   start: string
@@ -191,8 +209,12 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
  * Generates candidate slots for the date at SLOT_INTERVAL_MINUTES
  * granularity within shop hours, keeping only slots where at least one
  * of THIS TENANT's active staff is free for the full service duration.
+ *
+ * Exported: the kiosk's time-selection screen calls this directly so
+ * it's checking the exact same availability WhatsApp would show for the
+ * same tenant/date/service, not a second calculation that could disagree.
  */
-async function getAvailableSlots(tenantId: string, dateISO: string, durationMinutes: number): Promise<BookingSlot[]> {
+export async function getAvailableSlots(tenantId: string, dateISO: string, durationMinutes: number): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
   const staff = await getActiveStaff(supabase, tenantId)
   if (staff.length === 0) return []
@@ -247,10 +269,80 @@ async function claimStaffForSlot(
   })
 
   if (!freeStaff) {
-    throw new Error("BOOKING_SLOT_NO_LONGER_AVAILABLE")
+    throw new Error(BOOKING_SLOT_NO_LONGER_AVAILABLE)
   }
 
   return freeStaff
+}
+
+// ============================================================================
+// SHARED CORE — claim + insert. Called by handleConfirm (WhatsApp) AND
+// the kiosk's Server Action. This is the ONE place a `bookings` row gets
+// created from a customer-facing flow.
+// ============================================================================
+
+export interface CreateBookingParams {
+  /** The full catalog entry, not just an id — both callers already have
+   *  it in hand (WhatsApp from conversation state, kiosk from its own
+   *  services fetch), and durationMinutes is needed for the claim check
+   *  regardless. */
+  service: CatalogService
+  dateISO: string
+  slot: BookingSlot
+  /** Raw or normalized — ensureCustomer() normalizes internally, so
+   *  either is safe to pass here. */
+  phone: string
+}
+
+export interface CreateBookingResult {
+  customer: Customer
+  bookingReference: string
+  startTime: string
+  endTime: string
+}
+
+/**
+ * Claims a staff member for the slot and inserts the `bookings` row.
+ * Throws an Error with message BOOKING_SLOT_NO_LONGER_AVAILABLE if the
+ * slot was taken between when it was offered and now — callers should
+ * catch and show a "pick another time" message rather than a generic
+ * error, since it's an expected race, not a bug.
+ */
+export async function createBooking(tenantId: string, params: CreateBookingParams): Promise<CreateBookingResult> {
+  const { service, dateISO, slot, phone } = params
+  const supabase = getClientOrThrow()
+
+  const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, service.durationMinutes)
+
+  // Minimal (phone-only) tenant_customers row if this is a brand-new
+  // customer — no name/email required to book, on either channel.
+  const customer = await ensureCustomer(tenantId, phone)
+
+  const startTime = new Date(slot.start)
+  const endTime = new Date(startTime.getTime() + service.durationMinutes * 60_000)
+  const bookingReference = crypto.randomUUID().slice(0, 8).toUpperCase()
+
+  const { error } = await supabase.from("bookings").insert([
+    {
+      tenant_id: tenantId,
+      customer_id: customer.id,
+      service_id: service.id,
+      staff_id: staff.id,
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+      status: "confirmed",
+      booking_reference: bookingReference,
+    },
+  ])
+
+  if (error) throw new Error(error.message)
+
+  return {
+    customer,
+    bookingReference,
+    startTime: startTime.toISOString(),
+    endTime: endTime.toISOString(),
+  }
 }
 
 // ============================================================================
@@ -306,7 +398,12 @@ async function presentServices(tenantId: string): Promise<ActionResult> {
 // STEP 2: service → date options
 // ============================================================================
 
-function buildDateOptions(): Array<{ date: string; label: string }> {
+/**
+ * Exported: the kiosk's date-selection screen calls this directly so
+ * "today, tomorrow, next 6 days" is computed identically for both
+ * channels — no separate date-formatting logic to keep in sync.
+ */
+export function buildDateOptions(): Array<{ date: string; label: string }> {
   const options: Array<{ date: string; label: string }> = []
   const now = new Date()
 
@@ -437,46 +534,26 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     return { reply: missingBookingDataMessage(), buttons: [], nextState: null }
   }
 
-  const supabase = getClientOrThrow()
-
   try {
-    const staff = await claimStaffForSlot(supabase, tenantId, selectedDate, selectedSlot, selectedService.durationMinutes)
-
-    // Minimal (phone-only) tenant_customers row if this is a brand-new
-    // customer — no name/email required to book.
-    const customer = await ensureCustomer(tenantId, message.from)
-
-    const startTime = new Date(selectedSlot.start)
-    const endTime = new Date(startTime.getTime() + selectedService.durationMinutes * 60_000)
-    const bookingReference = crypto.randomUUID().slice(0, 8).toUpperCase()
-
-    const { error } = await supabase.from("bookings").insert([
-      {
-        tenant_id: tenantId,
-        customer_id: customer.id,
-        service_id: selectedService.id,
-        staff_id: staff.id,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        status: "confirmed",
-        booking_reference: bookingReference,
-      },
-    ])
-
-    if (error) throw new Error(error.message)
+    const result = await createBooking(tenantId, {
+      service: selectedService,
+      dateISO: selectedDate,
+      slot: selectedSlot,
+      phone: message.from,
+    })
 
     return {
       reply: bookingConfirmedMessage({
-        customerName: customer.name,
+        customerName: result.customer.name,
         serviceName: selectedService.name,
         slotLabel: selectedSlot.label,
-        bookingReference,
+        bookingReference: result.bookingReference,
       }),
-      buttons: customer.name ? CANCEL_BUTTON : [],
-      nextState: customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
+      buttons: result.customer.name ? CANCEL_BUTTON : [],
+      nextState: result.customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
     }
   } catch (error) {
-    if (error instanceof Error && error.message === "BOOKING_SLOT_NO_LONGER_AVAILABLE") {
+    if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
       return { reply: slotStaleMessage(), buttons: [], nextState: null }
     }
     console.error("[booking] Error creating booking", { tenantId, error })
