@@ -3,7 +3,7 @@
 
 /**
  * Settings tab actions — General info / Kiosk toggle / Private Label /
- * Booking / Queue / Messages.
+ * Booking / Queue / Messages / Business Hours.
  *
  * Same shape as actions.ts and inbox-actions.ts: requireTenantMember() is
  * the auth+membership gate (redirects to /login if there's no session or
@@ -31,6 +31,16 @@
  * straight out of booking_settings, so flipping the toggle takes effect on
  * its next run (within a minute), no revalidation needed on the Postgres
  * side, only on the Next.js cache below.
+ *
+ * updateBusinessHours writes business_hours (one row per day, 0=Sunday..
+ * 6=Saturday). These rows aren't just for display — a DB trigger on
+ * queue_entries rejects any walk_in insert when is_tenant_open_now(tenant)
+ * is false, and a DB trigger on bookings rejects any insert whose
+ * start_time falls outside that day's hours. So this form is the actual
+ * control for what the kiosk and WhatsApp bot are allowed to accept, not
+ * just a label shown to customers. is_closed=true requires open/close to
+ * be null; open<close is enforced by a DB check constraint, validated here
+ * first so the error reads cleanly instead of as a raw Postgres message.
  */
 
 import { revalidatePath } from "next/cache"
@@ -371,6 +381,51 @@ export async function updateMessageSettings(input: {
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Business hours — business_hours (one row per day_of_week, 0=Sunday..6=Saturday)
+// ---------------------------------------------------------------------------
+export async function updateBusinessHours(
+  days: Array<{
+    dayOfWeek: number
+    isClosed: boolean
+    openTime: string | null
+    closeTime: string | null
+  }>
+): Promise<ActionResult> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+
+    for (const day of days) {
+      if (!day.isClosed) {
+        if (!day.openTime || !day.closeTime) {
+          return { success: false, error: "Enter both an open and close time for every open day." }
+        }
+        if (day.openTime >= day.closeTime) {
+          return { success: false, error: "Open time must be before close time." }
+        }
+      }
+    }
+
+    const rows = days.map((day) => ({
+      tenant_id: tenantId,
+      day_of_week: day.dayOfWeek,
+      is_closed: day.isClosed,
+      open_time: day.isClosed ? null : day.openTime,
+      close_time: day.isClosed ? null : day.closeTime,
+      updated_at: new Date().toISOString(),
+    }))
+
+    const { error } = await supabase.from("business_hours").upsert(rows, { onConflict: "tenant_id,day_of_week" })
 
     if (error) return { success: false, error: error.message }
 
