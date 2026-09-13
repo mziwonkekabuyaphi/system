@@ -18,19 +18,25 @@
 //
 // Settings tab: plan lives on tenants (manually flipped in Supabase until
 // billing is wired up), general info on tenant_settings, and branding
-// (incl. remove_powered_by, gated to plan = 'business') on tenant_branding.
-// The kiosk toggle reads/writes tenant_modules for the 'kiosk' module row.
-// Booking / Queue / Messages tabs read booking_settings / queue_settings /
-// message_settings — one row per tenant, same shape as tenant_settings.
-// booking_settings.unify_with_queue is what the promote_bookings_to_queue()
-// pg_cron job (runs every minute in Postgres) checks per tenant before
-// promoting a confirmed booking into queue_entries.
+// (incl. remove_powered_by, gated to plan = 'business', plus the kiosk
+// config fields — tagline / idle+confirmation refresh / registration
+// type) on tenant_branding. The kiosk toggle reads/writes tenant_modules
+// for the 'kiosk' module row. Booking / Queue / Messages tabs read
+// booking_settings / queue_settings / message_settings — one row per
+// tenant, same shape as tenant_settings. booking_settings.unify_with_queue
+// is what the promote_bookings_to_queue() pg_cron job (runs every minute
+// in Postgres) checks per tenant before promoting a confirmed booking
+// into queue_entries.
 //
 // business_hours (Settings > Business Info) is one row per day_of_week
 // (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
 // bookings and queue_entries enforce them (see the business_hours_
 // enforcement migration), so this is the actual gate on what the kiosk and
 // WhatsApp bot are allowed to accept, not only a label shown to customers.
+//
+// tenants.slug is now also fetched here (alongside plan) purely so the
+// Settings > Kiosk tab can render the public Kiosk URL and its QR code —
+// it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -43,6 +49,7 @@ import type {
   AdminBusinessHours,
   AdminConversationSummary,
   AdminInboxStats,
+  AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
   AdminQueueEntry,
@@ -151,14 +158,20 @@ async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<Ad
 // SETTINGS
 // ============================================================================
 
+const DEFAULT_IDLE_REFRESH_SECONDS = 75
+const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
+const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
+
 async function getSettingsData(
   supabase: ServerClient,
   tenantId: string,
 ): Promise<{
   plan: AdminPlan
+  slug: string
   settings: AdminTenantSettings
   branding: AdminBranding
   kioskEnabled: boolean
+  kioskSettings: AdminKioskSettings
   bookingSettings: AdminBookingSettings
   queueSettings: AdminQueueSettings
   messageSettings: AdminMessageSettings
@@ -174,7 +187,7 @@ async function getSettingsData(
     messageSettingsResult,
     businessHoursResult,
   ] = await Promise.all([
-    supabase.from("tenants").select("plan").eq("id", tenantId).single(),
+    supabase.from("tenants").select("plan, slug").eq("id", tenantId).single(),
     supabase
       .from("tenant_settings")
       .select("timezone, currency, contact_email, contact_phone, address")
@@ -182,7 +195,9 @@ async function getSettingsData(
       .single(),
     supabase
       .from("tenant_branding")
-      .select("display_name, logo_url, primary_color, secondary_color, remove_powered_by")
+      .select(
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type",
+      )
       .eq("tenant_id", tenantId)
       .single(),
     // tenant_modules has no direct tenant_id -> modules.key path, so this
@@ -232,8 +247,13 @@ async function getSettingsData(
   if (businessHoursResult.error)
     throw new Error(`Failed to load business hours: ${businessHoursResult.error.message}`)
 
+  const registrationType = ["booking", "queue", "both"].includes(brandingResult.data.registration_type)
+    ? (brandingResult.data.registration_type as AdminKioskSettings["registrationType"])
+    : DEFAULT_REGISTRATION_TYPE
+
   return {
     plan: tenantResult.data.plan as AdminPlan,
+    slug: tenantResult.data.slug as string,
     settings: {
       timezone: settingsResult.data.timezone,
       currency: settingsResult.data.currency,
@@ -249,6 +269,13 @@ async function getSettingsData(
       removePoweredBy: brandingResult.data.remove_powered_by,
     },
     kioskEnabled: kioskResult.data?.enabled ?? false,
+    kioskSettings: {
+      tagline: brandingResult.data.tagline,
+      idleRefreshSeconds: brandingResult.data.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
+      confirmationRefreshSeconds:
+        brandingResult.data.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
+      registrationType,
+    },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
       queueLeadTimeMinutes: bookingSettingsResult.data.queue_lead_time_minutes,
@@ -422,9 +449,11 @@ export default async function AdminPage() {
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
+      tenantSlug={settingsData.slug}
       initialTenantSettings={settingsData.settings}
       initialBranding={settingsData.branding}
       initialKioskEnabled={settingsData.kioskEnabled}
+      initialKioskSettings={settingsData.kioskSettings}
       initialBookingSettings={settingsData.bookingSettings}
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}
