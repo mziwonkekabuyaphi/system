@@ -14,6 +14,7 @@ import type {
   AdminBooking,
   AdminBookingSettings,
   AdminBranding,
+  AdminBusinessHours,
   AdminConversationSummary,
   AdminInboxStats,
   AdminMessageSettings,
@@ -125,6 +126,7 @@ export function AdminView({
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
+  initialBusinessHours,
 }: {
   initialBookings: AdminBooking[]
   initialQueue: AdminQueueEntry[]
@@ -139,6 +141,7 @@ export function AdminView({
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
+  initialBusinessHours: AdminBusinessHours
 }) {
   const [tab, setTab] = useState<Tab>("today")
   const [hovered, setHovered] = useState(false)
@@ -259,6 +262,7 @@ export function AdminView({
               initialBookingSettings={initialBookingSettings}
               initialQueueSettings={initialQueueSettings}
               initialMessageSettings={initialMessageSettings}
+              initialBusinessHours={initialBusinessHours}
             />
           )}
         </main>
