@@ -1,7 +1,7 @@
 // app/admin/SettingsManager.tsx
 "use client"
 
-import { useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 
 import {
   removeLogo,
@@ -10,6 +10,7 @@ import {
   updateBranding,
   updateBusinessHours,
   updateGeneralInfo,
+  updateKioskSettings,
   updateMessageSettings,
   updateQueueSettings,
   uploadLogo,
@@ -18,6 +19,7 @@ import type {
   AdminBookingSettings,
   AdminBranding,
   AdminBusinessHours,
+  AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
   AdminQueueSettings,
@@ -41,23 +43,48 @@ const SUB_TABS: Array<{ id: SubTab; label: string }> = [
   { id: "messages", label: "Messages" },
 ]
 
+// ---------------------------------------------------------------------------
+// Shared styling
+//
+// CONTRAST FIX: inputs previously had no explicit background, so a white
+// <input> sitting inside a white .bg-white card was basically invisible
+// except for a thin border — and once a Save/upload button hit
+// disabled:opacity-50 on a white background, it faded to almost nothing.
+// Every field/button below now has a resting background distinct from the
+// white cards, and disabled states use explicit muted colors instead of
+// opacity, so "off"/disabled never means "blends into the page."
+// ---------------------------------------------------------------------------
 const inputClass =
-  "w-full rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-900 focus:border-[#7A2E3A] focus:outline-none focus:ring-1 focus:ring-[#7A2E3A]"
+  "w-full rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 " +
+  "placeholder:text-stone-400 focus:border-[#7A2E3A] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#7A2E3A] " +
+  "disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
+
+const secondaryButtonClass =
+  "rounded-full border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 " +
+  "hover:bg-stone-50 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400 disabled:hover:bg-stone-100"
+
+const primaryButtonClass =
+  "rounded-full bg-[#7A2E3A] px-4 py-2 text-sm font-medium text-white hover:bg-[#651F2A] " +
+  "disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500"
 
 export function SettingsManager({
   initialPlan,
+  tenantSlug,
   initialSettings,
   initialBranding,
   initialKioskEnabled,
+  initialKioskSettings,
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
   initialBusinessHours,
 }: {
   initialPlan: AdminPlan
+  tenantSlug: string
   initialSettings: AdminTenantSettings
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
+  initialKioskSettings: AdminKioskSettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
@@ -73,8 +100,10 @@ export function SettingsManager({
             key={t.id}
             type="button"
             onClick={() => setSubTab(t.id)}
-            className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium ${
-              subTab === t.id ? "bg-stone-800 text-white" : "border border-stone-300 text-stone-600"
+            className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium ${
+              subTab === t.id
+                ? "border-stone-800 bg-stone-800 text-white"
+                : "border-stone-300 bg-white text-stone-600 hover:bg-stone-50"
             }`}
           >
             {t.label}
@@ -88,7 +117,15 @@ export function SettingsManager({
           <OpeningHoursPanel initial={initialBusinessHours} />
         </div>
       )}
-      {subTab === "kiosk" && <KioskPanel initialEnabled={initialKioskEnabled} />}
+      {subTab === "kiosk" && (
+        <KioskPanel
+          initialEnabled={initialKioskEnabled}
+          plan={initialPlan}
+          tenantSlug={tenantSlug}
+          initialBranding={initialBranding}
+          initialKioskSettings={initialKioskSettings}
+        />
+      )}
       {subTab === "private-label" && <PrivateLabelPanel plan={initialPlan} initial={initialBranding} />}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
       {subTab === "queue" && <QueueSettingsPanel initial={initialQueueSettings} />}
@@ -197,7 +234,7 @@ function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
 
       <div className="mt-4 space-y-2">
         {sorted.map((day) => (
-          <div key={day.dayOfWeek} className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-100 px-3 py-2">
+          <div key={day.dayOfWeek} className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2">
             <span className="w-24 shrink-0 text-sm font-medium text-stone-800">{DAY_LABELS[day.dayOfWeek]}</span>
 
             <label className="flex items-center gap-2 text-sm text-stone-600">
@@ -242,44 +279,249 @@ function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
 }
 
 // ---------------------------------------------------------------------------
-// Kiosk
+// Kiosk — the tenant's full remote control over their physical kiosk:
+// on/off, look & feel (shared with Private Label), the tagline copy, the
+// public URL + QR code customers can jump to, the two auto-refresh timers,
+// and which registration paths are publicly offered.
 // ---------------------------------------------------------------------------
-function KioskPanel({ initialEnabled }: { initialEnabled: boolean }) {
+function KioskPanel({
+  initialEnabled,
+  plan,
+  tenantSlug,
+  initialBranding,
+  initialKioskSettings,
+}: {
+  initialEnabled: boolean
+  plan: AdminPlan
+  tenantSlug: string
+  initialBranding: AdminBranding
+  initialKioskSettings: AdminKioskSettings
+}) {
   const [enabled, setEnabled] = useState(initialEnabled)
-  const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const [isTogglePending, startToggleTransition] = useTransition()
+  const [toggleError, setToggleError] = useState<string | null>(null)
 
   function handleToggle(next: boolean) {
     const previous = enabled
     setEnabled(next)
-    setError(null)
-    startTransition(async () => {
+    setToggleError(null)
+    startToggleTransition(async () => {
       const result = await setKioskEnabled(next)
       if (!result.success) {
         setEnabled(previous)
-        setError(result.error)
+        setToggleError(result.error)
       }
     })
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
-          <p className="text-sm text-stone-500">Enable the self-service kiosk for this location.</p>
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
+            <p className="text-sm text-stone-500">Enable the self-service kiosk for this location.</p>
+          </div>
+          <Toggle checked={enabled} disabled={isTogglePending} onChange={handleToggle} />
         </div>
-        <Toggle checked={enabled} disabled={isPending} onChange={handleToggle} />
+        {toggleError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{toggleError}</p>}
+        {!enabled && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            The kiosk is off — walk-ins won&apos;t see a booking flow at the URL below. Everything else on this tab
+            still saves, so you can set it up before switching it on.
+          </p>
+        )}
       </div>
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      <KioskUrlPanel tenantSlug={tenantSlug} />
+
+      <BrandingFields plan={plan} initial={initialBranding} title="Look &amp; feel" />
+
+      <KioskBehaviorPanel initial={initialKioskSettings} />
+    </div>
+  )
+}
+
+// ---- Kiosk URL + QR code ---------------------------------------------------
+
+function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [origin, setOrigin] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
+
+  const kioskUrl = origin ? `${origin}/kiosk/${tenantSlug}` : null
+
+  async function copyUrl() {
+    if (!kioskUrl) return
+    try {
+      await navigator.clipboard.writeText(kioskUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can be unavailable (e.g. insecure context) — the URL
+      // is already selectable in the input, so this just skips the toast.
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk URL</p>
+      <p className="text-sm text-stone-500">The registration URL used for your kiosk.</p>
+
+      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex-1 space-y-2">
+          <div className="flex gap-2">
+            <input className={inputClass} readOnly value={kioskUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
+            <button type="button" className={secondaryButtonClass} onClick={copyUrl} disabled={!kioskUrl}>
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <p className="text-xs text-stone-400">Print this on a table stand, or open it directly on the kiosk tablet.</p>
+        </div>
+
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+          {kioskUrl ? (
+            // Third-party QR generator — the kiosk URL isn't sensitive
+            // (it's the same link printed on a counter stand), so a hosted
+            // generator is fine here; swap for a self-hosted one if that
+            // changes.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(kioskUrl)}`}
+              alt="QR code linking to the kiosk"
+              width={160}
+              height={160}
+            />
+          ) : (
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-stone-400">Loading…</div>
+          )}
+          <span className="text-xs text-stone-500">Scan to continue on phone</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---- Idle / confirmation refresh + registration type -----------------------
+
+const REGISTRATION_TYPE_OPTIONS: Array<{
+  value: AdminKioskSettings["registrationType"]
+  title: string
+  description: string
+}> = [
+  { value: "both", title: "Booking and Queue", description: "Customers choose between booking a time or joining the walk-in queue." },
+  { value: "booking", title: "Booking Only", description: "Customers go straight into picking a date and time — no walk-in option." },
+  { value: "queue", title: "Queue Only", description: "Customers go straight into joining the walk-in queue — no booking option." },
+]
+
+function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
+  const [tagline, setTagline] = useState(initial.tagline ?? "")
+  const [idleRefreshSeconds, setIdleRefreshSeconds] = useState(initial.idleRefreshSeconds)
+  const [confirmationRefreshSeconds, setConfirmationRefreshSeconds] = useState(initial.confirmationRefreshSeconds)
+  const [registrationType, setRegistrationType] = useState(initial.registrationType)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const result = await updateKioskSettings({
+        tagline: tagline.trim() || null,
+        idleRefreshSeconds,
+        confirmationRefreshSeconds,
+        registrationType,
+      })
+      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
+    })
+  }
+
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk behavior</p>
+      <p className="text-sm text-stone-500">What the kiosk says and how it resets itself between customers.</p>
+
+      <div className="mt-4 space-y-4">
+        <FieldRow label="Tagline" hint='Shown under your shop name on the welcome screen. Defaults to "Tap anywhere to check in".'>
+          <input
+            className={inputClass}
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            placeholder="Tap anywhere to check in"
+            maxLength={80}
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Idle refresh time (seconds)"
+          hint="The time it takes before the kiosk automatically refreshes when no one has used it."
+        >
+          <input
+            type="number"
+            min={10}
+            max={600}
+            className={inputClass}
+            value={idleRefreshSeconds}
+            onChange={(e) => setIdleRefreshSeconds(Number(e.target.value))}
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Confirmation refresh time (seconds)"
+          hint="The time it takes before the kiosk redirects to the start page after displaying the confirmation page."
+        >
+          <input
+            type="number"
+            min={3}
+            max={120}
+            className={inputClass}
+            value={confirmationRefreshSeconds}
+            onChange={(e) => setConfirmationRefreshSeconds(Number(e.target.value))}
+          />
+        </FieldRow>
+
+        <div>
+          <span className="mb-1 block text-sm text-stone-600">Registration types allowed</span>
+          <p className="mb-2 text-xs text-stone-400">Choose what type of registration is publicly allowed.</p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {REGISTRATION_TYPE_OPTIONS.map((option) => {
+              const selected = registrationType === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRegistrationType(option.value)}
+                  aria-pressed={selected}
+                  className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                    selected
+                      ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                      : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                  }`}
+                >
+                  <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                    {option.title}
+                  </span>
+                  <span className="text-xs text-stone-500">{option.description}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <SaveRow isPending={isPending} onSave={save} message={message} />
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Private Label
+// Shared branding fields — display name, logo, colors, and (plan-gated)
+// remove-powered-by. Used by both the Kiosk tab and the Private Label tab
+// so the two can never drift: same state shape, same save action.
 // ---------------------------------------------------------------------------
-function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+function BrandingFields({ plan, initial, title }: { plan: AdminPlan; initial: AdminBranding; title: string }) {
   const [form, setForm] = useState({
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
@@ -359,7 +601,7 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Branding</p>
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</p>
         <p className="text-sm text-stone-500">How your shop appears on the kiosk and customer-facing pages.</p>
 
         <div className="mt-4 space-y-4">
@@ -387,7 +629,7 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isLogoPending}
-                    className="rounded-full border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+                    className={secondaryButtonClass}
                   >
                     {isLogoPending ? "Uploading…" : logoUrl ? "Change logo" : "Upload logo"}
                   </button>
@@ -396,7 +638,7 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
                       type="button"
                       onClick={handleRemoveLogo}
                       disabled={isLogoPending}
-                      className="rounded-full px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100 disabled:opacity-50"
+                      className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-300"
                     >
                       Remove
                     </button>
@@ -466,6 +708,14 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
       <SaveRow isPending={isPending} onSave={save} message={message} />
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Private Label — unchanged behavior, now just a thin wrapper around the
+// shared BrandingFields so it can never drift from what's on the Kiosk tab.
+// ---------------------------------------------------------------------------
+function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+  return <BrandingFields plan={plan} initial={initial} title="Branding" />
 }
 
 // ---------------------------------------------------------------------------
@@ -716,10 +966,11 @@ function MessageSettingsPanel({ initial }: { initial: AdminMessageSettings }) {
 // ---------------------------------------------------------------------------
 // Shared bits
 // ---------------------------------------------------------------------------
-function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm text-stone-600">{label}</span>
+      <span className="mb-1 block text-sm font-medium text-stone-700">{label}</span>
+      {hint && <span className="mb-1.5 block text-xs text-stone-400">{hint}</span>}
       {children}
     </label>
   )
@@ -747,7 +998,7 @@ function ColorField({
       <div className="flex items-center gap-2">
         <input
           type="color"
-          className="h-10 w-10 shrink-0 rounded-lg border border-stone-300 p-0.5"
+          className="h-10 w-10 shrink-0 rounded-lg border border-stone-300 bg-white p-0.5"
           value={isValid ? draft : value}
           onChange={(e) => {
             setDraft(e.target.value)
@@ -756,7 +1007,7 @@ function ColorField({
         />
         <input
           type="text"
-          className={`${inputClass} ${!isValid ? "border-red-300" : ""}`}
+          className={`${inputClass} ${!isValid ? "border-red-300 bg-red-50" : ""}`}
           value={draft}
           onChange={(e) => commit(e.target.value)}
           placeholder="#7A2E3A"
@@ -777,12 +1028,7 @@ function SaveRow({
 }) {
   return (
     <div className="mt-4 flex items-center gap-3 border-t border-stone-100 pt-4">
-      <button
-        type="button"
-        onClick={onSave}
-        disabled={isPending}
-        className="rounded-full bg-[#7A2E3A] px-4 py-2 text-sm font-medium text-white hover:bg-[#651F2A] disabled:opacity-50"
-      >
+      <button type="button" onClick={onSave} disabled={isPending} className={primaryButtonClass}>
         {isPending ? "Saving…" : "Save"}
       </button>
       {message && (
@@ -808,12 +1054,12 @@ function Toggle({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-        checked ? "bg-[#7A2E3A]" : "bg-stone-300"
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset ring-black/10 transition-colors disabled:cursor-not-allowed ${
+        checked ? (disabled ? "bg-[#7A2E3A]/60" : "bg-[#7A2E3A]") : disabled ? "bg-stone-200" : "bg-stone-300"
       }`}
     >
       <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
           checked ? "translate-x-6" : "translate-x-1"
         }`}
       />

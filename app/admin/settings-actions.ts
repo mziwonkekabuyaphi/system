@@ -2,8 +2,8 @@
 "use server"
 
 /**
- * Settings tab actions — General info / Kiosk toggle / Private Label /
- * Booking / Queue / Messages / Business Hours.
+ * Settings tab actions — General info / Kiosk / Private Label / Booking /
+ * Queue / Messages / Business Hours.
  *
  * Same shape as actions.ts and inbox-actions.ts: requireTenantMember() is
  * the auth+membership gate (redirects to /login if there's no session or
@@ -41,12 +41,23 @@
  * just a label shown to customers. is_closed=true requires open/close to
  * be null; open<close is enforced by a DB check constraint, validated here
  * first so the error reads cleanly instead of as a raw Postgres message.
+ *
+ * updateKioskSettings (new) — tagline / idle-refresh / confirmation-refresh
+ * / registration-type all live on tenant_branding too (see
+ * migration_kiosk_settings.sql), read straight back out by
+ * app/kiosk/[slug]/page.tsx and handed to KioskApp as props. Bounds on the
+ * two timing fields are validated here to match the DB check constraints
+ * (idle: 10-600s, confirmation: 3-120s) so a bad value fails with a clean
+ * message instead of a raw Postgres constraint error. registrationType is
+ * plan-agnostic — unlike remove_powered_by, any tenant can lock their
+ * kiosk to booking-only or queue-only regardless of plan.
  */
 
 import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
+import type { KioskRegistrationType } from "@/app/kiosk/[slug]/page"
 
 type ActionResult = { success: true } | { success: false; error: string }
 type LogoActionResult = { success: true; logoUrl: string } | { success: false; error: string }
@@ -54,6 +65,12 @@ type LogoActionResult = { success: true; logoUrl: string } | { success: false; e
 const LOGO_BUCKET = "branding"
 const MAX_LOGO_BYTES = 2 * 1024 * 1024 // keep in sync with the bucket's file_size_limit
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
+
+const MIN_IDLE_REFRESH_SECONDS = 10
+const MAX_IDLE_REFRESH_SECONDS = 600
+const MIN_CONFIRMATION_REFRESH_SECONDS = 3
+const MAX_CONFIRMATION_REFRESH_SECONDS = 120
+const VALID_REGISTRATION_TYPES: KioskRegistrationType[] = ["booking", "queue", "both"]
 
 async function tenantContext() {
   const { tenantId } = await requireTenantMember()
@@ -136,7 +153,10 @@ export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
 // Branding + Private Label — tenant_branding
 // (logo_url is NOT settable here — it's only ever written by uploadLogo /
 // removeLogo below, since it has to stay in sync with what's actually in
-// Storage.)
+// Storage.) Shared by the Private Label tab AND the Kiosk tab — both
+// render the same display-name/logo/color/remove-powered-by fields
+// against this one action, so they can never drift out of sync with each
+// other.
 // ---------------------------------------------------------------------------
 export async function updateBranding(input: {
   displayName: string | null
@@ -188,6 +208,72 @@ export async function updateBranding(input: {
       return { success: false, error: error.message }
     }
 
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Kiosk behavior settings — tenant_branding (tagline / idle refresh /
+// confirmation refresh / registration type). Split from updateBranding
+// above because these fields have nothing to do with plan gating and
+// don't need the remove_powered_by check — keeping them in one action
+// with that check would mean every kiosk-config save silently re-verifies
+// an unrelated plan.
+// ---------------------------------------------------------------------------
+export async function updateKioskSettings(input: {
+  tagline: string | null
+  idleRefreshSeconds: number
+  confirmationRefreshSeconds: number
+  registrationType: KioskRegistrationType
+}): Promise<ActionResult> {
+  try {
+    if (
+      !Number.isFinite(input.idleRefreshSeconds) ||
+      input.idleRefreshSeconds < MIN_IDLE_REFRESH_SECONDS ||
+      input.idleRefreshSeconds > MAX_IDLE_REFRESH_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Idle refresh time must be between ${MIN_IDLE_REFRESH_SECONDS} and ${MAX_IDLE_REFRESH_SECONDS} seconds.`,
+      }
+    }
+
+    if (
+      !Number.isFinite(input.confirmationRefreshSeconds) ||
+      input.confirmationRefreshSeconds < MIN_CONFIRMATION_REFRESH_SECONDS ||
+      input.confirmationRefreshSeconds > MAX_CONFIRMATION_REFRESH_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Confirmation refresh time must be between ${MIN_CONFIRMATION_REFRESH_SECONDS} and ${MAX_CONFIRMATION_REFRESH_SECONDS} seconds.`,
+      }
+    }
+
+    if (!VALID_REGISTRATION_TYPES.includes(input.registrationType)) {
+      return { success: false, error: "Choose a valid registration type." }
+    }
+
+    const { supabase, tenantId } = await tenantContext()
+
+    const { error } = await supabase
+      .from("tenant_branding")
+      .update({
+        tagline: input.tagline?.trim() || null,
+        idle_refresh_seconds: input.idleRefreshSeconds,
+        confirmation_refresh_seconds: input.confirmationRefreshSeconds,
+        registration_type: input.registrationType,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
+
+    // Kiosk config is read fresh on every kiosk page load anyway
+    // (export const dynamic = "force-dynamic" in app/kiosk/[slug]/page.tsx),
+    // but revalidate /admin so the settings tab itself reflects the save.
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {

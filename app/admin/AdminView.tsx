@@ -17,6 +17,7 @@ import type {
   AdminBusinessHours,
   AdminConversationSummary,
   AdminInboxStats,
+  AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
   AdminQueueEntry,
@@ -120,9 +121,11 @@ export function AdminView({
   initialConversations,
   initialInboxStats,
   initialPlan,
+  tenantSlug,
   initialTenantSettings,
   initialBranding,
   initialKioskEnabled,
+  initialKioskSettings,
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
@@ -135,9 +138,11 @@ export function AdminView({
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
+  tenantSlug: string
   initialTenantSettings: AdminTenantSettings
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
+  initialKioskSettings: AdminKioskSettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
@@ -256,9 +261,11 @@ export function AdminView({
           {tab === "settings" && (
             <SettingsManager
               initialPlan={initialPlan}
+              tenantSlug={tenantSlug}
               initialSettings={initialTenantSettings}
               initialBranding={initialBranding}
               initialKioskEnabled={initialKioskEnabled}
+              initialKioskSettings={initialKioskSettings}
               initialBookingSettings={initialBookingSettings}
               initialQueueSettings={initialQueueSettings}
               initialMessageSettings={initialMessageSettings}
