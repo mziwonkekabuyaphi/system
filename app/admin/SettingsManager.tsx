@@ -8,6 +8,7 @@ import {
   setKioskEnabled,
   updateBookingSettings,
   updateBranding,
+  updateBusinessHours,
   updateGeneralInfo,
   updateMessageSettings,
   updateQueueSettings,
@@ -16,6 +17,7 @@ import {
 import type {
   AdminBookingSettings,
   AdminBranding,
+  AdminBusinessHours,
   AdminMessageSettings,
   AdminPlan,
   AdminQueueSettings,
@@ -26,10 +28,12 @@ const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
 
+const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
 type SubTab = "general" | "kiosk" | "private-label" | "booking" | "queue" | "messages"
 
 const SUB_TABS: Array<{ id: SubTab; label: string }> = [
-  { id: "general", label: "General" },
+  { id: "general", label: "Business Info" },
   { id: "kiosk", label: "Kiosk" },
   { id: "private-label", label: "Private Label" },
   { id: "booking", label: "Booking" },
@@ -48,6 +52,7 @@ export function SettingsManager({
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
+  initialBusinessHours,
 }: {
   initialPlan: AdminPlan
   initialSettings: AdminTenantSettings
@@ -56,6 +61,7 @@ export function SettingsManager({
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
+  initialBusinessHours: AdminBusinessHours
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
@@ -76,7 +82,12 @@ export function SettingsManager({
         ))}
       </div>
 
-      {subTab === "general" && <GeneralInfoPanel initial={initialSettings} />}
+      {subTab === "general" && (
+        <div className="space-y-3">
+          <BusinessInfoPanel initial={initialSettings} />
+          <OpeningHoursPanel initial={initialBusinessHours} />
+        </div>
+      )}
       {subTab === "kiosk" && <KioskPanel initialEnabled={initialKioskEnabled} />}
       {subTab === "private-label" && <PrivateLabelPanel plan={initialPlan} initial={initialBranding} />}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
@@ -87,9 +98,9 @@ export function SettingsManager({
 }
 
 // ---------------------------------------------------------------------------
-// General info
+// Business Info (formerly "General info")
 // ---------------------------------------------------------------------------
-function GeneralInfoPanel({ initial }: { initial: AdminTenantSettings }) {
+function BusinessInfoPanel({ initial }: { initial: AdminTenantSettings }) {
   const [form, setForm] = useState(initial)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -104,7 +115,7 @@ function GeneralInfoPanel({ initial }: { initial: AdminTenantSettings }) {
 
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">General info</p>
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Business Info</p>
       <p className="text-sm text-stone-500">Contact details and defaults shown to customers.</p>
 
       <div className="mt-4 space-y-3">
@@ -152,6 +163,85 @@ function GeneralInfoPanel({ initial }: { initial: AdminTenantSettings }) {
 }
 
 // ---------------------------------------------------------------------------
+// Opening Hours — controls what the kiosk and WhatsApp bot will accept.
+// Times are entered in the tenant's own timezone (set above in Business
+// Info) — the DB compares against that same timezone when deciding whether
+// a walk-in or booking is allowed right now.
+// ---------------------------------------------------------------------------
+function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
+  const [days, setDays] = useState(initial)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function updateDay(dayOfWeek: number, patch: Partial<AdminBusinessHours[number]>) {
+    setDays((prev) => prev.map((d) => (d.dayOfWeek === dayOfWeek ? { ...d, ...patch } : d)))
+  }
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const result = await updateBusinessHours(days)
+      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
+    })
+  }
+
+  const sorted = [...days].sort((a, b) => a.dayOfWeek - b.dayOfWeek)
+
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Opening Hours</p>
+      <p className="text-sm text-stone-500">
+        Controls when customers can join the queue on the kiosk or start a booking over WhatsApp. Times are in the
+        timezone set above.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {sorted.map((day) => (
+          <div key={day.dayOfWeek} className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-100 px-3 py-2">
+            <span className="w-24 shrink-0 text-sm font-medium text-stone-800">{DAY_LABELS[day.dayOfWeek]}</span>
+
+            <label className="flex items-center gap-2 text-sm text-stone-600">
+              <input
+                type="checkbox"
+                checked={day.isClosed}
+                onChange={(e) =>
+                  updateDay(day.dayOfWeek, {
+                    isClosed: e.target.checked,
+                    openTime: e.target.checked ? null : day.openTime ?? "09:00",
+                    closeTime: e.target.checked ? null : day.closeTime ?? "17:00",
+                  })
+                }
+              />
+              Closed
+            </label>
+
+            {!day.isClosed && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  className={`${inputClass} w-32`}
+                  value={day.openTime ?? ""}
+                  onChange={(e) => updateDay(day.dayOfWeek, { openTime: e.target.value })}
+                />
+                <span className="text-sm text-stone-400">to</span>
+                <input
+                  type="time"
+                  className={`${inputClass} w-32`}
+                  value={day.closeTime ?? ""}
+                  onChange={(e) => updateDay(day.dayOfWeek, { closeTime: e.target.value })}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <SaveRow isPending={isPending} onSave={save} message={message} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Kiosk
 // ---------------------------------------------------------------------------
 function KioskPanel({ initialEnabled }: { initialEnabled: boolean }) {
@@ -190,10 +280,6 @@ function KioskPanel({ initialEnabled }: { initialEnabled: boolean }) {
 // Private Label
 // ---------------------------------------------------------------------------
 function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
-  // Text/color fields go through the explicit Save button below (updateBranding).
-  // The logo is its own thing — it uploads immediately on file select, same as
-  // most logo pickers behave, since "pick a file" and "save settings" being two
-  // separate steps is a confusing UX for an image.
   const [form, setForm] = useState({
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
@@ -208,11 +294,6 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
   const [isLogoPending, startLogoTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // The banner used to be a static "you're on Starter" notice, always
-  // visible whenever the toggle was disabled. It's now a reaction to an
-  // actual tap: the toggle stays tappable for everyone (so starter admins
-  // can discover the feature at all), and this flips on only when someone
-  // tries to turn it on without the plan for it.
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
   const isBusiness = plan === "business"
@@ -232,9 +313,6 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
 
   function handleRemovePoweredByChange(next: boolean) {
     if (next && !isBusiness) {
-      // Same rule updateBranding enforces server-side (and the DB trigger
-      // enforces under that) — this is just the client noticing early so
-      // the person gets the prompt instead of a round-trip that fails.
       setShowUpgradePrompt(true)
       return
     }
