@@ -13,6 +13,17 @@
  * Talks to the tenant only via Server Actions in ./actions.ts, which
  * re-resolve tenantId from `slug` on every call — this component never
  * holds or sends a tenantId itself.
+ *
+ * FOOTER (new): `branding.removePoweredBy` is the same flag the admin
+ * Private Label panel writes via updateBranding() in
+ * app/admin/settings-actions.ts, gated there on `tenants.plan ===
+ * 'business'` (enforced by both the Server Action and a DB trigger).
+ * This component doesn't re-check the plan — it just renders whatever
+ * `page.tsx` resolved that flag to be, the same way it already trusts
+ * `branding.primaryColor`/`secondaryColor`. The footer is `position:
+ * fixed` with `pointer-events: none` rather than a normal flex child, so
+ * it never steals a tap from the ≥96px targets underneath it and never
+ * has to be threaded through every Screen's layout individually.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -77,6 +88,40 @@ function useIdleReset(onIdle: () => void, active: boolean) {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [resetTimer])
+}
+
+// ----------------------------------------------------------------------------
+// "Powered by" footer — hidden entirely when branding.removePoweredBy is
+// true, not just styled away, so a Business-plan tenant's kiosk has zero
+// trace of it in the DOM.
+// ----------------------------------------------------------------------------
+
+function PoweredByFooter() {
+  return (
+    <div className="poweredBy">
+      <span>Powered by QLess</span>
+
+      <style jsx>{`
+        .poweredBy {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 10px;
+          display: flex;
+          justify-content: center;
+          pointer-events: none;
+          z-index: 1;
+        }
+        .poweredBy span {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--muted);
+          opacity: 0.7;
+          letter-spacing: 0.02em;
+        }
+      `}</style>
+    </div>
+  )
 }
 
 // ----------------------------------------------------------------------------
@@ -275,6 +320,8 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       )}
 
       {step === "ticket" && ticket && <TicketScreen ticket={ticket} onDone={resetAll} />}
+
+      {!branding.removePoweredBy && <PoweredByFooter />}
 
       <style jsx global>{`
         html,
