@@ -22,6 +22,14 @@
  * the default palette below, which is also passed to KioskApp so a shop
  * that sets only one color still gets sane values for the rest.
  *
+ * KIOSK CONFIG (new): tenant_branding also now carries the behavioral
+ * settings admins control from Settings > Kiosk — tagline,
+ * idle_refresh_seconds, confirmation_refresh_seconds, registration_type
+ * (migration_kiosk_settings.sql). Same fallback posture as the colors:
+ * NULL/no-row means "hasn't configured it yet", not an error, so every
+ * field below has an explicit default matched to what KioskApp used to
+ * hardcode (75s idle, "Tap anywhere to check in", etc).
+ *
  * NEXT.JS 15/16 FIX: `params` is now a Promise (not a plain object) in
  * route/page components — must be awaited before use. The old sync
  * `{ params: { slug: string } }` shape silently resolved `params.slug`
@@ -31,10 +39,10 @@
  * component and generateMetadata needed this fix, since each
  * independently destructures `params`.
  *
- * KIOSK-AVAILABILITY GATE (new): a tenant existing and being active
- * (checked above) is not the same as that tenant having the kiosk
- * *module* turned on — that's a separate on/off switch admins flip from
- * Settings (setKioskEnabled in app/admin/settings-actions.ts), keyed on
+ * KIOSK-AVAILABILITY GATE: a tenant existing and being active (checked
+ * above) is not the same as that tenant having the kiosk *module* turned
+ * on — that's a separate on/off switch admins flip from Settings
+ * (setKioskEnabled in app/admin/settings-actions.ts), keyed on
  * `modules.key = 'kiosk'` / `tenant_modules.enabled`. This route reuses
  * that exact lookup (see resolveKioskModuleEnabled below) so a tenant
  * that's paused their kiosk gets an explicit "not available" screen
@@ -56,9 +64,11 @@ import { KioskApp } from "@/components/kiosk/KioskApp"
 const manrope = Manrope({ subsets: ["latin"], weight: ["500", "600", "700", "800"] })
 
 // Kiosk data (services, branding) can change any time a shop owner edits
-// their catalog or colors — a walk-in kiosk should never serve a cached
-// version of either.
+// their catalog, colors, or kiosk config — a walk-in kiosk should never
+// serve a cached version of any of it.
 export const dynamic = "force-dynamic"
+
+export type KioskRegistrationType = "booking" | "queue" | "both"
 
 export interface KioskBranding {
   displayName: string
@@ -66,6 +76,10 @@ export interface KioskBranding {
   primaryColor: string
   secondaryColor: string
   removePoweredBy: boolean
+  tagline: string
+  idleRefreshSeconds: number
+  confirmationRefreshSeconds: number
+  registrationType: KioskRegistrationType
 }
 
 // Fallback palette from the design brief. tenant_branding.primary_color
@@ -75,6 +89,15 @@ export interface KioskBranding {
 // not brand, and stays fixed regardless of tenant.
 const DEFAULT_PRIMARY_COLOR = "#2B6F5C" // accent
 const DEFAULT_SECONDARY_COLOR = "#C97A3D" // ticket-amber
+
+// Kiosk config defaults — these match what KioskApp used to hardcode
+// before it became admin-configurable, so an unconfigured tenant's kiosk
+// behaves exactly as it always has.
+const DEFAULT_TAGLINE = "Tap anywhere to check in"
+const DEFAULT_IDLE_REFRESH_SECONDS = 75
+const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
+const DEFAULT_REGISTRATION_TYPE: KioskRegistrationType = "both"
+const VALID_REGISTRATION_TYPES: KioskRegistrationType[] = ["booking", "queue", "both"]
 
 interface TenantRow {
   id: string
@@ -89,6 +112,10 @@ interface TenantBrandingRow {
   primary_color: string | null
   secondary_color: string | null
   remove_powered_by: boolean | null
+  tagline: string | null
+  idle_refresh_seconds: number | null
+  confirmation_refresh_seconds: number | null
+  registration_type: string | null
 }
 
 type KioskLoadResult =
@@ -133,6 +160,13 @@ async function resolveKioskModuleEnabled(
   return tenantModule?.enabled === true
 }
 
+function resolveRegistrationType(value: string | null | undefined): KioskRegistrationType {
+  if (value && (VALID_REGISTRATION_TYPES as string[]).includes(value)) {
+    return value as KioskRegistrationType
+  }
+  return DEFAULT_REGISTRATION_TYPE
+}
+
 async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Supabase server client is unavailable")
@@ -149,7 +183,9 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
 
   const { data: branding } = await supabase
     .from("tenant_branding")
-    .select("display_name, logo_url, primary_color, secondary_color, remove_powered_by")
+    .select(
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type",
+    )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
 
@@ -164,6 +200,10 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     // after having it set stays governed by whatever's actually stored
     // here, since that's what updateBranding's own plan check maintains.
     removePoweredBy: branding?.remove_powered_by === true,
+    tagline: branding?.tagline?.trim() || DEFAULT_TAGLINE,
+    idleRefreshSeconds: branding?.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
+    confirmationRefreshSeconds: branding?.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
+    registrationType: resolveRegistrationType(branding?.registration_type),
   }
 
   const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
