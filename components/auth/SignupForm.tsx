@@ -128,5 +128,3 @@ export function SignupForm() {
     </form>
   );
 }
-  );
-}
