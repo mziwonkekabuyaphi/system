@@ -180,6 +180,13 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
   const [isLogoPending, startLogoTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // The banner used to be a static "you're on Starter" notice, always
+  // visible whenever the toggle was disabled. It's now a reaction to an
+  // actual tap: the toggle stays tappable for everyone (so starter admins
+  // can discover the feature at all), and this flips on only when someone
+  // tries to turn it on without the plan for it.
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+
   const isBusiness = plan === "business"
 
   function save() {
@@ -196,7 +203,14 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
   }
 
   function handleRemovePoweredByChange(next: boolean) {
-    if (next && !isBusiness) return // upgrade banner below is the answer, not a failed save
+    if (next && !isBusiness) {
+      // Same rule updateBranding enforces server-side (and the DB trigger
+      // enforces under that) — this is just the client noticing early so
+      // the person gets the prompt instead of a round-trip that fails.
+      setShowUpgradePrompt(true)
+      return
+    }
+    setShowUpgradePrompt(false)
     setForm({ ...form, removePoweredBy: next })
   }
 
@@ -320,15 +334,25 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
           </div>
           <Toggle
             checked={form.removePoweredBy}
-            disabled={isPending || !isBusiness}
+            disabled={isPending}
             onChange={handleRemovePoweredByChange}
           />
         </div>
 
-        {!isBusiness && (
-          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            This is a Business plan feature. Upgrade your plan to remove the &quot;Powered by&quot; footer from your
-            kiosk.
+        {showUpgradePrompt && (
+          <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <span>
+              This is a Business plan feature. Upgrade your plan to remove the &quot;Powered by&quot; footer from your
+              kiosk.
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowUpgradePrompt(false)}
+              aria-label="Dismiss"
+              className="shrink-0 text-amber-600 hover:text-amber-900"
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>
