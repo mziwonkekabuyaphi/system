@@ -30,6 +30,20 @@
  * a real tenant 404'ing with zero errors logged anywhere. Both the page
  * component and generateMetadata needed this fix, since each
  * independently destructures `params`.
+ *
+ * KIOSK-AVAILABILITY GATE (new): a tenant existing and being active
+ * (checked above) is not the same as that tenant having the kiosk
+ * *module* turned on — that's a separate on/off switch admins flip from
+ * Settings (setKioskEnabled in app/admin/settings-actions.ts), keyed on
+ * `modules.key = 'kiosk'` / `tenant_modules.enabled`. This route reuses
+ * that exact lookup (see resolveKioskModuleEnabled below) so a tenant
+ * that's paused their kiosk gets an explicit "not available" screen
+ * instead of the booking flow. This check happens here, server-side, in
+ * loadKioskData — before KioskApp is ever rendered and before
+ * getBookableServices() is ever called — not as a client-side redirect
+ * after the flow has already mounted. No tenant_modules row for 'kiosk'
+ * is treated the same as `enabled: false` (fail closed): an unprovisioned
+ * module is not an on module.
  */
 
 import { notFound } from "next/navigation"
@@ -51,6 +65,7 @@ export interface KioskBranding {
   logoUrl: string | null
   primaryColor: string
   secondaryColor: string
+  removePoweredBy: boolean
 }
 
 // Fallback palette from the design brief. tenant_branding.primary_color
@@ -73,9 +88,52 @@ interface TenantBrandingRow {
   logo_url: string | null
   primary_color: string | null
   secondary_color: string | null
+  remove_powered_by: boolean | null
 }
 
-async function loadKioskData(slug: string) {
+type KioskLoadResult =
+  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: true; services: Awaited<ReturnType<typeof getBookableServices>> }
+  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: [] }
+
+// Same two-step lookup as setKioskEnabled/updateGeneralInfo's sibling in
+// app/admin/settings-actions.ts: resolve the `kiosk` row on `modules`,
+// then read this tenant's `tenant_modules` row for it. Any failure to
+// resolve either row — module not registered, no tenant_modules row yet,
+// or a real query error — is treated as "not enabled" rather than
+// bubbling an error, since a booking flow silently failing open on a
+// misconfigured module row would be far worse than an idle kiosk
+// correctly showing "not available."
+async function resolveKioskModuleEnabled(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+): Promise<boolean> {
+  const { data: kioskModule, error: moduleLookupError } = await supabase
+    .from("modules")
+    .select("id")
+    .eq("key", "kiosk")
+    .single()
+
+  if (moduleLookupError || !kioskModule) {
+    console.error("[kiosk] kiosk module lookup failed", { tenantId, error: moduleLookupError })
+    return false
+  }
+
+  const { data: tenantModule, error: tenantModuleError } = await supabase
+    .from("tenant_modules")
+    .select("enabled")
+    .eq("tenant_id", tenantId)
+    .eq("module_id", kioskModule.id)
+    .maybeSingle()
+
+  if (tenantModuleError) {
+    console.error("[kiosk] tenant_modules lookup failed", { tenantId, error: tenantModuleError })
+    return false
+  }
+
+  return tenantModule?.enabled === true
+}
+
+async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Supabase server client is unavailable")
 
@@ -91,7 +149,7 @@ async function loadKioskData(slug: string) {
 
   const { data: branding } = await supabase
     .from("tenant_branding")
-    .select("display_name, logo_url, primary_color, secondary_color")
+    .select("display_name, logo_url, primary_color, secondary_color, remove_powered_by")
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
 
@@ -100,11 +158,26 @@ async function loadKioskData(slug: string) {
     logoUrl: branding?.logo_url ?? null,
     primaryColor: branding?.primary_color || DEFAULT_PRIMARY_COLOR,
     secondaryColor: branding?.secondary_color || DEFAULT_SECONDARY_COLOR,
+    // No row (tenant hasn't touched branding yet) and NULL (column default)
+    // both mean "hasn't been granted/enabled" — false either way. This is
+    // also independent of `plan`: a tenant that downgrades off Business
+    // after having it set stays governed by whatever's actually stored
+    // here, since that's what updateBranding's own plan check maintains.
+    removePoweredBy: branding?.remove_powered_by === true,
+  }
+
+  const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
+
+  // Don't even touch the services catalog when the module's off — the
+  // whole point of a server-side gate is that the booking flow's data
+  // never loads for a kiosk that shouldn't be running it.
+  if (!kioskEnabled) {
+    return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [] }
   }
 
   const services = await getBookableServices(tenant.id)
 
-  return { tenant, branding: resolvedBranding, services }
+  return { tenant, branding: resolvedBranding, kioskEnabled: true, services }
 }
 
 export default async function KioskPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -112,7 +185,15 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
   const data = await loadKioskData(slug)
   if (!data) notFound()
 
-  const { tenant, branding, services } = data
+  const { tenant, branding, kioskEnabled, services } = data
+
+  if (!kioskEnabled) {
+    return (
+      <div className={manrope.className}>
+        <KioskUnavailable branding={branding} />
+      </div>
+    )
+  }
 
   return (
     <div className={manrope.className}>
@@ -121,10 +202,94 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
   )
 }
 
+// ----------------------------------------------------------------------------
+// Kiosk-module-off state — deliberately plain: no idle timer, no tap
+// target, nothing for a walk-in to interact with. Uses the same
+// paper/ink/accent tokens as KioskApp's own <style jsx> so a paused kiosk
+// still looks like it belongs to the shop, not like a generic error page.
+// ----------------------------------------------------------------------------
+
+function KioskUnavailable({ branding }: { branding: KioskBranding }) {
+  return (
+    <div
+      className="unavailable"
+      style={
+        {
+          "--ink": "#171412",
+          "--paper": "#FAF8F5",
+          "--accent": branding.primaryColor,
+          "--muted": "#6B655C",
+        } as React.CSSProperties
+      }
+    >
+      {branding.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={branding.logoUrl} alt="" className="logo" />
+      )}
+      <h1>{branding.displayName}</h1>
+      <p className="message">This kiosk isn't available right now.</p>
+      <p className="submessage">Please check in at the counter instead.</p>
+
+      <style jsx global>{`
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          height: 100%;
+          background: #faf8f5;
+        }
+      `}</style>
+
+      <style jsx>{`
+        .unavailable {
+          min-height: 100vh;
+          width: 100%;
+          background: var(--paper);
+          color: var(--ink);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 20px;
+          padding: 40px;
+          text-align: center;
+        }
+        .logo {
+          max-height: 96px;
+          max-width: 320px;
+          object-fit: contain;
+          margin-bottom: 8px;
+        }
+        h1 {
+          font-size: 48px;
+          font-weight: 800;
+          margin: 0;
+          color: var(--ink);
+          line-height: 1.1;
+        }
+        .message {
+          font-size: 26px;
+          font-weight: 700;
+          color: var(--accent);
+          margin: 0;
+        }
+        .submessage {
+          font-size: 19px;
+          font-weight: 500;
+          color: var(--muted);
+          margin: 0;
+        }
+      `}</style>
+    </div>
+  )
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const data = await loadKioskData(slug)
+  if (!data) return { title: "Kiosk" }
+
   return {
-    title: data ? `${data.branding.displayName} — Check in` : "Kiosk",
+    title: data.kioskEnabled ? `${data.branding.displayName} — Check in` : `${data.branding.displayName} — Kiosk unavailable`,
   }
 }
