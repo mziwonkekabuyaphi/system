@@ -46,7 +46,7 @@ export function SignupForm() {
 
     if (data.session) {
       // Email confirmation is off — the user is already signed in.
-      router.push("/app");
+      router.push("/admin");
       router.refresh();
       return;
     }
