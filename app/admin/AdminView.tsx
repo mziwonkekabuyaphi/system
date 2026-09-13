@@ -11,11 +11,14 @@ import { StaffManager } from "./StaffManager"
 import { TodayBookings } from "./TodayBookings"
 import type {
   AdminBooking,
+  AdminBookingSettings,
   AdminBranding,
   AdminConversationSummary,
   AdminInboxStats,
+  AdminMessageSettings,
   AdminPlan,
   AdminQueueEntry,
+  AdminQueueSettings,
   AdminService,
   AdminStaff,
   AdminTenantSettings,
@@ -118,6 +121,9 @@ export function AdminView({
   initialTenantSettings,
   initialBranding,
   initialKioskEnabled,
+  initialBookingSettings,
+  initialQueueSettings,
+  initialMessageSettings,
 }: {
   initialBookings: AdminBooking[]
   initialQueue: AdminQueueEntry[]
@@ -129,6 +135,9 @@ export function AdminView({
   initialTenantSettings: AdminTenantSettings
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
+  initialBookingSettings: AdminBookingSettings
+  initialQueueSettings: AdminQueueSettings
+  initialMessageSettings: AdminMessageSettings
 }) {
   const [tab, setTab] = useState<Tab>("today")
   const [hovered, setHovered] = useState(false)
@@ -241,6 +250,9 @@ export function AdminView({
               initialSettings={initialTenantSettings}
               initialBranding={initialBranding}
               initialKioskEnabled={initialKioskEnabled}
+              initialBookingSettings={initialBookingSettings}
+              initialQueueSettings={initialQueueSettings}
+              initialMessageSettings={initialMessageSettings}
             />
           )}
         </main>
