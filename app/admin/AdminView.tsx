@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { SVGProps } from "react"
 
+import { LogoutButton } from "@/components/admin/LogoutButton"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
@@ -204,6 +205,11 @@ export function AdminView({
             )
           })}
         </nav>
+
+        {/* Account section — sign out */}
+        <div className="border-t border-white/10 px-3 py-3">
+          <LogoutButton expanded={expanded} />
+        </div>
 
         {/* Pin toggle — lets touch users (no hover) keep it open, and keyboard/mouse users lock it */}
         <div className="border-t border-white/10 px-3 py-3">
