@@ -33,7 +33,10 @@ export function SignupForm() {
       password,
       options: {
         data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        // next=/onboarding tells /auth/callback where to send a user after
+        // they click the confirmation link, so they land on "create or
+        // join a business" instead of the default /app destination.
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
       },
     });
 
@@ -46,7 +49,9 @@ export function SignupForm() {
 
     if (data.session) {
       // Email confirmation is off — the user is already signed in.
-      router.push("/admin");
+      // Send them to onboarding, not /admin, since they have no
+      // business/tenant yet.
+      router.push("/onboarding");
       router.refresh();
       return;
     }
@@ -121,5 +126,7 @@ export function SignupForm() {
         Already have an account? <a href="/login">Sign in</a>
       </p>
     </form>
+  );
+}
   );
 }
