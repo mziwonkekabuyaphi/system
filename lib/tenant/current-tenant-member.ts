@@ -12,8 +12,14 @@
 //
 // platform_superadmin members have no tenant_members row at all (that
 // role is platform-scoped, not attached to a tenant) — they're treated
-// as "no tenant" here and redirected to noAccessPath. A cross-tenant
+// as "no tenant" here and redirected accordingly. A cross-tenant
 // platform view is a separate piece of UI, not this admin page.
+//
+// requireTenantMember() distinguishes two different "not ready" states:
+//   - not signed in at all            -> /login
+//   - signed in, but no active tenant -> /onboarding (create or join a business)
+// Collapsing these into one redirect used to send freshly-confirmed
+// signups back to /login, where they had nothing useful to do.
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
@@ -28,6 +34,19 @@ export type CurrentTenantMember = {
 };
 
 /**
+ * Returns the signed-in Supabase auth user, or null if there's no
+ * session. Cached per request so this and getCurrentTenantMember share
+ * one auth.getUser() call instead of each paying for their own.
+ */
+export const getSessionUser = cache(async () => {
+  const supabase = await createSessionClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
+});
+
+/**
  * Returns null if the visitor isn't signed in, or is signed in but has no
  * active tenant membership. Cached per request so layout.tsx and
  * page.tsx (and any Server Actions on the same request) don't each pay
@@ -35,13 +54,10 @@ export type CurrentTenantMember = {
  */
 export const getCurrentTenantMember = cache(
   async (): Promise<CurrentTenantMember | null> => {
-    const supabase = await createSessionClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getSessionUser();
     if (!user) return null;
 
+    const supabase = await createSessionClient();
     const { data, error } = await supabase
       .from("tenant_members")
       .select("id, tenant_id, status, roles ( key )")
@@ -67,13 +83,23 @@ export const getCurrentTenantMember = cache(
 
 /**
  * Use in layout.tsx / page.tsx / Server Actions that must not run without
- * a signed-in tenant member. Redirects rather than throwing, so a visit
- * without a session lands on /login instead of an error boundary.
+ * a signed-in tenant member.
+ *
+ * - No session at all -> redirect to /login.
+ * - Signed in, but no active tenant membership -> redirect to /onboarding,
+ *   since this is exactly the state a freshly-confirmed signup is in
+ *   before they've created or joined a business.
  */
 export async function requireTenantMember(): Promise<CurrentTenantMember> {
-  const member = await getCurrentTenantMember();
-  if (!member) {
+  const user = await getSessionUser();
+  if (!user) {
     redirect("/login?next=/admin");
   }
+
+  const member = await getCurrentTenantMember();
+  if (!member) {
+    redirect("/onboarding");
+  }
+
   return member;
 }
