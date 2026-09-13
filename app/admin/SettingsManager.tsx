@@ -1,10 +1,14 @@
 // app/admin/SettingsManager.tsx
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 
-import { setKioskEnabled, updateBranding, updateGeneralInfo } from "./settings-actions"
+import { removeLogo, setKioskEnabled, updateBranding, updateGeneralInfo, uploadLogo } from "./settings-actions"
 import type { AdminBranding, AdminPlan, AdminTenantSettings } from "./types"
+
+const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+const MAX_LOGO_BYTES = 2 * 1024 * 1024
+const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
 
 type SubTab = "general" | "kiosk" | "private-label"
 
@@ -158,9 +162,23 @@ function KioskPanel({ initialEnabled }: { initialEnabled: boolean }) {
 // Private Label
 // ---------------------------------------------------------------------------
 function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
-  const [form, setForm] = useState(initial)
+  // Text/color fields go through the explicit Save button below (updateBranding).
+  // The logo is its own thing — it uploads immediately on file select, same as
+  // most logo pickers behave, since "pick a file" and "save settings" being two
+  // separate steps is a confusing UX for an image.
+  const [form, setForm] = useState({
+    displayName: initial.displayName,
+    primaryColor: initial.primaryColor,
+    secondaryColor: initial.secondaryColor,
+    removePoweredBy: initial.removePoweredBy,
+  })
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const [logoUrl, setLogoUrl] = useState(initial.logoUrl)
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const [isLogoPending, startLogoTransition] = useTransition()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const isBusiness = plan === "business"
 
@@ -182,13 +200,49 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
     setForm({ ...form, removePoweredBy: next })
   }
 
+  function handleLogoFile(file: File | null) {
+    if (!file) return
+    setLogoError(null)
+
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      setLogoError("Logo must be a PNG, JPEG, WebP, or SVG image")
+      return
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError("Logo must be 2MB or smaller")
+      return
+    }
+
+    const formData = new FormData()
+    formData.set("file", file)
+
+    startLogoTransition(async () => {
+      const result = await uploadLogo(formData)
+      if (result.success) {
+        setLogoUrl(result.logoUrl)
+      } else {
+        setLogoError(result.error)
+      }
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    })
+  }
+
+  function handleRemoveLogo() {
+    setLogoError(null)
+    startLogoTransition(async () => {
+      const result = await removeLogo()
+      if (result.success) setLogoUrl(null)
+      else setLogoError(result.error)
+    })
+  }
+
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Branding</p>
         <p className="text-sm text-stone-500">How your shop appears on the kiosk and customer-facing pages.</p>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-4">
           <FieldRow label="Display name">
             <input
               className={inputClass}
@@ -196,30 +250,62 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
               onChange={(e) => setForm({ ...form, displayName: e.target.value || null })}
             />
           </FieldRow>
-          <FieldRow label="Logo URL">
-            <input
-              className={inputClass}
-              value={form.logoUrl ?? ""}
-              onChange={(e) => setForm({ ...form, logoUrl: e.target.value || null })}
-            />
+
+          <FieldRow label="Logo">
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-stone-200 bg-stone-50">
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, not a static/local asset
+                  <img src={logoUrl} alt="Shop logo" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="text-xs text-stone-400">No logo</span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isLogoPending}
+                    className="rounded-full border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-50"
+                  >
+                    {isLogoPending ? "Uploading…" : logoUrl ? "Change logo" : "Upload logo"}
+                  </button>
+                  {logoUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveLogo}
+                      disabled={isLogoPending}
+                      className="rounded-full px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-stone-400">PNG, JPEG, WebP, or SVG. Up to 2MB.</p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                className="hidden"
+                onChange={(e) => handleLogoFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+            {logoError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{logoError}</p>}
           </FieldRow>
+
           <div className="grid grid-cols-2 gap-3">
-            <FieldRow label="Primary color">
-              <input
-                type="color"
-                className="h-10 w-full rounded-lg border border-stone-300"
-                value={form.primaryColor ?? "#7A2E3A"}
-                onChange={(e) => setForm({ ...form, primaryColor: e.target.value })}
-              />
-            </FieldRow>
-            <FieldRow label="Secondary color">
-              <input
-                type="color"
-                className="h-10 w-full rounded-lg border border-stone-300"
-                value={form.secondaryColor ?? "#4B6B54"}
-                onChange={(e) => setForm({ ...form, secondaryColor: e.target.value })}
-              />
-            </FieldRow>
+            <ColorField
+              label="Primary color"
+              value={form.primaryColor ?? "#7A2E3A"}
+              onChange={(hex) => setForm({ ...form, primaryColor: hex })}
+            />
+            <ColorField
+              label="Secondary color"
+              value={form.secondaryColor ?? "#4B6B54"}
+              onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
+            />
           </div>
         </div>
       </div>
@@ -261,6 +347,47 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
       <span className="mb-1 block text-sm text-stone-600">{label}</span>
       {children}
     </label>
+  )
+}
+
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (hex: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const isValid = HEX_COLOR_PATTERN.test(draft)
+
+  function commit(next: string) {
+    setDraft(next)
+    if (HEX_COLOR_PATTERN.test(next)) onChange(next)
+  }
+
+  return (
+    <FieldRow label={label}>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          className="h-10 w-10 shrink-0 rounded-lg border border-stone-300 p-0.5"
+          value={isValid ? draft : value}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            onChange(e.target.value)
+          }}
+        />
+        <input
+          type="text"
+          className={`${inputClass} ${!isValid ? "border-red-300" : ""}`}
+          value={draft}
+          onChange={(e) => commit(e.target.value)}
+          placeholder="#7A2E3A"
+        />
+      </div>
+    </FieldRow>
   )
 }
 

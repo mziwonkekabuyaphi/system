@@ -17,6 +17,12 @@
  * true when tenants.plan = 'business'. That's checked below AND by a DB
  * trigger on tenant_branding (added in the same migration as the columns),
  * so even a direct SQL write or a future admin tool can't bypass it.
+ *
+ * Logo upload writes to the 'branding' Storage bucket (public read, 2MB
+ * limit, image/png|jpeg|webp|svg+xml only — enforced by the bucket itself,
+ * checked again below so the UI gets a clean error instead of a raw storage
+ * error) at a fixed key per tenant (branding/{tenantId}/logo) so re-uploads
+ * overwrite in place rather than accumulating orphaned files.
  */
 
 import { revalidatePath } from "next/cache"
@@ -25,6 +31,11 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
 type ActionResult = { success: true } | { success: false; error: string }
+type LogoActionResult = { success: true; logoUrl: string } | { success: false; error: string }
+
+const LOGO_BUCKET = "branding"
+const MAX_LOGO_BYTES = 2 * 1024 * 1024 // keep in sync with the bucket's file_size_limit
+const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
 
 async function tenantContext() {
   const { tenantId } = await requireTenantMember()
@@ -105,10 +116,12 @@ export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
 
 // ---------------------------------------------------------------------------
 // Branding + Private Label — tenant_branding
+// (logo_url is NOT settable here — it's only ever written by uploadLogo /
+// removeLogo below, since it has to stay in sync with what's actually in
+// Storage.)
 // ---------------------------------------------------------------------------
 export async function updateBranding(input: {
   displayName: string | null
-  logoUrl: string | null
   primaryColor: string | null
   secondaryColor: string | null
   removePoweredBy: boolean
@@ -137,7 +150,6 @@ export async function updateBranding(input: {
       .from("tenant_branding")
       .update({
         display_name: input.displayName,
-        logo_url: input.logoUrl,
         primary_color: input.primaryColor,
         secondary_color: input.secondaryColor,
         remove_powered_by: input.removePoweredBy,
@@ -157,6 +169,98 @@ export async function updateBranding(input: {
       }
       return { success: false, error: error.message }
     }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Logo — Storage ('branding' bucket) + tenant_branding.logo_url
+// ---------------------------------------------------------------------------
+function extensionFor(mimeType: string): string {
+  switch (mimeType) {
+    case "image/png":
+      return "png"
+    case "image/jpeg":
+      return "jpg"
+    case "image/webp":
+      return "webp"
+    case "image/svg+xml":
+      return "svg"
+    default:
+      return "bin"
+  }
+}
+
+export async function uploadLogo(formData: FormData): Promise<LogoActionResult> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+
+    const file = formData.get("file")
+    if (!(file instanceof File) || file.size === 0) {
+      return { success: false, error: "No file provided" }
+    }
+
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      return { success: false, error: "Logo must be a PNG, JPEG, WebP, or SVG image" }
+    }
+
+    if (file.size > MAX_LOGO_BYTES) {
+      return { success: false, error: "Logo must be 2MB or smaller" }
+    }
+
+    // Fixed key per tenant (no per-upload filename) so re-uploading a logo
+    // overwrites in place instead of leaving old versions behind in Storage.
+    const path = `${tenantId}/logo.${extensionFor(file.type)}`
+
+    const { error: uploadError } = await supabase.storage
+      .from(LOGO_BUCKET)
+      .upload(path, file, { contentType: file.type, upsert: true })
+
+    if (uploadError) return { success: false, error: uploadError.message }
+
+    const { data: publicUrlData } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path)
+    // Cache-bust: the path (and therefore the public URL) is the same
+    // across re-uploads, so without this the browser/CDN would keep
+    // serving the old cached image after a change.
+    const logoUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`
+
+    const { error: updateError } = await supabase
+      .from("tenant_branding")
+      .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+
+    if (updateError) return { success: false, error: updateError.message }
+
+    revalidatePath("/admin")
+    return { success: true, logoUrl }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+export async function removeLogo(): Promise<ActionResult> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+
+    // Extensions are the only thing that varies at this fixed key, so
+    // clear out whichever one is actually there.
+    const paths = ALLOWED_LOGO_TYPES.map((type) => `${tenantId}/logo.${extensionFor(type)}`)
+    const { error: removeError } = await supabase.storage.from(LOGO_BUCKET).remove(paths)
+    // Storage returns success even for paths that don't exist, so this
+    // isn't a false negative — a real removeError here means something
+    // else went wrong (bucket misconfigured, network, etc).
+    if (removeError) return { success: false, error: removeError.message }
+
+    const { error: updateError } = await supabase
+      .from("tenant_branding")
+      .update({ logo_url: null, updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+
+    if (updateError) return { success: false, error: updateError.message }
 
     revalidatePath("/admin")
     return { success: true }
