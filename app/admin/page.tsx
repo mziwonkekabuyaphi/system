@@ -15,6 +15,11 @@
 // have a linked profiles row. This now joins tenant_customers, which
 // also means no more splitting a nonexistent name/surname pair — it's
 // one full_name column.
+//
+// Settings tab: plan lives on tenants (manually flipped in Supabase until
+// billing is wired up), general info on tenant_settings, and branding
+// (incl. remove_powered_by, gated to plan = 'business') on tenant_branding.
+// The kiosk toggle reads/writes tenant_modules for the 'kiosk' module row.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -22,11 +27,14 @@ import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { AdminView } from "./AdminView"
 import type {
   AdminBooking,
+  AdminBranding,
   AdminConversationSummary,
   AdminInboxStats,
+  AdminPlan,
   AdminQueueEntry,
   AdminService,
   AdminStaff,
+  AdminTenantSettings,
 } from "./types"
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
@@ -122,6 +130,67 @@ async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<Ad
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
 
   return (data ?? []).map((s) => ({ id: s.id, name: s.name, active: s.active }))
+}
+
+// ============================================================================
+// SETTINGS
+// ============================================================================
+
+async function getSettingsData(
+  supabase: ServerClient,
+  tenantId: string,
+): Promise<{
+  plan: AdminPlan
+  settings: AdminTenantSettings
+  branding: AdminBranding
+  kioskEnabled: boolean
+}> {
+  const [tenantResult, settingsResult, brandingResult, kioskResult] = await Promise.all([
+    supabase.from("tenants").select("plan").eq("id", tenantId).single(),
+    supabase
+      .from("tenant_settings")
+      .select("timezone, currency, contact_email, contact_phone, address")
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("tenant_branding")
+      .select("display_name, logo_url, primary_color, secondary_color, remove_powered_by")
+      .eq("tenant_id", tenantId)
+      .single(),
+    // tenant_modules has no direct tenant_id -> modules.key path, so this
+    // joins through modules and filters both sides — same "don't trust a
+    // single filter" posture as everything else on this service-role client.
+    supabase
+      .from("tenant_modules")
+      .select("enabled, modules!inner(key)")
+      .eq("tenant_id", tenantId)
+      .eq("modules.key", "kiosk")
+      .maybeSingle(),
+  ])
+
+  if (tenantResult.error) throw new Error(`Failed to load plan: ${tenantResult.error.message}`)
+  if (settingsResult.error) throw new Error(`Failed to load tenant settings: ${settingsResult.error.message}`)
+  if (brandingResult.error) throw new Error(`Failed to load branding: ${brandingResult.error.message}`)
+  if (kioskResult.error) throw new Error(`Failed to load kiosk module: ${kioskResult.error.message}`)
+
+  return {
+    plan: tenantResult.data.plan as AdminPlan,
+    settings: {
+      timezone: settingsResult.data.timezone,
+      currency: settingsResult.data.currency,
+      contactEmail: settingsResult.data.contact_email,
+      contactPhone: settingsResult.data.contact_phone,
+      address: settingsResult.data.address,
+    },
+    branding: {
+      displayName: brandingResult.data.display_name,
+      logoUrl: brandingResult.data.logo_url,
+      primaryColor: brandingResult.data.primary_color,
+      secondaryColor: brandingResult.data.secondary_color,
+      removePoweredBy: brandingResult.data.remove_powered_by,
+    },
+    kioskEnabled: kioskResult.data?.enabled ?? false,
+  }
 }
 
 // ============================================================================
@@ -248,12 +317,13 @@ export default async function AdminPage() {
     )
   }
 
-  const [bookings, queue, services, staff, inbox] = await Promise.all([
+  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
     getAllServices(supabase, tenantId),
     getAllStaff(supabase, tenantId),
     getInboxData(supabase, tenantId),
+    getSettingsData(supabase, tenantId),
   ])
 
   return (
@@ -264,6 +334,10 @@ export default async function AdminPage() {
       initialStaff={staff}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
+      initialPlan={settingsData.plan}
+      initialTenantSettings={settingsData.settings}
+      initialBranding={settingsData.branding}
+      initialKioskEnabled={settingsData.kioskEnabled}
     />
   )
 }

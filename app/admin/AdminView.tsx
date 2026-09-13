@@ -5,18 +5,22 @@ import { useState } from "react"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
+import { SettingsManager } from "./SettingsManager"
 import { StaffManager } from "./StaffManager"
 import { TodayBookings } from "./TodayBookings"
 import type {
   AdminBooking,
+  AdminBranding,
   AdminConversationSummary,
   AdminInboxStats,
+  AdminPlan,
   AdminQueueEntry,
   AdminService,
   AdminStaff,
+  AdminTenantSettings,
 } from "./types"
 
-type Tab = "today" | "queue" | "inbox" | "services" | "staff"
+type Tab = "today" | "queue" | "inbox" | "services" | "staff" | "settings"
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "today", label: "Today" },
@@ -24,6 +28,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "inbox", label: "Inbox" },
   { id: "services", label: "Services" },
   { id: "staff", label: "Staff" },
+  { id: "settings", label: "Settings" },
 ]
 
 export function AdminView({
@@ -33,6 +38,10 @@ export function AdminView({
   initialStaff,
   initialConversations,
   initialInboxStats,
+  initialPlan,
+  initialTenantSettings,
+  initialBranding,
+  initialKioskEnabled,
 }: {
   initialBookings: AdminBooking[]
   initialQueue: AdminQueueEntry[]
@@ -40,6 +49,10 @@ export function AdminView({
   initialStaff: AdminStaff[]
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
+  initialPlan: AdminPlan
+  initialTenantSettings: AdminTenantSettings
+  initialBranding: AdminBranding
+  initialKioskEnabled: boolean
 }) {
   const [tab, setTab] = useState<Tab>("today")
 
@@ -75,6 +88,14 @@ export function AdminView({
         )}
         {tab === "services" && <ServicesManager initialServices={initialServices} />}
         {tab === "staff" && <StaffManager initialStaff={initialStaff} />}
+        {tab === "settings" && (
+          <SettingsManager
+            initialPlan={initialPlan}
+            initialSettings={initialTenantSettings}
+            initialBranding={initialBranding}
+            initialKioskEnabled={initialKioskEnabled}
+          />
+        )}
       </main>
     </div>
   )

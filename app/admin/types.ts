@@ -84,3 +84,32 @@ export interface AdminInboxStats {
   volumeByDay: Array<{ date: string; incoming: number; outgoing: number }>
   topCustomers: Array<{ name: string; phone: string; messageCount: number }>
 }
+
+// ============================================================================
+// SETTINGS (General info / Kiosk / Private Label tab)
+// ============================================================================
+
+/** Mirrors tenants.plan. Manually flipped in Supabase until billing is wired
+ *  up — see the migration comment on the column itself. Gates whether
+ *  AdminBranding.removePoweredBy can be set to true. */
+export type AdminPlan = "starter" | "business"
+
+/** tenant_settings, one row per tenant. */
+export interface AdminTenantSettings {
+  timezone: string
+  currency: string
+  contactEmail: string | null
+  contactPhone: string | null
+  address: string | null
+}
+
+/** tenant_branding, one row per tenant. removePoweredBy can only be true
+ *  when the tenant's plan is 'business' — enforced in settings-actions.ts
+ *  and, as a backstop, by a DB trigger on the column itself. */
+export interface AdminBranding {
+  displayName: string | null
+  logoUrl: string | null
+  primaryColor: string | null
+  secondaryColor: string | null
+  removePoweredBy: boolean
+}
