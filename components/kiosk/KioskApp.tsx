@@ -5,8 +5,8 @@
  * The kiosk touch flow itself: welcome -> book/queue choice -> service ->
  * (booking only: date -> time) -> name/phone -> submit -> a literal
  * ticket-style confirmation. One decision per full-bleed screen, ≥96px
- * tap targets throughout, and a 75-second idle timer that resets
- * everything back to welcome — so one customer's name, phone, and
+ * tap targets throughout, and an admin-configurable idle timer that
+ * resets everything back to welcome — so one customer's name, phone, and
  * in-progress selections never bleed into the next walk-in who taps the
  * same tablet.
  *
@@ -14,8 +14,24 @@
  * re-resolve tenantId from `slug` on every call — this component never
  * holds or sends a tenantId itself.
  *
- * FOOTER (new): `branding.removePoweredBy` is the same flag the admin
- * Private Label panel writes via updateBranding() in
+ * KIOSK CONFIG (new): `branding.tagline`, `branding.idleRefreshSeconds`,
+ * `branding.confirmationRefreshSeconds`, and `branding.registrationType`
+ * are all admin-set from Settings > Kiosk (app/admin/SettingsManager.tsx
+ * -> updateKioskSettings() in app/admin/settings-actions.ts) and resolved
+ * with defaults in app/kiosk/[slug]/page.tsx the same way
+ * primaryColor/secondaryColor already are — this component just renders
+ * whatever page.tsx resolved, it never re-derives or re-validates these.
+ *   - idleRefreshSeconds replaces what used to be a hardcoded 75s.
+ *   - confirmationRefreshSeconds auto-returns the kiosk to welcome after
+ *     the ticket screen has been up that long, independent of (and
+ *     shorter than) the general idle timer — a walk-in who reads their
+ *     ticket and walks off shouldn't hold the kiosk for a full idle cycle.
+ *   - registrationType controls whether the book/queue choice screen
+ *     shows at all: "both" behaves exactly as before; "booking" or
+ *     "queue" skip straight from welcome into that single path.
+ *
+ * FOOTER: `branding.removePoweredBy` is the same flag the admin Private
+ * Label / Kiosk panels write via updateBranding() in
  * app/admin/settings-actions.ts, gated there on `tenants.plan ===
  * 'business'` (enforced by both the Server Action and a DB trigger).
  * This component doesn't re-check the plan — it just renders whatever
@@ -39,8 +55,6 @@ import {
   type KioskBookingTicket,
   type KioskQueueTicket,
 } from "@/app/kiosk/[slug]/actions"
-
-const IDLE_TIMEOUT_MS = 75_000
 
 type Step =
   | "welcome"
@@ -67,17 +81,17 @@ interface KioskAppProps {
 }
 
 // ----------------------------------------------------------------------------
-// Idle reset
+// Idle reset — timeout length is admin-configurable (branding.idleRefreshSeconds)
 // ----------------------------------------------------------------------------
 
-function useIdleReset(onIdle: () => void, active: boolean) {
+function useIdleReset(onIdle: () => void, active: boolean, timeoutMs: number) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
     if (!active) return
-    timerRef.current = setTimeout(onIdle, IDLE_TIMEOUT_MS)
-  }, [onIdle, active])
+    timerRef.current = setTimeout(onIdle, timeoutMs)
+  }, [onIdle, active, timeoutMs])
 
   useEffect(() => {
     resetTimer()
@@ -88,6 +102,22 @@ function useIdleReset(onIdle: () => void, active: boolean) {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [resetTimer])
+}
+
+// ----------------------------------------------------------------------------
+// Confirmation-screen auto-redirect — independent of the idle timer above.
+// A customer reading their ticket and walking away shouldn't tie up the
+// kiosk for a full idle cycle, so this is its own (shorter) timer that
+// only runs while step === "ticket", and is cleared if the customer taps
+// "Done" (or anything else) before it fires.
+// ----------------------------------------------------------------------------
+
+function useConfirmationAutoReset(active: boolean, timeoutMs: number, onExpire: () => void) {
+  useEffect(() => {
+    if (!active) return
+    const timer = setTimeout(onExpire, timeoutMs)
+    return () => clearTimeout(timer)
+  }, [active, timeoutMs, onExpire])
 }
 
 // ----------------------------------------------------------------------------
@@ -163,11 +193,29 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
     setBusy(false)
   }, [])
 
-  useIdleReset(resetAll, step !== "welcome")
+  useIdleReset(resetAll, step !== "welcome", branding.idleRefreshSeconds * 1000)
+  useConfirmationAutoReset(step === "ticket", branding.confirmationRefreshSeconds * 1000, resetAll)
 
   // ---- navigation ----------------------------------------------------
 
-  const goToChoice = () => setStep("choice")
+  // "both" shows the normal book-vs-queue choice screen. A registration
+  // type locked to a single path skips that screen entirely and drops
+  // the customer straight into service selection for that path — there's
+  // nothing to choose between, so don't make them tap through a screen
+  // with only one live option.
+  const goToChoice = () => {
+    if (branding.registrationType === "booking") {
+      setPath("booking")
+      setStep("service")
+      return
+    }
+    if (branding.registrationType === "queue") {
+      setPath("queue")
+      setStep("service")
+      return
+    }
+    setStep("choice")
+  }
 
   const choosePath = (p: Path) => {
     setPath(p)
@@ -383,7 +431,7 @@ function WelcomeScreen({ branding, onTap }: { branding: KioskBranding; onTap: ()
         <img src={branding.logoUrl} alt="" className="logo" />
       )}
       <h1>{branding.displayName}</h1>
-      <p className="tap">Tap anywhere to check in</p>
+      <p className="tap">{branding.tagline}</p>
 
       <style jsx>{`
         .welcome {
