@@ -205,81 +205,52 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
 // ----------------------------------------------------------------------------
 // Kiosk-module-off state — deliberately plain: no idle timer, no tap
 // target, nothing for a walk-in to interact with. Uses the same
-// paper/ink/accent tokens as KioskApp's own <style jsx> so a paused kiosk
-// still looks like it belongs to the shop, not like a generic error page.
+// paper/ink/accent tokens KioskApp's own <style jsx> uses so a paused
+// kiosk still looks like it belongs to the shop, not like a generic error
+// page. Plain inline styles here (not styled-jsx like KioskApp) because
+// this renders inside KioskPage, a Server Component — styled-jsx's
+// runtime only works under a "use client" boundary, which is exactly
+// what KioskApp has and this doesn't need.
 // ----------------------------------------------------------------------------
+
+const UNAVAILABLE_INK = "#171412"
+const UNAVAILABLE_PAPER = "#FAF8F5"
+const UNAVAILABLE_MUTED = "#6B655C"
 
 function KioskUnavailable({ branding }: { branding: KioskBranding }) {
   return (
     <div
-      className="unavailable"
-      style={
-        {
-          "--ink": "#171412",
-          "--paper": "#FAF8F5",
-          "--accent": branding.primaryColor,
-          "--muted": "#6B655C",
-        } as React.CSSProperties
-      }
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        background: UNAVAILABLE_PAPER,
+        color: UNAVAILABLE_INK,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 20,
+        padding: 40,
+        textAlign: "center",
+      }}
     >
       {branding.logoUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={branding.logoUrl} alt="" className="logo" />
+        <img
+          src={branding.logoUrl}
+          alt=""
+          style={{ maxHeight: 96, maxWidth: 320, objectFit: "contain", marginBottom: 8 }}
+        />
       )}
-      <h1>{branding.displayName}</h1>
-      <p className="message">This kiosk isn't available right now.</p>
-      <p className="submessage">Please check in at the counter instead.</p>
-
-      <style jsx global>{`
-        html,
-        body {
-          margin: 0;
-          padding: 0;
-          height: 100%;
-          background: #faf8f5;
-        }
-      `}</style>
-
-      <style jsx>{`
-        .unavailable {
-          min-height: 100vh;
-          width: 100%;
-          background: var(--paper);
-          color: var(--ink);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 20px;
-          padding: 40px;
-          text-align: center;
-        }
-        .logo {
-          max-height: 96px;
-          max-width: 320px;
-          object-fit: contain;
-          margin-bottom: 8px;
-        }
-        h1 {
-          font-size: 48px;
-          font-weight: 800;
-          margin: 0;
-          color: var(--ink);
-          line-height: 1.1;
-        }
-        .message {
-          font-size: 26px;
-          font-weight: 700;
-          color: var(--accent);
-          margin: 0;
-        }
-        .submessage {
-          font-size: 19px;
-          font-weight: 500;
-          color: var(--muted);
-          margin: 0;
-        }
-      `}</style>
+      <h1 style={{ fontSize: 48, fontWeight: 800, margin: 0, color: UNAVAILABLE_INK, lineHeight: 1.1 }}>
+        {branding.displayName}
+      </h1>
+      <p style={{ fontSize: 26, fontWeight: 700, color: branding.primaryColor, margin: 0 }}>
+        This kiosk isn&apos;t available right now.
+      </p>
+      <p style={{ fontSize: 19, fontWeight: 500, color: UNAVAILABLE_MUTED, margin: 0 }}>
+        Please check in at the counter instead.
+      </p>
     </div>
   )
 }
