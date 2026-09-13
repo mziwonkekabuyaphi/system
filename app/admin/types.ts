@@ -113,3 +113,46 @@ export interface AdminBranding {
   secondaryColor: string | null
   removePoweredBy: boolean
 }
+
+// ============================================================================
+// SETTINGS (Booking / Queue / Messages tab)
+// ============================================================================
+
+/** booking_settings, one row per tenant.
+ *
+ *  unifyWithQueue is the flagship toggle for the "unified platform" work:
+ *  when true, the promote_bookings_to_queue() pg_cron job (runs every
+ *  minute) starts inserting this tenant's confirmed bookings into
+ *  queue_entries once they enter queueLeadTimeMinutes of start_time, with
+ *  queue_entries.source = 'booking' and booking_id set back to this row.
+ *  When false, bookings and the walk-in queue stay fully separate, same as
+ *  before this feature existed. */
+export interface AdminBookingSettings {
+  unifyWithQueue: boolean
+  queueLeadTimeMinutes: number
+  minNoticeMinutes: number
+  maxAdvanceDays: number
+  cancellationWindowMinutes: number
+}
+
+/** queue_settings, one row per tenant. */
+export interface AdminQueueSettings {
+  autoCallNext: boolean
+  /** null = no cap. */
+  maxQueueSize: number | null
+  notifyBeforeTurnPosition: number
+  allowWalkinWhatsapp: boolean
+  allowWalkinKiosk: boolean
+}
+
+/** message_settings, one row per tenant. WhatsApp copy used by the booking
+ *  and queue notify flows (incl. notify_queue_entry() in Postgres); a null
+ *  template means the sending code falls back to its hardcoded default. */
+export interface AdminMessageSettings {
+  aiEnabledDefault: boolean
+  bookingConfirmationTemplate: string | null
+  bookingReminderTemplate: string | null
+  queueJoinedTemplate: string | null
+  queueAlmostTurnTemplate: string | null
+  queueCalledTemplate: string | null
+}

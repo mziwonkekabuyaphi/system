@@ -20,6 +20,11 @@
 // billing is wired up), general info on tenant_settings, and branding
 // (incl. remove_powered_by, gated to plan = 'business') on tenant_branding.
 // The kiosk toggle reads/writes tenant_modules for the 'kiosk' module row.
+// Booking / Queue / Messages tabs read booking_settings / queue_settings /
+// message_settings — one row per tenant, same shape as tenant_settings.
+// booking_settings.unify_with_queue is what the promote_bookings_to_queue()
+// pg_cron job (runs every minute in Postgres) checks per tenant before
+// promoting a confirmed booking into queue_entries.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -27,11 +32,14 @@ import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { AdminView } from "./AdminView"
 import type {
   AdminBooking,
+  AdminBookingSettings,
   AdminBranding,
   AdminConversationSummary,
   AdminInboxStats,
+  AdminMessageSettings,
   AdminPlan,
   AdminQueueEntry,
+  AdminQueueSettings,
   AdminService,
   AdminStaff,
   AdminTenantSettings,
@@ -144,8 +152,19 @@ async function getSettingsData(
   settings: AdminTenantSettings
   branding: AdminBranding
   kioskEnabled: boolean
+  bookingSettings: AdminBookingSettings
+  queueSettings: AdminQueueSettings
+  messageSettings: AdminMessageSettings
 }> {
-  const [tenantResult, settingsResult, brandingResult, kioskResult] = await Promise.all([
+  const [
+    tenantResult,
+    settingsResult,
+    brandingResult,
+    kioskResult,
+    bookingSettingsResult,
+    queueSettingsResult,
+    messageSettingsResult,
+  ] = await Promise.all([
     supabase.from("tenants").select("plan").eq("id", tenantId).single(),
     supabase
       .from("tenant_settings")
@@ -166,12 +185,36 @@ async function getSettingsData(
       .eq("tenant_id", tenantId)
       .eq("modules.key", "kiosk")
       .maybeSingle(),
+    supabase
+      .from("booking_settings")
+      .select(
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes",
+      )
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("queue_settings")
+      .select("auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk")
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("message_settings")
+      .select(
+        "ai_enabled_default, booking_confirmation_template, booking_reminder_template, queue_joined_template, queue_almost_turn_template, queue_called_template",
+      )
+      .eq("tenant_id", tenantId)
+      .single(),
   ])
 
   if (tenantResult.error) throw new Error(`Failed to load plan: ${tenantResult.error.message}`)
   if (settingsResult.error) throw new Error(`Failed to load tenant settings: ${settingsResult.error.message}`)
   if (brandingResult.error) throw new Error(`Failed to load branding: ${brandingResult.error.message}`)
   if (kioskResult.error) throw new Error(`Failed to load kiosk module: ${kioskResult.error.message}`)
+  if (bookingSettingsResult.error)
+    throw new Error(`Failed to load booking settings: ${bookingSettingsResult.error.message}`)
+  if (queueSettingsResult.error) throw new Error(`Failed to load queue settings: ${queueSettingsResult.error.message}`)
+  if (messageSettingsResult.error)
+    throw new Error(`Failed to load message settings: ${messageSettingsResult.error.message}`)
 
   return {
     plan: tenantResult.data.plan as AdminPlan,
@@ -190,6 +233,28 @@ async function getSettingsData(
       removePoweredBy: brandingResult.data.remove_powered_by,
     },
     kioskEnabled: kioskResult.data?.enabled ?? false,
+    bookingSettings: {
+      unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
+      queueLeadTimeMinutes: bookingSettingsResult.data.queue_lead_time_minutes,
+      minNoticeMinutes: bookingSettingsResult.data.min_notice_minutes,
+      maxAdvanceDays: bookingSettingsResult.data.max_advance_days,
+      cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
+    },
+    queueSettings: {
+      autoCallNext: queueSettingsResult.data.auto_call_next,
+      maxQueueSize: queueSettingsResult.data.max_queue_size,
+      notifyBeforeTurnPosition: queueSettingsResult.data.notify_before_turn_position,
+      allowWalkinWhatsapp: queueSettingsResult.data.allow_walkin_whatsapp,
+      allowWalkinKiosk: queueSettingsResult.data.allow_walkin_kiosk,
+    },
+    messageSettings: {
+      aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,
+      bookingConfirmationTemplate: messageSettingsResult.data.booking_confirmation_template,
+      bookingReminderTemplate: messageSettingsResult.data.booking_reminder_template,
+      queueJoinedTemplate: messageSettingsResult.data.queue_joined_template,
+      queueAlmostTurnTemplate: messageSettingsResult.data.queue_almost_turn_template,
+      queueCalledTemplate: messageSettingsResult.data.queue_called_template,
+    },
   }
 }
 
@@ -338,6 +403,9 @@ export default async function AdminPage() {
       initialTenantSettings={settingsData.settings}
       initialBranding={settingsData.branding}
       initialKioskEnabled={settingsData.kioskEnabled}
+      initialBookingSettings={settingsData.bookingSettings}
+      initialQueueSettings={settingsData.queueSettings}
+      initialMessageSettings={settingsData.messageSettings}
     />
   )
 }

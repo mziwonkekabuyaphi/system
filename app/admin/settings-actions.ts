@@ -2,7 +2,8 @@
 "use server"
 
 /**
- * Settings tab actions — General info / Kiosk toggle / Private Label.
+ * Settings tab actions — General info / Kiosk toggle / Private Label /
+ * Booking / Queue / Messages.
  *
  * Same shape as actions.ts and inbox-actions.ts: requireTenantMember() is
  * the auth+membership gate (redirects to /login if there's no session or
@@ -23,6 +24,13 @@
  * checked again below so the UI gets a clean error instead of a raw storage
  * error) at a fixed key per tenant (branding/{tenantId}/logo) so re-uploads
  * overwrite in place rather than accumulating orphaned files.
+ *
+ * updateBookingSettings' unifyWithQueue is the on/off switch for the
+ * promote_bookings_to_queue() pg_cron job — no server-side gating on plan
+ * here, any tenant can turn it on. The job itself just reads this row
+ * straight out of booking_settings, so flipping the toggle takes effect on
+ * its next run (within a minute), no revalidation needed on the Postgres
+ * side, only on the Next.js cache below.
  */
 
 import { revalidatePath } from "next/cache"
@@ -261,6 +269,110 @@ export async function removeLogo(): Promise<ActionResult> {
       .eq("tenant_id", tenantId)
 
     if (updateError) return { success: false, error: updateError.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Booking settings — booking_settings
+// ---------------------------------------------------------------------------
+export async function updateBookingSettings(input: {
+  unifyWithQueue: boolean
+  queueLeadTimeMinutes: number
+  minNoticeMinutes: number
+  maxAdvanceDays: number
+  cancellationWindowMinutes: number
+}): Promise<ActionResult> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+
+    const { error } = await supabase
+      .from("booking_settings")
+      .update({
+        unify_with_queue: input.unifyWithQueue,
+        queue_lead_time_minutes: input.queueLeadTimeMinutes,
+        min_notice_minutes: input.minNoticeMinutes,
+        max_advance_days: input.maxAdvanceDays,
+        cancellation_window_minutes: input.cancellationWindowMinutes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Queue settings — queue_settings
+// ---------------------------------------------------------------------------
+export async function updateQueueSettings(input: {
+  autoCallNext: boolean
+  maxQueueSize: number | null
+  notifyBeforeTurnPosition: number
+  allowWalkinWhatsapp: boolean
+  allowWalkinKiosk: boolean
+}): Promise<ActionResult> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+
+    const { error } = await supabase
+      .from("queue_settings")
+      .update({
+        auto_call_next: input.autoCallNext,
+        max_queue_size: input.maxQueueSize,
+        notify_before_turn_position: input.notifyBeforeTurnPosition,
+        allow_walkin_whatsapp: input.allowWalkinWhatsapp,
+        allow_walkin_kiosk: input.allowWalkinKiosk,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Message settings — message_settings
+// ---------------------------------------------------------------------------
+export async function updateMessageSettings(input: {
+  aiEnabledDefault: boolean
+  bookingConfirmationTemplate: string | null
+  bookingReminderTemplate: string | null
+  queueJoinedTemplate: string | null
+  queueAlmostTurnTemplate: string | null
+  queueCalledTemplate: string | null
+}): Promise<ActionResult> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+
+    const { error } = await supabase
+      .from("message_settings")
+      .update({
+        ai_enabled_default: input.aiEnabledDefault,
+        booking_confirmation_template: input.bookingConfirmationTemplate,
+        booking_reminder_template: input.bookingReminderTemplate,
+        queue_joined_template: input.queueJoinedTemplate,
+        queue_almost_turn_template: input.queueAlmostTurnTemplate,
+        queue_called_template: input.queueCalledTemplate,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
 
     revalidatePath("/admin")
     return { success: true }

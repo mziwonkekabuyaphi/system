@@ -3,19 +3,38 @@
 
 import { useRef, useState, useTransition } from "react"
 
-import { removeLogo, setKioskEnabled, updateBranding, updateGeneralInfo, uploadLogo } from "./settings-actions"
-import type { AdminBranding, AdminPlan, AdminTenantSettings } from "./types"
+import {
+  removeLogo,
+  setKioskEnabled,
+  updateBookingSettings,
+  updateBranding,
+  updateGeneralInfo,
+  updateMessageSettings,
+  updateQueueSettings,
+  uploadLogo,
+} from "./settings-actions"
+import type {
+  AdminBookingSettings,
+  AdminBranding,
+  AdminMessageSettings,
+  AdminPlan,
+  AdminQueueSettings,
+  AdminTenantSettings,
+} from "./types"
 
 const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
 
-type SubTab = "general" | "kiosk" | "private-label"
+type SubTab = "general" | "kiosk" | "private-label" | "booking" | "queue" | "messages"
 
 const SUB_TABS: Array<{ id: SubTab; label: string }> = [
   { id: "general", label: "General" },
   { id: "kiosk", label: "Kiosk" },
   { id: "private-label", label: "Private Label" },
+  { id: "booking", label: "Booking" },
+  { id: "queue", label: "Queue" },
+  { id: "messages", label: "Messages" },
 ]
 
 const inputClass =
@@ -26,11 +45,17 @@ export function SettingsManager({
   initialSettings,
   initialBranding,
   initialKioskEnabled,
+  initialBookingSettings,
+  initialQueueSettings,
+  initialMessageSettings,
 }: {
   initialPlan: AdminPlan
   initialSettings: AdminTenantSettings
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
+  initialBookingSettings: AdminBookingSettings
+  initialQueueSettings: AdminQueueSettings
+  initialMessageSettings: AdminMessageSettings
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
@@ -54,6 +79,9 @@ export function SettingsManager({
       {subTab === "general" && <GeneralInfoPanel initial={initialSettings} />}
       {subTab === "kiosk" && <KioskPanel initialEnabled={initialKioskEnabled} />}
       {subTab === "private-label" && <PrivateLabelPanel plan={initialPlan} initial={initialBranding} />}
+      {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
+      {subTab === "queue" && <QueueSettingsPanel initial={initialQueueSettings} />}
+      {subTab === "messages" && <MessageSettingsPanel initial={initialMessageSettings} />}
     </div>
   )
 }
@@ -355,6 +383,251 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
             </button>
           </div>
         )}
+      </div>
+
+      <SaveRow isPending={isPending} onSave={save} message={message} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Booking
+// ---------------------------------------------------------------------------
+function BookingSettingsPanel({ initial }: { initial: AdminBookingSettings }) {
+  const [form, setForm] = useState(initial)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const result = await updateBookingSettings(form)
+      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
+    })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">
+              Link bookings to the queue
+            </p>
+            <p className="text-sm text-stone-500">
+              When on, confirmed bookings automatically join the walk-in queue shortly before their start
+              time, so front-of-house sees one unified line instead of two separate systems.
+            </p>
+          </div>
+          <Toggle
+            checked={form.unifyWithQueue}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, unifyWithQueue: next })}
+          />
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Booking rules</p>
+        <p className="text-sm text-stone-500">Timing defaults for appointments at this location.</p>
+
+        <div className="mt-4 space-y-3">
+          <FieldRow label="Add to queue this many minutes before start time">
+            <input
+              type="number"
+              min={0}
+              className={inputClass}
+              value={form.queueLeadTimeMinutes}
+              onChange={(e) => setForm({ ...form, queueLeadTimeMinutes: Number(e.target.value) })}
+            />
+          </FieldRow>
+          <FieldRow label="Minimum notice to book (minutes)">
+            <input
+              type="number"
+              min={0}
+              className={inputClass}
+              value={form.minNoticeMinutes}
+              onChange={(e) => setForm({ ...form, minNoticeMinutes: Number(e.target.value) })}
+            />
+          </FieldRow>
+          <FieldRow label="How far ahead customers can book (days)">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={form.maxAdvanceDays}
+              onChange={(e) => setForm({ ...form, maxAdvanceDays: Number(e.target.value) })}
+            />
+          </FieldRow>
+          <FieldRow label="Free cancellation window (minutes before start)">
+            <input
+              type="number"
+              min={0}
+              className={inputClass}
+              value={form.cancellationWindowMinutes}
+              onChange={(e) => setForm({ ...form, cancellationWindowMinutes: Number(e.target.value) })}
+            />
+          </FieldRow>
+        </div>
+
+        <SaveRow isPending={isPending} onSave={save} message={message} />
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Queue
+// ---------------------------------------------------------------------------
+function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
+  const [form, setForm] = useState(initial)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const result = await updateQueueSettings(form)
+      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
+    })
+  }
+
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Queue</p>
+      <p className="text-sm text-stone-500">How the walk-in line behaves for this location.</p>
+
+      <div className="mt-4 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-stone-800">Auto-call next</p>
+            <p className="text-sm text-stone-500">Automatically call the next customer when a slot frees up.</p>
+          </div>
+          <Toggle
+            checked={form.autoCallNext}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, autoCallNext: next })}
+          />
+        </div>
+
+        <FieldRow label="Maximum queue size (blank = no limit)">
+          <input
+            type="number"
+            min={1}
+            className={inputClass}
+            value={form.maxQueueSize ?? ""}
+            onChange={(e) => setForm({ ...form, maxQueueSize: e.target.value ? Number(e.target.value) : null })}
+          />
+        </FieldRow>
+
+        <FieldRow label="Notify a customer this many people before their turn">
+          <input
+            type="number"
+            min={0}
+            className={inputClass}
+            value={form.notifyBeforeTurnPosition}
+            onChange={(e) => setForm({ ...form, notifyBeforeTurnPosition: Number(e.target.value) })}
+          />
+        </FieldRow>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium text-stone-800">Allow walk-ins via WhatsApp</p>
+          <Toggle
+            checked={form.allowWalkinWhatsapp}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, allowWalkinWhatsapp: next })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium text-stone-800">Allow walk-ins via kiosk</p>
+          <Toggle
+            checked={form.allowWalkinKiosk}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, allowWalkinKiosk: next })}
+          />
+        </div>
+      </div>
+
+      <SaveRow isPending={isPending} onSave={save} message={message} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+function MessageSettingsPanel({ initial }: { initial: AdminMessageSettings }) {
+  const [form, setForm] = useState(initial)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const result = await updateMessageSettings(form)
+      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
+    })
+  }
+
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Messages</p>
+          <p className="text-sm text-stone-500">WhatsApp templates and default AI handling for conversations.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-stone-600">AI replies by default</span>
+          <Toggle
+            checked={form.aiEnabledDefault}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, aiEnabledDefault: next })}
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <FieldRow label="Booking confirmation">
+          <textarea
+            className={inputClass}
+            rows={2}
+            value={form.bookingConfirmationTemplate ?? ""}
+            onChange={(e) => setForm({ ...form, bookingConfirmationTemplate: e.target.value || null })}
+          />
+        </FieldRow>
+        <FieldRow label="Booking reminder">
+          <textarea
+            className={inputClass}
+            rows={2}
+            value={form.bookingReminderTemplate ?? ""}
+            onChange={(e) => setForm({ ...form, bookingReminderTemplate: e.target.value || null })}
+          />
+        </FieldRow>
+        <FieldRow label="Joined the queue">
+          <textarea
+            className={inputClass}
+            rows={2}
+            value={form.queueJoinedTemplate ?? ""}
+            onChange={(e) => setForm({ ...form, queueJoinedTemplate: e.target.value || null })}
+          />
+        </FieldRow>
+        <FieldRow label="Almost your turn">
+          <textarea
+            className={inputClass}
+            rows={2}
+            value={form.queueAlmostTurnTemplate ?? ""}
+            onChange={(e) => setForm({ ...form, queueAlmostTurnTemplate: e.target.value || null })}
+          />
+        </FieldRow>
+        <FieldRow label="You've been called">
+          <textarea
+            className={inputClass}
+            rows={2}
+            value={form.queueCalledTemplate ?? ""}
+            onChange={(e) => setForm({ ...form, queueCalledTemplate: e.target.value || null })}
+          />
+        </FieldRow>
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />
