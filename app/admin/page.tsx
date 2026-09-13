@@ -25,6 +25,12 @@
 // booking_settings.unify_with_queue is what the promote_bookings_to_queue()
 // pg_cron job (runs every minute in Postgres) checks per tenant before
 // promoting a confirmed booking into queue_entries.
+//
+// business_hours (Settings > Business Info) is one row per day_of_week
+// (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
+// bookings and queue_entries enforce them (see the business_hours_
+// enforcement migration), so this is the actual gate on what the kiosk and
+// WhatsApp bot are allowed to accept, not only a label shown to customers.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -34,6 +40,7 @@ import type {
   AdminBooking,
   AdminBookingSettings,
   AdminBranding,
+  AdminBusinessHours,
   AdminConversationSummary,
   AdminInboxStats,
   AdminMessageSettings,
@@ -155,6 +162,7 @@ async function getSettingsData(
   bookingSettings: AdminBookingSettings
   queueSettings: AdminQueueSettings
   messageSettings: AdminMessageSettings
+  businessHours: AdminBusinessHours
 }> {
   const [
     tenantResult,
@@ -164,6 +172,7 @@ async function getSettingsData(
     bookingSettingsResult,
     queueSettingsResult,
     messageSettingsResult,
+    businessHoursResult,
   ] = await Promise.all([
     supabase.from("tenants").select("plan").eq("id", tenantId).single(),
     supabase
@@ -204,6 +213,11 @@ async function getSettingsData(
       )
       .eq("tenant_id", tenantId)
       .single(),
+    supabase
+      .from("business_hours")
+      .select("day_of_week, is_closed, open_time, close_time")
+      .eq("tenant_id", tenantId)
+      .order("day_of_week", { ascending: true }),
   ])
 
   if (tenantResult.error) throw new Error(`Failed to load plan: ${tenantResult.error.message}`)
@@ -215,6 +229,8 @@ async function getSettingsData(
   if (queueSettingsResult.error) throw new Error(`Failed to load queue settings: ${queueSettingsResult.error.message}`)
   if (messageSettingsResult.error)
     throw new Error(`Failed to load message settings: ${messageSettingsResult.error.message}`)
+  if (businessHoursResult.error)
+    throw new Error(`Failed to load business hours: ${businessHoursResult.error.message}`)
 
   return {
     plan: tenantResult.data.plan as AdminPlan,
@@ -255,6 +271,12 @@ async function getSettingsData(
       queueAlmostTurnTemplate: messageSettingsResult.data.queue_almost_turn_template,
       queueCalledTemplate: messageSettingsResult.data.queue_called_template,
     },
+    businessHours: (businessHoursResult.data ?? []).map((d) => ({
+      dayOfWeek: d.day_of_week,
+      isClosed: d.is_closed,
+      openTime: d.open_time,
+      closeTime: d.close_time,
+    })),
   }
 }
 
@@ -406,6 +428,7 @@ export default async function AdminPage() {
       initialBookingSettings={settingsData.bookingSettings}
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}
+      initialBusinessHours={settingsData.businessHours}
     />
   )
 }
