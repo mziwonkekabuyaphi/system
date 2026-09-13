@@ -21,6 +21,15 @@
  * tenant may have no branding row at all yet — both cases fall back to
  * the default palette below, which is also passed to KioskApp so a shop
  * that sets only one color still gets sane values for the rest.
+ *
+ * NEXT.JS 15/16 FIX: `params` is now a Promise (not a plain object) in
+ * route/page components — must be awaited before use. The old sync
+ * `{ params: { slug: string } }` shape silently resolved `params.slug`
+ * to `undefined`, which made loadKioskData(undefined) return null via
+ * an empty (not erroring) Supabase query, which triggered notFound() —
+ * a real tenant 404'ing with zero errors logged anywhere. Both the page
+ * component and generateMetadata needed this fix, since each
+ * independently destructures `params`.
  */
 
 import { notFound } from "next/navigation"
@@ -98,8 +107,9 @@ async function loadKioskData(slug: string) {
   return { tenant, branding: resolvedBranding, services }
 }
 
-export default async function KioskPage({ params }: { params: { slug: string } }) {
-  const data = await loadKioskData(params.slug)
+export default async function KioskPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params
+  const data = await loadKioskData(slug)
   if (!data) notFound()
 
   const { tenant, branding, services } = data
@@ -111,8 +121,9 @@ export default async function KioskPage({ params }: { params: { slug: string } }
   )
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const data = await loadKioskData(params.slug)
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params
+  const data = await loadKioskData(slug)
   return {
     title: data ? `${data.branding.displayName} — Check in` : "Kiosk",
   }
