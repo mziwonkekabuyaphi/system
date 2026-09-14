@@ -1,1 +1,13 @@
-
+{
+  "name": "qless-print-agent",
+  "version": "1.0.0",
+  "description": "Local Windows helper that prints kiosk queue/booking tickets to an Epson TM-T88V via the TM Virtual Port Driver.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-thermal-printer": "^4.4.4"
+  }
+}
