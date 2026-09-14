@@ -451,6 +451,7 @@ function WelcomeScreen({ branding, onTap }: { branding: KioskBranding; onTap: ()
           max-height: 96px;
           max-width: 320px;
           object-fit: contain;
+          border-radius: 16px;
         }
         h1 {
           font-size: 64px;
