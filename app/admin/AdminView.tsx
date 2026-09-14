@@ -156,6 +156,18 @@ export function AdminView({
   const brandName = initialBranding.displayName?.trim() || "Shop admin"
   const brandInitial = brandName.charAt(0).toUpperCase() || "S"
 
+  // Single source of truth for the shop's logo across the whole app is
+  // tenant_branding.logo_url (edited only from Settings > Private Label,
+  // see SettingsManager.tsx's BrandingFields / settings-actions.ts's
+  // uploadLogo/removeLogo). The kiosk (app/kiosk/[slug]/page.tsx) reads
+  // the same column directly. Here it arrives via the initialBranding
+  // prop from the Server Component (app/admin/page.tsx), which
+  // re-fetches on every request and after the Private Label save calls
+  // revalidatePath("/admin") — the same mechanism that already keeps
+  // brandName above in sync, so no extra plumbing is needed for the logo
+  // to stay fresh too.
+  const brandLogoUrl = initialBranding.logoUrl
+
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-stone-900">
       {/* ================= SIDEBAR ================= */}
@@ -173,8 +185,13 @@ export function AdminView({
       >
         {/* Brand */}
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
-            {brandInitial}
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
+            {brandLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, same pattern as BrandingFields' logo preview and the kiosk's own branding image
+              <img src={brandLogoUrl} alt={`${brandName} logo`} className="h-full w-full object-cover" />
+            ) : (
+              brandInitial
+            )}
           </span>
           <span
             className={`truncate font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2] transition-opacity duration-150 ${
