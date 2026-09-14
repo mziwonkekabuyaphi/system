@@ -205,6 +205,75 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart < bEnd && bStart < aEnd
 }
 
+// ============================================================================
+// TIMEZONE — shop hours (SHOP_OPEN_HOUR/SHOP_CLOSE_HOUR) are defined in the
+// tenant's own local time, not UTC. Slot generation used to anchor them to
+// UTC midnight (`new Date(dateISO + "T00:00:00.000Z")`), which silently
+// treated "9am" as 09:00 UTC instead of 09:00 local — a two-hour drift for
+// an Africa/Johannesburg (UTC+2) tenant. These helpers convert a wall-clock
+// local time to the correct UTC instant using the tenant's configured
+// timezone, so a slot picked as "13:00" on the kiosk is actually stored as
+// 13:00 in the shop's timezone, not 13:00 UTC.
+// ============================================================================
+
+/** Falls back to UTC only if a tenant genuinely has no tenant_settings row
+ *  yet — never silently assumes Africa/Johannesburg for a tenant that
+ *  hasn't configured a timezone. */
+async function getTenantTimeZone(supabase: SupabaseClient, tenantId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("timezone")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    console.error("[booking] Failed to load tenant timezone, defaulting to UTC", { tenantId, error })
+  }
+
+  return data?.timezone || "UTC"
+}
+
+/** Offset (in minutes, UTC ahead of `timeZone`) that applies AT `instant`
+ *  in `timeZone` — computed per-instant (not a fixed constant) so this
+ *  stays correct for timezones that do observe DST, even though neither
+ *  Africa/Johannesburg nor UTC do. */
+function getTimeZoneOffsetMinutes(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant)
+
+  const map: Record<string, string> = {}
+  for (const part of parts) map[part.type] = part.value
+
+  const asUTC = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour) === 24 ? 0 : Number(map.hour), // some ICU implementations report midnight as "24"
+    Number(map.minute),
+    Number(map.second),
+  )
+
+  return (asUTC - instant.getTime()) / 60_000
+}
+
+/** Converts a wall-clock date + hour + minute *in `timeZone`* to the UTC
+ *  instant it actually represents. This is the piece that was missing:
+ *  slot generation previously built times purely in UTC space and never
+ *  accounted for the tenant's offset at all. */
+function zonedWallTimeToUtc(dateISO: string, hour: number, minute: number, timeZone: string): Date {
+  const naiveGuess = new Date(`${dateISO}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`)
+  const offsetMinutes = getTimeZoneOffsetMinutes(naiveGuess, timeZone)
+  return new Date(naiveGuess.getTime() - offsetMinutes * 60_000)
+}
+
 /**
  * Generates candidate slots for the date at SLOT_INTERVAL_MINUTES
  * granularity within shop hours, keeping only slots where at least one
@@ -219,13 +288,15 @@ export async function getAvailableSlots(tenantId: string, dateISO: string, durat
   const staff = await getActiveStaff(supabase, tenantId)
   if (staff.length === 0) return []
 
+  const timeZone = await getTenantTimeZone(supabase, tenantId)
   const existingBookings = await getBookingsForDate(supabase, tenantId, dateISO)
 
   const slots: BookingSlot[] = []
-  const dayBase = new Date(`${dateISO}T00:00:00.000Z`)
 
   for (let minutes = SHOP_OPEN_HOUR * 60; minutes + durationMinutes <= SHOP_CLOSE_HOUR * 60; minutes += SLOT_INTERVAL_MINUTES) {
-    const slotStart = new Date(dayBase.getTime() + minutes * 60_000)
+    const hour = Math.floor(minutes / 60)
+    const minute = minutes % 60
+    const slotStart = zonedWallTimeToUtc(dateISO, hour, minute, timeZone)
     const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
 
     if (slotStart.getTime() < Date.now()) continue
@@ -238,7 +309,7 @@ export async function getAvailableSlots(tenantId: string, dateISO: string, durat
     if (anyStaffFree) {
       slots.push({
         start: slotStart.toISOString(),
-        label: slotStart.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false }),
+        label: slotStart.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }),
       })
     }
   }
