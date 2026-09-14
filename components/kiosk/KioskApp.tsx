@@ -55,6 +55,13 @@ import {
   type KioskBookingTicket,
   type KioskQueueTicket,
 } from "@/app/kiosk/[slug]/actions"
+import { printKioskTicket } from "@/lib/kiosk/printTicket"
+
+// idle | printing | success | failed — drives the small status line and
+// retry button on TicketScreen. Never gates showing the ticket itself;
+// the on-screen number is always the source of truth, the paper ticket
+// is a bonus (same posture as the WhatsApp confirmation send).
+type PrintStatus = "idle" | "printing" | "success" | "failed"
 
 type Step =
   | "welcome"
@@ -177,6 +184,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [printStatus, setPrintStatus] = useState<PrintStatus>("idle")
 
   const resetAll = useCallback(() => {
     setStep("welcome")
@@ -191,7 +199,19 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
     setTicket(null)
     setError(null)
     setBusy(false)
+    setPrintStatus("idle")
   }, [])
+
+  // Fire-and-track: never awaited by submit() itself, so a slow/offline
+  // printer can't delay the customer seeing their on-screen ticket.
+  const attemptPrint = useCallback(
+    async (t: Ticket) => {
+      setPrintStatus("printing")
+      const ok = await printKioskTicket(t, branding.displayName)
+      setPrintStatus(ok ? "success" : "failed")
+    },
+    [branding.displayName],
+  )
 
   useIdleReset(resetAll, step !== "welcome", branding.idleRefreshSeconds * 1000)
   useConfirmationAutoReset(step === "ticket", branding.confirmationRefreshSeconds * 1000, resetAll)
@@ -287,6 +307,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       }
       setTicket(result.data)
       setStep("ticket")
+      void attemptPrint(result.data)
       return
     }
 
@@ -302,6 +323,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
     }
     setTicket(result.data)
     setStep("ticket")
+    void attemptPrint(result.data)
   }
 
   const canSubmit = name.trim().length >= 2 && phone.trim().length >= 9
@@ -367,7 +389,14 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
         />
       )}
 
-      {step === "ticket" && ticket && <TicketScreen ticket={ticket} onDone={resetAll} />}
+      {step === "ticket" && ticket && (
+        <TicketScreen
+          ticket={ticket}
+          onDone={resetAll}
+          printStatus={printStatus}
+          onRetryPrint={() => attemptPrint(ticket)}
+        />
+      )}
 
       {!branding.removePoweredBy && <PoweredByFooter />}
 
@@ -865,7 +894,17 @@ function DetailsScreen({
 // Ticket — the confirmation is a literal ticket, not a decorated banner
 // ----------------------------------------------------------------------------
 
-function TicketScreen({ ticket, onDone }: { ticket: Ticket; onDone: () => void }) {
+function TicketScreen({
+  ticket,
+  onDone,
+  printStatus,
+  onRetryPrint,
+}: {
+  ticket: Ticket
+  onDone: () => void
+  printStatus: "idle" | "printing" | "success" | "failed"
+  onRetryPrint: () => void
+}) {
   const isBooking = ticket.kind === "booking"
 
   return (
@@ -896,11 +935,50 @@ function TicketScreen({ ticket, onDone }: { ticket: Ticket; onDone: () => void }
         </div>
       </div>
 
+      {/* Never blocks "Done" or hides the ticket number above — printing
+          is a bonus, the screen is the source of truth either way. */}
+      {printStatus === "printing" && <p className="printStatus">Printing your ticket…</p>}
+      {printStatus === "failed" && (
+        <div className="printFailed">
+          <p className="printStatus printStatusError">Couldn't print — please note your number above.</p>
+          <button className="retry" onClick={onRetryPrint} type="button">
+            Try printing again
+          </button>
+        </div>
+      )}
+
       <button className="done" onClick={onDone} type="button">
         Done
       </button>
 
       <style jsx>{`
+        .printStatus {
+          margin: -16px 0 0;
+          font-size: 17px;
+          font-weight: 600;
+          color: var(--muted);
+        }
+        .printStatusError {
+          color: var(--amber);
+        }
+        .printFailed {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 16px;
+        }
+        .retry {
+          min-height: 64px;
+          padding: 0 28px;
+          background: transparent;
+          border: 2px solid var(--line);
+          border-radius: 14px;
+          color: var(--ink);
+          font-family: inherit;
+          font-size: 19px;
+          font-weight: 600;
+          cursor: pointer;
+        }
         .ticketScreen {
           flex: 1;
           display: flex;
