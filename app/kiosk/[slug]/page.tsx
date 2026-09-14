@@ -279,7 +279,7 @@ function KioskUnavailable({ branding }: { branding: KioskBranding }) {
         <img
           src={branding.logoUrl}
           alt=""
-          style={{ maxHeight: 96, maxWidth: 320, objectFit: "contain", marginBottom: 8, borderRadius: 16 }}
+          style={{ maxHeight: 96, maxWidth: 320, objectFit: "contain", marginBottom: 8 }}
         />
       )}
       <h1 style={{ fontSize: 48, fontWeight: 800, margin: 0, color: UNAVAILABLE_INK, lineHeight: 1.1 }}>
