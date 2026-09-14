@@ -37,6 +37,17 @@
 // tenants.slug is now also fetched here (alongside plan) purely so the
 // Settings > Kiosk tab can render the public Kiosk URL and its QR code —
 // it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
+//
+// STAFF HR (new): staff now carries job_title / hourly_rate / phone /
+// email / clock_in_pin (add_staff_hr_profile_and_shifts migration) —
+// phase 1 of turning the bare name+active toggle into an actual staff
+// profile. clock_in_pin is what staff type in at the public PIN pad,
+// app/clock/[slug], which is unauthenticated and re-resolves tenantId
+// from the slug itself (same trust model as /kiosk/[slug]) rather than
+// trusting anything this admin session hands it. getActiveStaffShifts
+// below powers the "currently clocked in" panel in StaffManager.tsx —
+// only the row a shift is admin-relevant for (who, since when); the full
+// shift history isn't loaded here.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -56,6 +67,7 @@ import type {
   AdminQueueSettings,
   AdminService,
   AdminStaff,
+  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -145,13 +157,44 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
 async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<AdminStaff[]> {
   const { data, error } = await supabase
     .from("staff")
-    .select("id, name, active")
+    .select("id, name, active, job_title, hourly_rate, phone, email, clock_in_pin")
     .eq("tenant_id", tenantId)
     .order("name", { ascending: true })
 
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
 
-  return (data ?? []).map((s) => ({ id: s.id, name: s.name, active: s.active }))
+  return (data ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    active: s.active,
+    jobTitle: s.job_title,
+    hourlyRate: s.hourly_rate === null ? null : Number(s.hourly_rate),
+    phone: s.phone,
+    email: s.email,
+    clockInPin: s.clock_in_pin,
+  }))
+}
+
+// staff_shifts rows with status = 'active' are, by definition, currently
+// clocked in — there's at most one open shift per staff member at a time
+// (the /clock/[slug] toggle closes the existing one before ever opening a
+// new one), so this list doubles as "who's on the floor right now".
+async function getActiveStaffShifts(supabase: ServerClient, tenantId: string): Promise<AdminStaffShift[]> {
+  const { data, error } = await supabase
+    .from("staff_shifts")
+    .select("id, staff_id, login_time, staff ( name )")
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .order("login_time", { ascending: true })
+
+  if (error) throw new Error(`Failed to load active shifts: ${error.message}`)
+
+  return (data ?? []).map((s: any) => ({
+    id: s.id,
+    staffId: s.staff_id,
+    staffName: s.staff?.name ?? "Unknown staff",
+    loginTime: s.login_time,
+  }))
 }
 
 // ============================================================================
@@ -431,11 +474,12 @@ export default async function AdminPage() {
     )
   }
 
-  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
+  const [bookings, queue, services, staff, activeShifts, inbox, settingsData] = await Promise.all([
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
     getAllServices(supabase, tenantId),
     getAllStaff(supabase, tenantId),
+    getActiveStaffShifts(supabase, tenantId),
     getInboxData(supabase, tenantId),
     getSettingsData(supabase, tenantId),
   ])
@@ -446,6 +490,7 @@ export default async function AdminPage() {
       initialQueue={queue}
       initialServices={services}
       initialStaff={staff}
+      initialActiveShifts={activeShifts}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}

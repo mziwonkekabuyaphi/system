@@ -16,6 +16,36 @@ export interface AdminStaff {
   id: string
   name: string
   active: boolean
+  jobTitle: string | null
+  hourlyRate: number | null
+  phone: string | null
+  email: string | null
+  /** Current PIN, shown back in the edit form (this is an admin-only
+   *  screen, same posture as showing any other tenant setting). Staff use
+   *  this PIN to clock in/out at the public /clock/[slug] pad. */
+  clockInPin: string | null
+}
+
+/** Payload shape for addStaff()/updateStaff() in actions.ts. clockInPin as
+ *  an empty string means "no PIN" on create and "leave unchanged" on
+ *  update — see updateStaff's implementation. */
+export interface AdminStaffInput {
+  name: string
+  jobTitle: string
+  hourlyRate: number | null
+  phone: string
+  email: string
+  clockInPin: string
+}
+
+/** A currently-open row in staff_shifts, joined with the staff member's
+ *  name for display in StaffManager.tsx's "Currently clocked in" panel. */
+export interface AdminStaffShift {
+  id: string
+  staffId: string
+  staffName: string
+  /** ISO timestamp */
+  loginTime: string
 }
 
 export interface AdminQueueEntry {

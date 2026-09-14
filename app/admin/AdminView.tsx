@@ -3,7 +3,6 @@
 import { useState } from "react"
 import type { SVGProps } from "react"
 
-import { LogoutButton } from "@/components/admin/LogoutButton"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
@@ -24,6 +23,7 @@ import type {
   AdminQueueSettings,
   AdminService,
   AdminStaff,
+  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -118,6 +118,7 @@ export function AdminView({
   initialQueue,
   initialServices,
   initialStaff,
+  initialActiveShifts,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -135,6 +136,7 @@ export function AdminView({
   initialQueue: AdminQueueEntry[]
   initialServices: AdminService[]
   initialStaff: AdminStaff[]
+  initialActiveShifts: AdminStaffShift[]
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -156,18 +158,6 @@ export function AdminView({
   const brandName = initialBranding.displayName?.trim() || "Shop admin"
   const brandInitial = brandName.charAt(0).toUpperCase() || "S"
 
-  // Single source of truth for the shop's logo across the whole app is
-  // tenant_branding.logo_url (edited only from Settings > Private Label,
-  // see SettingsManager.tsx's BrandingFields / settings-actions.ts's
-  // uploadLogo/removeLogo). The kiosk (app/kiosk/[slug]/page.tsx) reads
-  // the same column directly. Here it arrives via the initialBranding
-  // prop from the Server Component (app/admin/page.tsx), which
-  // re-fetches on every request and after the Private Label save calls
-  // revalidatePath("/admin") — the same mechanism that already keeps
-  // brandName above in sync, so no extra plumbing is needed for the logo
-  // to stay fresh too.
-  const brandLogoUrl = initialBranding.logoUrl
-
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-stone-900">
       {/* ================= SIDEBAR ================= */}
@@ -185,13 +175,8 @@ export function AdminView({
       >
         {/* Brand */}
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
-            {brandLogoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, same pattern as BrandingFields' logo preview and the kiosk's own branding image
-              <img src={brandLogoUrl} alt={`${brandName} logo`} className="h-full w-full object-cover" />
-            ) : (
-              brandInitial
-            )}
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
+            {brandInitial}
           </span>
           <span
             className={`truncate font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2] transition-opacity duration-150 ${
@@ -231,11 +216,6 @@ export function AdminView({
           })}
         </nav>
 
-        {/* Account section — sign out */}
-        <div className="border-t border-white/10 px-3 py-3">
-          <LogoutButton expanded={expanded} />
-        </div>
-
         {/* Pin toggle — lets touch users (no hover) keep it open, and keyboard/mouse users lock it */}
         <div className="border-t border-white/10 px-3 py-3">
           <button
@@ -274,7 +254,9 @@ export function AdminView({
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}
           {tab === "services" && <ServicesManager initialServices={initialServices} />}
-          {tab === "staff" && <StaffManager initialStaff={initialStaff} />}
+          {tab === "staff" && (
+            <StaffManager initialStaff={initialStaff} initialActiveShifts={initialActiveShifts} />
+          )}
           {tab === "settings" && (
             <SettingsManager
               initialPlan={initialPlan}
