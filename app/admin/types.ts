@@ -105,13 +105,49 @@ export interface AdminTenantSettings {
 
 /** tenant_branding, one row per tenant. removePoweredBy can only be true
  *  when the tenant's plan is 'business' — enforced in settings-actions.ts
- *  and, as a backstop, by a DB trigger on the column itself. */
+ *  and, as a backstop, by a DB trigger on the column itself.
+ *
+ *  This is the single source of truth for how the shop is branded across
+ *  every customer-facing surface (kiosk, booking/queue confirmations,
+ *  WhatsApp). It's edited in exactly one place in the admin UI — the
+ *  Private Label tab (see PrivateLabelPanel / BrandingFields in
+ *  SettingsManager.tsx) — via updateBranding()/uploadLogo()/removeLogo().
+ *  Other tabs (Kiosk) read this data but must never render their own copy
+ *  of these controls. */
 export interface AdminBranding {
   displayName: string | null
   logoUrl: string | null
   primaryColor: string | null
   secondaryColor: string | null
   removePoweredBy: boolean
+}
+
+/** Which paths the public kiosk offers. Mirrors
+ *  tenant_branding.registration_type (migration_kiosk_settings.sql) and
+ *  app/kiosk/[slug]/page.tsx's KioskRegistrationType — kept as its own
+ *  named type here (rather than admin code importing the kiosk route's
+ *  type directly) so nothing outside app/kiosk/[slug]/ ever has to import
+ *  from that route's page.tsx. Cross-importing from a Next.js page/layout
+ *  file into unrelated server code (e.g. a "use server" actions file) is
+ *  fragile — it pulls that file into a module graph it doesn't belong to
+ *  — so admin code (settings-actions.ts, SettingsManager.tsx) should
+ *  import this type from here instead. */
+export type AdminKioskRegistrationType = "booking" | "queue" | "both"
+
+/** tenant_branding's kiosk-behavior columns, one row per tenant. Separate
+ *  from AdminBranding (and saved by its own action, updateKioskSettings)
+ *  because these fields are plan-agnostic kiosk mechanics, not brand
+ *  identity — see the Kiosk tab in SettingsManager.tsx. */
+export interface AdminKioskSettings {
+  /** null/empty falls back to "Tap anywhere to check in" — see
+   *  app/kiosk/[slug]/page.tsx's DEFAULT_TAGLINE. */
+  tagline: string | null
+  /** Seconds of inactivity before the kiosk resets to welcome. 10–600. */
+  idleRefreshSeconds: number
+  /** Seconds the ticket confirmation screen stays up before auto-returning
+   *  to welcome. 3–120. */
+  confirmationRefreshSeconds: number
+  registrationType: AdminKioskRegistrationType
 }
 
 // ============================================================================

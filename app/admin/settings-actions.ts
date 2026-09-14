@@ -51,13 +51,18 @@
  * message instead of a raw Postgres constraint error. registrationType is
  * plan-agnostic — unlike remove_powered_by, any tenant can lock their
  * kiosk to booking-only or queue-only regardless of plan.
+ *
+ * registrationType is typed as AdminKioskRegistrationType from ./types,
+ * NOT re-imported from app/kiosk/[slug]/page.tsx — this file is
+ * "use server" and shouldn't pull in a route's page module (even for a
+ * type-only import) just to borrow a string union.
  */
 
 import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
-import type { KioskRegistrationType } from "@/app/kiosk/[slug]/page"
+import type { AdminKioskRegistrationType } from "./types"
 
 type ActionResult = { success: true } | { success: false; error: string }
 type LogoActionResult = { success: true; logoUrl: string } | { success: false; error: string }
@@ -70,7 +75,7 @@ const MIN_IDLE_REFRESH_SECONDS = 10
 const MAX_IDLE_REFRESH_SECONDS = 600
 const MIN_CONFIRMATION_REFRESH_SECONDS = 3
 const MAX_CONFIRMATION_REFRESH_SECONDS = 120
-const VALID_REGISTRATION_TYPES: KioskRegistrationType[] = ["booking", "queue", "both"]
+const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 async function tenantContext() {
   const { tenantId } = await requireTenantMember()
@@ -227,7 +232,7 @@ export async function updateKioskSettings(input: {
   tagline: string | null
   idleRefreshSeconds: number
   confirmationRefreshSeconds: number
-  registrationType: KioskRegistrationType
+  registrationType: AdminKioskRegistrationType
 }): Promise<ActionResult> {
   try {
     if (

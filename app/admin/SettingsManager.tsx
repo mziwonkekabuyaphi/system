@@ -120,9 +120,7 @@ export function SettingsManager({
       {subTab === "kiosk" && (
         <KioskPanel
           initialEnabled={initialKioskEnabled}
-          plan={initialPlan}
           tenantSlug={tenantSlug}
-          initialBranding={initialBranding}
           initialKioskSettings={initialKioskSettings}
         />
       )}
@@ -279,22 +277,22 @@ function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
 }
 
 // ---------------------------------------------------------------------------
-// Kiosk — the tenant's full remote control over their physical kiosk:
-// on/off, look & feel (shared with Private Label), the tagline copy, the
-// public URL + QR code customers can jump to, the two auto-refresh timers,
-// and which registration paths are publicly offered.
+// Kiosk — kiosk-specific functionality ONLY: on/off, the public URL + QR
+// code, and kiosk behavior (tagline / refresh timers / registration type).
+//
+// Branding (display name, logo, colors, "Remove Powered by") is NOT edited
+// here. Private Label is the single source of truth for that — this tab
+// only ever reads it (indirectly, via what the kiosk itself renders at
+// runtime from tenant_branding), it never provides a second set of editing
+// controls for it. See BrandingFields under PrivateLabelPanel below.
 // ---------------------------------------------------------------------------
 function KioskPanel({
   initialEnabled,
-  plan,
   tenantSlug,
-  initialBranding,
   initialKioskSettings,
 }: {
   initialEnabled: boolean
-  plan: AdminPlan
   tenantSlug: string
-  initialBranding: AdminBranding
   initialKioskSettings: AdminKioskSettings
 }) {
   const [enabled, setEnabled] = useState(initialEnabled)
@@ -334,8 +332,6 @@ function KioskPanel({
       </div>
 
       <KioskUrlPanel tenantSlug={tenantSlug} />
-
-      <BrandingFields plan={plan} initial={initialBranding} title="Look &amp; feel" />
 
       <KioskBehaviorPanel initial={initialKioskSettings} />
     </div>
@@ -441,7 +437,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
       <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk behavior</p>
-      <p className="text-sm text-stone-500">What the kiosk says and how it resets itself between customers.</p>
+      <p className="text-sm text-stone-500">Control what the kiosk displays and how it resets between customers.</p>
 
       <div className="mt-4 space-y-4">
         <FieldRow label="Tagline" hint='Shown under your shop name on the welcome screen. Defaults to "Tap anywhere to check in".'>
@@ -517,11 +513,31 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared branding fields — display name, logo, colors, and (plan-gated)
-// remove-powered-by. Used by both the Kiosk tab and the Private Label tab
-// so the two can never drift: same state shape, same save action.
+// Private Label — the SINGLE place branding is edited. Controls how the
+// business appears across every customer-facing surface (kiosk, booking &
+// queue confirmations, WhatsApp). Two cards:
+//   - Brand identity: display name, logo, colors
+//   - Platform branding: "Remove Powered by" (Business plan only)
+// Both save through the same AdminBranding shape and the same
+// updateBranding()/uploadLogo()/removeLogo() actions as before — nothing
+// about the data layer changed, only where the controls live.
 // ---------------------------------------------------------------------------
-function BrandingFields({ plan, initial, title }: { plan: AdminPlan; initial: AdminBranding; title: string }) {
+function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="font-[family-name:var(--font-admin-serif)] text-xl text-stone-900">Private Label</p>
+        <p className="text-sm text-stone-500">
+          Control the brand customers see across your booking, queue, kiosk, and WhatsApp experience.
+        </p>
+      </div>
+
+      <BrandingFields plan={plan} initial={initial} />
+    </div>
+  )
+}
+
+function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
   const [form, setForm] = useState({
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
@@ -601,8 +617,8 @@ function BrandingFields({ plan, initial, title }: { plan: AdminPlan; initial: Ad
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</p>
-        <p className="text-sm text-stone-500">How your shop appears on the kiosk and customer-facing pages.</p>
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Brand identity</p>
+        <p className="text-sm text-stone-500">Set the name, logo, and colors customers see when interacting with your business.</p>
 
         <div className="mt-4 space-y-4">
           <FieldRow label="Display name">
@@ -670,21 +686,22 @@ function BrandingFields({ plan, initial, title }: { plan: AdminPlan; initial: Ad
             />
           </div>
         </div>
+
+        <SaveRow isPending={isPending} onSave={save} message={message} />
       </div>
 
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Platform branding</p>
+        <p className="text-sm text-stone-500">Control whether your customers see attribution to the platform.</p>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
           <div>
-            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">
-              Remove &quot;Powered by&quot;
+            <p className="text-sm font-medium text-stone-800">Remove &quot;Powered by&quot;</p>
+            <p className="text-sm text-stone-500">
+              Hide the platform footer from customer-facing experiences. This is a Business plan feature.
             </p>
-            <p className="text-sm text-stone-500">Hide the platform footer on the kiosk.</p>
           </div>
-          <Toggle
-            checked={form.removePoweredBy}
-            disabled={isPending}
-            onChange={handleRemovePoweredByChange}
-          />
+          <Toggle checked={form.removePoweredBy} disabled={isPending} onChange={handleRemovePoweredByChange} />
         </div>
 
         {showUpgradePrompt && (
@@ -704,18 +721,8 @@ function BrandingFields({ plan, initial, title }: { plan: AdminPlan; initial: Ad
           </div>
         )}
       </div>
-
-      <SaveRow isPending={isPending} onSave={save} message={message} />
     </div>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Private Label — unchanged behavior, now just a thin wrapper around the
-// shared BrandingFields so it can never drift from what's on the Kiosk tab.
-// ---------------------------------------------------------------------------
-function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
-  return <BrandingFields plan={plan} initial={initial} title="Branding" />
 }
 
 // ---------------------------------------------------------------------------
