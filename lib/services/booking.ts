@@ -9,38 +9,62 @@
  * messages/booking.ts imports it as a type (slots/dates are booking's
  * own data shape, not copy).
  *
- * KIOSK REFACTOR (new): the actual "claim a slot and insert" logic that
- * used to live inline inside handleConfirm() is now its own exported
- * function, createBooking(). handleConfirm() calls it and does nothing
- * else with the DB itself. This is the single source of truth for what
- * "create a booking" means — the kiosk's Server Action calls the exact
- * same function, so there's no way for WhatsApp and kiosk bookings to
- * drift apart on staff-claiming, reference generation, or insert shape.
- * Likewise buildDateOptions() and getAvailableSlots() are now exported:
- * the kiosk's date/time screens need the identical "today + next 6 days"
- * and "which slots are actually free" logic WhatsApp uses, not a
- * lookalike reimplementation.
+ * KIOSK REFACTOR: the actual "claim a slot and insert" logic that used
+ * to live inline inside handleConfirm() is its own exported function,
+ * createBooking(). handleConfirm() calls it and does nothing else with
+ * the DB itself. This is the single source of truth for what "create a
+ * booking" means — the kiosk's Server Action calls the exact same
+ * function, so there's no way for WhatsApp and kiosk bookings to drift
+ * apart on staff-claiming, reference generation, or insert shape.
+ * Likewise buildDateOptions() and getAvailableSlots() are exported: the
+ * kiosk's date/time screens need the identical availability logic
+ * WhatsApp uses, not a lookalike reimplementation.
+ *
+ * BOOKING SETTINGS WIRING (new): availability and creation now actually
+ * read and enforce booking_settings, business_hours, and
+ * tenant_settings.timezone, via lib/services/shared/tenant-scheduling.ts
+ * — previously none of that was true; shop hours were a hardcoded UTC
+ * constant and booking_settings was never read here at all. Specifically:
+ *   - getAvailableSlots() only offers slots inside the tenant's actual
+ *     business_hours for that calendar date (in the tenant's timezone),
+ *     that are at least `min_notice_minutes` from now, and only for
+ *     dates within `max_advance_days`.
+ *   - buildDateOptions() is now async and tenant-aware: "today" is the
+ *     tenant's local calendar date, and the number of days offered is
+ *     capped at `max_advance_days` (never more than
+ *     DAYS_AHEAD_OFFERED, to keep a WhatsApp numbered list usable).
+ *   - createBooking() re-validates all of the above immediately before
+ *     inserting (assertBookingIsAllowed) — defense in depth against a
+ *     stale conversation state or a kiosk client replaying an old slot,
+ *     same "never trust the client" posture claimStaffForSlot already
+ *     had for staff availability.
+ *   - SHOP_OPEN_HOUR/SHOP_CLOSE_HOUR (hardcoded 9-18 "shop hours") are
+ *     removed — business_hours is now the only source of truth for
+ *     opening hours, per the single-source-of-truth requirement.
  *
  * What changed for multi-tenancy (vs the version this replaces):
  *   1. Every exported function and internal data-access helper now takes
  *      `tenantId` as its first argument, and every raw Supabase query
  *      against `staff`/`bookings` now filters `.eq("tenant_id", tenantId)`.
- *      Previously none of them did — without it, "don't care who"
- *      availability could pull in a different tenant's staff/bookings.
- *   2. Switched from `@/lib/services/customer` (profiles-based, can't
- *      create a row for an anonymous WhatsApp customer at all) to
- *      `@/lib/services/tenant-customer` (tenant_customers-based, built
- *      for exactly this). `customer.name` is now `tenant_customers.
- *      full_name` under the hood — still called `.name` on the returned
- *      object, so nothing downstream needed to change.
+ *   2. Switched from `@/lib/services/customer` to
+ *      `@/lib/services/tenant-customer` (tenant_customers-based).
  *   3. `getBookableServices` (services-catalog.ts) now also needs a
- *      `tenantId` argument — see that file for the fresh implementation
- *      this now calls.
+ *      `tenantId` argument.
+ *
+ * PLAN BILLING (from the separate Plans & Billing work): createBooking()
+ * also enforces the tenant's plan visit cap via
+ * lib/services/plans.ts's assertWithinVisitLimit() — thrown as
+ * PLAN_VISIT_LIMIT_REACHED before any slot is claimed or written, same
+ * "check first, write nothing on failure" posture as
+ * assertBookingIsAllowed(). This only actually blocks anything for a
+ * tenant on the free Mahala plan; metered plans (Growth/Business) have
+ * no visit_limit, so this check is a no-op for them and they're never
+ * stopped mid-booking — they just accrue toward next month's invoice.
  *
  * ASSUMPTIONS — unchanged from the original:
- *   - `services`/`staff`/`bookings` tables, shop hours as a flat
- *     constant, "don't care who" staff assignment (best-effort re-check
- *     at confirm time, no DB-level lock), no payment step.
+ *   - `services`/`staff`/`bookings` tables, "don't care who" staff
+ *     assignment (best-effort re-check at confirm time, no DB-level
+ *     lock), no payment step.
  */
 
 import crypto from "node:crypto"
@@ -56,6 +80,18 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
+import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+
+import {
+  getBookingSettings,
+  getTenantTimezone,
+  getBusinessHoursForDate,
+  zonedTimeToUtc,
+  todayInTimezone,
+  addDaysToDateString,
+  isWithinAdvanceWindow,
+  type DayHours,
+} from "@/lib/services/shared/tenant-scheduling"
 
 import {
   CANCEL_BUTTON,
@@ -73,6 +109,7 @@ import {
   noSlotsMessage,
   availabilityErrorMessage,
   slotStaleMessage,
+  bookingWindowClosedMessage,
   bookingCancelledMessage,
   missingBookingDataMessage,
   confirmYesNoReminderMessage,
@@ -93,16 +130,21 @@ const BOOKING_STATE_TIME_SELECTION = "booking_time_selection"
 const BOOKING_STATE_CONFIRM = "booking_confirm"
 const BOOKING_STATE_AWAITING_NAME = "booking_awaiting_name"
 
-const SHOP_OPEN_HOUR = 9 // 09:00
-const SHOP_CLOSE_HOUR = 18 // 18:00
 const SLOT_INTERVAL_MINUTES = 30 // granularity of offered start times
-const DAYS_AHEAD_OFFERED = 6 // "today" + next 6 days
+const DAYS_AHEAD_OFFERED = 6 // "today" + up to 6 more days, capped further by max_advance_days
 
 /** Thrown by createBooking() when nobody's free anymore by confirm time.
  *  Exported so callers outside this file (the kiosk action) can match on
  *  it without string-comparing error.message. handleConfirm below still
  *  checks the message string too, for zero behavior change there. */
 export const BOOKING_SLOT_NO_LONGER_AVAILABLE = "BOOKING_SLOT_NO_LONGER_AVAILABLE"
+
+/** Thrown by createBooking() when the requested slot no longer satisfies
+ *  booking_settings/business_hours — e.g. the conversation sat idle long
+ *  enough that min_notice_minutes now excludes it, the day is now beyond
+ *  max_advance_days, or the tenant's hours changed underneath it. Same
+ *  "never trust a client-provided time" posture as slot staleness. */
+export const BOOKING_OUTSIDE_ALLOWED_WINDOW = "BOOKING_OUTSIDE_ALLOWED_WINDOW"
 
 function getClientOrThrow(): SupabaseClient {
   const supabase = getSupabaseServerClient()
@@ -131,7 +173,7 @@ type BookingServiceOffer = CatalogService
 export interface BookingSlot {
   /** ISO start time, e.g. "2026-09-15T10:30:00.000Z" */
   start: string
-  /** Human display, e.g. "10:30" */
+  /** Human display, e.g. "10:30" — formatted in the tenant's timezone. */
   label: string
 }
 
@@ -172,27 +214,30 @@ async function getActiveStaff(supabase: SupabaseClient, tenantId: string): Promi
 }
 
 /**
- * Returns booked (staff_id, start_time, end_time) rows for the given date,
- * scoped to this tenant, across all active staff, so slot generation can
- * check overlaps in memory rather than one query per candidate slot.
+ * Returns booked (staff_id, start_time, end_time) rows whose start_time
+ * falls within [windowStart, windowEnd] (inclusive), scoped to this
+ * tenant, across all active staff — used to check slot overlaps in
+ * memory rather than one query per candidate slot. Bounds are now the
+ * tenant's actual business-hours window for a date (see resolveDayWindow
+ * below), not a fixed UTC calendar day — a shop whose local day doesn't
+ * align with the UTC day (anything not UTC+0) previously risked missing
+ * or double counting bookings near midnight.
  */
-async function getBookingsForDate(
+async function getBookingsInWindow(
   supabase: SupabaseClient,
   tenantId: string,
-  dateISO: string,
+  windowStart: Date,
+  windowEnd: Date,
 ): Promise<Array<{ staffId: string; start: Date; end: Date }>> {
-  const dayStart = new Date(`${dateISO}T00:00:00.000Z`)
-  const dayEnd = new Date(`${dateISO}T23:59:59.999Z`)
-
   const { data, error } = await supabase
     .from("bookings")
     .select("staff_id, start_time, end_time")
     .eq("tenant_id", tenantId)
     .eq("status", "confirmed")
-    .gte("start_time", dayStart.toISOString())
-    .lte("start_time", dayEnd.toISOString())
+    .gte("start_time", windowStart.toISOString())
+    .lte("start_time", windowEnd.toISOString())
 
-  if (error) throw new Error(`Failed to load bookings for ${dateISO}: ${error.message}`)
+  if (error) throw new Error(`Failed to load bookings: ${error.message}`)
 
   return (data ?? []).map((b) => ({
     staffId: b.staff_id,
@@ -205,79 +250,46 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart < bEnd && bStart < aEnd
 }
 
-// ============================================================================
-// TIMEZONE — shop hours (SHOP_OPEN_HOUR/SHOP_CLOSE_HOUR) are defined in the
-// tenant's own local time, not UTC. Slot generation used to anchor them to
-// UTC midnight (`new Date(dateISO + "T00:00:00.000Z")`), which silently
-// treated "9am" as 09:00 UTC instead of 09:00 local — a two-hour drift for
-// an Africa/Johannesburg (UTC+2) tenant. These helpers convert a wall-clock
-// local time to the correct UTC instant using the tenant's configured
-// timezone, so a slot picked as "13:00" on the kiosk is actually stored as
-// 13:00 in the shop's timezone, not 13:00 UTC.
-// ============================================================================
+interface DayWindow {
+  timezone: string
+  hours: DayHours
+  /** null when the tenant is closed that day / has no hours configured. */
+  dayOpenUTC: Date | null
+  dayCloseUTC: Date | null
+}
 
-/** Falls back to UTC only if a tenant genuinely has no tenant_settings row
- *  yet — never silently assumes Africa/Johannesburg for a tenant that
- *  hasn't configured a timezone. */
-async function getTenantTimeZone(supabase: SupabaseClient, tenantId: string): Promise<string> {
-  const { data, error } = await supabase
-    .from("tenant_settings")
-    .select("timezone")
-    .eq("tenant_id", tenantId)
-    .maybeSingle()
+/**
+ * Resolves everything needed to reason about one calendar date for one
+ * tenant: their timezone, their configured hours for that weekday, and
+ * those hours converted to UTC instants. The one place this
+ * timezone+business-hours resolution happens, shared by availability
+ * generation, staff claiming, and the final pre-insert check — so all
+ * three agree by construction instead of three separate calculations
+ * that could drift apart.
+ */
+async function resolveDayWindow(supabase: SupabaseClient, tenantId: string, dateISO: string): Promise<DayWindow> {
+  const timezone = await getTenantTimezone(supabase, tenantId)
+  const hours = await getBusinessHoursForDate(supabase, tenantId, dateISO)
 
-  if (error) {
-    console.error("[booking] Failed to load tenant timezone, defaulting to UTC", { tenantId, error })
+  if (hours.isClosed || !hours.openTime || !hours.closeTime) {
+    return { timezone, hours, dayOpenUTC: null, dayCloseUTC: null }
   }
 
-  return data?.timezone || "UTC"
-}
-
-/** Offset (in minutes, UTC ahead of `timeZone`) that applies AT `instant`
- *  in `timeZone` — computed per-instant (not a fixed constant) so this
- *  stays correct for timezones that do observe DST, even though neither
- *  Africa/Johannesburg nor UTC do. */
-function getTimeZoneOffsetMinutes(instant: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(instant)
-
-  const map: Record<string, string> = {}
-  for (const part of parts) map[part.type] = part.value
-
-  const asUTC = Date.UTC(
-    Number(map.year),
-    Number(map.month) - 1,
-    Number(map.day),
-    Number(map.hour) === 24 ? 0 : Number(map.hour), // some ICU implementations report midnight as "24"
-    Number(map.minute),
-    Number(map.second),
-  )
-
-  return (asUTC - instant.getTime()) / 60_000
-}
-
-/** Converts a wall-clock date + hour + minute *in `timeZone`* to the UTC
- *  instant it actually represents. This is the piece that was missing:
- *  slot generation previously built times purely in UTC space and never
- *  accounted for the tenant's offset at all. */
-function zonedWallTimeToUtc(dateISO: string, hour: number, minute: number, timeZone: string): Date {
-  const naiveGuess = new Date(`${dateISO}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`)
-  const offsetMinutes = getTimeZoneOffsetMinutes(naiveGuess, timeZone)
-  return new Date(naiveGuess.getTime() - offsetMinutes * 60_000)
+  return {
+    timezone,
+    hours,
+    dayOpenUTC: zonedTimeToUtc(dateISO, hours.openTime, timezone),
+    dayCloseUTC: zonedTimeToUtc(dateISO, hours.closeTime, timezone),
+  }
 }
 
 /**
  * Generates candidate slots for the date at SLOT_INTERVAL_MINUTES
- * granularity within shop hours, keeping only slots where at least one
- * of THIS TENANT's active staff is free for the full service duration.
+ * granularity within the tenant's ACTUAL business hours for that
+ * weekday (business_hours, in the tenant's timezone), excluding
+ * anything inside `min_notice_minutes` of now and any date outside
+ * `max_advance_days`, keeping only slots where at least one of this
+ * tenant's active staff is free for the full service duration.
  *
  * Exported: the kiosk's time-selection screen calls this directly so
  * it's checking the exact same availability WhatsApp would show for the
@@ -285,21 +297,34 @@ function zonedWallTimeToUtc(dateISO: string, hour: number, minute: number, timeZ
  */
 export async function getAvailableSlots(tenantId: string, dateISO: string, durationMinutes: number): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
-  const staff = await getActiveStaff(supabase, tenantId)
-  if (staff.length === 0) return []
 
-  const timeZone = await getTenantTimeZone(supabase, tenantId)
-  const existingBookings = await getBookingsForDate(supabase, tenantId, dateISO)
+  const [staff, bookingSettings, dayWindow] = await Promise.all([
+    getActiveStaff(supabase, tenantId),
+    getBookingSettings(supabase, tenantId),
+    resolveDayWindow(supabase, tenantId, dateISO),
+  ])
+
+  if (staff.length === 0) return []
+  // Closed that day / no hours configured for that weekday at all.
+  if (!dayWindow.dayOpenUTC || !dayWindow.dayCloseUTC) return []
+
+  const today = todayInTimezone(dayWindow.timezone)
+  if (!isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) return []
+
+  const existingBookings = await getBookingsInWindow(supabase, tenantId, dayWindow.dayOpenUTC, dayWindow.dayCloseUTC)
+
+  const minNoticeCutoffMillis = Date.now() + bookingSettings.minNoticeMinutes * 60_000
 
   const slots: BookingSlot[] = []
+  for (
+    let slotStartMillis = dayWindow.dayOpenUTC.getTime();
+    slotStartMillis + durationMinutes * 60_000 <= dayWindow.dayCloseUTC.getTime();
+    slotStartMillis += SLOT_INTERVAL_MINUTES * 60_000
+  ) {
+    if (slotStartMillis < minNoticeCutoffMillis) continue
 
-  for (let minutes = SHOP_OPEN_HOUR * 60; minutes + durationMinutes <= SHOP_CLOSE_HOUR * 60; minutes += SLOT_INTERVAL_MINUTES) {
-    const hour = Math.floor(minutes / 60)
-    const minute = minutes % 60
-    const slotStart = zonedWallTimeToUtc(dateISO, hour, minute, timeZone)
-    const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
-
-    if (slotStart.getTime() < Date.now()) continue
+    const slotStart = new Date(slotStartMillis)
+    const slotEnd = new Date(slotStartMillis + durationMinutes * 60_000)
 
     const anyStaffFree = staff.some((member) => {
       const memberBookings = existingBookings.filter((b) => b.staffId === member.id)
@@ -309,7 +334,12 @@ export async function getAvailableSlots(tenantId: string, dateISO: string, durat
     if (anyStaffFree) {
       slots.push({
         start: slotStart.toISOString(),
-        label: slotStart.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }),
+        label: new Intl.DateTimeFormat("en-ZA", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: dayWindow.timezone,
+        }).format(slotStart),
       })
     }
   }
@@ -330,9 +360,19 @@ async function claimStaffForSlot(
   durationMinutes: number,
 ): Promise<ActiveStaff> {
   const staff = await getActiveStaff(supabase, tenantId)
-  const existingBookings = await getBookingsForDate(supabase, tenantId, dateISO)
+  const dayWindow = await resolveDayWindow(supabase, tenantId, dateISO)
+
   const slotStart = new Date(slot.start)
   const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
+
+  // Fall back to a window around just this slot if the day somehow has
+  // no resolved hours here (assertBookingIsAllowed, called before this
+  // in createBooking, already rejects that case — this is a defensive
+  // fallback, not the expected path).
+  const windowStart = dayWindow.dayOpenUTC ?? slotStart
+  const windowEnd = dayWindow.dayCloseUTC ?? slotEnd
+
+  const existingBookings = await getBookingsInWindow(supabase, tenantId, windowStart, windowEnd)
 
   const freeStaff = staff.find((member) => {
     const memberBookings = existingBookings.filter((b) => b.staffId === member.id)
@@ -344,6 +384,50 @@ async function claimStaffForSlot(
   }
 
   return freeStaff
+}
+
+/**
+ * Final server-side gate before a booking is inserted — re-validates
+ * business hours, max_advance_days, and min_notice_minutes against the
+ * requested slot. Never trusts that a slot offered earlier in the
+ * conversation (or passed in by the kiosk) is still valid: a customer
+ * can sit on a "confirm?" prompt for a while, booking_settings can
+ * change mid-conversation, and the kiosk calls createBooking() directly
+ * with client-supplied data. Throws BOOKING_OUTSIDE_ALLOWED_WINDOW if
+ * anything no longer holds.
+ */
+async function assertBookingIsAllowed(
+  supabase: SupabaseClient,
+  tenantId: string,
+  dateISO: string,
+  slot: BookingSlot,
+  durationMinutes: number,
+): Promise<void> {
+  const [bookingSettings, dayWindow] = await Promise.all([
+    getBookingSettings(supabase, tenantId),
+    resolveDayWindow(supabase, tenantId, dateISO),
+  ])
+
+  if (!dayWindow.dayOpenUTC || !dayWindow.dayCloseUTC) {
+    throw new Error(BOOKING_OUTSIDE_ALLOWED_WINDOW)
+  }
+
+  const today = todayInTimezone(dayWindow.timezone)
+  if (!isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) {
+    throw new Error(BOOKING_OUTSIDE_ALLOWED_WINDOW)
+  }
+
+  const slotStart = new Date(slot.start)
+  const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
+
+  if (slotStart.getTime() < dayWindow.dayOpenUTC.getTime() || slotEnd.getTime() > dayWindow.dayCloseUTC.getTime()) {
+    throw new Error(BOOKING_OUTSIDE_ALLOWED_WINDOW)
+  }
+
+  const minNoticeCutoffMillis = Date.now() + bookingSettings.minNoticeMinutes * 60_000
+  if (slotStart.getTime() < minNoticeCutoffMillis) {
+    throw new Error(BOOKING_OUTSIDE_ALLOWED_WINDOW)
+  }
 }
 
 // ============================================================================
@@ -373,15 +457,24 @@ export interface CreateBookingResult {
 }
 
 /**
- * Claims a staff member for the slot and inserts the `bookings` row.
- * Throws an Error with message BOOKING_SLOT_NO_LONGER_AVAILABLE if the
+ * Validates the slot against booking_settings/business_hours, claims a
+ * staff member for it, and inserts the `bookings` row. Throws an Error
+ * with message BOOKING_OUTSIDE_ALLOWED_WINDOW if the slot no longer
+ * satisfies booking policy, or BOOKING_SLOT_NO_LONGER_AVAILABLE if the
  * slot was taken between when it was offered and now — callers should
- * catch and show a "pick another time" message rather than a generic
- * error, since it's an expected race, not a bug.
+ * catch both and show a "pick another time" style message rather than a
+ * generic error, since both are expected races/edge cases, not bugs.
  */
 export async function createBooking(tenantId: string, params: CreateBookingParams): Promise<CreateBookingResult> {
   const { service, dateISO, slot, phone } = params
   const supabase = getClientOrThrow()
+
+  // Plan enforcement runs first and cheapest — no point checking business
+  // hours or claiming a staff member for a booking that's about to be
+  // rejected because the tenant is over their monthly visit cap anyway.
+  await assertWithinVisitLimit(supabase, tenantId)
+
+  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, service.durationMinutes)
 
   const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, service.durationMinutes)
 
@@ -471,18 +564,44 @@ async function presentServices(tenantId: string): Promise<ActionResult> {
 
 /**
  * Exported: the kiosk's date-selection screen calls this directly so
- * "today, tomorrow, next 6 days" is computed identically for both
+ * "today, tomorrow, next N days" is computed identically for both
  * channels — no separate date-formatting logic to keep in sync.
+ *
+ * Tenant-aware (new): "today" is the tenant's own local calendar date
+ * (tenant_settings.timezone), not the server's/UTC's. The number of
+ * days offered is capped at booking_settings.max_advance_days — a shop
+ * with a 3-day advance window won't show 6 days of dates that would
+ * just get rejected server-side if picked.
  */
-export function buildDateOptions(): Array<{ date: string; label: string }> {
-  const options: Array<{ date: string; label: string }> = []
-  const now = new Date()
+export async function buildDateOptions(tenantId: string): Promise<Array<{ date: string; label: string }>> {
+  const supabase = getClientOrThrow()
 
-  for (let i = 0; i <= DAYS_AHEAD_OFFERED; i++) {
-    const d = new Date(now)
-    d.setUTCDate(d.getUTCDate() + i)
-    const dateISO = d.toISOString().slice(0, 10)
-    const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" })
+  const [timezone, bookingSettings] = await Promise.all([
+    getTenantTimezone(supabase, tenantId),
+    getBookingSettings(supabase, tenantId),
+  ])
+
+  const today = todayInTimezone(timezone)
+  const daysToOffer = Math.min(DAYS_AHEAD_OFFERED, Math.max(0, bookingSettings.maxAdvanceDays))
+
+  const options: Array<{ date: string; label: string }> = []
+  for (let i = 0; i <= daysToOffer; i++) {
+    const dateISO = addDaysToDateString(today, i)
+    const label =
+      i === 0
+        ? "Today"
+        : i === 1
+          ? "Tomorrow"
+          : // Anchored at UTC noon purely so formatting this pure calendar
+            // date can't roll over to the adjacent day in any timezone —
+            // dateISO already IS the tenant-local calendar date, no further
+            // timezone conversion is needed just to format it as text.
+            new Date(`${dateISO}T12:00:00.000Z`).toLocaleDateString("en-ZA", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              timeZone: "UTC",
+            })
     options.push({ date: dateISO, label })
   }
 
@@ -499,7 +618,7 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
   }
 
   const selectedService = services[index]
-  const dateOptions = buildDateOptions()
+  const dateOptions = await buildDateOptions(tenantId)
 
   return {
     reply: dateOptionsMessage(dateOptions),
@@ -626,6 +745,20 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
   } catch (error) {
     if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
       return { reply: slotStaleMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_OUTSIDE_ALLOWED_WINDOW) {
+      return { reply: bookingWindowClosedMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
+      // TODO: move this into lib/services/messages/booking.ts as a proper
+      // planLimitReachedMessage() alongside the other booking copy, once
+      // that file's conventions are in hand — inlined here for now so this
+      // merge doesn't guess at that file's shape.
+      return {
+        reply: "Sorry, this shop has reached its booking limit for this month. Please try again next month, or contact them directly.",
+        buttons: [],
+        nextState: null,
+      }
     }
     console.error("[booking] Error creating booking", { tenantId, error })
     return { reply: bookingErrorMessage(), buttons: [], nextState: null }

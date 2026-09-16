@@ -10,35 +10,60 @@
  * file only owns state transitions and data access, same convention as
  * booking.ts.
  *
- * KIOSK REFACTOR (new): the "join and get position" logic that used to
- * live inline inside handleServiceSelection() is now its own exported
- * function, joinQueue(). handleServiceSelection() calls it and builds
- * the WhatsApp reply around the result. The kiosk's Server Action calls
- * the exact same function — one source of truth for what "join the
- * queue" means, so a kiosk walk-in and a WhatsApp walk-in land in
+ * QUEUE SIMULATION REWRITE (new): getQueuePosition() previously summed
+ * the duration of every entry ahead as if there were exactly one member
+ * of staff — a customer in position 6 was told the wait of 6 back-to-back
+ * services, even with 3 staff on. It's replaced by getQueueSimulation(),
+ * a proper multi-server FIFO simulation: N "server free-at" times
+ * (N = active staff count), each entry assigned to whichever server
+ * frees up soonest. This is still a heuristic (queue_entries doesn't
+ * record which physical staff member is serving a "called" entry, so a
+ * called entry is assigned to whichever simulated server is free
+ * soonest, not necessarily the real one — see getQueueSimulation()'s doc
+ * comment), but it's a large accuracy improvement over a flat sum and
+ * needs no schema change.
+ *
+ * A promoted booking (queue_entries.booking_id set, source = 'booking' —
+ * see app/api/cron/promote-bookings/route.ts) has something a walk-in
+ * doesn't: an actual appointment time the customer was promised. How
+ * that's weighed against plain walk-in fairness is now a tenant setting,
+ * booking_settings.queue_priority_mode (added by
+ * supabase/migrations/20260915_add_queue_priority_mode.sql):
+ *   - 'fifo'     a promoted booking is ordered purely by when it entered
+ *                the queue (joined_at) — treated exactly like a walk-in.
+ *   - 'priority' a promoted booking is guaranteed to be served at/before
+ *                its actual start_time wherever physically possible,
+ *                even ahead of walk-ins who joined earlier.
+ *   - 'hybrid'   ordered like 'fifo' (no reordering), but flagged
+ *                (runningLate) if the simulated wait would run past its
+ *                start_time, so staff can see it needs attention.
+ * See getQueueSimulation() below for exactly how each mode changes the
+ * processing order.
+ *
+ * KIOSK REFACTOR: the "join and get position" logic that used to live
+ * inline inside handleServiceSelection() is its own exported function,
+ * joinQueue(). handleServiceSelection() calls it and builds the
+ * WhatsApp reply around the result. The kiosk's Server Action calls the
+ * exact same function — one source of truth for what "join the queue"
+ * means, so a kiosk walk-in and a WhatsApp walk-in land in
  * `queue_entries` identically and both get an accurate position/ETA
- * computed the same way.
+ * computed the same way. getQueueSimulation() is ALSO exported directly
+ * so the admin dashboard (app/admin/page.tsx's getTodaysQueue) can show
+ * the same accurate position/ETA/runningLate for the whole current
+ * queue, not just for a customer who's mid-join.
  *
  * What changed for multi-tenancy (vs the version this replaces):
- *   1. `startQueueFlow` and `handleState` now take `tenantId` as their
- *      first argument (matching the StatefulService/IntentService shape
- *      action-router.ts expects), threaded through to
- *      getBookableServices/ensureCustomer/the queue_entries queries.
- *   2. `queue_entries` queries now filter `.eq("tenant_id", tenantId)` —
- *      previously ungated, so a position/ETA calculation could count
- *      another tenant's customers as "ahead in line."
- *   3. Switched from `@/lib/services/customer` (single-arg
- *      `ensureCustomer(phone)`, profiles-based) to
- *      `@/lib/services/tenant-customer` (`ensureCustomer(tenantId, phone)`,
- *      tenant_customers-based).
- *   4. Registered in action-router.ts's `stateHandlers`. It wasn't
- *      before, even pre-multi-tenant — `queue_service_selection` had no
- *      path back into this file on a customer's next reply. Unrelated to
- *      tenancy, just a pre-existing gap fixed while this file was open.
+ *   1. `startQueueFlow` and `handleState` take `tenantId` as their first
+ *      argument, threaded through to getBookableServices/ensureCustomer/
+ *      the queue_entries queries.
+ *   2. `queue_entries` queries filter `.eq("tenant_id", tenantId)`.
+ *   3. Switched from `@/lib/services/customer` to
+ *      `@/lib/services/tenant-customer`.
+ *   4. Registered in action-router.ts's `stateHandlers`.
  *
- * ASSUMPTIONS — unchanged from the original: no availability/staff
- * awareness, no confirm step, naive ETA (sum of durations for everyone
- * ahead, no parallelism awareness).
+ * ASSUMPTIONS — carried over from the original, still true: no real
+ * per-staff assignment tracking for walk-ins (see the simulation's doc
+ * comment for how that's approximated).
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
@@ -50,6 +75,7 @@ import type { ConversationState } from "@/lib/services/state"
 
 import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
+import { getBookingSettings, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 
 import {
   servicesListMessage,
@@ -112,8 +138,10 @@ async function startQueueFlow(tenantId: string): Promise<ActionResult> {
 }
 
 // ============================================================================
-// SHARED CORE — join + position. Called by handleServiceSelection
-// (WhatsApp) AND the kiosk's Server Action.
+// QUEUE SIMULATION — multi-server FIFO, priority-mode-aware.
+// Exported so both joinQueue() (below) and the admin dashboard
+// (app/admin/page.tsx's getTodaysQueue) can get the same accurate
+// numbers for the same underlying queue.
 // ============================================================================
 
 export interface QueuePositionInfo {
@@ -121,27 +149,252 @@ export interface QueuePositionInfo {
   etaMinutes: number
 }
 
-/**
- * Counts everyone ahead of `joinedAt`, SCOPED TO THIS TENANT, who's still
- * waiting or already called, and sums their service durations for a
- * naive ETA. See file-header ASSUMPTIONS — no idea how many staff can
- * work in parallel.
- */
-async function getQueuePosition(supabase: SupabaseClient, tenantId: string, joinedAt: string): Promise<QueuePositionInfo> {
+export interface QueueSimulationEntry {
+  id: string
+  /** 1-based position in line. Called entries (already being served)
+   *  are numbered ahead of every waiting entry, in call order. */
+  position: number
+  /** Minutes until this entry's simulated turn. 0 for a called entry. */
+  etaMinutes: number
+  /** Only ever true for a booking-linked entry under 'hybrid' mode —
+   *  see this file's header. Always false otherwise, including for
+   *  plain walk-ins and for 'fifo'/'priority' modes (the latter avoids
+   *  lateness by reordering instead of flagging it). */
+  runningLate: boolean
+}
+
+interface QueueEntryRow {
+  id: string
+  status: "waiting" | "called"
+  joined_at: string
+  called_at: string | null
+  booking_id: string | null
+  services: { duration_minutes: number } | { duration_minutes: number }[] | null
+}
+
+interface SimEntry {
+  id: string
+  joinedAtMillis: number
+  calledAtMillis: number | null
+  durationMinutes: number
+  /** Resolved start_time of the linked booking, in ms — null for a
+   *  plain walk-in or if the linked booking couldn't be found. */
+  bookingStartMillis: number | null
+}
+
+function durationFromRow(row: QueueEntryRow): number {
+  const services = row.services
+  if (!services) return 0
+  const entry = Array.isArray(services) ? services[0] : services
+  return entry?.duration_minutes ?? 0
+}
+
+async function getActiveStaffCount(supabase: SupabaseClient, tenantId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("staff")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("active", true)
+
+  if (error) throw new Error(`Failed to load staff count: ${error.message}`)
+  return count ?? 0
+}
+
+async function loadSimEntries(supabase: SupabaseClient, tenantId: string): Promise<SimEntry[]> {
   const { data, error } = await supabase
     .from("queue_entries")
-    .select("joined_at, services ( duration_minutes )")
+    .select("id, status, joined_at, called_at, booking_id, services ( duration_minutes )")
     .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
-    .lt("joined_at", joinedAt)
 
-  if (error) throw new Error(`Failed to compute queue position: ${error.message}`)
+  if (error) throw new Error(`Failed to load queue entries: ${error.message}`)
 
-  const ahead = data ?? []
-  const etaMinutes = ahead.reduce((sum: number, row: any) => sum + (row.services?.duration_minutes ?? 0), 0)
+  const rows = (data ?? []) as unknown as QueueEntryRow[]
+  const bookingIds = rows.map((r) => r.booking_id).filter((id): id is string => Boolean(id))
 
-  return { position: ahead.length + 1, etaMinutes }
+  let bookingStartById = new Map<string, number>()
+  if (bookingIds.length > 0) {
+    const { data: bookingRows, error: bookingsError } = await supabase
+      .from("bookings")
+      .select("id, start_time")
+      .in("id", bookingIds)
+
+    if (bookingsError) throw new Error(`Failed to load linked bookings: ${bookingsError.message}`)
+    bookingStartById = new Map(
+      (bookingRows ?? []).map((b: { id: string; start_time: string }) => [b.id, new Date(b.start_time).getTime()]),
+    )
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    joinedAtMillis: new Date(row.joined_at).getTime(),
+    calledAtMillis: row.called_at ? new Date(row.called_at).getTime() : null,
+    durationMinutes: durationFromRow(row),
+    bookingStartMillis: row.booking_id ? bookingStartById.get(row.booking_id) ?? null : null,
+  }))
 }
+
+function indexOfEarliestFreeServer(serverFreeAtMillis: number[]): number {
+  let minIndex = 0
+  for (let i = 1; i < serverFreeAtMillis.length; i++) {
+    if (serverFreeAtMillis[i] < serverFreeAtMillis[minIndex]) minIndex = i
+  }
+  return minIndex
+}
+
+/**
+ * Runs the N-server simulation: `calledEntries` (already being served)
+ * occupy a server until their estimated finish; `processingOrder`
+ * (waiting entries, already sorted into whatever order this mode uses)
+ * are then assigned one at a time to whichever server frees up soonest.
+ * Returns each waiting entry's simulated start time.
+ *
+ * NOTE ON ACCURACY: queue_entries doesn't record which physical staff
+ * member is serving a "called" entry, so a called entry here is
+ * greedily assigned to whichever simulated server is free soonest — not
+ * necessarily the actual staff member serving it. With normal usage
+ * (one entry called at a time, staff free when nobody's called) this
+ * converges to the right answer quickly; it can be briefly optimistic
+ * right when several customers are called back-to-back. Tracking the
+ * real assignment would need a staff_id column on queue_entries, which
+ * this change deliberately doesn't add (no evidence it's needed yet).
+ */
+function runServerSimulation(
+  calledEntries: SimEntry[],
+  processingOrder: SimEntry[],
+  staffCount: number,
+  nowMillis: number,
+): Map<string, number> {
+  const serverFreeAtMillis = new Array(Math.max(staffCount, 1)).fill(nowMillis)
+
+  for (const entry of calledEntries) {
+    const finishAt = Math.max(nowMillis, (entry.calledAtMillis ?? nowMillis) + entry.durationMinutes * 60_000)
+    const serverIndex = indexOfEarliestFreeServer(serverFreeAtMillis)
+    serverFreeAtMillis[serverIndex] = finishAt
+  }
+
+  const startAtById = new Map<string, number>()
+  for (const entry of processingOrder) {
+    const serverIndex = indexOfEarliestFreeServer(serverFreeAtMillis)
+    const startAt = serverFreeAtMillis[serverIndex]
+    startAtById.set(entry.id, startAt)
+    serverFreeAtMillis[serverIndex] = startAt + entry.durationMinutes * 60_000
+  }
+
+  return startAtById
+}
+
+/**
+ * Builds the order waiting entries will actually be served in, per
+ * `mode`. 'fifo' and 'hybrid' both use plain joined_at order — 'hybrid'
+ * never reorders, it only flags lateness afterward (see
+ * getQueueSimulation). 'priority' runs the plain FIFO simulation once to
+ * see which booking-linked entries WOULD miss their appointment time,
+ * then moves only those to the front (earliest appointment first),
+ * leaving every other entry's relative order untouched. This is a
+ * heuristic that guarantees a late booking gets the earliest possible
+ * service without reshuffling the whole line for bookings that were
+ * never going to be late anyway — not a globally optimal schedule.
+ */
+function buildProcessingOrder(
+  waiting: SimEntry[],
+  calledEntries: SimEntry[],
+  staffCount: number,
+  mode: QueuePriorityMode,
+  nowMillis: number,
+): SimEntry[] {
+  const fifoOrder = [...waiting].sort((a, b) => a.joinedAtMillis - b.joinedAtMillis)
+
+  if (mode !== "priority" || fifoOrder.length === 0) {
+    return fifoOrder
+  }
+
+  const tentativeStartById = runServerSimulation(calledEntries, fifoOrder, staffCount, nowMillis)
+
+  const urgent: SimEntry[] = []
+  const rest: SimEntry[] = []
+  for (const entry of fifoOrder) {
+    const deadline = entry.bookingStartMillis
+    const tentativeStart = tentativeStartById.get(entry.id) ?? nowMillis
+    const wouldMissDeadline = deadline !== null && tentativeStart > deadline
+    if (wouldMissDeadline) urgent.push(entry)
+    else rest.push(entry)
+  }
+
+  // Earliest appointment first among the ones that need rescuing.
+  urgent.sort((a, b) => (a.bookingStartMillis as number) - (b.bookingStartMillis as number))
+  return [...urgent, ...rest]
+}
+
+/**
+ * The single source of truth for "where does everyone currently stand in
+ * the queue" — called entries plus waiting entries, tenant-wide. Called
+ * by joinQueue() right after a new entry is inserted (to answer "what's
+ * MY position"), and importable directly by the admin dashboard to show
+ * the same numbers for the whole visible queue.
+ */
+export async function getQueueSimulation(tenantId: string): Promise<Map<string, QueueSimulationEntry>> {
+  const supabase = getClientOrThrow()
+
+  const [entries, staffCount, bookingSettings, statusRowsResult] = await Promise.all([
+    loadSimEntries(supabase, tenantId),
+    getActiveStaffCount(supabase, tenantId),
+    getBookingSettings(supabase, tenantId),
+    supabase.from("queue_entries").select("id, status").eq("tenant_id", tenantId).in("status", ["waiting", "called"]),
+  ])
+
+  if (statusRowsResult.error) {
+    throw new Error(`Failed to load queue entry statuses: ${statusRowsResult.error.message}`)
+  }
+
+  const statusById = new Map(
+    (statusRowsResult.data ?? []).map((r: { id: string; status: "waiting" | "called" }) => [r.id, r.status]),
+  )
+
+  const now = Date.now()
+  const calledEntries = entries
+    .filter((e) => statusById.get(e.id) === "called")
+    .sort((a, b) => (a.calledAtMillis ?? 0) - (b.calledAtMillis ?? 0))
+  const waitingEntries = entries.filter((e) => statusById.get(e.id) === "waiting")
+
+  const processingOrder = buildProcessingOrder(
+    waitingEntries,
+    calledEntries,
+    staffCount,
+    bookingSettings.queuePriorityMode,
+    now,
+  )
+  const startAtById = runServerSimulation(calledEntries, processingOrder, staffCount, now)
+
+  const result = new Map<string, QueueSimulationEntry>()
+
+  calledEntries.forEach((entry, index) => {
+    result.set(entry.id, { id: entry.id, position: index + 1, etaMinutes: 0, runningLate: false })
+  })
+
+  processingOrder.forEach((entry, index) => {
+    const startAt = startAtById.get(entry.id) ?? now
+    const etaMinutes = Math.max(0, Math.round((startAt - now) / 60_000))
+    const runningLate =
+      bookingSettings.queuePriorityMode === "hybrid" &&
+      entry.bookingStartMillis !== null &&
+      startAt > entry.bookingStartMillis
+
+    result.set(entry.id, {
+      id: entry.id,
+      position: calledEntries.length + index + 1,
+      etaMinutes,
+      runningLate,
+    })
+  })
+
+  return result
+}
+
+// ============================================================================
+// SHARED CORE — join + position. Called by handleServiceSelection
+// (WhatsApp) AND the kiosk's Server Action.
+// ============================================================================
 
 export interface JoinQueueParams {
   /** The full catalog entry, not just an id — both callers already have
@@ -159,8 +412,12 @@ export interface JoinQueueResult {
 
 /**
  * Creates the tenant_customers row if needed, inserts the queue_entries
- * row, and returns this customer's position + naive ETA. The one place a
- * `queue_entries` row gets created from a customer-facing flow.
+ * row, and returns this customer's position + ETA via the same
+ * getQueueSimulation() the admin dashboard uses — so a customer joining
+ * by WhatsApp/kiosk and staff looking at the dashboard are always
+ * looking at the same number, never two separate calculations that can
+ * disagree. The one place a `queue_entries` row gets created from a
+ * customer-facing flow.
  */
 export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
   const { service, phone } = params
@@ -172,20 +429,33 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
   const customer = await ensureCustomer(tenantId, phone)
   const joinedAt = new Date().toISOString()
 
-  const { error } = await supabase.from("queue_entries").insert([
-    {
-      tenant_id: tenantId,
-      customer_id: customer.id,
-      service_id: service.id,
-      status: "waiting",
-      joined_at: joinedAt,
-    },
-  ])
+  const { data: inserted, error } = await supabase
+    .from("queue_entries")
+    .insert([
+      {
+        tenant_id: tenantId,
+        customer_id: customer.id,
+        service_id: service.id,
+        status: "waiting",
+        joined_at: joinedAt,
+      },
+    ])
+    .select("id")
+    .single()
+
   if (error) throw new Error(error.message)
 
-  const { position, etaMinutes } = await getQueuePosition(supabase, tenantId, joinedAt)
+  const simulation = await getQueueSimulation(tenantId)
+  const own = simulation.get(inserted.id)
 
-  return { customer, position, etaMinutes }
+  return {
+    customer,
+    // Fallback (position 1 / this service's own duration) only matters
+    // if the simulation somehow doesn't contain the entry we just
+    // inserted, which shouldn't happen — defensive, not the expected path.
+    position: own?.position ?? 1,
+    etaMinutes: own?.etaMinutes ?? service.durationMinutes,
+  }
 }
 
 // ============================================================================
