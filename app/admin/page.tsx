@@ -40,7 +40,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
-import { getTenantPermissions } from "@/lib/tenant/require-tenant-permission"
+import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 
 import { AdminView } from "./AdminView"
 import type {
@@ -479,24 +479,48 @@ export default async function AdminPage() {
   // data fetched below is shaped around this: hourlyRate is only
   // requested from the DB at all when payrollView is true.
   //
-  // ASSUMPTION FLAGGED: this call site assumes getTenantPermissions()
-  // takes no arguments and resolves tenantId/role from the session itself
-  // (matching requireTenantMember()'s own signature) and returns at least
-  // the 4 fields AdminStaffPermissions needs. I haven't seen
-  // lib/tenant/require-tenant-permission.ts directly — if its real
-  // signature differs (e.g. it takes tenantId, or returns a differently
-  // shaped object), this line needs adjusting to match.
-  const permissions = await getTenantPermissions()
+  // getTenantPermissions() takes the specific permission keys to check
+  // (batched into one round trip internally) and returns a Set of the
+  // ones granted — it does NOT return flat booleans, so that Set is
+  // converted into AdminStaffPermissions' shape here. The try/catch is
+  // kept as a safety net (a transient RPC failure degrades to "no staff/
+  // payroll access" for this one request rather than 500ing the whole
+  // page) now that the call itself is actually correct.
+  const STAFF_PERMISSION_KEYS: PermissionKey[] = ["staff.view", "staff.manage", "payroll.view", "payroll.manage"]
 
-  const [bookings, queue, services, staff, activeShifts, inbox, settingsData] = await Promise.all([
+  let permissions: AdminStaffPermissions
+  try {
+    const { granted } = await getTenantPermissions(STAFF_PERMISSION_KEYS)
+    permissions = {
+      staffView: granted.has("staff.view"),
+      staffManage: granted.has("staff.manage"),
+      payrollView: granted.has("payroll.view"),
+      payrollManage: granted.has("payroll.manage"),
+    }
+  } catch (err) {
+    console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll access", err)
+    permissions = { staffView: false, staffManage: false, payrollView: false, payrollManage: false }
+  }
+
+  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
     getAllServices(supabase, tenantId),
     getAllStaff(supabase, tenantId, permissions.payrollView),
-    getActiveShifts(supabase, tenantId),
     getInboxData(supabase, tenantId),
     getSettingsData(supabase, tenantId),
   ])
+
+  // Same hotfix posture as permissions above — staff_shifts is another
+  // brand-new query I added without confirming against your actual
+  // schema. Falling back to "nobody's clocked in" rather than crashing
+  // the whole page if this table/join doesn't match what's really there.
+  let activeShifts: AdminStaffShift[] = []
+  try {
+    activeShifts = await getActiveShifts(supabase, tenantId)
+  } catch (err) {
+    console.error("[admin] getActiveShifts failed — falling back to empty list", err)
+  }
 
   return (
     <AdminView
