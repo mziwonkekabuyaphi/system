@@ -280,6 +280,7 @@ export function AdminView({
               initialStaff={initialStaff}
               initialActiveShifts={initialActiveShifts}
               permissions={staffPermissions}
+              tenantSlug={tenantSlug}
             />
           )}
           {tab === "billing" && <BillingPanel />}
