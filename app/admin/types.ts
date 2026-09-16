@@ -16,38 +16,16 @@ export interface AdminStaff {
   id: string
   name: string
   active: boolean
-  jobTitle: string | null
-  hourlyRate: number | null
-  phone: string | null
-  email: string | null
-  /** Current PIN, shown back in the edit form (this is an admin-only
-   *  screen, same posture as showing any other tenant setting). Staff use
-   *  this PIN to clock in/out at the public /clock/[slug] pad. */
-  clockInPin: string | null
 }
 
-/** Payload shape for addStaff()/updateStaff() in actions.ts. clockInPin as
- *  an empty string means "no PIN" on create and "leave unchanged" on
- *  update — see updateStaff's implementation. */
-export interface AdminStaffInput {
-  name: string
-  jobTitle: string
-  hourlyRate: number | null
-  phone: string
-  email: string
-  clockInPin: string
-}
-
-/** A currently-open row in staff_shifts, joined with the staff member's
- *  name for display in StaffManager.tsx's "Currently clocked in" panel. */
-export interface AdminStaffShift {
-  id: string
-  staffId: string
-  staffName: string
-  /** ISO timestamp */
-  loginTime: string
-}
-
+/** UPDATED: `source` and the three queue-simulation fields let the admin
+ *  UI tell a promoted booking apart from an ordinary walk-in, and show a
+ *  staff-facing position/ETA that actually accounts for staff capacity
+ *  (see lib/services/queue.ts's getQueueSimulation(), which page.tsx's
+ *  getTodaysQueue() now calls to populate these). position/etaMinutes/
+ *  runningLate are optional because a "called" entry (already being
+ *  served) doesn't have a meaningful queue position — see
+ *  getQueueSimulation()'s own doc comment for exactly what each means. */
 export interface AdminQueueEntry {
   id: string
   status: "waiting" | "called"
@@ -56,6 +34,21 @@ export interface AdminQueueEntry {
   serviceName: string
   customerName: string | null
   customerPhone: string
+  /** 'booking' when this entry was created by the booking→queue
+   *  promotion job (app/api/cron/promote-bookings/route.ts), 'walkin'
+   *  for a kiosk/WhatsApp walk-in. Mirrors queue_entries.source. */
+  source: "walkin" | "booking"
+  /** 1-based position in line, accounting for active staff capacity.
+   *  Undefined for a 'called' entry (already being served). */
+  position?: number
+  /** Minutes until this entry's simulated turn. Undefined for a
+   *  'called' entry. */
+  etaMinutes?: number
+  /** Only ever true for a 'booking'-sourced entry in 'hybrid' queue
+   *  priority mode: the simulated wait would run past the booking's
+   *  actual appointment time. Always false/undefined otherwise — see
+   *  booking_settings.queue_priority_mode. */
+  runningLate?: boolean
 }
 
 export interface AdminBooking {
@@ -184,21 +177,36 @@ export interface AdminKioskSettings {
 // SETTINGS (Booking / Queue / Messages tab)
 // ============================================================================
 
+/** Mirrors booking_settings.queue_priority_mode (added by
+ *  supabase/migrations/20260915_add_queue_priority_mode.sql). Kept as its
+ *  own named type here rather than importing from
+ *  lib/services/shared/tenant-scheduling.ts's QueuePriorityMode — same
+ *  cross-boundary-import reasoning as AdminKioskRegistrationType above:
+ *  "use server" admin code shouldn't reach into lib/services just to
+ *  borrow a string union, so the two are intentionally kept in sync by
+ *  hand rather than shared by import. See lib/services/queue.ts's
+ *  getQueueSimulation() for exactly what each value does. */
+export type AdminQueuePriorityMode = "fifo" | "priority" | "hybrid"
+
 /** booking_settings, one row per tenant.
  *
  *  unifyWithQueue is the flagship toggle for the "unified platform" work:
- *  when true, the promote_bookings_to_queue() pg_cron job (runs every
- *  minute) starts inserting this tenant's confirmed bookings into
+ *  when true, app/api/cron/promote-bookings/route.ts (invoked on a
+ *  schedule) starts inserting this tenant's confirmed bookings into
  *  queue_entries once they enter queueLeadTimeMinutes of start_time, with
  *  queue_entries.source = 'booking' and booking_id set back to this row.
- *  When false, bookings and the walk-in queue stay fully separate, same as
- *  before this feature existed. */
+ *  When false, bookings and the walk-in queue stay fully separate.
+ *
+ *  queuePriorityMode only matters once a booking has actually been
+ *  promoted (i.e. only has any effect when unifyWithQueue is true) — see
+ *  lib/services/queue.ts's getQueueSimulation(). */
 export interface AdminBookingSettings {
   unifyWithQueue: boolean
   queueLeadTimeMinutes: number
   minNoticeMinutes: number
   maxAdvanceDays: number
   cancellationWindowMinutes: number
+  queuePriorityMode: AdminQueuePriorityMode
 }
 
 /** queue_settings, one row per tenant. */
