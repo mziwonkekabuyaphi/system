@@ -3,10 +3,16 @@
  * Customer-facing copy for the appointment booking flow.
  * ---------------------------------------------------------
  * Split out of booking.ts so copy can be edited without touching booking
- * logic (this was flagged as a TODO in booking.ts's original "MESSAGE
- * BUILDERS" comment — "split into lib/messages/booking.ts once copy
- * stabilizes"). booking.ts imports everything it needs from here; nothing
- * in this file talks to Supabase or holds any state.
+ * logic. booking.ts imports everything it needs from here; nothing in
+ * this file talks to Supabase or holds any state.
+ *
+ * ADDED: bookingWindowClosedMessage(), for booking.ts's new
+ * BOOKING_OUTSIDE_ALLOWED_WINDOW case — thrown when a slot that was
+ * valid when offered no longer satisfies booking_settings/business_hours
+ * by the time the customer confirms (e.g. min_notice_minutes has since
+ * caught up to it). Deliberately distinct copy from slotStaleMessage()
+ * (which means "someone else took it") since the cause and the
+ * customer-facing framing are different.
  */
 
 import type { CatalogService } from "@/lib/services/shared/services-catalog"
@@ -95,6 +101,10 @@ export function availabilityErrorMessage(): string {
 
 export function slotStaleMessage(): string {
   return "Sorry, that slot was just taken. Let's find you another one — reply *menu* to start over."
+}
+
+export function bookingWindowClosedMessage(): string {
+  return "Sorry, that time's no longer bookable — please reply *menu* and pick a new time."
 }
 
 export function bookingCancelledMessage(): string {
