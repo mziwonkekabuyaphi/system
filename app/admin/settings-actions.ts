@@ -25,25 +25,48 @@
  * error) at a fixed key per tenant (branding/{tenantId}/logo) so re-uploads
  * overwrite in place rather than accumulating orphaned files.
  *
- * updateBookingSettings' unifyWithQueue is the on/off switch for the
- * promote_bookings_to_queue() pg_cron job — no server-side gating on plan
- * here, any tenant can turn it on. The job itself just reads this row
- * straight out of booking_settings, so flipping the toggle takes effect on
- * its next run (within a minute), no revalidation needed on the Postgres
- * side, only on the Next.js cache below.
+ * updateBookingSettings (UPDATED): now validates every numeric field
+ * server-side before writing — mirroring updateKioskSettings' bounds
+ * checks below — rather than relying only on the browser's <input min=…>
+ * and the database's own CHECK constraints. The DB constraints
+ * (queue_lead_time_minutes >= 0, min_notice_minutes >= 0,
+ * max_advance_days > 0, cancellation_window_minutes >= 0) are unchanged
+ * and still the final backstop; this is defense in depth, not a
+ * replacement for them. These five fields are also now genuinely
+ * enforced by the booking flow itself — see
+ * lib/services/shared/tenant-scheduling.ts, lib/services/booking.ts, and
+ * app/admin/actions.ts's cancelBooking() — this action was already
+ * correctly reading/writing the one `booking_settings` row per tenant;
+ * it just had no validation of its own and nothing downstream read the
+ * values back until now.
+ *
+ * updateBookingSettings' unifyWithQueue is the on/off switch for booking
+ * → queue promotion. Previously described in this comment as being
+ * driven by an existing `promote_bookings_to_queue()` pg_cron job — a
+ * repo-wide search (is_tenant_open_now, promote_bookings_to_queue,
+ * pg_cron, cron.schedule) across every file available for inspection
+ * found no such job, migration, or scheduler config, so that was
+ * evidently describing an intended design that was never built. The real
+ * mechanism is now app/api/cron/promote-bookings/route.ts, a plain Route
+ * Handler meant to be invoked on a ~1-minute schedule by whatever
+ * external scheduler this deploys with (see that file's header for
+ * details) — it reads this exact `booking_settings` row per tenant
+ * (unify_with_queue, queue_lead_time_minutes), so flipping the toggle
+ * here takes effect on its next invocation, no revalidation needed on
+ * the Postgres side, only on the Next.js cache below.
  *
  * updateBusinessHours writes business_hours (one row per day, 0=Sunday..
- * 6=Saturday). These rows aren't just for display — a DB trigger on
- * queue_entries rejects any walk_in insert when is_tenant_open_now(tenant)
- * is false, and a DB trigger on bookings rejects any insert whose
- * start_time falls outside that day's hours. So this form is the actual
- * control for what the kiosk and WhatsApp bot are allowed to accept, not
- * just a label shown to customers. is_closed=true requires open/close to
- * be null; open<close is enforced by a DB check constraint, validated here
- * first so the error reads cleanly instead of as a raw Postgres message.
+ * 6=Saturday). These rows are read directly by
+ * lib/services/shared/tenant-scheduling.ts's getBusinessHoursForDate(),
+ * which lib/services/booking.ts now uses for every availability
+ * calculation and booking-creation check — so this form is the real
+ * control for what can be booked, not just a label. is_closed=true
+ * requires open/close to be null; open<close is enforced by a DB check
+ * constraint, validated here first so the error reads cleanly instead of
+ * as a raw Postgres message.
  *
- * updateKioskSettings (new) — tagline / idle-refresh / confirmation-refresh
- * / registration-type all live on tenant_branding too (see
+ * updateKioskSettings (tagline / idle-refresh / confirmation-refresh /
+ * registration-type) all live on tenant_branding too (see
  * migration_kiosk_settings.sql), read straight back out by
  * app/kiosk/[slug]/page.tsx and handed to KioskApp as props. Bounds on the
  * two timing fields are validated here to match the DB check constraints
@@ -62,7 +85,7 @@ import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
-import type { AdminKioskRegistrationType } from "./types"
+import type { AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
 
 type ActionResult = { success: true } | { success: false; error: string }
 type LogoActionResult = { success: true; logoUrl: string } | { success: false; error: string }
@@ -76,6 +99,15 @@ const MAX_IDLE_REFRESH_SECONDS = 600
 const MIN_CONFIRMATION_REFRESH_SECONDS = 3
 const MAX_CONFIRMATION_REFRESH_SECONDS = 120
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
+
+// Mirrors booking_settings' own CHECK constraints — validated here too so
+// a bad value fails with a clean message instead of a raw Postgres
+// constraint error (same reasoning as the kiosk bounds above).
+const MIN_QUEUE_LEAD_TIME_MINUTES = 0
+const MIN_NOTICE_MINUTES_FLOOR = 0
+const MIN_MAX_ADVANCE_DAYS = 1
+const MIN_CANCELLATION_WINDOW_MINUTES = 0
+const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
 async function tenantContext() {
   const { tenantId } = await requireTenantMember()
@@ -156,12 +188,6 @@ export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
 
 // ---------------------------------------------------------------------------
 // Branding + Private Label — tenant_branding
-// (logo_url is NOT settable here — it's only ever written by uploadLogo /
-// removeLogo below, since it has to stay in sync with what's actually in
-// Storage.) Shared by the Private Label tab AND the Kiosk tab — both
-// render the same display-name/logo/color/remove-powered-by fields
-// against this one action, so they can never drift out of sync with each
-// other.
 // ---------------------------------------------------------------------------
 export async function updateBranding(input: {
   displayName: string | null
@@ -200,9 +226,6 @@ export async function updateBranding(input: {
       })
       .eq("tenant_id", tenantId)
 
-    // Belt-and-suspenders: if the DB trigger is what actually catches this
-    // (e.g. plan changed between our check above and this write), turn its
-    // raw Postgres exception into the same clean message.
     if (error) {
       if (error.message.includes("remove_powered_by can only be enabled")) {
         return {
@@ -221,12 +244,7 @@ export async function updateBranding(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Kiosk behavior settings — tenant_branding (tagline / idle refresh /
-// confirmation refresh / registration type). Split from updateBranding
-// above because these fields have nothing to do with plan gating and
-// don't need the remove_powered_by check — keeping them in one action
-// with that check would mean every kiosk-config save silently re-verifies
-// an unrelated plan.
+// Kiosk behavior settings — tenant_branding
 // ---------------------------------------------------------------------------
 export async function updateKioskSettings(input: {
   tagline: string | null
@@ -276,9 +294,6 @@ export async function updateKioskSettings(input: {
 
     if (error) return { success: false, error: error.message }
 
-    // Kiosk config is read fresh on every kiosk page load anyway
-    // (export const dynamic = "force-dynamic" in app/kiosk/[slug]/page.tsx),
-    // but revalidate /admin so the settings tab itself reflects the save.
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
@@ -321,8 +336,6 @@ export async function uploadLogo(formData: FormData): Promise<LogoActionResult> 
       return { success: false, error: "Logo must be 2MB or smaller" }
     }
 
-    // Fixed key per tenant (no per-upload filename) so re-uploading a logo
-    // overwrites in place instead of leaving old versions behind in Storage.
     const path = `${tenantId}/logo.${extensionFor(file.type)}`
 
     const { error: uploadError } = await supabase.storage
@@ -332,9 +345,6 @@ export async function uploadLogo(formData: FormData): Promise<LogoActionResult> 
     if (uploadError) return { success: false, error: uploadError.message }
 
     const { data: publicUrlData } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path)
-    // Cache-bust: the path (and therefore the public URL) is the same
-    // across re-uploads, so without this the browser/CDN would keep
-    // serving the old cached image after a change.
     const logoUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`
 
     const { error: updateError } = await supabase
@@ -355,13 +365,8 @@ export async function removeLogo(): Promise<ActionResult> {
   try {
     const { supabase, tenantId } = await tenantContext()
 
-    // Extensions are the only thing that varies at this fixed key, so
-    // clear out whichever one is actually there.
     const paths = ALLOWED_LOGO_TYPES.map((type) => `${tenantId}/logo.${extensionFor(type)}`)
     const { error: removeError } = await supabase.storage.from(LOGO_BUCKET).remove(paths)
-    // Storage returns success even for paths that don't exist, so this
-    // isn't a false negative — a real removeError here means something
-    // else went wrong (bucket misconfigured, network, etc).
     if (removeError) return { success: false, error: removeError.message }
 
     const { error: updateError } = await supabase
@@ -387,8 +392,32 @@ export async function updateBookingSettings(input: {
   minNoticeMinutes: number
   maxAdvanceDays: number
   cancellationWindowMinutes: number
+  queuePriorityMode: AdminQueuePriorityMode
 }): Promise<ActionResult> {
   try {
+    if (!Number.isFinite(input.queueLeadTimeMinutes) || input.queueLeadTimeMinutes < MIN_QUEUE_LEAD_TIME_MINUTES) {
+      return { success: false, error: "Queue lead time must be 0 or more minutes." }
+    }
+
+    if (!Number.isFinite(input.minNoticeMinutes) || input.minNoticeMinutes < MIN_NOTICE_MINUTES_FLOOR) {
+      return { success: false, error: "Minimum notice must be 0 or more minutes." }
+    }
+
+    if (!Number.isFinite(input.maxAdvanceDays) || input.maxAdvanceDays < MIN_MAX_ADVANCE_DAYS) {
+      return { success: false, error: "Advance booking window must be at least 1 day." }
+    }
+
+    if (
+      !Number.isFinite(input.cancellationWindowMinutes) ||
+      input.cancellationWindowMinutes < MIN_CANCELLATION_WINDOW_MINUTES
+    ) {
+      return { success: false, error: "Cancellation window must be 0 or more minutes." }
+    }
+
+    if (!VALID_QUEUE_PRIORITY_MODES.includes(input.queuePriorityMode)) {
+      return { success: false, error: "Choose a valid queue priority mode." }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     const { error } = await supabase
@@ -399,6 +428,7 @@ export async function updateBookingSettings(input: {
         min_notice_minutes: input.minNoticeMinutes,
         max_advance_days: input.maxAdvanceDays,
         cancellation_window_minutes: input.cancellationWindowMinutes,
+        queue_priority_mode: input.queuePriorityMode,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

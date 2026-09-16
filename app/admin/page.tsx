@@ -24,33 +24,35 @@
 // for the 'kiosk' module row. Booking / Queue / Messages tabs read
 // booking_settings / queue_settings / message_settings — one row per
 // tenant, same shape as tenant_settings. booking_settings.unify_with_queue
-// is what the promote_bookings_to_queue() pg_cron job (runs every minute
-// in Postgres) checks per tenant before promoting a confirmed booking
-// into queue_entries.
+// is what app/api/cron/promote-bookings/route.ts (invoked on a schedule)
+// checks per tenant before promoting a confirmed booking into
+// queue_entries; booking_settings.queue_priority_mode (new — see
+// supabase/migrations/20260915_add_queue_priority_mode.sql) controls how
+// that promoted booking is ordered against walk-ins once it's there, read
+// by lib/services/queue.ts's getQueueSimulation().
 //
 // business_hours (Settings > Business Info) is one row per day_of_week
-// (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
-// bookings and queue_entries enforce them (see the business_hours_
-// enforcement migration), so this is the actual gate on what the kiosk and
-// WhatsApp bot are allowed to accept, not only a label shown to customers.
+// (0=Sunday..6=Saturday). These aren't just displayed — lib/services/
+// booking.ts's availability/creation logic reads this directly (see
+// lib/services/shared/tenant-scheduling.ts), so this form is the actual
+// gate on what the kiosk and WhatsApp bot are allowed to accept, not
+// only a label shown to customers.
 //
 // tenants.slug is now also fetched here (alongside plan) purely so the
 // Settings > Kiosk tab can render the public Kiosk URL and its QR code —
 // it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
 //
-// STAFF HR (new): staff now carries job_title / hourly_rate / phone /
-// email / clock_in_pin (add_staff_hr_profile_and_shifts migration) —
-// phase 1 of turning the bare name+active toggle into an actual staff
-// profile. clock_in_pin is what staff type in at the public PIN pad,
-// app/clock/[slug], which is unauthenticated and re-resolves tenantId
-// from the slug itself (same trust model as /kiosk/[slug]) rather than
-// trusting anything this admin session hands it. getActiveStaffShifts
-// below powers the "currently clocked in" panel in StaffManager.tsx —
-// only the row a shift is admin-relevant for (who, since when); the full
-// shift history isn't loaded here.
+// getTodaysQueue (UPDATED): now selects queue_entries.source and enriches
+// every entry with lib/services/queue.ts's getQueueSimulation() — the
+// exact same multi-server, priority-mode-aware calculation a WhatsApp/
+// kiosk customer's own "your position" message uses, so staff never see
+// a different number than a customer was told. A "called" entry has no
+// meaningful position/eta (it's already being served), so those fields
+// stay undefined for it, same as getQueueSimulation() itself reports.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
+import { getQueueSimulation } from "@/lib/services/queue"
 
 import { AdminView } from "./AdminView"
 import type {
@@ -64,10 +66,10 @@ import type {
   AdminMessageSettings,
   AdminPlan,
   AdminQueueEntry,
+  AdminQueuePriorityMode,
   AdminQueueSettings,
   AdminService,
   AdminStaff,
-  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -116,7 +118,7 @@ async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise
   const { data, error } = await supabase
     .from("queue_entries")
     .select(
-      `id, status, joined_at,
+      `id, status, joined_at, source,
        services ( name ),
        tenant_customers ( full_name, phone )`,
     )
@@ -126,14 +128,35 @@ async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise
 
   if (error) throw new Error(`Failed to load today's queue: ${error.message}`)
 
-  return (data ?? []).map((q: any) => ({
-    id: q.id,
-    status: q.status,
-    joinedAt: q.joined_at,
-    serviceName: q.services?.name ?? "Unknown service",
-    customerName: q.tenant_customers?.full_name ?? null,
-    customerPhone: q.tenant_customers?.phone ?? "",
-  }))
+  const rows = data ?? []
+
+  // Best-effort: a simulation failure (e.g. a transient DB error) must
+  // never take down the whole queue list — staff still need to see who's
+  // waiting even without accurate position/ETA that moment. Falls back
+  // to an empty map, so every entry's position/etaMinutes/runningLate
+  // just come back undefined below rather than throwing.
+  let simulation: Map<string, { position: number; etaMinutes: number; runningLate: boolean }> = new Map()
+  try {
+    simulation = await getQueueSimulation(tenantId)
+  } catch (error) {
+    console.error("[admin] getQueueSimulation failed, showing queue without position/ETA", { tenantId, error })
+  }
+
+  return rows.map((q: any) => {
+    const sim = simulation.get(q.id)
+    return {
+      id: q.id,
+      status: q.status,
+      joinedAt: q.joined_at,
+      serviceName: q.services?.name ?? "Unknown service",
+      customerName: q.tenant_customers?.full_name ?? null,
+      customerPhone: q.tenant_customers?.phone ?? "",
+      source: q.source === "booking" ? "booking" : "walkin",
+      position: q.status === "called" ? undefined : sim?.position,
+      etaMinutes: q.status === "called" ? undefined : sim?.etaMinutes,
+      runningLate: sim?.runningLate ?? false,
+    }
+  })
 }
 
 async function getAllServices(supabase: ServerClient, tenantId: string): Promise<AdminService[]> {
@@ -157,44 +180,13 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
 async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<AdminStaff[]> {
   const { data, error } = await supabase
     .from("staff")
-    .select("id, name, active, job_title, hourly_rate, phone, email, clock_in_pin")
+    .select("id, name, active")
     .eq("tenant_id", tenantId)
     .order("name", { ascending: true })
 
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
 
-  return (data ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    active: s.active,
-    jobTitle: s.job_title,
-    hourlyRate: s.hourly_rate === null ? null : Number(s.hourly_rate),
-    phone: s.phone,
-    email: s.email,
-    clockInPin: s.clock_in_pin,
-  }))
-}
-
-// staff_shifts rows with status = 'active' are, by definition, currently
-// clocked in — there's at most one open shift per staff member at a time
-// (the /clock/[slug] toggle closes the existing one before ever opening a
-// new one), so this list doubles as "who's on the floor right now".
-async function getActiveStaffShifts(supabase: ServerClient, tenantId: string): Promise<AdminStaffShift[]> {
-  const { data, error } = await supabase
-    .from("staff_shifts")
-    .select("id, staff_id, login_time, staff ( name )")
-    .eq("tenant_id", tenantId)
-    .eq("status", "active")
-    .order("login_time", { ascending: true })
-
-  if (error) throw new Error(`Failed to load active shifts: ${error.message}`)
-
-  return (data ?? []).map((s: any) => ({
-    id: s.id,
-    staffId: s.staff_id,
-    staffName: s.staff?.name ?? "Unknown staff",
-    loginTime: s.login_time,
-  }))
+  return (data ?? []).map((s) => ({ id: s.id, name: s.name, active: s.active }))
 }
 
 // ============================================================================
@@ -204,6 +196,8 @@ async function getActiveStaffShifts(supabase: ServerClient, tenantId: string): P
 const DEFAULT_IDLE_REFRESH_SECONDS = 75
 const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
 const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
+const DEFAULT_QUEUE_PRIORITY_MODE: AdminQueuePriorityMode = "fifo"
+const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
 async function getSettingsData(
   supabase: ServerClient,
@@ -255,7 +249,7 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, queue_priority_mode",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -294,6 +288,12 @@ async function getSettingsData(
     ? (brandingResult.data.registration_type as AdminKioskSettings["registrationType"])
     : DEFAULT_REGISTRATION_TYPE
 
+  const queuePriorityMode = VALID_QUEUE_PRIORITY_MODES.includes(
+    bookingSettingsResult.data.queue_priority_mode as AdminQueuePriorityMode,
+  )
+    ? (bookingSettingsResult.data.queue_priority_mode as AdminQueuePriorityMode)
+    : DEFAULT_QUEUE_PRIORITY_MODE
+
   return {
     plan: tenantResult.data.plan as AdminPlan,
     slug: tenantResult.data.slug as string,
@@ -325,6 +325,7 @@ async function getSettingsData(
       minNoticeMinutes: bookingSettingsResult.data.min_notice_minutes,
       maxAdvanceDays: bookingSettingsResult.data.max_advance_days,
       cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
+      queuePriorityMode,
     },
     queueSettings: {
       autoCallNext: queueSettingsResult.data.auto_call_next,
@@ -474,12 +475,11 @@ export default async function AdminPage() {
     )
   }
 
-  const [bookings, queue, services, staff, activeShifts, inbox, settingsData] = await Promise.all([
+  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
     getAllServices(supabase, tenantId),
     getAllStaff(supabase, tenantId),
-    getActiveStaffShifts(supabase, tenantId),
     getInboxData(supabase, tenantId),
     getSettingsData(supabase, tenantId),
   ])
@@ -490,7 +490,6 @@ export default async function AdminPage() {
       initialQueue={queue}
       initialServices={services}
       initialStaff={staff}
-      initialActiveShifts={activeShifts}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
