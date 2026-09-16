@@ -1,7 +1,7 @@
 // app/admin/StaffManager.tsx
 "use client"
 
-import { useState, useTransition, type FormEvent } from "react"
+import { useEffect, useState, useTransition, type FormEvent } from "react"
 import { addStaff, forceClockOutShift, toggleStaffActive, updateStaff } from "./actions"
 import type { AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
 
@@ -59,10 +59,86 @@ function formatClockTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
+// ---- Staff clock-in URL + QR code ------------------------------------------
+// Same idea as SettingsManager.tsx's KioskUrlPanel: the public, unauthenticated
+// URL staff hit to clock in/out (PIN-gated on that page itself), at
+// /clock/{tenantSlug} — e.g. https://system-eta-azure.vercel.app/clock/test-venue.
+// origin is resolved client-side (not baked in server-side) so this reads
+// correctly whether the tenant is on a custom domain or the shared one.
+function StaffClockInUrlPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [origin, setOrigin] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
+
+  const clockInUrl = origin ? `${origin}/clock/${tenantSlug}` : null
+
+  async function copyUrl() {
+    if (!clockInUrl) return
+    try {
+      await navigator.clipboard.writeText(clockInUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can be unavailable (e.g. insecure context) — the URL
+      // is already selectable in the input, so this just skips the toast.
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-[#E6E1D4] p-4">
+      <h3 className="text-sm font-semibold text-[#1C1A17]">Staff clock-in URL</h3>
+      <p className="mt-1 text-sm text-[#8A8375]">Where staff clock in and out for a shift, PIN-protected on that page.</p>
+
+      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex-1 space-y-2">
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={clockInUrl ?? "Loading…"}
+              onFocus={(e) => e.target.select()}
+              className="w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none"
+            />
+            <button
+              type="button"
+              onClick={copyUrl}
+              disabled={!clockInUrl}
+              className="shrink-0 border border-[#D9D3C3] px-3 py-1.5 text-sm text-[#1C1A17] disabled:opacity-50"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <p className="text-xs text-[#8A8375]">Print this by the staff entrance, or bookmark it on a shared tablet.</p>
+        </div>
+
+        <div className="flex flex-col items-center gap-2 border border-[#E6E1D4] p-3">
+          {clockInUrl ? (
+            // Same third-party QR generator as the kiosk URL panel — the
+            // clock-in URL isn't sensitive on its own (the PIN gate is on
+            // the page itself), so a hosted generator is fine here.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(clockInUrl)}`}
+              alt="QR code linking to the staff clock-in page"
+              width={160}
+              height={160}
+            />
+          ) : (
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-[#8A8375]">Loading…</div>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function StaffManager({
   initialStaff: staff,
   initialActiveShifts: activeShifts,
   permissions,
+  tenantSlug,
 }: {
   initialStaff: AdminStaff[]
   initialActiveShifts: AdminStaffShift[]
@@ -73,6 +149,7 @@ export function StaffManager({
    *  actions.ts and matching RLS policies, so a stale/tampered client
    *  bypassing this prop still can't act past what the server allows. */
   permissions: AdminStaffPermissions
+  tenantSlug: string
 }) {
   const [form, setForm] = useState<StaffFormState>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -147,6 +224,8 @@ export function StaffManager({
 
   return (
     <div className="space-y-10">
+      <StaffClockInUrlPanel tenantSlug={tenantSlug} />
+
       {/* ================= Currently clocked in ================= */}
       <section>
         <h3 className="text-sm font-semibold text-[#1C1A17]">Currently clocked in</h3>
