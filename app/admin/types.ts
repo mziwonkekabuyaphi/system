@@ -12,20 +12,74 @@ export interface AdminService {
   active: boolean
 }
 
+/** Base staff profile — everything gated behind staff.view. Deliberately
+ *  excludes hourlyRate: compensation data is payroll.view territory (see
+ *  AdminStaffPermissions / the `permissions.key` rows added by the
+ *  staff_payroll_activity_log_and_granular_permissions migration), so a
+ *  staff.view-only caller must never receive it, not even as `null`. */
 export interface AdminStaff {
   id: string
   name: string
   active: boolean
+  jobTitle: string | null
+  phone: string | null
+  email: string | null
+  /** Current PIN, shown back in the edit form (this is an admin-only
+   *  screen, same posture as showing any other tenant setting). Staff use
+   *  this PIN to clock in/out at the public /clock/[slug] pad. */
+  clockInPin: string | null
+  /** Present ONLY when the caller has payroll.view — app/admin/page.tsx's
+   *  getAllStaff() adds this key conditionally rather than always
+   *  including it as null, so the key's mere presence is meaningful.
+   *  Check with `"hourlyRate" in member`, not `member.hourlyRate != null`
+   *  (a real rate can legitimately be null — "not yet set"). */
+  hourlyRate?: number | null
 }
 
-/** UPDATED: `source` and the three queue-simulation fields let the admin
- *  UI tell a promoted booking apart from an ordinary walk-in, and show a
- *  staff-facing position/ETA that actually accounts for staff capacity
- *  (see lib/services/queue.ts's getQueueSimulation(), which page.tsx's
- *  getTodaysQueue() now calls to populate these). position/etaMinutes/
- *  runningLate are optional because a "called" entry (already being
- *  served) doesn't have a meaningful queue position — see
- *  getQueueSimulation()'s own doc comment for exactly what each means. */
+/** Payload shape for addStaff()/updateStaff() in actions.ts. clockInPin as
+ *  an empty string means "no PIN" on create and "leave unchanged" on
+ *  update — see updateStaff's implementation.
+ *
+ *  hourlyRate is optional and permission-gated independently of the rest
+ *  of this input: setting it (to a number OR to null) always requires
+ *  payroll.manage in addition to staff.manage, checked server-side in
+ *  actions.ts. Omit the key entirely (don't include `hourlyRate:
+ *  undefined` in the object you send) when the signed-in user doesn't
+ *  have payroll.manage — updateStaff() then leaves hourly_rate untouched,
+ *  and addStaff() defaults it to null. StaffManager.tsx only renders the
+ *  rate field at all when the `payrollManage` permission flag is true. */
+export interface AdminStaffInput {
+  name: string
+  jobTitle: string
+  phone: string
+  email: string
+  clockInPin: string
+  hourlyRate?: number | null
+}
+
+/** Permission flags resolved once per request in app/admin/page.tsx (see
+ *  getTenantPermissions() in lib/tenant/require-tenant-permission.ts) and
+ *  threaded down through AdminView into every staff/payroll/activity-log
+ *  component. These gate which tabs, fields, and action buttons render —
+ *  the actual enforcement lives server-side in actions.ts and RLS; this
+ *  is purely "don't show controls the server will reject anyway". */
+export interface AdminStaffPermissions {
+  staffView: boolean
+  staffManage: boolean
+  payrollView: boolean
+  payrollManage: boolean
+}
+
+/** A currently-open row in staff_shifts, joined with the staff member's
+ *  name for display in StaffManager.tsx's "Currently clocked in" panel. */
+export interface AdminStaffShift {
+  id: string
+  staffId: string
+  staffName: string
+  /** ISO timestamp */
+  loginTime: string
+}
+
 export interface AdminQueueEntry {
   id: string
   status: "waiting" | "called"
@@ -34,21 +88,6 @@ export interface AdminQueueEntry {
   serviceName: string
   customerName: string | null
   customerPhone: string
-  /** 'booking' when this entry was created by the booking→queue
-   *  promotion job (app/api/cron/promote-bookings/route.ts), 'walkin'
-   *  for a kiosk/WhatsApp walk-in. Mirrors queue_entries.source. */
-  source: "walkin" | "booking"
-  /** 1-based position in line, accounting for active staff capacity.
-   *  Undefined for a 'called' entry (already being served). */
-  position?: number
-  /** Minutes until this entry's simulated turn. Undefined for a
-   *  'called' entry. */
-  etaMinutes?: number
-  /** Only ever true for a 'booking'-sourced entry in 'hybrid' queue
-   *  priority mode: the simulated wait would run past the booking's
-   *  actual appointment time. Always false/undefined otherwise — see
-   *  booking_settings.queue_priority_mode. */
-  runningLate?: boolean
 }
 
 export interface AdminBooking {
@@ -177,36 +216,21 @@ export interface AdminKioskSettings {
 // SETTINGS (Booking / Queue / Messages tab)
 // ============================================================================
 
-/** Mirrors booking_settings.queue_priority_mode (added by
- *  supabase/migrations/20260915_add_queue_priority_mode.sql). Kept as its
- *  own named type here rather than importing from
- *  lib/services/shared/tenant-scheduling.ts's QueuePriorityMode — same
- *  cross-boundary-import reasoning as AdminKioskRegistrationType above:
- *  "use server" admin code shouldn't reach into lib/services just to
- *  borrow a string union, so the two are intentionally kept in sync by
- *  hand rather than shared by import. See lib/services/queue.ts's
- *  getQueueSimulation() for exactly what each value does. */
-export type AdminQueuePriorityMode = "fifo" | "priority" | "hybrid"
-
 /** booking_settings, one row per tenant.
  *
  *  unifyWithQueue is the flagship toggle for the "unified platform" work:
- *  when true, app/api/cron/promote-bookings/route.ts (invoked on a
- *  schedule) starts inserting this tenant's confirmed bookings into
+ *  when true, the promote_bookings_to_queue() pg_cron job (runs every
+ *  minute) starts inserting this tenant's confirmed bookings into
  *  queue_entries once they enter queueLeadTimeMinutes of start_time, with
  *  queue_entries.source = 'booking' and booking_id set back to this row.
- *  When false, bookings and the walk-in queue stay fully separate.
- *
- *  queuePriorityMode only matters once a booking has actually been
- *  promoted (i.e. only has any effect when unifyWithQueue is true) — see
- *  lib/services/queue.ts's getQueueSimulation(). */
+ *  When false, bookings and the walk-in queue stay fully separate, same as
+ *  before this feature existed. */
 export interface AdminBookingSettings {
   unifyWithQueue: boolean
   queueLeadTimeMinutes: number
   minNoticeMinutes: number
   maxAdvanceDays: number
   cancellationWindowMinutes: number
-  queuePriorityMode: AdminQueuePriorityMode
 }
 
 /** queue_settings, one row per tenant. */
@@ -229,4 +253,69 @@ export interface AdminMessageSettings {
   queueJoinedTemplate: string | null
   queueAlmostTurnTemplate: string | null
   queueCalledTemplate: string | null
+}
+
+// ============================================================================
+// PAYROLL (staff_payroll — gated behind payroll.view / payroll.manage)
+// ============================================================================
+
+export type AdminPayrollStatus = "pending" | "paid"
+
+/** One calculated payroll row for one staff member over one period. Only
+ *  ever sent to a caller with payroll.view — see getPayrollForPeriod() /
+ *  calculatePayroll() in actions.ts, both of which require it. */
+export interface AdminPayrollRecord {
+  id: string
+  staffId: string
+  staffName: string
+  jobTitle: string | null
+  /** ISO date (YYYY-MM-DD), inclusive. */
+  periodStart: string
+  /** ISO date (YYYY-MM-DD), inclusive. */
+  periodEnd: string
+  hoursWorked: number
+  hourlyRate: number
+  grossPay: number
+  /** Estimated SARS PAYE for the period — see lib/payroll/paye.ts. */
+  paye: number
+  /** Estimated employee UIF (1%, capped) for the period. */
+  uif: number
+  /** paye + uif, kept as its own column for quick display/CSV export. */
+  deductions: number
+  finalPay: number
+  paymentStatus: AdminPayrollStatus
+  /** ISO timestamp, set when payment_status flips to 'paid'. */
+  paidAt: string | null
+  /** Display name of whoever marked it paid, resolved server-side —
+   *  never a raw profile id. Null while pending. */
+  paidByName: string | null
+}
+
+/** Pay period preset shown in the calculator UI; 'custom' means the user
+ *  picked their own start/end dates rather than one of the presets. */
+export type AdminPayPeriodPreset = "weekly" | "biweekly" | "monthly" | "custom"
+
+// ============================================================================
+// ACTIVITY LOG (staff_activity_logs — category='payroll' rows additionally
+// gated behind payroll.view; every other category needs only staff.view)
+// ============================================================================
+
+export type AdminActivityCategory = "staff" | "clock" | "bookings" | "queue" | "services" | "payroll"
+
+export interface AdminActivityLogEntry {
+  id: string
+  category: AdminActivityCategory
+  /** Human-readable description, e.g. "Force clocked out after 2h 14m" —
+   *  deliberately never contains raw rand amounts or other figures that
+   *  would need their own permission check independent of the category. */
+  action: string
+  /** Null for actions that aren't about a specific staff member (e.g. a
+   *  booking cancellation). */
+  staffId: string | null
+  staffName: string | null
+  /** Display name of the admin who performed the action, resolved
+   *  server-side. Null if the actor's profile has since been removed. */
+  actorName: string | null
+  /** ISO timestamp. */
+  createdAt: string
 }

@@ -24,38 +24,37 @@
 // for the 'kiosk' module row. Booking / Queue / Messages tabs read
 // booking_settings / queue_settings / message_settings — one row per
 // tenant, same shape as tenant_settings. booking_settings.unify_with_queue
-// is what app/api/cron/promote-bookings/route.ts (invoked on a schedule)
-// checks per tenant before promoting a confirmed booking into
-// queue_entries; booking_settings.queue_priority_mode (new — see
-// supabase/migrations/20260915_add_queue_priority_mode.sql) controls how
-// that promoted booking is ordered against walk-ins once it's there, read
-// by lib/services/queue.ts's getQueueSimulation().
+// is what the promote_bookings_to_queue() pg_cron job (runs every minute
+// in Postgres) checks per tenant before promoting a confirmed booking
+// into queue_entries.
 //
 // business_hours (Settings > Business Info) is one row per day_of_week
-// (0=Sunday..6=Saturday). These aren't just displayed — lib/services/
-// booking.ts's availability/creation logic reads this directly (see
-// lib/services/shared/tenant-scheduling.ts), so this form is the actual
-// gate on what the kiosk and WhatsApp bot are allowed to accept, not
-// only a label shown to customers.
+// (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
+// bookings and queue_entries enforce them (see the business_hours_
+// enforcement migration), so this is the actual gate on what the kiosk and
+// WhatsApp bot are allowed to accept, not only a label shown to customers.
 //
 // tenants.slug is now also fetched here (alongside plan) purely so the
 // Settings > Kiosk tab can render the public Kiosk URL and its QR code —
 // it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
 //
-// getTodaysQueue (UPDATED): now selects queue_entries.source and enriches
-// every entry with lib/services/queue.ts's getQueueSimulation() — the
-// exact same multi-server, priority-mode-aware calculation a WhatsApp/
-// kiosk customer's own "your position" message uses, so staff never see
-// a different number than a customer was told. A "called" entry has no
-// meaningful position/eta (it's already being served), so those fields
-// stay undefined for it, same as getQueueSimulation() itself reports.
+// STAFF HR (new): staff now carries job_title / hourly_rate / phone /
+// email / clock_in_pin (add_staff_hr_profile_and_shifts migration) —
+// phase 1 of turning the bare name+active toggle into an actual staff
+// profile. clock_in_pin is what staff type in at the public PIN pad,
+// app/clock/[slug], which is unauthenticated and re-resolves tenantId
+// from the slug itself (same trust model as /kiosk/[slug]) rather than
+// trusting anything this admin session hands it. getActiveStaffShifts
+// below powers the "currently clocked in" panel in StaffManager.tsx —
+// only the row a shift is admin-relevant for (who, since when); the full
+// shift history isn't loaded here.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
-import { getQueueSimulation } from "@/lib/services/queue"
+import { getTenantPermissions } from "@/lib/tenant/require-tenant-permission"
 
 import { AdminView } from "./AdminView"
 import type {
+  AdminActivityLogEntry,
   AdminBooking,
   AdminBookingSettings,
   AdminBranding,
@@ -64,12 +63,14 @@ import type {
   AdminInboxStats,
   AdminKioskSettings,
   AdminMessageSettings,
+  AdminPayrollRecord,
   AdminPlan,
   AdminQueueEntry,
-  AdminQueuePriorityMode,
   AdminQueueSettings,
   AdminService,
   AdminStaff,
+  AdminStaffPermissions,
+  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -118,7 +119,7 @@ async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise
   const { data, error } = await supabase
     .from("queue_entries")
     .select(
-      `id, status, joined_at, source,
+      `id, status, joined_at,
        services ( name ),
        tenant_customers ( full_name, phone )`,
     )
@@ -128,35 +129,14 @@ async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise
 
   if (error) throw new Error(`Failed to load today's queue: ${error.message}`)
 
-  const rows = data ?? []
-
-  // Best-effort: a simulation failure (e.g. a transient DB error) must
-  // never take down the whole queue list — staff still need to see who's
-  // waiting even without accurate position/ETA that moment. Falls back
-  // to an empty map, so every entry's position/etaMinutes/runningLate
-  // just come back undefined below rather than throwing.
-  let simulation: Map<string, { position: number; etaMinutes: number; runningLate: boolean }> = new Map()
-  try {
-    simulation = await getQueueSimulation(tenantId)
-  } catch (error) {
-    console.error("[admin] getQueueSimulation failed, showing queue without position/ETA", { tenantId, error })
-  }
-
-  return rows.map((q: any) => {
-    const sim = simulation.get(q.id)
-    return {
-      id: q.id,
-      status: q.status,
-      joinedAt: q.joined_at,
-      serviceName: q.services?.name ?? "Unknown service",
-      customerName: q.tenant_customers?.full_name ?? null,
-      customerPhone: q.tenant_customers?.phone ?? "",
-      source: q.source === "booking" ? "booking" : "walkin",
-      position: q.status === "called" ? undefined : sim?.position,
-      etaMinutes: q.status === "called" ? undefined : sim?.etaMinutes,
-      runningLate: sim?.runningLate ?? false,
-    }
-  })
+  return (data ?? []).map((q: any) => ({
+    id: q.id,
+    status: q.status,
+    joinedAt: q.joined_at,
+    serviceName: q.services?.name ?? "Unknown service",
+    customerName: q.tenant_customers?.full_name ?? null,
+    customerPhone: q.tenant_customers?.phone ?? "",
+  }))
 }
 
 async function getAllServices(supabase: ServerClient, tenantId: string): Promise<AdminService[]> {
@@ -177,16 +157,61 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
   }))
 }
 
-async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<AdminStaff[]> {
+// includeHourlyRate must only ever be true when the caller has already
+// checked payroll.view (see AdminPage() below) — hourly_rate is
+// compensation data, not part of the base staff.view profile. Selecting
+// it conditionally at the query level (rather than always fetching it
+// and stripping it client-side) means a staff.view-only render path
+// never has the number in memory to begin with.
+async function getAllStaff(
+  supabase: ServerClient,
+  tenantId: string,
+  includeHourlyRate: boolean,
+): Promise<AdminStaff[]> {
+  const columns = includeHourlyRate
+    ? "id, name, active, job_title, hourly_rate, phone, email, clock_in_pin"
+    : "id, name, active, job_title, phone, email, clock_in_pin"
+
   const { data, error } = await supabase
     .from("staff")
-    .select("id, name, active")
+    .select(columns)
     .eq("tenant_id", tenantId)
     .order("name", { ascending: true })
 
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
 
-  return (data ?? []).map((s) => ({ id: s.id, name: s.name, active: s.active }))
+  return (data ?? []).map((s: any) => ({
+    id: s.id,
+    name: s.name,
+    active: s.active,
+    jobTitle: s.job_title,
+    phone: s.phone,
+    email: s.email,
+    clockInPin: s.clock_in_pin,
+    ...(includeHourlyRate ? { hourlyRate: s.hourly_rate === null ? null : Number(s.hourly_rate) } : {}),
+  }))
+}
+
+// staff_shifts rows with status = 'active' are, by definition, currently
+// clocked in — there's at most one open shift per staff member at a time
+// (the /clock/[slug] toggle closes the existing one before ever opening a
+// new one), so this list doubles as "who's on the floor right now".
+async function getActiveStaffShifts(supabase: ServerClient, tenantId: string): Promise<AdminStaffShift[]> {
+  const { data, error } = await supabase
+    .from("staff_shifts")
+    .select("id, staff_id, login_time, staff ( name )")
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .order("login_time", { ascending: true })
+
+  if (error) throw new Error(`Failed to load active shifts: ${error.message}`)
+
+  return (data ?? []).map((s: any) => ({
+    id: s.id,
+    staffId: s.staff_id,
+    staffName: s.staff?.name ?? "Unknown staff",
+    loginTime: s.login_time,
+  }))
 }
 
 // ============================================================================
@@ -196,8 +221,6 @@ async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<Ad
 const DEFAULT_IDLE_REFRESH_SECONDS = 75
 const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
 const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
-const DEFAULT_QUEUE_PRIORITY_MODE: AdminQueuePriorityMode = "fifo"
-const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
 async function getSettingsData(
   supabase: ServerClient,
@@ -249,7 +272,7 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, queue_priority_mode",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -288,12 +311,6 @@ async function getSettingsData(
     ? (brandingResult.data.registration_type as AdminKioskSettings["registrationType"])
     : DEFAULT_REGISTRATION_TYPE
 
-  const queuePriorityMode = VALID_QUEUE_PRIORITY_MODES.includes(
-    bookingSettingsResult.data.queue_priority_mode as AdminQueuePriorityMode,
-  )
-    ? (bookingSettingsResult.data.queue_priority_mode as AdminQueuePriorityMode)
-    : DEFAULT_QUEUE_PRIORITY_MODE
-
   return {
     plan: tenantResult.data.plan as AdminPlan,
     slug: tenantResult.data.slug as string,
@@ -325,7 +342,6 @@ async function getSettingsData(
       minNoticeMinutes: bookingSettingsResult.data.min_notice_minutes,
       maxAdvanceDays: bookingSettingsResult.data.max_advance_days,
       cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
-      queuePriorityMode,
     },
     queueSettings: {
       autoCallNext: queueSettingsResult.data.auto_call_next,
@@ -349,6 +365,106 @@ async function getSettingsData(
       closeTime: d.close_time,
     })),
   }
+}
+
+// ============================================================================
+// PAYROLL — only ever called when the caller has payroll.view (see
+// AdminPage() below). Loads the most recent calculated period, if any,
+// so the Payroll tab opens showing something rather than an empty
+// picker; recalculating or picking a different period happens client-side
+// via the getPayrollForPeriod()/calculatePayroll() Server Actions.
+// ============================================================================
+
+async function getLatestPayrollPeriod(
+  supabase: ServerClient,
+  tenantId: string,
+): Promise<{ periodStart: string; periodEnd: string } | null> {
+  const { data, error } = await supabase
+    .from("staff_payroll")
+    .select("period_start, period_end")
+    .eq("tenant_id", tenantId)
+    .order("period_end", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw new Error(`Failed to load latest payroll period: ${error.message}`)
+  if (!data) return null
+  return { periodStart: data.period_start, periodEnd: data.period_end }
+}
+
+async function getPayrollForLatestPeriod(supabase: ServerClient, tenantId: string): Promise<AdminPayrollRecord[]> {
+  const latest = await getLatestPayrollPeriod(supabase, tenantId)
+  if (!latest) return []
+
+  const { data, error } = await supabase
+    .from("staff_payroll")
+    .select(
+      `id, staff_id, period_start, period_end, hours_worked, hourly_rate, gross_pay, paye, uif, deductions,
+       final_pay, payment_status, paid_at,
+       staff ( name, job_title ),
+       paid_by_profile:profiles!staff_payroll_paid_by_fkey ( full_name )`,
+    )
+    .eq("tenant_id", tenantId)
+    .eq("period_start", latest.periodStart)
+    .eq("period_end", latest.periodEnd)
+    .order("created_at", { ascending: true })
+
+  if (error) throw new Error(`Failed to load payroll: ${error.message}`)
+
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    staffId: r.staff_id,
+    staffName: r.staff?.name ?? "Unknown staff",
+    jobTitle: r.staff?.job_title ?? null,
+    periodStart: r.period_start,
+    periodEnd: r.period_end,
+    hoursWorked: Number(r.hours_worked),
+    hourlyRate: Number(r.hourly_rate),
+    grossPay: Number(r.gross_pay),
+    paye: Number(r.paye),
+    uif: Number(r.uif),
+    deductions: Number(r.deductions),
+    finalPay: Number(r.final_pay),
+    paymentStatus: r.payment_status,
+    paidAt: r.paid_at,
+    paidByName: r.paid_by_profile?.full_name ?? null,
+  }))
+}
+
+// ============================================================================
+// ACTIVITY LOG — category filter mirrors the RLS split: a staff.view-only
+// caller's query excludes 'payroll' outright (belt-and-suspenders with
+// the staff_activity_logs_select policy), a payroll.view caller gets
+// everything merged and re-sorted.
+// ============================================================================
+
+async function getRecentActivityLog(
+  supabase: ServerClient,
+  tenantId: string,
+  includePayrollCategory: boolean,
+  limit = 100,
+): Promise<AdminActivityLogEntry[]> {
+  let query = supabase
+    .from("staff_activity_logs")
+    .select(`id, category, action, created_at, staff ( id, name ), actor:profiles ( full_name )`)
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+
+  if (!includePayrollCategory) query = query.neq("category", "payroll")
+
+  const { data, error } = await query
+  if (error) throw new Error(`Failed to load activity log: ${error.message}`)
+
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    category: r.category,
+    action: r.action,
+    staffId: r.staff?.id ?? null,
+    staffName: r.staff?.name ?? null,
+    actorName: r.actor?.full_name ?? null,
+    createdAt: r.created_at,
+  }))
 }
 
 // ============================================================================
@@ -456,9 +572,27 @@ async function getInboxData(
 
 export default async function AdminPage() {
   // Redirects to /login if there's no session or no active tenant
-  // membership — see layout.tsx, which already calls this once per
-  // request; React's cache() means this call is free.
-  const { tenantId } = await requireTenantMember()
+  // membership (same as the old requireTenantMember() call — see
+  // getTenantPermissions() in lib/tenant/require-tenant-permission.ts,
+  // which calls it internally), AND resolves which of the four
+  // staff/payroll permissions this signed-in user actually has. Nothing
+  // below fetches staff or payroll data before this resolves — a
+  // staff.view-only user's render path never issues a query that could
+  // return hourly_rate or a staff_payroll row.
+  const { member, granted } = await getTenantPermissions([
+    "staff.view",
+    "staff.manage",
+    "payroll.view",
+    "payroll.manage",
+  ])
+  const tenantId = member.tenantId
+
+  const staffPermissions: AdminStaffPermissions = {
+    staffView: granted.has("staff.view"),
+    staffManage: granted.has("staff.manage"),
+    payrollView: granted.has("payroll.view"),
+    payrollManage: granted.has("payroll.manage"),
+  }
 
   const supabase = getSupabaseServerClient()
 
@@ -475,14 +609,23 @@ export default async function AdminPage() {
     )
   }
 
-  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
-    getTodaysBookings(supabase, tenantId),
-    getTodaysQueue(supabase, tenantId),
-    getAllServices(supabase, tenantId),
-    getAllStaff(supabase, tenantId),
-    getInboxData(supabase, tenantId),
-    getSettingsData(supabase, tenantId),
-  ])
+  const [bookings, queue, services, staff, activeShifts, inbox, settingsData, payroll, activityLog] =
+    await Promise.all([
+      getTodaysBookings(supabase, tenantId),
+      getTodaysQueue(supabase, tenantId),
+      getAllServices(supabase, tenantId),
+      // Empty array (not an error) for a caller without staff.view — the
+      // "Staff" tab itself should already be hidden client-side by
+      // staffPermissions.staffView, this is the belt to that suspenders.
+      staffPermissions.staffView ? getAllStaff(supabase, tenantId, staffPermissions.payrollView) : [],
+      staffPermissions.staffView ? getActiveStaffShifts(supabase, tenantId) : [],
+      getInboxData(supabase, tenantId),
+      getSettingsData(supabase, tenantId),
+      staffPermissions.payrollView ? getPayrollForLatestPeriod(supabase, tenantId) : [],
+      staffPermissions.staffView
+        ? getRecentActivityLog(supabase, tenantId, staffPermissions.payrollView)
+        : [],
+    ])
 
   return (
     <AdminView
@@ -490,6 +633,7 @@ export default async function AdminPage() {
       initialQueue={queue}
       initialServices={services}
       initialStaff={staff}
+      initialActiveShifts={activeShifts}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
@@ -502,6 +646,15 @@ export default async function AdminPage() {
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}
       initialBusinessHours={settingsData.businessHours}
+      // NEW — staff/payroll permission gating (staff_payroll_activity_log_and_granular_permissions
+      // migration). AdminView needs to thread `staffPermissions` down to
+      // StaffManager/PayrollManager/ActivityLogPanel and use it to decide
+      // whether the Payroll / Activity Log tabs render at all — I don't
+      // have AdminView.tsx's source, so this prop is new and unwired on
+      // that end; see the delivery notes.
+      staffPermissions={staffPermissions}
+      initialPayroll={payroll}
+      initialActivityLog={activityLog}
     />
   )
 }
