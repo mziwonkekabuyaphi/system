@@ -25,6 +25,8 @@ import type {
   AdminQueueSettings,
   AdminService,
   AdminStaff,
+  AdminStaffPermissions,
+  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -130,6 +132,8 @@ export function AdminView({
   initialQueue,
   initialServices,
   initialStaff,
+  initialActiveShifts,
+  staffPermissions,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -147,6 +151,8 @@ export function AdminView({
   initialQueue: AdminQueueEntry[]
   initialServices: AdminService[]
   initialStaff: AdminStaff[]
+  initialActiveShifts: AdminStaffShift[]
+  staffPermissions: AdminStaffPermissions
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -269,7 +275,13 @@ export function AdminView({
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}
           {tab === "services" && <ServicesManager initialServices={initialServices} />}
-          {tab === "staff" && <StaffManager initialStaff={initialStaff} />}
+          {tab === "staff" && (
+            <StaffManager
+              initialStaff={initialStaff}
+              initialActiveShifts={initialActiveShifts}
+              permissions={staffPermissions}
+            />
+          )}
           {tab === "billing" && <BillingPanel />}
           {tab === "settings" && (
             <SettingsManager

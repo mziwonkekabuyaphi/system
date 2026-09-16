@@ -40,6 +40,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
+import { getTenantPermissions } from "@/lib/tenant/require-tenant-permission"
 
 import { AdminView } from "./AdminView"
 import type {
@@ -56,6 +57,8 @@ import type {
   AdminQueueSettings,
   AdminService,
   AdminStaff,
+  AdminStaffPermissions,
+  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -142,16 +145,56 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
   }))
 }
 
-async function getAllStaff(supabase: ServerClient, tenantId: string): Promise<AdminStaff[]> {
-  const { data, error } = await supabase
-    .from("staff")
-    .select("id, name, active")
-    .eq("tenant_id", tenantId)
-    .order("name", { ascending: true })
+// AdminStaff requires jobTitle/phone/email/clockInPin always, and
+// hourlyRate ONLY as a present-or-absent key gated on payroll.view (see
+// that field's doc comment in types.ts) — never sent as `null` to signal
+// "no permission", since a real rate can legitimately be null too.
+async function getAllStaff(supabase: ServerClient, tenantId: string, includeHourlyRate: boolean): Promise<AdminStaff[]> {
+  const columns = includeHourlyRate
+    ? "id, name, active, job_title, phone, email, clock_in_pin, hourly_rate"
+    : "id, name, active, job_title, phone, email, clock_in_pin"
+
+  const { data, error } = await supabase.from("staff").select(columns).eq("tenant_id", tenantId).order("name", { ascending: true })
 
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
 
-  return (data ?? []).map((s) => ({ id: s.id, name: s.name, active: s.active }))
+  return (data ?? []).map((s: any) => {
+    const base = {
+      id: s.id,
+      name: s.name,
+      active: s.active,
+      jobTitle: s.job_title,
+      phone: s.phone,
+      email: s.email,
+      clockInPin: s.clock_in_pin,
+    }
+    // Spreading conditionally, rather than always setting hourlyRate (even
+    // to null), is what keeps the key itself absent for a non-payroll.view
+    // caller — StaffManager.tsx checks `"hourlyRate" in member`, not
+    // `!= null`, specifically because of this.
+    return includeHourlyRate ? { ...base, hourlyRate: s.hourly_rate } : base
+  })
+}
+
+// staff_shifts rows with status='active' -- the same set forceClockOutShift()
+// in actions.ts operates on, joined with the staff member's name for
+// display in StaffManager's "Currently clocked in" panel.
+async function getActiveShifts(supabase: ServerClient, tenantId: string): Promise<AdminStaffShift[]> {
+  const { data, error } = await supabase
+    .from("staff_shifts")
+    .select("id, staff_id, login_time, staff ( name )")
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .order("login_time", { ascending: true })
+
+  if (error) throw new Error(`Failed to load active shifts: ${error.message}`)
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    staffId: row.staff_id,
+    staffName: row.staff?.name ?? "Unknown staff",
+    loginTime: row.login_time,
+  }))
 }
 
 // ============================================================================
@@ -431,11 +474,26 @@ export default async function AdminPage() {
     )
   }
 
-  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
+  // Resolved once per request, same cache() pattern as requireTenantMember
+  // — see AdminStaffPermissions' doc comment in types.ts. Staff/payroll
+  // data fetched below is shaped around this: hourlyRate is only
+  // requested from the DB at all when payrollView is true.
+  //
+  // ASSUMPTION FLAGGED: this call site assumes getTenantPermissions()
+  // takes no arguments and resolves tenantId/role from the session itself
+  // (matching requireTenantMember()'s own signature) and returns at least
+  // the 4 fields AdminStaffPermissions needs. I haven't seen
+  // lib/tenant/require-tenant-permission.ts directly — if its real
+  // signature differs (e.g. it takes tenantId, or returns a differently
+  // shaped object), this line needs adjusting to match.
+  const permissions = await getTenantPermissions()
+
+  const [bookings, queue, services, staff, activeShifts, inbox, settingsData] = await Promise.all([
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
     getAllServices(supabase, tenantId),
-    getAllStaff(supabase, tenantId),
+    getAllStaff(supabase, tenantId, permissions.payrollView),
+    getActiveShifts(supabase, tenantId),
     getInboxData(supabase, tenantId),
     getSettingsData(supabase, tenantId),
   ])
@@ -446,6 +504,8 @@ export default async function AdminPage() {
       initialQueue={queue}
       initialServices={services}
       initialStaff={staff}
+      initialActiveShifts={activeShifts}
+      staffPermissions={permissions}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
