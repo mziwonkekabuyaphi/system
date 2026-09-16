@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { SVGProps } from "react"
 
 import { LogoutButton } from "@/components/admin/LogoutButton"
+import { BillingPanel } from "@/components/admin/BillingPanel"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
@@ -27,7 +28,7 @@ import type {
   AdminTenantSettings,
 } from "./types"
 
-type Tab = "today" | "queue" | "inbox" | "services" | "staff" | "settings"
+type Tab = "today" | "queue" | "inbox" | "services" | "staff" | "billing" | "settings"
 
 const SIDEBAR_COLLAPSED = 72 // px
 const SIDEBAR_EXPANDED = 240 // px
@@ -96,6 +97,16 @@ function GearIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function CreditCardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="6" width="18" height="13" rx="2" />
+      <path d="M3 10h18" />
+      <path d="M6.5 14.5h4" />
+    </svg>
+  )
+}
+
 function ChevronIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -110,6 +121,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "services", label: "Services", icon: TagIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
+  { id: "billing", label: "Billing", icon: CreditCardIcon },
   { id: "settings", label: "Settings", icon: GearIcon },
 ]
 
@@ -258,6 +270,7 @@ export function AdminView({
           )}
           {tab === "services" && <ServicesManager initialServices={initialServices} />}
           {tab === "staff" && <StaffManager initialStaff={initialStaff} />}
+          {tab === "billing" && <BillingPanel />}
           {tab === "settings" && (
             <SettingsManager
               initialPlan={initialPlan}
