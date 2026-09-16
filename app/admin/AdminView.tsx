@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { SVGProps } from "react"
 
+import { LogoutButton } from "@/components/admin/LogoutButton"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
@@ -23,7 +24,6 @@ import type {
   AdminQueueSettings,
   AdminService,
   AdminStaff,
-  AdminStaffShift,
   AdminTenantSettings,
 } from "./types"
 
@@ -118,7 +118,6 @@ export function AdminView({
   initialQueue,
   initialServices,
   initialStaff,
-  initialActiveShifts,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -136,7 +135,6 @@ export function AdminView({
   initialQueue: AdminQueueEntry[]
   initialServices: AdminService[]
   initialStaff: AdminStaff[]
-  initialActiveShifts: AdminStaffShift[]
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -216,6 +214,11 @@ export function AdminView({
           })}
         </nav>
 
+        {/* Account section — sign out */}
+        <div className="border-t border-white/10 px-3 py-3">
+          <LogoutButton expanded={expanded} />
+        </div>
+
         {/* Pin toggle — lets touch users (no hover) keep it open, and keyboard/mouse users lock it */}
         <div className="border-t border-white/10 px-3 py-3">
           <button
@@ -254,9 +257,7 @@ export function AdminView({
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}
           {tab === "services" && <ServicesManager initialServices={initialServices} />}
-          {tab === "staff" && (
-            <StaffManager initialStaff={initialStaff} initialActiveShifts={initialActiveShifts} />
-          )}
+          {tab === "staff" && <StaffManager initialStaff={initialStaff} />}
           {tab === "settings" && (
             <SettingsManager
               initialPlan={initialPlan}
