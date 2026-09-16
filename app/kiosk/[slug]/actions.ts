@@ -79,8 +79,8 @@ export async function fetchKioskServices(slug: string): Promise<KioskActionResul
 
 export async function fetchKioskDateOptions(slug: string): Promise<KioskActionResult<Array<{ date: string; label: string }>>> {
   try {
-    await resolveActiveTenantId(slug) // still gate on the tenant existing + being active
-    return { ok: true, data: buildDateOptions() }
+    const tenantId = await resolveActiveTenantId(slug)
+    return { ok: true, data: await buildDateOptions(tenantId) }
   } catch (error) {
     console.error("[kiosk] fetchKioskDateOptions failed", { slug, error })
     return { ok: false, error: "Something went wrong. Please try again." }
