@@ -232,6 +232,10 @@ export interface AdminKioskSettings {
   /** Subtitle on the "join the queue" card. Defaults to "Walk in now and
    *  we'll call you". */
   queueCardSubtitle: string | null
+  /** Heading on the service-picker screen (the screen right after the
+   *  choice screen, or right after welcome on a booking-only/queue-only
+   *  kiosk). Defaults to "What are you here for?". */
+  serviceScreenTitle: string | null
 }
 
 // ============================================================================

@@ -239,7 +239,7 @@ async function getSettingsData(
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle",
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -328,6 +328,7 @@ async function getSettingsData(
       bookingCardSubtitle: brandingResult.data.booking_card_subtitle,
       queueCardTitle: brandingResult.data.queue_card_title,
       queueCardSubtitle: brandingResult.data.queue_card_subtitle,
+      serviceScreenTitle: brandingResult.data.service_screen_title,
     },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,

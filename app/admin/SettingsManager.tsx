@@ -433,6 +433,7 @@ const DEFAULT_BOOKING_CARD_TITLE = "Book a time"
 const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
 const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
+const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [tagline, setTagline] = useState(initial.tagline ?? "")
@@ -444,6 +445,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [bookingCardSubtitle, setBookingCardSubtitle] = useState(initial.bookingCardSubtitle ?? "")
   const [queueCardTitle, setQueueCardTitle] = useState(initial.queueCardTitle ?? "")
   const [queueCardSubtitle, setQueueCardSubtitle] = useState(initial.queueCardSubtitle ?? "")
+  const [serviceScreenTitle, setServiceScreenTitle] = useState(initial.serviceScreenTitle ?? "")
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -460,6 +462,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
         bookingCardSubtitle: bookingCardSubtitle.trim() || null,
         queueCardTitle: queueCardTitle.trim() || null,
         queueCardSubtitle: queueCardSubtitle.trim() || null,
+        serviceScreenTitle: serviceScreenTitle.trim() || null,
       })
       setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
     })
@@ -535,6 +538,21 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
               )
             })}
           </div>
+        </div>
+
+        <div className="border-t border-stone-200 pt-4">
+          <FieldRow
+            label="Service screen heading"
+            hint={`Shown on every kiosk path (booking, queue, or both) when picking a service. Defaults to "${DEFAULT_SERVICE_SCREEN_TITLE}".`}
+          >
+            <input
+              className={inputClass}
+              value={serviceScreenTitle}
+              onChange={(e) => setServiceScreenTitle(e.target.value)}
+              placeholder={DEFAULT_SERVICE_SCREEN_TITLE}
+              maxLength={80}
+            />
+          </FieldRow>
         </div>
 
         {registrationType === "both" && (

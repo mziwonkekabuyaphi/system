@@ -77,14 +77,15 @@
  * plan.
  *
  * Screen wording (choiceTitle / bookingCardTitle / bookingCardSubtitle /
- * queueCardTitle / queueCardSubtitle) is the multi-tenant customization
- * layer for copy that used to be hardcoded in components/kiosk/KioskApp.tsx
- * — every tenant can now rename "Book a time" / "Join the queue" (and
- * their subtitles) and the choice-screen heading to match their own
- * business without a code change. Length-capped, not content-validated:
- * this is free-text a tenant controls for their own kiosk, same trust
- * level as tagline. An empty string is normalized to null here so the
- * kiosk route's fallback logic only has one "unset" value to check.
+ * queueCardTitle / queueCardSubtitle / serviceScreenTitle) is the
+ * multi-tenant customization layer for copy that used to be hardcoded in
+ * components/kiosk/KioskApp.tsx — every tenant can now rename "Book a
+ * time" / "Join the queue" / "What are you here for?" (and their
+ * subtitles) to match their own business without a code change. Length-
+ * capped, not content-validated: this is free-text a tenant controls for
+ * their own kiosk, same trust level as tagline. An empty string is
+ * normalized to null here so the kiosk route's fallback logic only has
+ * one "unset" value to check.
  *
  * registrationType is typed as AdminKioskRegistrationType from ./types,
  * NOT re-imported from app/kiosk/[slug]/page.tsx — this file is
@@ -116,6 +117,7 @@ const MAX_CONFIRMATION_REFRESH_SECONDS = 120
 const MAX_CHOICE_TITLE_LENGTH = 80
 const MAX_CARD_TITLE_LENGTH = 40
 const MAX_CARD_SUBTITLE_LENGTH = 100
+const MAX_SERVICE_SCREEN_TITLE_LENGTH = 80
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 // Mirrors booking_settings' own CHECK constraints — validated here too so
@@ -277,6 +279,9 @@ export async function updateKioskSettings(input: {
   bookingCardSubtitle?: string | null
   queueCardTitle?: string | null
   queueCardSubtitle?: string | null
+  /** Heading on the service-picker screen. Optional/nullable, same
+   *  clear-to-default posture as the choice-screen wording above. */
+  serviceScreenTitle?: string | null
 }): Promise<ActionResult> {
   try {
     if (
@@ -311,6 +316,7 @@ export async function updateKioskSettings(input: {
       { label: "Booking card subtitle", value: input.bookingCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
       { label: "Queue card title", value: input.queueCardTitle, max: MAX_CARD_TITLE_LENGTH },
       { label: "Queue card subtitle", value: input.queueCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
+      { label: "Service screen title", value: input.serviceScreenTitle, max: MAX_SERVICE_SCREEN_TITLE_LENGTH },
     ]
     for (const field of wordingFields) {
       if (field.value && field.value.trim().length > field.max) {
@@ -332,6 +338,7 @@ export async function updateKioskSettings(input: {
         booking_card_subtitle: input.bookingCardSubtitle?.trim() || null,
         queue_card_title: input.queueCardTitle?.trim() || null,
         queue_card_subtitle: input.queueCardSubtitle?.trim() || null,
+        service_screen_title: input.serviceScreenTitle?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
