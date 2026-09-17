@@ -91,6 +91,12 @@ import {
 
 const QUEUE_STATE_SERVICE_SELECTION = "queue_service_selection"
 
+// Mirrors queue_settings.default_service_duration_minutes's DB default.
+// Only ever used as a last-resort fallback (queue_settings row missing or
+// query failed) — the real per-tenant value is normally read from that
+// column so an admin can tune it without a code change.
+const DEFAULT_SERVICE_DURATION_MINUTES = 15
+
 function getClientOrThrow(): SupabaseClient {
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Supabase server client is unavailable")
@@ -182,11 +188,33 @@ interface SimEntry {
   bookingStartMillis: number | null
 }
 
-function durationFromRow(row: QueueEntryRow): number {
+// `row.services` comes back null/empty from the join whenever
+// queue_entries.service_id is null — i.e. exactly the walk-in-with-no-
+// -service case require_service_selection=false enables. Falling back to
+// 0 there (the old behavior) told the simulation this customer takes no
+// time to serve, which understated the wait for everyone queued behind
+// them. defaultDurationMinutes (queue_settings.default_service_duration_minutes)
+// is the tenant's own estimate for that case instead.
+function durationFromRow(row: QueueEntryRow, defaultDurationMinutes: number): number {
   const services = row.services
-  if (!services) return 0
+  if (!services) return defaultDurationMinutes
   const entry = Array.isArray(services) ? services[0] : services
-  return entry?.duration_minutes ?? 0
+  return entry?.duration_minutes ?? defaultDurationMinutes
+}
+
+async function getDefaultServiceDurationMinutes(supabase: SupabaseClient, tenantId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("queue_settings")
+    .select("default_service_duration_minutes")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    console.error("[queue] Failed to load default_service_duration_minutes, using fallback", { tenantId, error })
+    return DEFAULT_SERVICE_DURATION_MINUTES
+  }
+
+  return data?.default_service_duration_minutes ?? DEFAULT_SERVICE_DURATION_MINUTES
 }
 
 async function getActiveStaffCount(supabase: SupabaseClient, tenantId: string): Promise<number> {
@@ -200,7 +228,11 @@ async function getActiveStaffCount(supabase: SupabaseClient, tenantId: string): 
   return count ?? 0
 }
 
-async function loadSimEntries(supabase: SupabaseClient, tenantId: string): Promise<SimEntry[]> {
+async function loadSimEntries(
+  supabase: SupabaseClient,
+  tenantId: string,
+  defaultDurationMinutes: number,
+): Promise<SimEntry[]> {
   const { data, error } = await supabase
     .from("queue_entries")
     .select("id, status, joined_at, called_at, booking_id, services ( duration_minutes )")
@@ -229,7 +261,7 @@ async function loadSimEntries(supabase: SupabaseClient, tenantId: string): Promi
     id: row.id,
     joinedAtMillis: new Date(row.joined_at).getTime(),
     calledAtMillis: row.called_at ? new Date(row.called_at).getTime() : null,
-    durationMinutes: durationFromRow(row),
+    durationMinutes: durationFromRow(row, defaultDurationMinutes),
     bookingStartMillis: row.booking_id ? bookingStartById.get(row.booking_id) ?? null : null,
   }))
 }
@@ -336,8 +368,13 @@ function buildProcessingOrder(
 export async function getQueueSimulation(tenantId: string): Promise<Map<string, QueueSimulationEntry>> {
   const supabase = getClientOrThrow()
 
+  // Resolved once up front so loadSimEntries can use it for every
+  // service_id = null row in a single pass, rather than each row
+  // re-querying queue_settings.
+  const defaultDurationMinutes = await getDefaultServiceDurationMinutes(supabase, tenantId)
+
   const [entries, staffCount, bookingSettings, statusRowsResult] = await Promise.all([
-    loadSimEntries(supabase, tenantId),
+    loadSimEntries(supabase, tenantId, defaultDurationMinutes),
     getActiveStaffCount(supabase, tenantId),
     getBookingSettings(supabase, tenantId),
     supabase.from("queue_entries").select("id, status").eq("tenant_id", tenantId).in("status", ["waiting", "called"]),
@@ -398,8 +435,16 @@ export async function getQueueSimulation(tenantId: string): Promise<Map<string, 
 
 export interface JoinQueueParams {
   /** The full catalog entry, not just an id — both callers already have
-   *  it in hand. */
-  service: CatalogService
+   *  it in hand. Null when the tenant has queue_settings.require_service_
+   *  selection off and the customer was never asked to pick one — the
+   *  inserted queue_entries row gets service_id = null, and the wait
+   *  estimate falls back to queue_settings.default_service_duration_minutes
+   *  (see durationFromRow/getDefaultServiceDurationMinutes above). Callers
+   *  (WhatsApp's handleServiceSelection, the kiosk's submitKioskQueueJoin)
+   *  are responsible for enforcing require_service_selection themselves
+   *  BEFORE calling this — joinQueue() itself doesn't re-check the flag,
+   *  it just accepts whatever service (or lack of one) it's given. */
+  service: CatalogService | null
   /** Raw or normalized — ensureCustomer() normalizes internally. */
   phone: string
 }
@@ -435,7 +480,7 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
       {
         tenant_id: tenantId,
         customer_id: customer.id,
-        service_id: service.id,
+        service_id: service?.id ?? null,
         status: "waiting",
         joined_at: joinedAt,
       },
@@ -448,13 +493,15 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
   const simulation = await getQueueSimulation(tenantId)
   const own = simulation.get(inserted.id)
 
+  // Fallbacks below only matter if the simulation somehow doesn't contain
+  // the entry we just inserted, which shouldn't happen — defensive, not
+  // the expected path. The etaMinutes fallback mirrors durationFromRow's
+  // own fallback (service's real duration when we have one, otherwise the
+  // same constant durationFromRow would have used).
   return {
     customer,
-    // Fallback (position 1 / this service's own duration) only matters
-    // if the simulation somehow doesn't contain the entry we just
-    // inserted, which shouldn't happen — defensive, not the expected path.
     position: own?.position ?? 1,
-    etaMinutes: own?.etaMinutes ?? service.durationMinutes,
+    etaMinutes: own?.etaMinutes ?? service?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES,
   }
 }
 
