@@ -261,7 +261,9 @@ async function getSettingsData(
       .single(),
     supabase
       .from("queue_settings")
-      .select("auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk")
+      .select(
+        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection",
+      )
       .eq("tenant_id", tenantId)
       .single(),
     supabase
@@ -343,6 +345,13 @@ async function getSettingsData(
       notifyBeforeTurnPosition: queueSettingsResult.data.notify_before_turn_position,
       allowWalkinWhatsapp: queueSettingsResult.data.allow_walkin_whatsapp,
       allowWalkinKiosk: queueSettingsResult.data.allow_walkin_kiosk,
+      // When false, walk-ins (WhatsApp/kiosk/manual) can join this
+      // tenant's queue without picking a service first — some business
+      // models (e.g. a single-line clinic) have nothing to choose
+      // between. See queue_entries.service_id (nullable) and
+      // submitKioskQueueJoin/the WhatsApp state machine, which both check
+      // this flag before deciding whether to prompt for a service.
+      requireServiceSelection: queueSettingsResult.data.require_service_selection,
     },
     messageSettings: {
       aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,

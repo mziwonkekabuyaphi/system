@@ -1093,6 +1093,21 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
             onChange={(next) => setForm({ ...form, allowWalkinKiosk: next })}
           />
         </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
+          <div>
+            <p className="text-sm font-medium text-stone-800">Require a service to join the queue</p>
+            <p className="text-sm text-stone-500">
+              Turn this off if walk-ins don&apos;t choose between services — they&apos;ll skip straight to giving
+              their name and number on the kiosk, WhatsApp, and admin.
+            </p>
+          </div>
+          <Toggle
+            checked={form.requireServiceSelection}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, requireServiceSelection: next })}
+          />
+        </div>
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />
