@@ -171,7 +171,21 @@ export function AdminView({
   const [pinned, setPinned] = useState(false)
   const expanded = hovered || pinned
 
-  const brandName = initialBranding.displayName?.trim() || "Shop admin"
+  // Branding is lifted into state (seeded from the server-fetched
+  // initialBranding) so the sidebar badge and header logo update the
+  // moment SettingsManager's Private Label panel saves a new name or
+  // logo — not just after a full page reload. SettingsManager calls
+  // onBrandingChange with a partial patch after each successful save.
+  const [branding, setBranding] = useState({
+    displayName: initialBranding.displayName,
+    logoUrl: initialBranding.logoUrl,
+  })
+
+  function handleBrandingChange(patch: Partial<{ displayName: string | null; logoUrl: string | null }>) {
+    setBranding((prev) => ({ ...prev, ...patch }))
+  }
+
+  const brandName = branding.displayName?.trim() || "Shop admin"
   const brandInitial = brandName.charAt(0).toUpperCase() || "S"
 
   return (
@@ -191,9 +205,18 @@ export function AdminView({
       >
         {/* Brand */}
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
-            {brandInitial}
-          </span>
+          {branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, not a static/local asset
+            <img
+              src={branding.logoUrl}
+              alt=""
+              className="h-9 w-9 shrink-0 rounded-full border border-white/10 object-cover"
+            />
+          ) : (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
+              {brandInitial}
+            </span>
+          )}
           <span
             className={`truncate font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2] transition-opacity duration-150 ${
               expanded ? "opacity-100 delay-100" : "opacity-0"
@@ -261,11 +284,21 @@ export function AdminView({
 
       {/* ================= CONTENT ================= */}
       <div style={{ paddingLeft: SIDEBAR_COLLAPSED }}>
-        <header className="px-6 pb-3 pt-6">
-          <h1 className="font-[family-name:var(--font-admin-serif)] text-2xl tracking-tight text-stone-900">
-            {brandName}
-          </h1>
-          <p className="mt-1 text-sm text-stone-500">Bookings, queue, inbox, services and staff</p>
+        <header className="flex items-center gap-3 px-6 pb-3 pt-6">
+          {branding.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, not a static/local asset
+            <img
+              src={branding.logoUrl}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-lg border border-stone-200 object-contain bg-white"
+            />
+          )}
+          <div>
+            <h1 className="font-[family-name:var(--font-admin-serif)] text-2xl tracking-tight text-stone-900">
+              {brandName}
+            </h1>
+            <p className="mt-1 text-sm text-stone-500">Bookings, queue, inbox, services and staff</p>
+          </div>
         </header>
 
         <main className="px-6 pb-24 pt-2">
@@ -290,6 +323,7 @@ export function AdminView({
               tenantSlug={tenantSlug}
               initialSettings={initialTenantSettings}
               initialBranding={initialBranding}
+              onBrandingChange={handleBrandingChange}
               initialKioskEnabled={initialKioskEnabled}
               initialKioskSettings={initialKioskSettings}
               initialBookingSettings={initialBookingSettings}

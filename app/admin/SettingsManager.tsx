@@ -73,6 +73,7 @@ export function SettingsManager({
   tenantSlug,
   initialSettings,
   initialBranding,
+  onBrandingChange,
   initialKioskEnabled,
   initialKioskSettings,
   initialBookingSettings,
@@ -84,6 +85,10 @@ export function SettingsManager({
   tenantSlug: string
   initialSettings: AdminTenantSettings
   initialBranding: AdminBranding
+  // Notifies AdminView (sidebar badge + header) the moment the name or
+  // logo save succeeds, so it doesn't have to wait for a page reload to
+  // pick up initialBranding again.
+  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
   initialKioskEnabled: boolean
   initialKioskSettings: AdminKioskSettings
   initialBookingSettings: AdminBookingSettings
@@ -125,7 +130,9 @@ export function SettingsManager({
           initialKioskSettings={initialKioskSettings}
         />
       )}
-      {subTab === "private-label" && <PrivateLabelPanel plan={initialPlan} initial={initialBranding} />}
+      {subTab === "private-label" && (
+        <PrivateLabelPanel plan={initialPlan} initial={initialBranding} onBrandingChange={onBrandingChange} />
+      )}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
       {subTab === "queue" && <QueueSettingsPanel initial={initialQueueSettings} />}
       {subTab === "messages" && <MessageSettingsPanel initial={initialMessageSettings} />}
@@ -734,7 +741,15 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
 // updateBranding()/uploadLogo()/removeLogo() actions as before — nothing
 // about the data layer changed, only where the controls live.
 // ---------------------------------------------------------------------------
-function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+function PrivateLabelPanel({
+  plan,
+  initial,
+  onBrandingChange,
+}: {
+  plan: AdminPlan
+  initial: AdminBranding
+  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
+}) {
   return (
     <div className="space-y-3">
       <div>
@@ -744,12 +759,20 @@ function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminB
         </p>
       </div>
 
-      <BrandingFields plan={plan} initial={initial} />
+      <BrandingFields plan={plan} initial={initial} onBrandingChange={onBrandingChange} />
     </div>
   )
 }
 
-function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+function BrandingFields({
+  plan,
+  initial,
+  onBrandingChange,
+}: {
+  plan: AdminPlan
+  initial: AdminBranding
+  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
+}) {
   const [form, setForm] = useState({
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
@@ -774,6 +797,7 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
       const result = await updateBranding(form)
       if (result.success) {
         setMessage({ ok: true, text: "Saved." })
+        onBrandingChange?.({ displayName: form.displayName })
       } else {
         setMessage({ ok: false, text: result.error })
         setForm((f) => ({ ...f, removePoweredBy: initial.removePoweredBy }))
@@ -810,6 +834,7 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
       const result = await uploadLogo(formData)
       if (result.success) {
         setLogoUrl(result.logoUrl)
+        onBrandingChange?.({ logoUrl: result.logoUrl })
       } else {
         setLogoError(result.error)
       }
@@ -821,8 +846,12 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
     setLogoError(null)
     startLogoTransition(async () => {
       const result = await removeLogo()
-      if (result.success) setLogoUrl(null)
-      else setLogoError(result.error)
+      if (result.success) {
+        setLogoUrl(null)
+        onBrandingChange?.({ logoUrl: null })
+      } else {
+        setLogoError(result.error)
+      }
     })
   }
 
