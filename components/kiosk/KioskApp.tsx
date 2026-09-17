@@ -45,6 +45,18 @@
  *   - dateScreenTitle is the same idea for DateScreen's "Which day works
  *     for you?" heading — only ever shown on the booking path, since
  *     queue has no date step.
+ *   - timeScreenTitle is a PREFIX for TimeScreen's heading, not the whole
+ *     string — the kiosk appends " — {date label}" itself, so a tenant
+ *     configures just the "Pick a time" part and the date (e.g. "Today")
+ *     is always appended live.
+ *   - detailsScreenTitle is DetailsScreen's "Almost done — who are we
+ *     booking for?" heading — shared by both the booking and queue paths
+ *     (there's only one name/phone screen), so a tenant who wants
+ *     path-specific copy here isn't supported by this single field; flag
+ *     that if it comes up.
+ *   - ticketBookingEyebrow/ticketQueueEyebrow are the small label above
+ *     the ticket number on TicketScreen, one per path ("Your booking" /
+ *     "Your place in line" by default).
  *   - ChoiceScreen's two cards are solid, filled buttons (accent /
  *     secondary gradient, icon, shadow) rather than plain white
  *     bordered tiles — the darker gradient stop each card uses is
@@ -502,6 +514,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
       {step === "time" && (
         <TimeScreen
+          titlePrefix={branding.timeScreenTitle}
           slots={slots}
           dateLabel={selectedDate?.label ?? ""}
           onSelect={chooseSlot}
@@ -512,6 +525,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
       {step === "details" && (
         <DetailsScreen
+          title={branding.detailsScreenTitle}
           name={name}
           phone={phone}
           onNameChange={setName}
@@ -526,6 +540,8 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       {step === "ticket" && ticket && (
         <TicketScreen
           ticket={ticket}
+          bookingEyebrow={branding.ticketBookingEyebrow}
+          queueEyebrow={branding.ticketQueueEyebrow}
           onDone={resetAll}
           printStatus={printStatus}
           onRetryPrint={() => attemptPrint(ticket)}
@@ -974,12 +990,14 @@ function DateScreen({
 // ----------------------------------------------------------------------------
 
 function TimeScreen({
+  titlePrefix,
   slots,
   dateLabel,
   onSelect,
   busy,
   error,
 }: {
+  titlePrefix: string
   slots: BookingSlot[]
   dateLabel: string
   onSelect: (slot: BookingSlot) => void
@@ -1002,7 +1020,7 @@ function TimeScreen({
   }
 
   return (
-    <Screen title={`Pick a time — ${dateLabel}`} error={error} busy={busy}>
+    <Screen title={`${titlePrefix} — ${dateLabel}`} error={error} busy={busy}>
       <div className="grid">
         {slots.map((slot) => (
           <button key={slot.start} className="tile" onClick={() => onSelect(slot)} type="button" disabled={busy}>
@@ -1049,6 +1067,7 @@ function TimeScreen({
 // ----------------------------------------------------------------------------
 
 function DetailsScreen({
+  title,
   name,
   phone,
   onNameChange,
@@ -1058,6 +1077,7 @@ function DetailsScreen({
   busy,
   error,
 }: {
+  title: string
   name: string
   phone: string
   onNameChange: (v: string) => void
@@ -1068,7 +1088,7 @@ function DetailsScreen({
   error: string | null
 }) {
   return (
-    <Screen title="Almost done — who are we booking for?" error={error} busy={busy}>
+    <Screen title={title} error={error} busy={busy}>
       <div className="form">
         <label>
           <span>Your name</span>
@@ -1157,11 +1177,15 @@ function DetailsScreen({
 
 function TicketScreen({
   ticket,
+  bookingEyebrow,
+  queueEyebrow,
   onDone,
   printStatus,
   onRetryPrint,
 }: {
   ticket: Ticket
+  bookingEyebrow: string
+  queueEyebrow: string
   onDone: () => void
   printStatus: "idle" | "printing" | "success" | "failed"
   onRetryPrint: () => void
@@ -1172,7 +1196,7 @@ function TicketScreen({
     <div className="ticketScreen">
       <div className="stub">
         <div className="top">
-          <p className="eyebrow">{isBooking ? "Your booking" : "Your place in line"}</p>
+          <p className="eyebrow">{isBooking ? bookingEyebrow : queueEyebrow}</p>
           <p className="number">{ticket.ticketNumber}</p>
         </div>
 
