@@ -32,21 +32,22 @@
  *
  * SCREEN WORDING (new): tenant_branding also carries choice_title,
  * booking_card_title, booking_card_subtitle, queue_card_title,
- * queue_card_subtitle, service_screen_title, and date_screen_title
- * (migration_kiosk_wording.sql) — the copy on the book-vs-queue choice
- * screen and the two screens right after it (service picker, then date
- * picker on the booking path), which used to be hardcoded in
- * components/kiosk/KioskApp.tsx's ChoiceScreen/ServiceScreen/DateScreen.
- * Same NULL-means-default posture as everything else here, since this is
- * a multi-tenant kiosk and every shop's idea of "Book a time" vs "Join
- * the queue" vs "What are you here for?" vs "Which day works for you?"
- * may differ (e.g. "Reserve a table" / "Get in line" / "Choose a
- * service" / "Pick a date"). Unlike the choice-screen fields,
- * service_screen_title and date_screen_title apply no matter which
- * registrationType is set for the screens they're on — service_screen
- * shows on every path, date_screen only ever shows on the booking path
- * (queue has no date step) so it's simply unused/unread on a
- * queue-only kiosk.
+ * queue_card_subtitle, service_screen_title, date_screen_title,
+ * time_screen_title, details_screen_title, ticket_booking_eyebrow, and
+ * ticket_queue_eyebrow (migration_kiosk_wording.sql) — the copy on every
+ * screen in the kiosk flow after welcome, which used to be hardcoded in
+ * components/kiosk/KioskApp.tsx (ChoiceScreen / ServiceScreen /
+ * DateScreen / TimeScreen / DetailsScreen / TicketScreen). Same
+ * NULL-means-default posture as everything else here. time_screen_title
+ * is a PREFIX, not the full heading — TimeScreen appends
+ * " — {date label}" itself (e.g. "Pick a time — Today", "Pick a time —
+ * Fri 19 Sep"), so a tenant only configures the part before the dash.
+ * ticket_booking_eyebrow/ticket_queue_eyebrow are the small label above
+ * the ticket number on the final confirmation screen, one per path.
+ * Registration-type scoping: service_screen_title and
+ * details_screen_title apply on every path; date_screen_title and
+ * time_screen_title only ever render on the booking path; the two ticket
+ * eyebrows are each scoped to their own path.
  *
  * NEXT.JS 15/16 FIX: `params` is now a Promise (not a plain object) in
  * route/page components — must be awaited before use. The old sync
@@ -110,6 +111,10 @@ export interface KioskBranding {
   queueCardSubtitle: string
   serviceScreenTitle: string
   dateScreenTitle: string
+  timeScreenTitle: string
+  detailsScreenTitle: string
+  ticketBookingEyebrow: string
+  ticketQueueEyebrow: string
 }
 
 // Fallback palette from the design brief. tenant_branding.primary_color
@@ -141,6 +146,10 @@ const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
 const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
 const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
+const DEFAULT_TIME_SCREEN_TITLE = "Pick a time"
+const DEFAULT_DETAILS_SCREEN_TITLE = "Almost done — who are we booking for?"
+const DEFAULT_TICKET_BOOKING_EYEBROW = "Your booking"
+const DEFAULT_TICKET_QUEUE_EYEBROW = "Your place in line"
 
 interface TenantRow {
   id: string
@@ -166,6 +175,10 @@ interface TenantBrandingRow {
   queue_card_subtitle: string | null
   service_screen_title: string | null
   date_screen_title: string | null
+  time_screen_title: string | null
+  details_screen_title: string | null
+  ticket_booking_eyebrow: string | null
+  ticket_queue_eyebrow: string | null
 }
 
 type KioskLoadResult =
@@ -234,7 +247,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -261,6 +274,10 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     queueCardSubtitle: branding?.queue_card_subtitle?.trim() || DEFAULT_QUEUE_CARD_SUBTITLE,
     serviceScreenTitle: branding?.service_screen_title?.trim() || DEFAULT_SERVICE_SCREEN_TITLE,
     dateScreenTitle: branding?.date_screen_title?.trim() || DEFAULT_DATE_SCREEN_TITLE,
+    timeScreenTitle: branding?.time_screen_title?.trim() || DEFAULT_TIME_SCREEN_TITLE,
+    detailsScreenTitle: branding?.details_screen_title?.trim() || DEFAULT_DETAILS_SCREEN_TITLE,
+    ticketBookingEyebrow: branding?.ticket_booking_eyebrow?.trim() || DEFAULT_TICKET_BOOKING_EYEBROW,
+    ticketQueueEyebrow: branding?.ticket_queue_eyebrow?.trim() || DEFAULT_TICKET_QUEUE_EYEBROW,
   }
 
   const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
