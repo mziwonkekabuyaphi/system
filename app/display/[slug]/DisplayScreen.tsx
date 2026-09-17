@@ -7,22 +7,25 @@
  *   - Dark neutral canvas, not the tenant's raw primary_color as the
  *     background -- an admin-picked hex has no guaranteed contrast against
  *     text at TV viewing distance. primary_color/secondary_color are used
- *     as accents (wordmark glow, prices, dots) instead.
+ *     as accents (wordmark glow, prices, position numbers, dots) instead.
  *   - Bricolage Grotesque for anything large, Inter for everything small.
- *   - Pricing slide uses menu-board convention (name — leader dots — price),
- *     hours slide groups consecutive identical days, rather than generic
- *     cards.
+ *   - Pricing slide uses menu-board convention (name — leader dots — price).
+ *   - Slides are welcome -> services (menu) -> bookings -> queue. Hours
+ *     and the kiosk QR code were deliberately dropped from this screen --
+ *     this TV is meant to show what's actually happening right now
+ *     (what's on offer, who's booked, who's waiting), not static info a
+ *     customer would look up once on their phone.
  *   - One motion idea: slow crossfade between slides, a quiet glow behind
  *     the wordmark on the welcome slide. Nothing else moves.
  *
  * This tab is expected to stay open for days/weeks on a physical TV, so
  * it polls fetchDisplayData() every POLL_MS to pick up branding/service/
- * hours edits made elsewhere, without ever needing a manual reload.
+ * booking/queue edits made elsewhere, without ever needing a manual reload.
  */
 
 import { useEffect, useMemo, useState } from "react"
 import type { CSSProperties } from "react"
-import { fetchDisplayData, type DisplayData, type DisplayHours } from "./actions"
+import { fetchDisplayData, type DisplayData } from "./actions"
 
 const ROTATE_MS = 9000
 const POLL_MS = 5 * 60 * 1000
@@ -30,14 +33,7 @@ const POLL_MS = 5 * 60 * 1000
 const DEFAULT_ACCENT = "#E2B33C"
 const DEFAULT_SECONDARY = "#3E7C74"
 
-type SlideKey = "welcome" | "services" | "hours" | "scan"
-
-const DAY_LABELS: Record<number, string> = { 0: "Sun", 1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat" }
-const MONDAY_FIRST_ORDER = [1, 2, 3, 4, 5, 6, 0]
-
-function formatTime(t: string | null): string {
-  return t ? t.slice(0, 5) : ""
-}
+type SlideKey = "welcome" | "services" | "bookings" | "queue"
 
 /** Plain rgba conversion instead of CSS color-mix() -- some smart TV
  *  browsers (older Tizen/webOS/Android TV WebView builds) don't support
@@ -53,40 +49,16 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-/** Groups consecutive days (Monday-first) that share the same open/close
- *  (or closed) status into one row, e.g. "Mon – Fri" / "09:00 – 18:00". */
-function groupHours(hours: DisplayHours[]): Array<{ label: string; time: string }> {
-  const byDay = new Map(hours.map((h) => [h.dayOfWeek, h]))
-  const ordered = MONDAY_FIRST_ORDER.map((d) => byDay.get(d)).filter((h): h is DisplayHours => Boolean(h))
-
-  const groups: Array<{ days: number[]; time: string }> = []
-  for (const day of ordered) {
-    const time = day.isClosed ? "Closed" : `${formatTime(day.openTime)} – ${formatTime(day.closeTime)}`
-    const last = groups[groups.length - 1]
-    if (last && last.time === time) {
-      last.days.push(day.dayOfWeek)
-    } else {
-      groups.push({ days: [day.dayOfWeek], time })
-    }
-  }
-
-  return groups.map((g) => ({
-    label:
-      g.days.length === 1
-        ? DAY_LABELS[g.days[0]]
-        : `${DAY_LABELS[g.days[0]]} – ${DAY_LABELS[g.days[g.days.length - 1]]}`,
-    time: g.time,
-  }))
+/** "14:30" for a booking's start_time. Rendered in the TV's local time,
+ *  same as the browser clock on the wall -- no server-side tenant
+ *  timezone conversion needed for something displayed on-site. */
+function formatClockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
 export function DisplayScreen({ slug, initialData }: { slug: string; initialData: DisplayData }) {
   const [data, setData] = useState<DisplayData>(initialData)
   const [index, setIndex] = useState(0)
-  const [origin, setOrigin] = useState<string | null>(null)
-
-  useEffect(() => {
-    setOrigin(window.location.origin)
-  }, [])
 
   useEffect(() => {
     const id = setInterval(async () => {
@@ -101,8 +73,8 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   const slides = useMemo<SlideKey[]>(() => {
     const s: SlideKey[] = ["welcome"]
     if (data.services.length > 0) s.push("services")
-    if (data.hours.some((h) => !h.isClosed)) s.push("hours")
-    s.push("scan")
+    if (data.bookings.length > 0) s.push("bookings")
+    if (data.queue.length > 0) s.push("queue")
     return s
   }, [data])
 
@@ -112,13 +84,15 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
     return () => clearInterval(id)
   }, [slides.length])
 
-  const groupedHours = useMemo(() => groupHours(data.hours), [data.hours])
+  // "Now serving" (called) surfaces separately from the numbered "up
+  // next" (waiting) list -- they read as different things on a TV.
+  const calledEntries = useMemo(() => data.queue.filter((q) => q.status === "called"), [data.queue])
+  const waitingEntries = useMemo(() => data.queue.filter((q) => q.status === "waiting"), [data.queue])
 
   const brandName = data.branding.displayName?.trim() || "Welcome"
   const accent = data.branding.primaryColor || DEFAULT_ACCENT
   const secondary = data.branding.secondaryColor || DEFAULT_SECONDARY
   const accentSoft = hexToRgba(accent, 0.22)
-  const kioskUrl = origin ? `${origin}/kiosk/${slug}` : null
 
   return (
     <div
@@ -157,35 +131,52 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
             </>
           )}
 
-          {key === "hours" && (
+          {key === "bookings" && (
             <>
               <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">Opening hours</h2>
-              <ul className="hours-list">
-                {groupedHours.map((g) => (
-                  <li key={g.label} className="hours-row">
-                    <span className="hours-day">{g.label}</span>
-                    <span className="hours-time">{g.time}</span>
+              <h2 className="slide-title">Upcoming bookings</h2>
+              <ul className="bookings-list">
+                {data.bookings.map((b) => (
+                  <li key={b.id} className="booking-row">
+                    <span className="booking-time">{formatClockTime(b.startTime)}</span>
+                    <span className="booking-name">{b.customerName ?? "Guest"}</span>
+                    <span className="booking-leader" aria-hidden="true" />
+                    <span className="booking-service">{b.serviceName ?? ""}</span>
                   </li>
                 ))}
               </ul>
             </>
           )}
 
-          {key === "scan" && (
+          {key === "queue" && (
             <>
               <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">Skip the line</h2>
-              <p className="scan-copy">Scan to book or join the queue from your phone</p>
-              {kioskUrl && (
-                <div className="qr-plate">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    className="qr"
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=380x380&data=${encodeURIComponent(kioskUrl)}`}
-                    alt="QR code to book or join the queue"
-                  />
+              <h2 className="slide-title">Live queue</h2>
+
+              {calledEntries.length > 0 && (
+                <div className="now-serving">
+                  <p className="now-serving-label">Now serving</p>
+                  <ul className="now-serving-list">
+                    {calledEntries.map((q) => (
+                      <li key={q.id} className="now-serving-row">
+                        <span className="now-serving-name">{q.customerName ?? "Guest"}</span>
+                        {q.serviceName && <span className="now-serving-service">{q.serviceName}</span>}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
+              )}
+
+              {waitingEntries.length > 0 && (
+                <ul className="queue-list">
+                  {waitingEntries.map((q) => (
+                    <li key={q.id} className="queue-row">
+                      <span className="queue-position">{q.position}</span>
+                      <span className="queue-name">{q.customerName ?? "Guest"}</span>
+                      <span className="queue-service">{q.serviceName ?? ""}</span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </>
           )}
@@ -351,51 +342,114 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           white-space: nowrap;
         }
 
-        /* ---- Hours slide ---- */
-        .hours-list {
+        /* ---- Bookings slide ---- */
+        .bookings-list {
           list-style: none;
           margin: 0;
           padding: 0;
           display: flex;
           flex-direction: column;
-          gap: 2.8vh;
+          gap: 2.2vh;
+          overflow: hidden;
         }
-        .hours-row {
+        .booking-row {
           display: flex;
           align-items: baseline;
-          justify-content: space-between;
-          max-width: 55vw;
+          gap: 1.4vw;
         }
-        .hours-day {
+        .booking-time {
           font-family: "Bricolage Grotesque", sans-serif;
-          font-size: clamp(1.6rem, 3vw, 2.4rem);
-          font-weight: 500;
+          font-size: clamp(1.5rem, 2.8vw, 2.3rem);
+          font-weight: 600;
+          color: var(--accent);
+          white-space: nowrap;
+          min-width: 4.5ch;
         }
-        .hours-time {
-          font-size: clamp(1.3rem, 2.2vw, 1.9rem);
-          color: rgba(245, 241, 232, 0.75);
+        .booking-name {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-size: clamp(1.5rem, 2.8vw, 2.3rem);
+          font-weight: 500;
+          white-space: nowrap;
+        }
+        .booking-leader {
+          flex: 1;
+          border-bottom: 0.3vh dotted rgba(245, 241, 232, 0.28);
+          margin-bottom: 0.7vh;
+        }
+        .booking-service {
+          font-size: clamp(1.1rem, 1.8vw, 1.6rem);
+          color: rgba(245, 241, 232, 0.65);
+          white-space: nowrap;
         }
 
-        /* ---- Scan-to-book slide ---- */
-        .scan {
-          align-items: flex-start;
+        /* ---- Live queue slide ---- */
+        .now-serving {
+          margin-bottom: 4vh;
+          padding: 2.4vh 2.6vw;
+          border-radius: 1.4vh;
+          background: var(--accent-soft);
+          border: 2px solid var(--accent);
+          max-width: 60vw;
         }
-        .scan-copy {
+        .now-serving-label {
+          margin: 0 0 1.4vh 0;
+          font-size: 1.1rem;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--accent);
+        }
+        .now-serving-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 1vh;
+        }
+        .now-serving-row {
+          display: flex;
+          align-items: baseline;
+          gap: 1.2vw;
+        }
+        .now-serving-name {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+          font-weight: 700;
+        }
+        .now-serving-service {
+          font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+          color: rgba(245, 241, 232, 0.7);
+        }
+        .queue-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 1.8vh;
+          overflow: hidden;
+        }
+        .queue-row {
+          display: flex;
+          align-items: center;
+          gap: 1.4vw;
+        }
+        .queue-position {
+          font-family: "Bricolage Grotesque", sans-serif;
           font-size: clamp(1.2rem, 2vw, 1.7rem);
-          color: rgba(245, 241, 232, 0.75);
-          margin: 0 0 4vh 0;
-          max-width: 32ch;
+          font-weight: 600;
+          color: var(--secondary);
+          min-width: 2.4ch;
         }
-        .qr-plate {
-          background: #f5f1e8;
-          border-radius: 1.2vh;
-          padding: 2vh;
-          border: 3px solid var(--accent);
+        .queue-name {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-size: clamp(1.4rem, 2.4vw, 2rem);
+          font-weight: 500;
         }
-        .qr {
-          display: block;
-          width: 30vh;
-          height: 30vh;
+        .queue-service {
+          font-size: clamp(1rem, 1.6vw, 1.4rem);
+          color: rgba(245, 241, 232, 0.6);
         }
 
         /* ---- Progress dots ---- */
