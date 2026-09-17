@@ -282,7 +282,13 @@ function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
 
 // ---------------------------------------------------------------------------
 // Kiosk — kiosk-specific functionality ONLY: on/off, the public URL + QR
-// code, and kiosk behavior (tagline / refresh timers / registration type).
+// code, and kiosk behavior (tagline / refresh timers / registration type /
+// choice-screen wording).
+//
+// Choice-screen wording (heading + each card's title/subtitle) only shows
+// when registrationType is "both" — a locked-to-one-path kiosk never
+// renders that screen, so editing its copy would be dead configuration.
+// Switching back to "both" later keeps whatever was last saved.
 //
 // Branding (display name, logo, colors, "Remove Powered by") is NOT edited
 // here. Private Label is the single source of truth for that — this tab
@@ -417,11 +423,27 @@ const REGISTRATION_TYPE_OPTIONS: Array<{
   { value: "queue", title: "Queue Only", description: "Customers go straight into joining the walk-in queue — no booking option." },
 ]
 
+// Placeholder text only — shown greyed-out in an empty field so the admin
+// can see exactly what their kiosk renders before they've customized
+// anything. Must stay in sync with app/kiosk/[slug]/page.tsx's own
+// DEFAULT_CHOICE_TITLE / DEFAULT_BOOKING_CARD_TITLE / etc., which is where
+// these strings actually take effect as fallbacks.
+const DEFAULT_CHOICE_TITLE = "How can we help you today?"
+const DEFAULT_BOOKING_CARD_TITLE = "Book a time"
+const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
+const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
+const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
+
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [tagline, setTagline] = useState(initial.tagline ?? "")
   const [idleRefreshSeconds, setIdleRefreshSeconds] = useState(initial.idleRefreshSeconds)
   const [confirmationRefreshSeconds, setConfirmationRefreshSeconds] = useState(initial.confirmationRefreshSeconds)
   const [registrationType, setRegistrationType] = useState(initial.registrationType)
+  const [choiceTitle, setChoiceTitle] = useState(initial.choiceTitle ?? "")
+  const [bookingCardTitle, setBookingCardTitle] = useState(initial.bookingCardTitle ?? "")
+  const [bookingCardSubtitle, setBookingCardSubtitle] = useState(initial.bookingCardSubtitle ?? "")
+  const [queueCardTitle, setQueueCardTitle] = useState(initial.queueCardTitle ?? "")
+  const [queueCardSubtitle, setQueueCardSubtitle] = useState(initial.queueCardSubtitle ?? "")
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -433,6 +455,11 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
         idleRefreshSeconds,
         confirmationRefreshSeconds,
         registrationType,
+        choiceTitle: choiceTitle.trim() || null,
+        bookingCardTitle: bookingCardTitle.trim() || null,
+        bookingCardSubtitle: bookingCardSubtitle.trim() || null,
+        queueCardTitle: queueCardTitle.trim() || null,
+        queueCardSubtitle: queueCardSubtitle.trim() || null,
       })
       setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
     })
@@ -509,6 +536,74 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
             })}
           </div>
         </div>
+
+        {registrationType === "both" && (
+          <div className="border-t border-stone-200 pt-4">
+            <span className="mb-1 block text-sm font-medium text-stone-800">Choice screen wording</span>
+            <p className="mb-3 text-xs text-stone-400">
+              What customers see on the screen where they pick booking or the walk-in queue. Rename these to fit
+              your business — e.g. &quot;Reserve a table&quot; / &quot;Get in line&quot;.
+            </p>
+
+            <div className="space-y-4">
+              <FieldRow label="Screen heading" hint={`Defaults to "${DEFAULT_CHOICE_TITLE}".`}>
+                <input
+                  className={inputClass}
+                  value={choiceTitle}
+                  onChange={(e) => setChoiceTitle(e.target.value)}
+                  placeholder={DEFAULT_CHOICE_TITLE}
+                  maxLength={80}
+                />
+              </FieldRow>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-4 rounded-xl border border-stone-200 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Booking card</p>
+                  <FieldRow label="Title" hint={`Defaults to "${DEFAULT_BOOKING_CARD_TITLE}".`}>
+                    <input
+                      className={inputClass}
+                      value={bookingCardTitle}
+                      onChange={(e) => setBookingCardTitle(e.target.value)}
+                      placeholder={DEFAULT_BOOKING_CARD_TITLE}
+                      maxLength={40}
+                    />
+                  </FieldRow>
+                  <FieldRow label="Subtitle" hint={`Defaults to "${DEFAULT_BOOKING_CARD_SUBTITLE}".`}>
+                    <input
+                      className={inputClass}
+                      value={bookingCardSubtitle}
+                      onChange={(e) => setBookingCardSubtitle(e.target.value)}
+                      placeholder={DEFAULT_BOOKING_CARD_SUBTITLE}
+                      maxLength={100}
+                    />
+                  </FieldRow>
+                </div>
+
+                <div className="space-y-4 rounded-xl border border-stone-200 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Queue card</p>
+                  <FieldRow label="Title" hint={`Defaults to "${DEFAULT_QUEUE_CARD_TITLE}".`}>
+                    <input
+                      className={inputClass}
+                      value={queueCardTitle}
+                      onChange={(e) => setQueueCardTitle(e.target.value)}
+                      placeholder={DEFAULT_QUEUE_CARD_TITLE}
+                      maxLength={40}
+                    />
+                  </FieldRow>
+                  <FieldRow label="Subtitle" hint={`Defaults to "${DEFAULT_QUEUE_CARD_SUBTITLE}".`}>
+                    <input
+                      className={inputClass}
+                      value={queueCardSubtitle}
+                      onChange={(e) => setQueueCardSubtitle(e.target.value)}
+                      placeholder={DEFAULT_QUEUE_CARD_SUBTITLE}
+                      maxLength={100}
+                    />
+                  </FieldRow>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />

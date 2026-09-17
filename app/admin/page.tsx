@@ -239,7 +239,7 @@ async function getSettingsData(
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type",
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -318,6 +318,16 @@ async function getSettingsData(
       confirmationRefreshSeconds:
         brandingResult.data.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
       registrationType,
+      // Kept raw/nullable here (not defaulted) same as tagline above —
+      // SettingsManager.tsx shows an empty field with the default as
+      // placeholder text, so it's visually obvious the tenant hasn't
+      // overridden it yet. The kiosk route (app/kiosk/[slug]/page.tsx) is
+      // where null actually resolves to the default string that renders.
+      choiceTitle: brandingResult.data.choice_title,
+      bookingCardTitle: brandingResult.data.booking_card_title,
+      bookingCardSubtitle: brandingResult.data.booking_card_subtitle,
+      queueCardTitle: brandingResult.data.queue_card_title,
+      queueCardSubtitle: brandingResult.data.queue_card_subtitle,
     },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,

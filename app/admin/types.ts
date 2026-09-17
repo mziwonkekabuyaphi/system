@@ -210,6 +210,28 @@ export interface AdminKioskSettings {
    *  to welcome. 3–120. */
   confirmationRefreshSeconds: number
   registrationType: AdminKioskRegistrationType
+
+  // -- Screen wording (multi-tenant copy customization) --------------------
+  // Every field below is null/empty-safe: an unset value falls back to the
+  // same English copy the kiosk always used to hardcode, resolved in
+  // app/kiosk/[slug]/page.tsx (DEFAULT_CHOICE_TITLE etc.) the same way
+  // tagline/colors already fall back. Only rendered on the kiosk when
+  // registrationType === "both" shows the choice screen at all, but a
+  // tenant can still set them ahead of switching registrationType later.
+
+  /** Heading on the book-vs-queue choice screen. Defaults to
+   *  "How can we help you today?". */
+  choiceTitle: string | null
+  /** Title on the "book a time" card. Defaults to "Book a time". */
+  bookingCardTitle: string | null
+  /** Subtitle on the "book a time" card. Defaults to "Pick a date and
+   *  time that works for you". */
+  bookingCardSubtitle: string | null
+  /** Title on the "join the queue" card. Defaults to "Join the queue". */
+  queueCardTitle: string | null
+  /** Subtitle on the "join the queue" card. Defaults to "Walk in now and
+   *  we'll call you". */
+  queueCardSubtitle: string | null
 }
 
 // ============================================================================

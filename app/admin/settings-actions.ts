@@ -66,14 +66,25 @@
  * as a raw Postgres message.
  *
  * updateKioskSettings (tagline / idle-refresh / confirmation-refresh /
- * registration-type) all live on tenant_branding too (see
- * migration_kiosk_settings.sql), read straight back out by
- * app/kiosk/[slug]/page.tsx and handed to KioskApp as props. Bounds on the
- * two timing fields are validated here to match the DB check constraints
- * (idle: 10-600s, confirmation: 3-120s) so a bad value fails with a clean
- * message instead of a raw Postgres constraint error. registrationType is
- * plan-agnostic — unlike remove_powered_by, any tenant can lock their
- * kiosk to booking-only or queue-only regardless of plan.
+ * registration-type / screen wording) all live on tenant_branding too (see
+ * migration_kiosk_settings.sql and migration_kiosk_wording.sql), read
+ * straight back out by app/kiosk/[slug]/page.tsx and handed to KioskApp as
+ * props. Bounds on the two timing fields are validated here to match the
+ * DB check constraints (idle: 10-600s, confirmation: 3-120s) so a bad
+ * value fails with a clean message instead of a raw Postgres constraint
+ * error. registrationType is plan-agnostic — unlike remove_powered_by, any
+ * tenant can lock their kiosk to booking-only or queue-only regardless of
+ * plan.
+ *
+ * Screen wording (choiceTitle / bookingCardTitle / bookingCardSubtitle /
+ * queueCardTitle / queueCardSubtitle) is the multi-tenant customization
+ * layer for copy that used to be hardcoded in components/kiosk/KioskApp.tsx
+ * — every tenant can now rename "Book a time" / "Join the queue" (and
+ * their subtitles) and the choice-screen heading to match their own
+ * business without a code change. Length-capped, not content-validated:
+ * this is free-text a tenant controls for their own kiosk, same trust
+ * level as tagline. An empty string is normalized to null here so the
+ * kiosk route's fallback logic only has one "unset" value to check.
  *
  * registrationType is typed as AdminKioskRegistrationType from ./types,
  * NOT re-imported from app/kiosk/[slug]/page.tsx — this file is
@@ -98,6 +109,13 @@ const MIN_IDLE_REFRESH_SECONDS = 10
 const MAX_IDLE_REFRESH_SECONDS = 600
 const MIN_CONFIRMATION_REFRESH_SECONDS = 3
 const MAX_CONFIRMATION_REFRESH_SECONDS = 120
+
+// Kiosk wording bounds — generous enough for translated copy (which often
+// runs longer than English) while keeping the choice screen's two cards
+// from overflowing a touch layout designed around ~1-2 short lines each.
+const MAX_CHOICE_TITLE_LENGTH = 80
+const MAX_CARD_TITLE_LENGTH = 40
+const MAX_CARD_SUBTITLE_LENGTH = 100
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 // Mirrors booking_settings' own CHECK constraints — validated here too so
@@ -251,6 +269,14 @@ export async function updateKioskSettings(input: {
   idleRefreshSeconds: number
   confirmationRefreshSeconds: number
   registrationType: AdminKioskRegistrationType
+  // Screen wording — every field optional/nullable. Omitting a key (or
+  // sending null/"") clears the override and the kiosk falls back to its
+  // hardcoded default, same posture as tagline above.
+  choiceTitle?: string | null
+  bookingCardTitle?: string | null
+  bookingCardSubtitle?: string | null
+  queueCardTitle?: string | null
+  queueCardSubtitle?: string | null
 }): Promise<ActionResult> {
   try {
     if (
@@ -279,6 +305,19 @@ export async function updateKioskSettings(input: {
       return { success: false, error: "Choose a valid registration type." }
     }
 
+    const wordingFields: Array<{ label: string; value: string | null | undefined; max: number }> = [
+      { label: "Choice screen title", value: input.choiceTitle, max: MAX_CHOICE_TITLE_LENGTH },
+      { label: "Booking card title", value: input.bookingCardTitle, max: MAX_CARD_TITLE_LENGTH },
+      { label: "Booking card subtitle", value: input.bookingCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
+      { label: "Queue card title", value: input.queueCardTitle, max: MAX_CARD_TITLE_LENGTH },
+      { label: "Queue card subtitle", value: input.queueCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
+    ]
+    for (const field of wordingFields) {
+      if (field.value && field.value.trim().length > field.max) {
+        return { success: false, error: `${field.label} must be ${field.max} characters or fewer.` }
+      }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     const { error } = await supabase
@@ -288,6 +327,11 @@ export async function updateKioskSettings(input: {
         idle_refresh_seconds: input.idleRefreshSeconds,
         confirmation_refresh_seconds: input.confirmationRefreshSeconds,
         registration_type: input.registrationType,
+        choice_title: input.choiceTitle?.trim() || null,
+        booking_card_title: input.bookingCardTitle?.trim() || null,
+        booking_card_subtitle: input.bookingCardSubtitle?.trim() || null,
+        queue_card_title: input.queueCardTitle?.trim() || null,
+        queue_card_subtitle: input.queueCardSubtitle?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
