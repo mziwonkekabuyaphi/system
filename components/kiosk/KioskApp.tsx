@@ -3,12 +3,13 @@
 // components/kiosk/KioskApp.tsx
 /**
  * The kiosk touch flow itself: welcome -> book/queue choice -> service ->
- * (booking only: date -> time) -> name/phone -> submit -> a literal
- * ticket-style confirmation. One decision per full-bleed screen, ≥96px
- * tap targets throughout, and an admin-configurable idle timer that
- * resets everything back to welcome — so one customer's name, phone, and
- * in-progress selections never bleed into the next walk-in who taps the
- * same tablet.
+ * (booking only: date -> time, or straight to time when there's only one
+ * date option — see chooseService's same-day-only skip below) -> name/
+ * phone -> submit -> a literal ticket-style confirmation. One decision
+ * per full-bleed screen, ≥96px tap targets throughout, and an
+ * admin-configurable idle timer that resets everything back to welcome —
+ * so one customer's name, phone, and in-progress selections never bleed
+ * into the next walk-in who taps the same tablet.
  *
  * Talks to the tenant only via Server Actions in ./actions.ts, which
  * re-resolve tenantId from `slug` on every call — this component never
@@ -367,16 +368,31 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       setError(result.error)
       return
     }
-    setDateOptions(Array.isArray(result.data) ? result.data : [])
+    const options = Array.isArray(result.data) ? result.data : []
+    setDateOptions(options)
+
+    // Same-day-only tenants (maxAdvanceDays = 0 in Settings > Booking/
+    // Queue) get exactly one date option back — "today" — from
+    // buildDateOptions. Asking someone to tap a screen that only ever has
+    // one button on it is a wasted step at a touch kiosk, so skip
+    // straight into fetching today's times instead of rendering
+    // DateScreen at all. Any tenant with more than one day configured
+    // still sees the normal date picker, unaffected.
+    if (options.length === 1) {
+      await chooseDate(options[0], service)
+      return
+    }
+
     setStep("date")
   }
 
-  const chooseDate = async (option: DateOption) => {
-    if (!selectedService) return
+  const chooseDate = async (option: DateOption, serviceOverride?: CatalogService) => {
+    const service = serviceOverride ?? selectedService
+    if (!service) return
     setSelectedDate(option)
     setError(null)
     setBusy(true)
-    const result = await fetchKioskTimeSlots(slug, selectedService.id, option.date)
+    const result = await fetchKioskTimeSlots(slug, service.id, option.date)
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
@@ -892,6 +908,26 @@ function DateScreen({
   busy: boolean
   error: string | null
 }) {
+  // Reachable mainly when a same-day-only tenant (maxAdvanceDays = 0) has
+  // no bookable slots today at all (e.g. outside Opening Hours) —
+  // chooseService already skips this screen entirely for the normal
+  // one-date case, so by the time DateScreen renders with zero options
+  // there's genuinely nothing to offer rather than a loading glitch.
+  if (options.length === 0) {
+    return (
+      <Screen title={title}>
+        <p className="empty">No bookable dates right now. Please ask a member of staff.</p>
+        <style jsx>{`
+          .empty {
+            font-size: 22px;
+            color: var(--muted);
+            text-align: center;
+          }
+        `}</style>
+      </Screen>
+    )
+  }
+
   return (
     <Screen title={title} error={error} busy={busy}>
       <div className="grid">
