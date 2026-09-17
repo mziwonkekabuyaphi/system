@@ -30,9 +30,11 @@
  * checks below — rather than relying only on the browser's <input min=…>
  * and the database's own CHECK constraints. The DB constraints
  * (queue_lead_time_minutes >= 0, min_notice_minutes >= 0,
- * max_advance_days > 0, cancellation_window_minutes >= 0) are unchanged
+ * max_advance_days >= 0, cancellation_window_minutes >= 0) are unchanged
  * and still the final backstop; this is defense in depth, not a
- * replacement for them. These five fields are also now genuinely
+ * replacement for them. max_advance_days = 0 is a supported value
+ * ("same-day booking only" — see MIN_MAX_ADVANCE_DAYS below), not an
+ * edge case to reject. These five fields are also now genuinely
  * enforced by the booking flow itself — see
  * lib/services/shared/tenant-scheduling.ts, lib/services/booking.ts, and
  * app/admin/actions.ts's cancelBooking() — this action was already
@@ -123,9 +125,18 @@ const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queu
 // Mirrors booking_settings' own CHECK constraints — validated here too so
 // a bad value fails with a clean message instead of a raw Postgres
 // constraint error (same reasoning as the kiosk bounds above).
+//
+// MIN_MAX_ADVANCE_DAYS = 0, not 1: the DB constraint is
+// `max_advance_days >= 0` (see booking_settings_max_advance_days_check),
+// and 0 is a real, supported value — "same-day booking only", where the
+// kiosk/booking flow skips the date picker and goes straight to today's
+// available times. This constant previously said 1, silently rejecting
+// that value here even though both the DB and the Settings UI (its
+// min={0} input and "Set to 0 for same-day booking only" hint) already
+// expected 0 to work.
 const MIN_QUEUE_LEAD_TIME_MINUTES = 0
 const MIN_NOTICE_MINUTES_FLOOR = 0
-const MIN_MAX_ADVANCE_DAYS = 1
+const MIN_MAX_ADVANCE_DAYS = 0
 const MIN_CANCELLATION_WINDOW_MINUTES = 0
 const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
@@ -455,7 +466,7 @@ export async function updateBookingSettings(input: {
     }
 
     if (!Number.isFinite(input.maxAdvanceDays) || input.maxAdvanceDays < MIN_MAX_ADVANCE_DAYS) {
-      return { success: false, error: "Advance booking window must be at least 1 day." }
+      return { success: false, error: "Advance booking window can't be negative." }
     }
 
     if (
