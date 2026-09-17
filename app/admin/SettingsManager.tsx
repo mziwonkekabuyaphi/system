@@ -434,6 +434,7 @@ const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
 const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
 const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
+const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [tagline, setTagline] = useState(initial.tagline ?? "")
@@ -446,6 +447,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [queueCardTitle, setQueueCardTitle] = useState(initial.queueCardTitle ?? "")
   const [queueCardSubtitle, setQueueCardSubtitle] = useState(initial.queueCardSubtitle ?? "")
   const [serviceScreenTitle, setServiceScreenTitle] = useState(initial.serviceScreenTitle ?? "")
+  const [dateScreenTitle, setDateScreenTitle] = useState(initial.dateScreenTitle ?? "")
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -463,6 +465,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
         queueCardTitle: queueCardTitle.trim() || null,
         queueCardSubtitle: queueCardSubtitle.trim() || null,
         serviceScreenTitle: serviceScreenTitle.trim() || null,
+        dateScreenTitle: dateScreenTitle.trim() || null,
       })
       setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
     })
@@ -554,6 +557,23 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
             />
           </FieldRow>
         </div>
+
+        {registrationType !== "queue" && (
+          <div>
+            <FieldRow
+              label="Date screen heading"
+              hint={`Shown on the booking path, right after picking a service. Defaults to "${DEFAULT_DATE_SCREEN_TITLE}".`}
+            >
+              <input
+                className={inputClass}
+                value={dateScreenTitle}
+                onChange={(e) => setDateScreenTitle(e.target.value)}
+                placeholder={DEFAULT_DATE_SCREEN_TITLE}
+                maxLength={80}
+              />
+            </FieldRow>
+          </div>
+        )}
 
         {registrationType === "both" && (
           <div className="border-t border-stone-200 pt-4">
@@ -953,11 +973,11 @@ function BookingSettingsPanel({ initial }: { initial: AdminBookingSettings }) {
           </FieldRow>
           <FieldRow
             label="How far ahead customers can book (days)"
-            hint="Customers can book up to and including this many days ahead, in your shop's timezone. Also still limited by your Opening Hours."
+            hint="Customers can book up to and including this many days ahead, in your shop's timezone. Also still limited by your Opening Hours. Set to 0 for same-day booking only — the kiosk and booking flow then skip the date picker entirely and go straight to today's available times."
           >
             <input
               type="number"
-              min={1}
+              min={0}
               className={inputClass}
               value={form.maxAdvanceDays}
               onChange={(e) => setForm({ ...form, maxAdvanceDays: Number(e.target.value) })}
@@ -1091,21 +1111,6 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
             checked={form.allowWalkinKiosk}
             disabled={isPending}
             onChange={(next) => setForm({ ...form, allowWalkinKiosk: next })}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
-          <div>
-            <p className="text-sm font-medium text-stone-800">Require a service to join the queue</p>
-            <p className="text-sm text-stone-500">
-              Turn this off if walk-ins don&apos;t choose between services — they&apos;ll skip straight to giving
-              their name and number on the kiosk, WhatsApp, and admin.
-            </p>
-          </div>
-          <Toggle
-            checked={form.requireServiceSelection}
-            disabled={isPending}
-            onChange={(next) => setForm({ ...form, requireServiceSelection: next })}
           />
         </div>
       </div>

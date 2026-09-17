@@ -30,10 +30,13 @@
  * checks below — rather than relying only on the browser's <input min=…>
  * and the database's own CHECK constraints. The DB constraints
  * (queue_lead_time_minutes >= 0, min_notice_minutes >= 0,
- * max_advance_days > 0, cancellation_window_minutes >= 0) are unchanged
- * and still the final backstop; this is defense in depth, not a
- * replacement for them. These five fields are also now genuinely
- * enforced by the booking flow itself — see
+ * cancellation_window_minutes >= 0) are unchanged and still the final
+ * backstop; this is defense in depth, not a replacement for them.
+ * max_advance_days is the one exception: its DB constraint was
+ * `max_advance_days > 0`, which made "today only" bookings impossible to
+ * save — see migration_allow_same_day_only_booking.sql, which relaxes it
+ * to `>= 0` to match MIN_MAX_ADVANCE_DAYS below. These five fields are
+ * also now genuinely enforced by the booking flow itself — see
  * lib/services/shared/tenant-scheduling.ts, lib/services/booking.ts, and
  * app/admin/actions.ts's cancelBooking() — this action was already
  * correctly reading/writing the one `booking_settings` row per tenant;
@@ -77,15 +80,16 @@
  * plan.
  *
  * Screen wording (choiceTitle / bookingCardTitle / bookingCardSubtitle /
- * queueCardTitle / queueCardSubtitle / serviceScreenTitle) is the
- * multi-tenant customization layer for copy that used to be hardcoded in
- * components/kiosk/KioskApp.tsx — every tenant can now rename "Book a
- * time" / "Join the queue" / "What are you here for?" (and their
- * subtitles) to match their own business without a code change. Length-
- * capped, not content-validated: this is free-text a tenant controls for
- * their own kiosk, same trust level as tagline. An empty string is
- * normalized to null here so the kiosk route's fallback logic only has
- * one "unset" value to check.
+ * queueCardTitle / queueCardSubtitle / serviceScreenTitle /
+ * dateScreenTitle) is the multi-tenant customization layer for copy that
+ * used to be hardcoded in components/kiosk/KioskApp.tsx — every tenant
+ * can now rename "Book a time" / "Join the queue" / "What are you here
+ * for?" / "Which day works for you?" (and their subtitles) to match their
+ * own business without a code change. Length-capped, not content-
+ * validated: this is free-text a tenant controls for their own kiosk,
+ * same trust level as tagline. An empty string is normalized to null here
+ * so the kiosk route's fallback logic only has one "unset" value to
+ * check.
  *
  * registrationType is typed as AdminKioskRegistrationType from ./types,
  * NOT re-imported from app/kiosk/[slug]/page.tsx — this file is
@@ -118,14 +122,25 @@ const MAX_CHOICE_TITLE_LENGTH = 80
 const MAX_CARD_TITLE_LENGTH = 40
 const MAX_CARD_SUBTITLE_LENGTH = 100
 const MAX_SERVICE_SCREEN_TITLE_LENGTH = 80
+const MAX_DATE_SCREEN_TITLE_LENGTH = 80
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 // Mirrors booking_settings' own CHECK constraints — validated here too so
 // a bad value fails with a clean message instead of a raw Postgres
 // constraint error (same reasoning as the kiosk bounds above).
+//
+// MIN_MAX_ADVANCE_DAYS is 0, not 1: 0 is a legitimate, supported value
+// meaning "today only" — see buildDateOptions in lib/services/booking.ts,
+// which returns exactly one date option (today) when max_advance_days is
+// 0, and the kiosk's own auto-skip in components/kiosk/KioskApp.tsx,
+// which jumps straight from the service picker to available times
+// whenever there's only one date to choose from (see chooseService). The
+// DB's own CHECK constraint on max_advance_days must be relaxed to match
+// — see migration_allow_same_day_only_booking.sql — or this will still
+// fail at the database layer even though it now passes validation here.
 const MIN_QUEUE_LEAD_TIME_MINUTES = 0
 const MIN_NOTICE_MINUTES_FLOOR = 0
-const MIN_MAX_ADVANCE_DAYS = 1
+const MIN_MAX_ADVANCE_DAYS = 0
 const MIN_CANCELLATION_WINDOW_MINUTES = 0
 const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
@@ -282,6 +297,9 @@ export async function updateKioskSettings(input: {
   /** Heading on the service-picker screen. Optional/nullable, same
    *  clear-to-default posture as the choice-screen wording above. */
   serviceScreenTitle?: string | null
+  /** Heading on the date-picker screen (booking path). Optional/nullable,
+   *  same clear-to-default posture as the rest of this wording block. */
+  dateScreenTitle?: string | null
 }): Promise<ActionResult> {
   try {
     if (
@@ -317,6 +335,7 @@ export async function updateKioskSettings(input: {
       { label: "Queue card title", value: input.queueCardTitle, max: MAX_CARD_TITLE_LENGTH },
       { label: "Queue card subtitle", value: input.queueCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
       { label: "Service screen title", value: input.serviceScreenTitle, max: MAX_SERVICE_SCREEN_TITLE_LENGTH },
+      { label: "Date screen title", value: input.dateScreenTitle, max: MAX_DATE_SCREEN_TITLE_LENGTH },
     ]
     for (const field of wordingFields) {
       if (field.value && field.value.trim().length > field.max) {
@@ -339,6 +358,7 @@ export async function updateKioskSettings(input: {
         queue_card_title: input.queueCardTitle?.trim() || null,
         queue_card_subtitle: input.queueCardSubtitle?.trim() || null,
         service_screen_title: input.serviceScreenTitle?.trim() || null,
+        date_screen_title: input.dateScreenTitle?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
@@ -455,7 +475,7 @@ export async function updateBookingSettings(input: {
     }
 
     if (!Number.isFinite(input.maxAdvanceDays) || input.maxAdvanceDays < MIN_MAX_ADVANCE_DAYS) {
-      return { success: false, error: "Advance booking window must be at least 1 day." }
+      return { success: false, error: "Advance booking window must be 0 or more days." }
     }
 
     if (
