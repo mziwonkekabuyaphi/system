@@ -33,12 +33,25 @@ export interface Plan {
   priceCents: number
   currency: string
   visitLimit: number | null // null = unlimited
+  /** How visitLimit is counted. 'monthly': resets every calendar month.
+   *  'lifetime': a one-time allowance that never resets -- once a tenant
+   *  uses it up, they're at their cap for good until they upgrade.
+   *  Meaningless when visitLimit is null. */
+  visitLimitPeriod: "monthly" | "lifetime"
   staffLimit: number | null // null = unlimited
   pricePerVisitCents: number | null // null = not metered (flat fee or free)
 }
 
 export interface PlanUsage {
   plan: Plan
+  /** Visits counted toward visitLimit, in whatever window visitLimitPeriod
+   *  implies (this calendar month, or all-time for a lifetime plan). This
+   *  is the number that atLimit/visitsRemaining are computed from. */
+  visitsUsed: number
+  /** Visits in the current calendar month specifically -- always this-month
+   *  regardless of visitLimitPeriod, since this is what a metered plan's
+   *  estimatedAmountCentsThisMonth is computed from. For a monthly-period
+   *  capped plan this is the same number as visitsUsed. */
   visitsThisMonth: number
   visitsRemaining: number | null // null = unlimited
   atLimit: boolean
@@ -61,6 +74,7 @@ function rowToPlan(row: {
   price_cents: number
   currency: string
   visit_limit: number | null
+  visit_limit_period: "monthly" | "lifetime"
   staff_limit: number | null
   price_per_visit_cents: number | null
 }): Plan {
@@ -70,6 +84,7 @@ function rowToPlan(row: {
     priceCents: row.price_cents,
     currency: row.currency,
     visitLimit: row.visit_limit,
+    visitLimitPeriod: row.visit_limit_period,
     staffLimit: row.staff_limit,
     pricePerVisitCents: row.price_per_visit_cents,
   }
@@ -79,7 +94,7 @@ function rowToPlan(row: {
 export async function listPlans(supabase: SupabaseClient): Promise<Plan[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("key, name, price_cents, currency, visit_limit, staff_limit, price_per_visit_cents")
+    .select("key, name, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents")
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
 
@@ -99,7 +114,7 @@ export async function getTenantPlan(supabase: SupabaseClient, tenantId: string):
 
   const { data: plan, error: planError } = await supabase
     .from("plans")
-    .select("key, name, price_cents, currency, visit_limit, staff_limit, price_per_visit_cents")
+    .select("key, name, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents")
     .eq("key", tenant.plan)
     .single()
 
@@ -136,34 +151,59 @@ export async function isModuleAllowedForPlan(
   return Boolean(data)
 }
 
-/** This tenant's usage against their current plan's visit cap. */
-export async function getTenantPlanUsage(supabase: SupabaseClient, tenantId: string): Promise<PlanUsage> {
-  const plan = await getTenantPlan(supabase, tenantId)
-  const monthStart = startOfCurrentMonthUtc()
+/** Count of bookings+queue_entries for a tenant, optionally restricted to
+ *  created_at >= sinceISO. Omitting sinceISO counts all-time -- used for
+ *  a lifetime-period plan, where there's no month to reset against. */
+async function countVisits(supabase: SupabaseClient, tenantId: string, sinceISO?: string): Promise<number> {
+  let bookingsQuery = supabase.from("bookings").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)
+  let queueQuery = supabase.from("queue_entries").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)
 
-  const [bookingsResult, queueResult] = await Promise.all([
-    supabase
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .eq("tenant_id", tenantId)
-      .gte("created_at", monthStart),
-    supabase
-      .from("queue_entries")
-      .select("id", { count: "exact", head: true })
-      .eq("tenant_id", tenantId)
-      .gte("created_at", monthStart),
-  ])
+  if (sinceISO) {
+    bookingsQuery = bookingsQuery.gte("created_at", sinceISO)
+    queueQuery = queueQuery.gte("created_at", sinceISO)
+  }
+
+  const [bookingsResult, queueResult] = await Promise.all([bookingsQuery, queueQuery])
 
   if (bookingsResult.error) throw new Error(`Failed to count bookings: ${bookingsResult.error.message}`)
   if (queueResult.error) throw new Error(`Failed to count queue entries: ${queueResult.error.message}`)
 
-  const visitsThisMonth = (bookingsResult.count ?? 0) + (queueResult.count ?? 0)
-  const visitsRemaining = plan.visitLimit === null ? null : Math.max(plan.visitLimit - visitsThisMonth, 0)
-  const atLimit = plan.visitLimit !== null && visitsThisMonth >= plan.visitLimit
+  return (bookingsResult.count ?? 0) + (queueResult.count ?? 0)
+}
+
+/** This tenant's usage against their current plan's visit cap.
+ *
+ *  A 'monthly' plan (visitLimit not null) resets every calendar month --
+ *  visitsUsed is this month's count. A 'lifetime' plan (the free/Mahala
+ *  tier: 100 visits, once-off) never resets -- visitsUsed is the tenant's
+ *  all-time count, so once they've used their 100 they're at atLimit for
+ *  good and createBooking()/joinQueue() stay blocked until they upgrade,
+ *  not just until next month.
+ *
+ *  visitsThisMonth is always this-month regardless of period, since a
+ *  metered plan's estimatedAmountCentsThisMonth (an unlimited-visitLimit
+ *  plan) is billed monthly no matter what. */
+export async function getTenantPlanUsage(supabase: SupabaseClient, tenantId: string): Promise<PlanUsage> {
+  const plan = await getTenantPlan(supabase, tenantId)
+  const monthStart = startOfCurrentMonthUtc()
+
+  const visitsThisMonth = await countVisits(supabase, tenantId, monthStart)
+
+  let visitsUsed: number
+  if (plan.visitLimit === null) {
+    visitsUsed = visitsThisMonth // unlimited: nothing to gate on, this-month is fine to report
+  } else if (plan.visitLimitPeriod === "lifetime") {
+    visitsUsed = await countVisits(supabase, tenantId) // all-time, no created_at filter
+  } else {
+    visitsUsed = visitsThisMonth
+  }
+
+  const visitsRemaining = plan.visitLimit === null ? null : Math.max(plan.visitLimit - visitsUsed, 0)
+  const atLimit = plan.visitLimit !== null && visitsUsed >= plan.visitLimit
   const estimatedAmountCentsThisMonth =
     plan.pricePerVisitCents === null ? null : visitsThisMonth * plan.pricePerVisitCents
 
-  return { plan, visitsThisMonth, visitsRemaining, atLimit, estimatedAmountCentsThisMonth }
+  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, estimatedAmountCentsThisMonth }
 }
 
 /**
