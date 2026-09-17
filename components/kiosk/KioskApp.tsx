@@ -29,6 +29,19 @@
  *   - registrationType controls whether the book/queue choice screen
  *     shows at all: "both" behaves exactly as before; "booking" or
  *     "queue" skip straight from welcome into that single path.
+ *   - choiceTitle / bookingCardTitle / bookingCardSubtitle /
+ *     queueCardTitle / queueCardSubtitle are the wording on that choice
+ *     screen (ChoiceScreen, below) — fully tenant-configurable from
+ *     Settings > Kiosk now instead of hardcoded English strings, since
+ *     this is multi-tenant and "Book a time" / "Join the queue" won't fit
+ *     every business (a barbershop vs a clinic vs a car wash all want
+ *     different copy). ChoiceScreen just renders whatever page.tsx
+ *     resolved, same as every other branding.* field.
+ *   - ChoiceScreen's two cards are solid, filled buttons (accent /
+ *     secondary gradient, icon, shadow) rather than plain white
+ *     bordered tiles — the darker gradient stop each card uses is
+ *     derived from branding.primaryColor/secondaryColor via darkenHex()
+ *     below, so a tenant only ever has to pick their one brand color.
  *
  * FOOTER: `branding.removePoweredBy` is the same flag the admin Private
  * Label / Kiosk panels write via updateBranding() in
@@ -56,6 +69,27 @@ import {
   type KioskQueueTicket,
 } from "@/app/kiosk/[slug]/actions"
 import { printKioskTicket } from "@/lib/kiosk/printTicket"
+
+// Darkens a "#rrggbb" hex color by `amount` (0-1) for the choice screen's
+// button gradients — tenants only ever configure ONE flat color each for
+// primary/secondary (branding.primaryColor / secondaryColor), so the
+// second, darker stop needed for a convincing gradient is derived here
+// rather than asking every tenant to also pick a matching dark shade.
+// Falls back to the original color unchanged if it isn't a plain 6-digit
+// hex (e.g. a bad/legacy value in tenant_branding).
+function darkenHex(hex: string, amount: number): string {
+  const match = /^#([0-9a-fA-F]{6})$/.exec(hex.trim())
+  if (!match) return hex
+  const num = parseInt(match[1], 16)
+  const channel = (shift: number) => {
+    const value = (num >> shift) & 0xff
+    return Math.max(0, Math.round(value * (1 - amount)))
+  }
+  const r = channel(16)
+  const g = channel(8)
+  const b = channel(0)
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
+}
 
 // idle | printing | success | failed — drives the small status line and
 // retry button on TicketScreen. Never gates showing the ticket itself;
@@ -169,7 +203,13 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
   const [step, setStep] = useState<Step>("welcome")
   const [path, setPath] = useState<Path | null>(null)
 
-  const [services] = useState<CatalogService[]>(initialServices)
+  // HOTFIX: initialServices was seeded directly with no fallback, so if
+  // getBookableServices() (lib/services/shared/services-catalog.ts) ever
+  // returns something other than a plain array, this crashed the kiosk
+  // immediately on load with "e.map is not a function". Falling back to
+  // [] here is a stopgap — the real fix is finding why that function's
+  // return value isn't reliably an array.
+  const [services] = useState<CatalogService[]>(Array.isArray(initialServices) ? initialServices : [])
   const [selectedService, setSelectedService] = useState<CatalogService | null>(null)
 
   const [dateOptions, setDateOptions] = useState<DateOption[]>([])
@@ -258,7 +298,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       setError(result.error)
       return
     }
-    setDateOptions(result.data)
+    setDateOptions(Array.isArray(result.data) ? result.data : [])
     setStep("date")
   }
 
@@ -273,7 +313,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       setError(result.error)
       return
     }
-    setSlots(result.data)
+    setSlots(Array.isArray(result.data) ? result.data : [])
     setStep("time")
   }
 
@@ -334,7 +374,9 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
         "--ink": "#171412",
         "--paper": "#FAF8F5",
         "--accent": branding.primaryColor,
+        "--accent-deep": darkenHex(branding.primaryColor, 0.22),
         "--amber": branding.secondaryColor,
+        "--amber-deep": darkenHex(branding.secondaryColor, 0.22),
         "--line": "#E4DED4",
         "--muted": "#6B655C",
       }) as React.CSSProperties,
@@ -351,7 +393,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
       {step === "welcome" && <WelcomeScreen branding={branding} onTap={goToChoice} />}
 
-      {step === "choice" && <ChoiceScreen onChoose={choosePath} />}
+      {step === "choice" && <ChoiceScreen branding={branding} onChoose={choosePath} />}
 
       {step === "service" && (
         <ServiceScreen
@@ -504,17 +546,38 @@ function WelcomeScreen({ branding, onTap }: { branding: KioskBranding; onTap: ()
 // Choice — book vs queue
 // ----------------------------------------------------------------------------
 
-function ChoiceScreen({ onChoose }: { onChoose: (path: Path) => void }) {
+// Booking gets --accent, queue gets --amber — the same two brand colors
+// every other tenant-facing surface (ticket header, welcome tagline)
+// already uses, so a shop's two colors are the only thing that changes
+// this screen's look between tenants; the wording is the other axis of
+// customization, resolved from branding below.
+function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoose: (path: Path) => void }) {
   return (
-    <Screen title="How can we help you today?">
+    <Screen title={branding.choiceTitle}>
       <div className="tiles">
-        <button className="tile" onClick={() => onChoose("booking")} type="button">
-          <span className="tileTitle">Book a time</span>
-          <span className="tileSub">Pick a date and time that works for you</span>
+        <button className="tile tileBooking" onClick={() => onChoose("booking")} type="button">
+          <span className="tileIcon" aria-hidden="true">
+            <CalendarIcon />
+          </span>
+          <span className="tileText">
+            <span className="tileTitle">{branding.bookingCardTitle}</span>
+            <span className="tileSub">{branding.bookingCardSubtitle}</span>
+          </span>
+          <span className="tileArrow" aria-hidden="true">
+            <ArrowIcon />
+          </span>
         </button>
-        <button className="tile" onClick={() => onChoose("queue")} type="button">
-          <span className="tileTitle">Join the queue</span>
-          <span className="tileSub">Walk in now and we'll call you</span>
+        <button className="tile tileQueue" onClick={() => onChoose("queue")} type="button">
+          <span className="tileIcon" aria-hidden="true">
+            <QueueIcon />
+          </span>
+          <span className="tileText">
+            <span className="tileTitle">{branding.queueCardTitle}</span>
+            <span className="tileSub">{branding.queueCardSubtitle}</span>
+          </span>
+          <span className="tileArrow" aria-hidden="true">
+            <ArrowIcon />
+          </span>
         </button>
       </div>
 
@@ -528,32 +591,66 @@ function ChoiceScreen({ onChoose }: { onChoose: (path: Path) => void }) {
         }
         .tile {
           min-height: 220px;
-          background: #fff;
-          border: 2px solid var(--line);
-          border-radius: 20px;
+          border: none;
+          border-radius: 24px;
           display: flex;
           flex-direction: column;
           justify-content: center;
           align-items: flex-start;
-          gap: 12px;
-          padding: 32px;
+          gap: 20px;
+          padding: 36px;
           text-align: left;
           cursor: pointer;
           font-family: inherit;
+          color: #fff;
+          box-shadow: 0 14px 30px rgba(23, 20, 18, 0.18);
+          transition: transform 120ms ease, box-shadow 120ms ease;
+        }
+        .tileBooking {
+          background: linear-gradient(155deg, var(--accent), var(--accent-deep));
+        }
+        .tileQueue {
+          background: linear-gradient(155deg, var(--amber), var(--amber-deep));
         }
         .tile:active {
-          border-color: var(--accent);
-          background: var(--paper);
+          transform: scale(0.97);
+          box-shadow: 0 6px 16px rgba(23, 20, 18, 0.16);
+        }
+        .tileIcon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 64px;
+          height: 64px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.2);
+        }
+        .tileText {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
         }
         .tileTitle {
           font-size: 30px;
-          font-weight: 700;
-          color: var(--ink);
+          font-weight: 800;
+          color: #fff;
+          line-height: 1.15;
         }
         .tileSub {
-          font-size: 19px;
+          font-size: 18px;
           font-weight: 500;
-          color: var(--muted);
+          color: rgba(255, 255, 255, 0.85);
+        }
+        .tileArrow {
+          margin-top: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.16);
+          align-self: flex-end;
         }
         @media (max-width: 720px) {
           .tiles {
@@ -562,6 +659,40 @@ function ChoiceScreen({ onChoose }: { onChoose: (path: Path) => void }) {
         }
       `}</style>
     </Screen>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="3" y="5" width="18" height="16" rx="3" stroke="#fff" strokeWidth="1.8" />
+      <path d="M3 9.5H21" stroke="#fff" strokeWidth="1.8" />
+      <path d="M8 3V6.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M16 3V6.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="8" cy="13.5" r="1.3" fill="#fff" />
+      <circle cx="12" cy="13.5" r="1.3" fill="#fff" />
+      <circle cx="16" cy="13.5" r="1.3" fill="#fff" />
+    </svg>
+  )
+}
+
+function QueueIcon() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="8" cy="8" r="3" stroke="#fff" strokeWidth="1.8" />
+      <circle cx="17" cy="9" r="2.4" stroke="#fff" strokeWidth="1.8" />
+      <path d="M2.5 20c0-3.6 2.9-6 5.5-6s5.5 2.4 5.5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M14.5 20c0-2.6 1.9-4.6 4-4.6s4 2 4 4.6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function ArrowIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 12H19" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+      <path d="M13 6L19 12L13 18" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
