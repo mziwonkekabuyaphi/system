@@ -1203,6 +1203,20 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
             onChange={(next) => setForm({ ...form, requireServiceSelection: next })}
           />
         </div>
+
+        {!form.requireServiceSelection && (
+          <FieldRow label="Estimated minutes to serve a walk-in with no service">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={form.defaultServiceDurationMinutes}
+              onChange={(e) =>
+                setForm({ ...form, defaultServiceDurationMinutes: Number(e.target.value) })
+              }
+            />
+          </FieldRow>
+        )}
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />

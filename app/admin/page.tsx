@@ -262,7 +262,7 @@ async function getSettingsData(
     supabase
       .from("queue_settings")
       .select(
-        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection",
+        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -352,6 +352,7 @@ async function getSettingsData(
       // submitKioskQueueJoin/the WhatsApp state machine, which both check
       // this flag before deciding whether to prompt for a service.
       requireServiceSelection: queueSettingsResult.data.require_service_selection,
+      defaultServiceDurationMinutes: queueSettingsResult.data.default_service_duration_minutes,
     },
     messageSettings: {
       aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,

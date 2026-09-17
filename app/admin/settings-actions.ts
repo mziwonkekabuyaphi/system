@@ -503,6 +503,7 @@ export async function updateQueueSettings(input: {
   allowWalkinWhatsapp: boolean
   allowWalkinKiosk: boolean
   requireServiceSelection: boolean
+  defaultServiceDurationMinutes: number
 }): Promise<ActionResult> {
   try {
     const { supabase, tenantId } = await tenantContext()
@@ -516,6 +517,7 @@ export async function updateQueueSettings(input: {
         allow_walkin_whatsapp: input.allowWalkinWhatsapp,
         allow_walkin_kiosk: input.allowWalkinKiosk,
         require_service_selection: input.requireServiceSelection,
+        default_service_duration_minutes: input.defaultServiceDurationMinutes,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

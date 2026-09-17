@@ -274,6 +274,12 @@ export interface AdminQueueSettings {
    *  bookings always require a service regardless of this flag, since
    *  availability is looked up per-service. */
   requireServiceSelection: boolean
+  /** Only relevant when requireServiceSelection is false. Estimated
+   *  minutes to serve a walk-in with no service attached — used by
+   *  lib/services/queue.ts's wait-time simulation (getQueueSimulation/
+   *  joinQueue) in place of a real service duration, so a no-service
+   *  entry doesn't get treated as taking 0 minutes. */
+  defaultServiceDurationMinutes: number
 }
 
 /** message_settings, one row per tenant. WhatsApp copy used by the booking
