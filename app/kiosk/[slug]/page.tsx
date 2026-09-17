@@ -30,6 +30,15 @@
  * field below has an explicit default matched to what KioskApp used to
  * hardcode (75s idle, "Tap anywhere to check in", etc).
  *
+ * SCREEN WORDING (new): tenant_branding also carries choice_title,
+ * booking_card_title, booking_card_subtitle, queue_card_title, and
+ * queue_card_subtitle (migration_kiosk_wording.sql) — the copy on the
+ * book-vs-queue choice screen, which used to be hardcoded in
+ * components/kiosk/KioskApp.tsx's ChoiceScreen. Same NULL-means-default
+ * posture as everything else here, since this is a multi-tenant kiosk and
+ * every shop's idea of "Book a time" vs "Join the queue" may differ (e.g.
+ * "Reserve a table" / "Get in line").
+ *
  * NEXT.JS 15/16 FIX: `params` is now a Promise (not a plain object) in
  * route/page components — must be awaited before use. The old sync
  * `{ params: { slug: string } }` shape silently resolved `params.slug`
@@ -80,6 +89,16 @@ export interface KioskBranding {
   idleRefreshSeconds: number
   confirmationRefreshSeconds: number
   registrationType: KioskRegistrationType
+  // Screen wording — admin-configurable from Settings > Kiosk (see
+  // updateKioskSettings in app/admin/settings-actions.ts). Every field is
+  // already resolved to a non-null display string here, same fallback
+  // posture as tagline above, so KioskApp/ChoiceScreen never has to think
+  // about null.
+  choiceTitle: string
+  bookingCardTitle: string
+  bookingCardSubtitle: string
+  queueCardTitle: string
+  queueCardSubtitle: string
 }
 
 // Fallback palette from the design brief. tenant_branding.primary_color
@@ -99,6 +118,17 @@ const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
 const DEFAULT_REGISTRATION_TYPE: KioskRegistrationType = "both"
 const VALID_REGISTRATION_TYPES: KioskRegistrationType[] = ["booking", "queue", "both"]
 
+// Wording defaults — the exact strings ChoiceScreen used to hardcode.
+// Must stay in sync with the placeholder text shown in
+// app/admin/SettingsManager.tsx's KioskBehaviorPanel, so an admin who
+// hasn't customized anything sees the same copy their kiosk is actually
+// rendering.
+const DEFAULT_CHOICE_TITLE = "How can we help you today?"
+const DEFAULT_BOOKING_CARD_TITLE = "Book a time"
+const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
+const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
+const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
+
 interface TenantRow {
   id: string
   name: string
@@ -116,6 +146,11 @@ interface TenantBrandingRow {
   idle_refresh_seconds: number | null
   confirmation_refresh_seconds: number | null
   registration_type: string | null
+  choice_title: string | null
+  booking_card_title: string | null
+  booking_card_subtitle: string | null
+  queue_card_title: string | null
+  queue_card_subtitle: string | null
 }
 
 type KioskLoadResult =
@@ -184,7 +219,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -204,6 +239,11 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     idleRefreshSeconds: branding?.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
     confirmationRefreshSeconds: branding?.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
     registrationType: resolveRegistrationType(branding?.registration_type),
+    choiceTitle: branding?.choice_title?.trim() || DEFAULT_CHOICE_TITLE,
+    bookingCardTitle: branding?.booking_card_title?.trim() || DEFAULT_BOOKING_CARD_TITLE,
+    bookingCardSubtitle: branding?.booking_card_subtitle?.trim() || DEFAULT_BOOKING_CARD_SUBTITLE,
+    queueCardTitle: branding?.queue_card_title?.trim() || DEFAULT_QUEUE_CARD_TITLE,
+    queueCardSubtitle: branding?.queue_card_subtitle?.trim() || DEFAULT_QUEUE_CARD_SUBTITLE,
   }
 
   const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
