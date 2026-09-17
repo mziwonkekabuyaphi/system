@@ -62,6 +62,30 @@ async function resolveActiveTenantId(slug: string): Promise<string> {
   return data.id as string
 }
 
+// Same fail-closed posture as app/kiosk/[slug]/page.tsx's queueBehavior
+// lookup: a missing row or query error means "require a service", not
+// "silently let it through". This is the SERVER-side gate — the kiosk UI
+// (KioskApp.tsx) already skips ServiceScreen when this is off, but this
+// action can be called directly, so the client's choice to omit serviceId
+// is never trusted on its own.
+async function resolveRequireServiceSelection(tenantId: string): Promise<boolean> {
+  const supabase = getSupabaseServerClient()
+  if (!supabase) throw new Error("Supabase server client is unavailable")
+
+  const { data, error } = await supabase
+    .from("queue_settings")
+    .select("require_service_selection")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    console.error("[kiosk] queue_settings lookup failed", { tenantId, error })
+    return true
+  }
+
+  return data?.require_service_selection ?? true
+}
+
 // ============================================================================
 // READS
 // ============================================================================
@@ -183,7 +207,9 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
 }
 
 export interface KioskQueueInput {
-  serviceId: string
+  // Null when the tenant has require_service_selection off and the
+  // customer never saw ServiceScreen — see KioskApp.tsx's enterQueueFlow.
+  serviceId: string | null
   name: string
   phone: string
 }
@@ -192,7 +218,9 @@ export interface KioskQueueTicket {
   kind: "queue"
   ticketNumber: string
   customerName: string
-  serviceName: string
+  // Null when this queue entry has no service attached — TicketScreen
+  // should omit the service line rather than show "Unknown service".
+  serviceName: string | null
   position: number
   etaMinutes: number
 }
@@ -204,9 +232,18 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
 
   try {
     const tenantId = await resolveActiveTenantId(slug)
-    const services = await getBookableServices(tenantId)
-    const service = services.find((s) => s.id === input.serviceId)
-    if (!service) return { ok: false, error: "That service isn't available anymore." }
+    const requireServiceSelection = await resolveRequireServiceSelection(tenantId)
+
+    if (requireServiceSelection && !input.serviceId) {
+      return { ok: false, error: "Please choose a service." }
+    }
+
+    let service: CatalogService | null = null
+    if (input.serviceId) {
+      const services = await getBookableServices(tenantId)
+      service = services.find((s) => s.id === input.serviceId) ?? null
+      if (!service) return { ok: false, error: "That service isn't available anymore." }
+    }
 
     const { position, etaMinutes } = await joinQueue(tenantId, { service, phone: input.phone })
     await updateCustomer(tenantId, input.phone, { name })
@@ -214,10 +251,11 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
     const ticketNumber = `Q${String(position).padStart(3, "0")}`
 
     try {
+      const serviceClause = service ? ` for ${service.name}` : ""
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
-        `Hi ${name}! You're in the queue for ${service.name} — you're number ${position}, ` +
+        `Hi ${name}! You're in the queue${serviceClause} — you're number ${position}, ` +
           `about ${etaMinutes} min wait. We'll see you soon!`,
       )
     } catch (sendError) {
@@ -226,7 +264,14 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
 
     return {
       ok: true,
-      data: { kind: "queue", ticketNumber, customerName: name, serviceName: service.name, position, etaMinutes },
+      data: {
+        kind: "queue",
+        ticketNumber,
+        customerName: name,
+        serviceName: service?.name ?? null,
+        position,
+        etaMinutes,
+      },
     }
   } catch (error) {
     console.error("[kiosk] submitKioskQueueJoin failed", { slug, error })
