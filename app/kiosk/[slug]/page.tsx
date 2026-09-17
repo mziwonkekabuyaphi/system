@@ -32,17 +32,21 @@
  *
  * SCREEN WORDING (new): tenant_branding also carries choice_title,
  * booking_card_title, booking_card_subtitle, queue_card_title,
- * queue_card_subtitle, and service_screen_title
+ * queue_card_subtitle, service_screen_title, and date_screen_title
  * (migration_kiosk_wording.sql) — the copy on the book-vs-queue choice
- * screen and the service-picker screen right after it, which used to be
- * hardcoded in components/kiosk/KioskApp.tsx's ChoiceScreen/ServiceScreen.
+ * screen and the two screens right after it (service picker, then date
+ * picker on the booking path), which used to be hardcoded in
+ * components/kiosk/KioskApp.tsx's ChoiceScreen/ServiceScreen/DateScreen.
  * Same NULL-means-default posture as everything else here, since this is
  * a multi-tenant kiosk and every shop's idea of "Book a time" vs "Join
- * the queue" vs "What are you here for?" may differ (e.g. "Reserve a
- * table" / "Get in line" / "Choose a service"). Unlike the choice-screen
- * fields, service_screen_title/serviceScreenTitle applies no matter which
- * registrationType is set — every path (booking-only, queue-only, or
- * both) passes through the service picker.
+ * the queue" vs "What are you here for?" vs "Which day works for you?"
+ * may differ (e.g. "Reserve a table" / "Get in line" / "Choose a
+ * service" / "Pick a date"). Unlike the choice-screen fields,
+ * service_screen_title and date_screen_title apply no matter which
+ * registrationType is set for the screens they're on — service_screen
+ * shows on every path, date_screen only ever shows on the booking path
+ * (queue has no date step) so it's simply unused/unread on a
+ * queue-only kiosk.
  *
  * NEXT.JS 15/16 FIX: `params` is now a Promise (not a plain object) in
  * route/page components — must be awaited before use. The old sync
@@ -105,6 +109,7 @@ export interface KioskBranding {
   queueCardTitle: string
   queueCardSubtitle: string
   serviceScreenTitle: string
+  dateScreenTitle: string
 }
 
 // Fallback palette from the design brief. tenant_branding.primary_color
@@ -135,6 +140,7 @@ const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
 const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
 const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
+const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
 
 interface TenantRow {
   id: string
@@ -159,29 +165,12 @@ interface TenantBrandingRow {
   queue_card_title: string | null
   queue_card_subtitle: string | null
   service_screen_title: string | null
+  date_screen_title: string | null
 }
-
-// Per-tenant queue behavior that KioskApp needs but that doesn't live on
-// tenant_branding — pulled from queue_settings alongside everything else
-// this route resolves server-side. Defaults to `true` (service required)
-// on any missing row or query error, matching the DB column default —
-// fail closed, since skipping a service prompt is the more surprising
-// behavior for a tenant that never configured this.
-interface KioskQueueBehavior {
-  requireServiceSelection: boolean
-}
-
-const DEFAULT_REQUIRE_SERVICE_SELECTION = true
 
 type KioskLoadResult =
-  | {
-      tenant: TenantRow
-      branding: KioskBranding
-      kioskEnabled: true
-      services: Awaited<ReturnType<typeof getBookableServices>>
-      queueBehavior: KioskQueueBehavior
-    }
-  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: []; queueBehavior: KioskQueueBehavior }
+  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: true; services: Awaited<ReturnType<typeof getBookableServices>> }
+  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: [] }
 
 // Same two-step lookup as setKioskEnabled/updateGeneralInfo's sibling in
 // app/admin/settings-actions.ts: resolve the `kiosk` row on `modules`,
@@ -245,7 +234,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -271,38 +260,21 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     queueCardTitle: branding?.queue_card_title?.trim() || DEFAULT_QUEUE_CARD_TITLE,
     queueCardSubtitle: branding?.queue_card_subtitle?.trim() || DEFAULT_QUEUE_CARD_SUBTITLE,
     serviceScreenTitle: branding?.service_screen_title?.trim() || DEFAULT_SERVICE_SCREEN_TITLE,
+    dateScreenTitle: branding?.date_screen_title?.trim() || DEFAULT_DATE_SCREEN_TITLE,
   }
 
   const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
-
-  // Same fail-closed posture as resolveKioskModuleEnabled above: a missing
-  // row or query error means "behave as if service selection is
-  // required", not "silently skip it" — an admin who hasn't touched this
-  // setting yet gets the flow they already had.
-  const { data: queueSettingsRow, error: queueSettingsError } = await supabase
-    .from("queue_settings")
-    .select("require_service_selection")
-    .eq("tenant_id", tenant.id)
-    .maybeSingle()
-
-  if (queueSettingsError) {
-    console.error("[kiosk] queue_settings lookup failed", { tenantId: tenant.id, error: queueSettingsError })
-  }
-
-  const queueBehavior: KioskQueueBehavior = {
-    requireServiceSelection: queueSettingsRow?.require_service_selection ?? DEFAULT_REQUIRE_SERVICE_SELECTION,
-  }
 
   // Don't even touch the services catalog when the module's off — the
   // whole point of a server-side gate is that the booking flow's data
   // never loads for a kiosk that shouldn't be running it.
   if (!kioskEnabled) {
-    return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [], queueBehavior }
+    return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [] }
   }
 
   const services = await getBookableServices(tenant.id)
 
-  return { tenant, branding: resolvedBranding, kioskEnabled: true, services, queueBehavior }
+  return { tenant, branding: resolvedBranding, kioskEnabled: true, services }
 }
 
 export default async function KioskPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -310,7 +282,7 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
   const data = await loadKioskData(slug)
   if (!data) notFound()
 
-  const { tenant, branding, kioskEnabled, services, queueBehavior } = data
+  const { tenant, branding, kioskEnabled, services } = data
 
   if (!kioskEnabled) {
     return (
@@ -322,12 +294,7 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
 
   return (
     <div className={manrope.className}>
-      <KioskApp
-        slug={tenant.slug}
-        branding={branding}
-        initialServices={services}
-        requireServiceSelection={queueBehavior.requireServiceSelection}
-      />
+      <KioskApp slug={tenant.slug} branding={branding} initialServices={services} />
     </div>
   )
 }
