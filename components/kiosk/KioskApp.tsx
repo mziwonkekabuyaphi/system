@@ -185,6 +185,13 @@ interface KioskAppProps {
   slug: string
   branding: KioskBranding
   initialServices: CatalogService[]
+  // From queue_settings.require_service_selection (resolved server-side in
+  // app/kiosk/[slug]/page.tsx). Only affects the queue path — a booking
+  // always needs a service to look up availability/duration against, so
+  // ServiceScreen is never skippable there. When false, a walk-in on the
+  // queue path drops straight from welcome/choice into DetailsScreen with
+  // no service attached (queue_entries.service_id will be null).
+  requireServiceSelection: boolean
 }
 
 // ----------------------------------------------------------------------------
@@ -265,7 +272,7 @@ function PoweredByFooter() {
 // Main component
 // ----------------------------------------------------------------------------
 
-export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
+export function KioskApp({ slug, branding, initialServices, requireServiceSelection }: KioskAppProps) {
   const [step, setStep] = useState<Step>("welcome")
   const [path, setPath] = useState<Path | null>(null)
 
@@ -324,6 +331,21 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
   // ---- navigation ----------------------------------------------------
 
+  // Queue-only tenants with requireServiceSelection off have nothing to
+  // pick between and no service screen to show — drop straight to
+  // DetailsScreen with no service attached. Booking always goes through
+  // ServiceScreen regardless of this flag: a booking's date/time
+  // availability is looked up per-service, so there's no "skip" path for it.
+  const enterQueueFlow = () => {
+    setPath("queue")
+    if (!requireServiceSelection) {
+      setSelectedService(null)
+      setStep("details")
+      return
+    }
+    setStep("service")
+  }
+
   // "both" shows the normal book-vs-queue choice screen. A registration
   // type locked to a single path skips that screen entirely and drops
   // the customer straight into service selection for that path — there's
@@ -336,14 +358,17 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       return
     }
     if (branding.registrationType === "queue") {
-      setPath("queue")
-      setStep("service")
+      enterQueueFlow()
       return
     }
     setStep("choice")
   }
 
   const choosePath = (p: Path) => {
+    if (p === "queue") {
+      enterQueueFlow()
+      return
+    }
     setPath(p)
     setStep("service")
   }
@@ -389,12 +414,18 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
   }
 
   const submit = async () => {
-    if (!selectedService) return
+    // Booking always needs a service (date/time availability is looked up
+    // per-service). Queue only needs one when requireServiceSelection is
+    // on — when it's off, selectedService is null by construction
+    // (enterQueueFlow never lets the customer reach ServiceScreen), so
+    // this guard would otherwise silently block every queue submission.
+    if (path === "booking" && !selectedService) return
+    if (path === "queue" && requireServiceSelection && !selectedService) return
     setError(null)
     setBusy(true)
 
     if (path === "booking") {
-      if (!selectedDate || !selectedSlot) {
+      if (!selectedDate || !selectedSlot || !selectedService) {
         setBusy(false)
         return
       }
@@ -418,7 +449,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
     }
 
     const result = await submitKioskQueueJoin(slug, {
-      serviceId: selectedService.id,
+      serviceId: selectedService?.id ?? null,
       name,
       phone,
     })
