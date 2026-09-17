@@ -41,6 +41,9 @@
  *     ServiceScreen's "What are you here for?" heading — shown on EVERY
  *     registrationType (booking-only, queue-only, or both), since every
  *     path passes through picking a service.
+ *   - dateScreenTitle is the same idea for DateScreen's "Which day works
+ *     for you?" heading — only ever shown on the booking path, since
+ *     queue has no date step.
  *   - ChoiceScreen's two cards are solid, filled buttons (accent /
  *     secondary gradient, icon, shadow) rather than plain white
  *     bordered tiles — the darker gradient stop each card uses is
@@ -185,13 +188,6 @@ interface KioskAppProps {
   slug: string
   branding: KioskBranding
   initialServices: CatalogService[]
-  // From queue_settings.require_service_selection (resolved server-side in
-  // app/kiosk/[slug]/page.tsx). Only affects the queue path — a booking
-  // always needs a service to look up availability/duration against, so
-  // ServiceScreen is never skippable there. When false, a walk-in on the
-  // queue path drops straight from welcome/choice into DetailsScreen with
-  // no service attached (queue_entries.service_id will be null).
-  requireServiceSelection: boolean
 }
 
 // ----------------------------------------------------------------------------
@@ -272,7 +268,7 @@ function PoweredByFooter() {
 // Main component
 // ----------------------------------------------------------------------------
 
-export function KioskApp({ slug, branding, initialServices, requireServiceSelection }: KioskAppProps) {
+export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
   const [step, setStep] = useState<Step>("welcome")
   const [path, setPath] = useState<Path | null>(null)
 
@@ -331,21 +327,6 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
 
   // ---- navigation ----------------------------------------------------
 
-  // Queue-only tenants with requireServiceSelection off have nothing to
-  // pick between and no service screen to show — drop straight to
-  // DetailsScreen with no service attached. Booking always goes through
-  // ServiceScreen regardless of this flag: a booking's date/time
-  // availability is looked up per-service, so there's no "skip" path for it.
-  const enterQueueFlow = () => {
-    setPath("queue")
-    if (!requireServiceSelection) {
-      setSelectedService(null)
-      setStep("details")
-      return
-    }
-    setStep("service")
-  }
-
   // "both" shows the normal book-vs-queue choice screen. A registration
   // type locked to a single path skips that screen entirely and drops
   // the customer straight into service selection for that path — there's
@@ -358,17 +339,14 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
       return
     }
     if (branding.registrationType === "queue") {
-      enterQueueFlow()
+      setPath("queue")
+      setStep("service")
       return
     }
     setStep("choice")
   }
 
   const choosePath = (p: Path) => {
-    if (p === "queue") {
-      enterQueueFlow()
-      return
-    }
     setPath(p)
     setStep("service")
   }
@@ -414,18 +392,12 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   }
 
   const submit = async () => {
-    // Booking always needs a service (date/time availability is looked up
-    // per-service). Queue only needs one when requireServiceSelection is
-    // on — when it's off, selectedService is null by construction
-    // (enterQueueFlow never lets the customer reach ServiceScreen), so
-    // this guard would otherwise silently block every queue submission.
-    if (path === "booking" && !selectedService) return
-    if (path === "queue" && requireServiceSelection && !selectedService) return
+    if (!selectedService) return
     setError(null)
     setBusy(true)
 
     if (path === "booking") {
-      if (!selectedDate || !selectedSlot || !selectedService) {
+      if (!selectedDate || !selectedSlot) {
         setBusy(false)
         return
       }
@@ -449,7 +421,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     }
 
     const result = await submitKioskQueueJoin(slug, {
-      serviceId: selectedService?.id ?? null,
+      serviceId: selectedService.id,
       name,
       phone,
     })
@@ -509,7 +481,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
       )}
 
       {step === "date" && (
-        <DateScreen options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
+        <DateScreen title={branding.dateScreenTitle} options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
       )}
 
       {step === "time" && (
@@ -908,18 +880,20 @@ function ServiceScreen({
 // ----------------------------------------------------------------------------
 
 function DateScreen({
+  title,
   options,
   onSelect,
   busy,
   error,
 }: {
+  title: string
   options: DateOption[]
   onSelect: (option: DateOption) => void
   busy: boolean
   error: string | null
 }) {
   return (
-    <Screen title="Which day works for you?" error={error} busy={busy}>
+    <Screen title={title} error={error} busy={busy}>
       <div className="grid">
         {options.map((option) => (
           <button key={option.date} className="tile" onClick={() => onSelect(option)} type="button" disabled={busy}>
