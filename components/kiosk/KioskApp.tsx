@@ -3,13 +3,12 @@
 // components/kiosk/KioskApp.tsx
 /**
  * The kiosk touch flow itself: welcome -> book/queue choice -> service ->
- * (booking only: date -> time, or straight to time when there's only one
- * date option — see chooseService's same-day-only skip below) -> name/
- * phone -> submit -> a literal ticket-style confirmation. One decision
- * per full-bleed screen, ≥96px tap targets throughout, and an
- * admin-configurable idle timer that resets everything back to welcome —
- * so one customer's name, phone, and in-progress selections never bleed
- * into the next walk-in who taps the same tablet.
+ * (booking only: date -> time) -> name/phone -> submit -> a literal
+ * ticket-style confirmation. One decision per full-bleed screen, ≥96px
+ * tap targets throughout, and an admin-configurable idle timer that
+ * resets everything back to welcome — so one customer's name, phone, and
+ * in-progress selections never bleed into the next walk-in who taps the
+ * same tablet.
  *
  * Talks to the tenant only via Server Actions in ./actions.ts, which
  * re-resolve tenantId from `slug` on every call — this component never
@@ -42,21 +41,6 @@
  *     ServiceScreen's "What are you here for?" heading — shown on EVERY
  *     registrationType (booking-only, queue-only, or both), since every
  *     path passes through picking a service.
- *   - dateScreenTitle is the same idea for DateScreen's "Which day works
- *     for you?" heading — only ever shown on the booking path, since
- *     queue has no date step.
- *   - timeScreenTitle is a PREFIX for TimeScreen's heading, not the whole
- *     string — the kiosk appends " — {date label}" itself, so a tenant
- *     configures just the "Pick a time" part and the date (e.g. "Today")
- *     is always appended live.
- *   - detailsScreenTitle is DetailsScreen's "Almost done — who are we
- *     booking for?" heading — shared by both the booking and queue paths
- *     (there's only one name/phone screen), so a tenant who wants
- *     path-specific copy here isn't supported by this single field; flag
- *     that if it comes up.
- *   - ticketBookingEyebrow/ticketQueueEyebrow are the small label above
- *     the ticket number on TicketScreen, one per path ("Your booking" /
- *     "Your place in line" by default).
  *   - ChoiceScreen's two cards are solid, filled buttons (accent /
  *     secondary gradient, icon, shadow) rather than plain white
  *     bordered tiles — the darker gradient stop each card uses is
@@ -201,6 +185,13 @@ interface KioskAppProps {
   slug: string
   branding: KioskBranding
   initialServices: CatalogService[]
+  // From queue_settings.require_service_selection (resolved server-side in
+  // app/kiosk/[slug]/page.tsx). Only affects the queue path — a booking
+  // always needs a service to look up availability/duration against, so
+  // ServiceScreen is never skippable there. When false, a walk-in on the
+  // queue path drops straight from welcome/choice into DetailsScreen with
+  // no service attached (queue_entries.service_id will be null).
+  requireServiceSelection: boolean
 }
 
 // ----------------------------------------------------------------------------
@@ -281,7 +272,7 @@ function PoweredByFooter() {
 // Main component
 // ----------------------------------------------------------------------------
 
-export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
+export function KioskApp({ slug, branding, initialServices, requireServiceSelection }: KioskAppProps) {
   const [step, setStep] = useState<Step>("welcome")
   const [path, setPath] = useState<Path | null>(null)
 
@@ -340,6 +331,21 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
   // ---- navigation ----------------------------------------------------
 
+  // Queue-only tenants with requireServiceSelection off have nothing to
+  // pick between and no service screen to show — drop straight to
+  // DetailsScreen with no service attached. Booking always goes through
+  // ServiceScreen regardless of this flag: a booking's date/time
+  // availability is looked up per-service, so there's no "skip" path for it.
+  const enterQueueFlow = () => {
+    setPath("queue")
+    if (!requireServiceSelection) {
+      setSelectedService(null)
+      setStep("details")
+      return
+    }
+    setStep("service")
+  }
+
   // "both" shows the normal book-vs-queue choice screen. A registration
   // type locked to a single path skips that screen entirely and drops
   // the customer straight into service selection for that path — there's
@@ -352,14 +358,17 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       return
     }
     if (branding.registrationType === "queue") {
-      setPath("queue")
-      setStep("service")
+      enterQueueFlow()
       return
     }
     setStep("choice")
   }
 
   const choosePath = (p: Path) => {
+    if (p === "queue") {
+      enterQueueFlow()
+      return
+    }
     setPath(p)
     setStep("service")
   }
@@ -380,31 +389,16 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       setError(result.error)
       return
     }
-    const options = Array.isArray(result.data) ? result.data : []
-    setDateOptions(options)
-
-    // Same-day-only tenants (maxAdvanceDays = 0 in Settings > Booking/
-    // Queue) get exactly one date option back — "today" — from
-    // buildDateOptions. Asking someone to tap a screen that only ever has
-    // one button on it is a wasted step at a touch kiosk, so skip
-    // straight into fetching today's times instead of rendering
-    // DateScreen at all. Any tenant with more than one day configured
-    // still sees the normal date picker, unaffected.
-    if (options.length === 1) {
-      await chooseDate(options[0], service)
-      return
-    }
-
+    setDateOptions(Array.isArray(result.data) ? result.data : [])
     setStep("date")
   }
 
-  const chooseDate = async (option: DateOption, serviceOverride?: CatalogService) => {
-    const service = serviceOverride ?? selectedService
-    if (!service) return
+  const chooseDate = async (option: DateOption) => {
+    if (!selectedService) return
     setSelectedDate(option)
     setError(null)
     setBusy(true)
-    const result = await fetchKioskTimeSlots(slug, service.id, option.date)
+    const result = await fetchKioskTimeSlots(slug, selectedService.id, option.date)
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
@@ -420,12 +414,18 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
   }
 
   const submit = async () => {
-    if (!selectedService) return
+    // Booking always needs a service (date/time availability is looked up
+    // per-service). Queue only needs one when requireServiceSelection is
+    // on — when it's off, selectedService is null by construction
+    // (enterQueueFlow never lets the customer reach ServiceScreen), so
+    // this guard would otherwise silently block every queue submission.
+    if (path === "booking" && !selectedService) return
+    if (path === "queue" && requireServiceSelection && !selectedService) return
     setError(null)
     setBusy(true)
 
     if (path === "booking") {
-      if (!selectedDate || !selectedSlot) {
+      if (!selectedDate || !selectedSlot || !selectedService) {
         setBusy(false)
         return
       }
@@ -449,7 +449,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
     }
 
     const result = await submitKioskQueueJoin(slug, {
-      serviceId: selectedService.id,
+      serviceId: selectedService?.id ?? null,
       name,
       phone,
     })
@@ -509,12 +509,11 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       )}
 
       {step === "date" && (
-        <DateScreen title={branding.dateScreenTitle} options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
+        <DateScreen options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
       )}
 
       {step === "time" && (
         <TimeScreen
-          titlePrefix={branding.timeScreenTitle}
           slots={slots}
           dateLabel={selectedDate?.label ?? ""}
           onSelect={chooseSlot}
@@ -525,7 +524,6 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
       {step === "details" && (
         <DetailsScreen
-          title={branding.detailsScreenTitle}
           name={name}
           phone={phone}
           onNameChange={setName}
@@ -540,8 +538,6 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
       {step === "ticket" && ticket && (
         <TicketScreen
           ticket={ticket}
-          bookingEyebrow={branding.ticketBookingEyebrow}
-          queueEyebrow={branding.ticketQueueEyebrow}
           onDone={resetAll}
           printStatus={printStatus}
           onRetryPrint={() => attemptPrint(ticket)}
@@ -912,40 +908,18 @@ function ServiceScreen({
 // ----------------------------------------------------------------------------
 
 function DateScreen({
-  title,
   options,
   onSelect,
   busy,
   error,
 }: {
-  title: string
   options: DateOption[]
   onSelect: (option: DateOption) => void
   busy: boolean
   error: string | null
 }) {
-  // Reachable mainly when a same-day-only tenant (maxAdvanceDays = 0) has
-  // no bookable slots today at all (e.g. outside Opening Hours) —
-  // chooseService already skips this screen entirely for the normal
-  // one-date case, so by the time DateScreen renders with zero options
-  // there's genuinely nothing to offer rather than a loading glitch.
-  if (options.length === 0) {
-    return (
-      <Screen title={title}>
-        <p className="empty">No bookable dates right now. Please ask a member of staff.</p>
-        <style jsx>{`
-          .empty {
-            font-size: 22px;
-            color: var(--muted);
-            text-align: center;
-          }
-        `}</style>
-      </Screen>
-    )
-  }
-
   return (
-    <Screen title={title} error={error} busy={busy}>
+    <Screen title="Which day works for you?" error={error} busy={busy}>
       <div className="grid">
         {options.map((option) => (
           <button key={option.date} className="tile" onClick={() => onSelect(option)} type="button" disabled={busy}>
@@ -990,14 +964,12 @@ function DateScreen({
 // ----------------------------------------------------------------------------
 
 function TimeScreen({
-  titlePrefix,
   slots,
   dateLabel,
   onSelect,
   busy,
   error,
 }: {
-  titlePrefix: string
   slots: BookingSlot[]
   dateLabel: string
   onSelect: (slot: BookingSlot) => void
@@ -1020,7 +992,7 @@ function TimeScreen({
   }
 
   return (
-    <Screen title={`${titlePrefix} — ${dateLabel}`} error={error} busy={busy}>
+    <Screen title={`Pick a time — ${dateLabel}`} error={error} busy={busy}>
       <div className="grid">
         {slots.map((slot) => (
           <button key={slot.start} className="tile" onClick={() => onSelect(slot)} type="button" disabled={busy}>
@@ -1067,7 +1039,6 @@ function TimeScreen({
 // ----------------------------------------------------------------------------
 
 function DetailsScreen({
-  title,
   name,
   phone,
   onNameChange,
@@ -1077,7 +1048,6 @@ function DetailsScreen({
   busy,
   error,
 }: {
-  title: string
   name: string
   phone: string
   onNameChange: (v: string) => void
@@ -1088,7 +1058,7 @@ function DetailsScreen({
   error: string | null
 }) {
   return (
-    <Screen title={title} error={error} busy={busy}>
+    <Screen title="Almost done — who are we booking for?" error={error} busy={busy}>
       <div className="form">
         <label>
           <span>Your name</span>
@@ -1177,15 +1147,11 @@ function DetailsScreen({
 
 function TicketScreen({
   ticket,
-  bookingEyebrow,
-  queueEyebrow,
   onDone,
   printStatus,
   onRetryPrint,
 }: {
   ticket: Ticket
-  bookingEyebrow: string
-  queueEyebrow: string
   onDone: () => void
   printStatus: "idle" | "printing" | "success" | "failed"
   onRetryPrint: () => void
@@ -1196,7 +1162,7 @@ function TicketScreen({
     <div className="ticketScreen">
       <div className="stub">
         <div className="top">
-          <p className="eyebrow">{isBooking ? bookingEyebrow : queueEyebrow}</p>
+          <p className="eyebrow">{isBooking ? "Your booking" : "Your place in line"}</p>
           <p className="number">{ticket.ticketNumber}</p>
         </div>
 
@@ -1204,7 +1170,7 @@ function TicketScreen({
 
         <div className="bottom">
           <Row label="Name" value={ticket.customerName} />
-          <Row label="Service" value={ticket.serviceName} />
+          {ticket.serviceName && <Row label="Service" value={ticket.serviceName} />}
           {isBooking ? (
             <>
               <Row label="Date" value={(ticket as KioskBookingTicket).dateLabel} />
