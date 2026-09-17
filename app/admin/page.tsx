@@ -239,7 +239,7 @@ async function getSettingsData(
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title",
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -261,9 +261,7 @@ async function getSettingsData(
       .single(),
     supabase
       .from("queue_settings")
-      .select(
-        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection",
-      )
+      .select("auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk")
       .eq("tenant_id", tenantId)
       .single(),
     supabase
@@ -331,6 +329,7 @@ async function getSettingsData(
       queueCardTitle: brandingResult.data.queue_card_title,
       queueCardSubtitle: brandingResult.data.queue_card_subtitle,
       serviceScreenTitle: brandingResult.data.service_screen_title,
+      dateScreenTitle: brandingResult.data.date_screen_title,
     },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
@@ -345,13 +344,6 @@ async function getSettingsData(
       notifyBeforeTurnPosition: queueSettingsResult.data.notify_before_turn_position,
       allowWalkinWhatsapp: queueSettingsResult.data.allow_walkin_whatsapp,
       allowWalkinKiosk: queueSettingsResult.data.allow_walkin_kiosk,
-      // When false, walk-ins (WhatsApp/kiosk/manual) can join this
-      // tenant's queue without picking a service first — some business
-      // models (e.g. a single-line clinic) have nothing to choose
-      // between. See queue_entries.service_id (nullable) and
-      // submitKioskQueueJoin/the WhatsApp state machine, which both check
-      // this flag before deciding whether to prompt for a service.
-      requireServiceSelection: queueSettingsResult.data.require_service_selection,
     },
     messageSettings: {
       aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,

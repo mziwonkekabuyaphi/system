@@ -236,6 +236,9 @@ export interface AdminKioskSettings {
    *  choice screen, or right after welcome on a booking-only/queue-only
    *  kiosk). Defaults to "What are you here for?". */
   serviceScreenTitle: string | null
+  /** Heading on the date-picker screen (booking path only, right after
+   *  the service picker). Defaults to "Which day works for you?". */
+  dateScreenTitle: string | null
 }
 
 // ============================================================================
