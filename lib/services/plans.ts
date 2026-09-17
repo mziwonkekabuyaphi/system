@@ -6,15 +6,30 @@
  * gateway. `plans.price_cents` is display-only for now. What this DOES
  * do is give the rest of the app a single place to ask:
  *   - "what plan is this tenant on, and what does it include?"
- *   - "has this tenant hit their monthly visit cap?"
+ *   - "has this tenant hit a HARD block on visits?" (Free only — see below)
  *   - "is this module even available on their plan?"
+ *   - "what would this tenant's bill look like right now?"
  *
- * A "visit" = one booking or one queue join. That's the unit that
- * actually costs the platform something (WhatsApp sends, infra), and the
- * natural thing to cap on a free tier. Usage is computed on the fly by
- * counting `bookings` + `queue_entries` created this calendar month —
- * no separate counter table to keep in sync, since tenant volumes here
- * are nowhere near the scale where that COUNT becomes expensive.
+ * A "visit" = one BILLABLE customer interaction: a queue entry that
+ * reached 'done', or a booking marked 'completed' that was never
+ * promoted into the queue (promoted ones are counted via their queue
+ * entry instead — see the migration for why that avoids double-billing).
+ *
+ * USAGE SOURCE OF TRUTH: the `billable_visits` ledger table, populated by
+ * DB triggers (trg_record_queue_billable_visit / trg_record_booking_
+ * billable_visit), NOT a live COUNT over `bookings`/`queue_entries`. That
+ * used to double-count any tenant with unify_with_queue=true (a booking
+ * promoted into a queue entry was counted on both tables). The ledger is
+ * idempotent by construction (unique(source, source_id)), so it's now the
+ * only place usage is ever computed from.
+ *
+ * BLOCKING VS. BILLING: only Free (price_per_visit_cents === null) has a
+ * hard visit cap — there's no rate to bill overage at, so
+ * assertWithinVisitLimit() throws once the 100 lifetime visits are used.
+ * Growth and Business both have a price_per_visit_cents, so they NEVER
+ * block; usage past visit_limit (Growth) or all usage (Business, whose
+ * visit_limit is null) simply becomes billable overage instead. See
+ * lib/services/billing-calculator.ts for the actual math.
  *
  * ENFORCEMENT POINTS (see call sites):
  *   - lib/services/booking.ts's createBooking() — checked before insert.
@@ -26,6 +41,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { calculateBilling, type BillingCalculation } from "./billing-calculator"
 
 export interface Plan {
   key: string
@@ -50,23 +66,29 @@ export interface PlanUsage {
   visitsUsed: number
   /** Visits in the current calendar month specifically -- always this-month
    *  regardless of visitLimitPeriod, since this is what a metered plan's
-   *  estimatedAmountCentsThisMonth is computed from. For a monthly-period
-   *  capped plan this is the same number as visitsUsed. */
+   *  billing calc is computed from. For a monthly-period capped plan this
+   *  is the same number as visitsUsed. */
   visitsThisMonth: number
-  visitsRemaining: number | null // null = unlimited
+  visitsRemaining: number | null // null = unlimited (Growth/Business never run out, they bill overage instead)
+  /** True only for Free once its 100 lifetime visits are used up -- see
+   *  the "BLOCKING VS. BILLING" note above. Always false for Growth/Business. */
   atLimit: boolean
-  /** Only meaningful for a metered plan -- the running total this month
-   *  would cost at month-end if usage stopped right now. Not a final
-   *  bill; tenant_invoices is generated after the period actually ends. */
-  estimatedAmountCentsThisMonth: number | null
+  /** The full base-fee + overage breakdown for the current month, from
+   *  the shared calculator. Present for every plan, including Free (where
+   *  it's always a R0 total) so the UI has one consistent shape to render. */
+  currentBilling: BillingCalculation
+}
+
+export interface VisitBreakdown {
+  /** Completed queue visits (walk-ins and unified bookings alike --
+   *  anything that reached the queue and hit 'done'). */
+  queueVisits: number
+  /** Completed bookings that were never promoted into the queue. */
+  bookingVisits: number
+  total: number
 }
 
 export const PLAN_VISIT_LIMIT_REACHED = "PLAN_VISIT_LIMIT_REACHED"
-
-function startOfCurrentMonthUtc(): string {
-  const now = new Date()
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
-}
 
 function rowToPlan(row: {
   key: string
@@ -151,59 +173,92 @@ export async function isModuleAllowedForPlan(
   return Boolean(data)
 }
 
-/** Count of bookings+queue_entries for a tenant, optionally restricted to
- *  created_at >= sinceISO. Omitting sinceISO counts all-time -- used for
- *  a lifetime-period plan, where there's no month to reset against. */
-async function countVisits(supabase: SupabaseClient, tenantId: string, sinceISO?: string): Promise<number> {
-  let bookingsQuery = supabase.from("bookings").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)
-  let queueQuery = supabase.from("queue_entries").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId)
-
-  if (sinceISO) {
-    bookingsQuery = bookingsQuery.gte("created_at", sinceISO)
-    queueQuery = queueQuery.gte("created_at", sinceISO)
-  }
-
-  const [bookingsResult, queueResult] = await Promise.all([bookingsQuery, queueQuery])
-
-  if (bookingsResult.error) throw new Error(`Failed to count bookings: ${bookingsResult.error.message}`)
-  if (queueResult.error) throw new Error(`Failed to count queue entries: ${queueResult.error.message}`)
-
-  return (bookingsResult.count ?? 0) + (queueResult.count ?? 0)
+/** "2026-09" for the current UTC calendar month -- matches how the
+ *  billable_visits.billing_period column is populated by the DB triggers,
+ *  so counting against it is always an exact string match, not a range
+ *  scan with its own timezone-rounding edge cases. */
+function currentBillingPeriodUtc(): string {
+  const now = new Date()
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0")
+  return `${now.getUTCFullYear()}-${month}`
 }
 
-/** This tenant's usage against their current plan's visit cap.
+/** Count of billable_visits ledger rows for a tenant. Omitting
+ *  billingPeriod counts all-time -- used for a lifetime-period plan
+ *  (Free), where there's no month to reset against. This is the ONLY
+ *  place visit usage is counted from: the ledger is idempotent
+ *  (unique(source, source_id) in the DB), so unlike counting raw
+ *  bookings+queue_entries directly, a booking that got promoted into the
+ *  queue is never counted twice. */
+async function countBillableVisits(supabase: SupabaseClient, tenantId: string, billingPeriod?: string): Promise<number> {
+  let query = supabase
+    .from("billable_visits")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+
+  if (billingPeriod) query = query.eq("billing_period", billingPeriod)
+
+  const { count, error } = await query
+  if (error) throw new Error(`Failed to count billable visits: ${error.message}`)
+  return count ?? 0
+}
+
+/** Breakdown of this tenant's current-period visits by source, for the
+ *  billing dashboard's "Visit Usage" transparency section. Free (lifetime
+ *  period) breaks down all-time instead of the current month, matching
+ *  how its visitsUsed is computed below. */
+export async function getTenantVisitBreakdown(supabase: SupabaseClient, tenantId: string): Promise<VisitBreakdown> {
+  const plan = await getTenantPlan(supabase, tenantId)
+  const billingPeriod = plan.visitLimit !== null && plan.visitLimitPeriod === "lifetime" ? undefined : currentBillingPeriodUtc()
+
+  let query = supabase.from("billable_visits").select("source").eq("tenant_id", tenantId)
+  if (billingPeriod) query = query.eq("billing_period", billingPeriod)
+
+  const { data, error } = await query
+  if (error) throw new Error(`Failed to load visit breakdown: ${error.message}`)
+
+  const rows = data ?? []
+  const queueVisits = rows.filter((r) => r.source === "queue_entry").length
+  const bookingVisits = rows.filter((r) => r.source === "booking").length
+  return { queueVisits, bookingVisits, total: queueVisits + bookingVisits }
+}
+
+/** This tenant's usage against their current plan, plus what it would
+ *  currently bill to.
  *
- *  A 'monthly' plan (visitLimit not null) resets every calendar month --
- *  visitsUsed is this month's count. A 'lifetime' plan (the free/Mahala
- *  tier: 100 visits, once-off) never resets -- visitsUsed is the tenant's
- *  all-time count, so once they've used their 100 they're at atLimit for
- *  good and createBooking()/joinQueue() stay blocked until they upgrade,
- *  not just until next month.
+ *  A 'monthly' plan resets every calendar month -- visitsUsed is this
+ *  month's ledger count. Free's 'lifetime' period never resets --
+ *  visitsUsed is the tenant's all-time ledger count, so once they've used
+ *  their 100 they stay blocked for good, not just until next month.
  *
- *  visitsThisMonth is always this-month regardless of period, since a
- *  metered plan's estimatedAmountCentsThisMonth (an unlimited-visitLimit
- *  plan) is billed monthly no matter what. */
+ *  visitsThisMonth is always this-month regardless of period, since
+ *  currentBilling (Growth/Business overage) is always a this-month figure
+ *  -- a lifetime plan's currentBilling is a flat R0, so this distinction
+ *  only actually matters once a tenant is on a paid plan.
+ *
+ *  atLimit is a HARD BLOCK, and only Free can ever hit it: Growth and
+ *  Business both have a price_per_visit_cents, so usage past visitLimit
+ *  becomes billable overage (see calculateBilling) instead of being
+ *  blocked. Free has no rate to bill at, so there's nothing else it CAN
+ *  do once the 100 lifetime visits are gone. */
 export async function getTenantPlanUsage(supabase: SupabaseClient, tenantId: string): Promise<PlanUsage> {
   const plan = await getTenantPlan(supabase, tenantId)
-  const monthStart = startOfCurrentMonthUtc()
+  const billingPeriod = currentBillingPeriodUtc()
 
-  const visitsThisMonth = await countVisits(supabase, tenantId, monthStart)
+  const visitsThisMonth = await countBillableVisits(supabase, tenantId, billingPeriod)
 
   let visitsUsed: number
-  if (plan.visitLimit === null) {
-    visitsUsed = visitsThisMonth // unlimited: nothing to gate on, this-month is fine to report
-  } else if (plan.visitLimitPeriod === "lifetime") {
-    visitsUsed = await countVisits(supabase, tenantId) // all-time, no created_at filter
+  if (plan.visitLimitPeriod === "lifetime") {
+    visitsUsed = await countBillableVisits(supabase, tenantId) // all-time, no billing_period filter
   } else {
     visitsUsed = visitsThisMonth
   }
 
   const visitsRemaining = plan.visitLimit === null ? null : Math.max(plan.visitLimit - visitsUsed, 0)
-  const atLimit = plan.visitLimit !== null && visitsUsed >= plan.visitLimit
-  const estimatedAmountCentsThisMonth =
-    plan.pricePerVisitCents === null ? null : visitsThisMonth * plan.pricePerVisitCents
+  const atLimit = plan.pricePerVisitCents === null && plan.visitLimit !== null && visitsUsed >= plan.visitLimit
+  const currentBilling = calculateBilling(plan, visitsThisMonth)
 
-  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, estimatedAmountCentsThisMonth }
+  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, currentBilling }
 }
 
 /**
@@ -242,6 +297,8 @@ export interface GeneratedInvoice {
   tenantId: string
   visitCount: number
   amountCents: number
+  baseFeeCents: number
+  overageVisits: number
 }
 
 /** Previous completed calendar month, as [start, end) in UTC. */
@@ -266,11 +323,16 @@ function previousMonthRangeUtc(): { start: Date; end: Date; periodStart: string;
  * (the cron route) should log this for visibility.
  */
 export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
-  const { start, end, periodStart, periodEnd } = previousMonthRangeUtc()
+  const { periodStart, periodEnd } = previousMonthRangeUtc()
+  const billingPeriod = periodStart.slice(0, 7) // "2026-09-01" -> "2026-09", matches billable_visits.billing_period
 
+  // "Metered" here just means "has a per-visit rate at all" -- Free
+  // (price_per_visit_cents null) never gets an invoice row; Growth and
+  // Business both do, even in a month with 0 overage, because they still
+  // owe their flat base_fee_cents.
   const { data: meteredTenants, error: tenantsError } = await supabase
     .from("tenants")
-    .select("id, plan, plans!inner(key, price_per_visit_cents)")
+    .select("id, plan, plans!inner(key, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents)")
     .not("plans.price_per_visit_cents", "is", null)
 
   if (tenantsError) throw new Error(`Failed to load metered tenants: ${tenantsError.message}`)
@@ -278,7 +340,15 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
   const generated: GeneratedInvoice[] = []
 
   for (const tenant of meteredTenants ?? []) {
-    const planRow = (tenant as any).plans as { key: string; price_per_visit_cents: number }
+    const planRow = (tenant as any).plans as {
+      key: string
+      price_cents: number
+      currency: string
+      visit_limit: number | null
+      visit_limit_period: "monthly" | "lifetime"
+      staff_limit: number | null
+      price_per_visit_cents: number
+    }
     const tenantId = (tenant as any).id as string
 
     // Skip if this tenant already has an invoice for this exact period —
@@ -294,25 +364,23 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
 
     if (existing) continue
 
-    const [bookingsResult, queueResult] = await Promise.all([
-      supabase
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", tenantId)
-        .gte("created_at", start.toISOString())
-        .lt("created_at", end.toISOString()),
-      supabase
-        .from("queue_entries")
-        .select("id", { count: "exact", head: true })
-        .eq("tenant_id", tenantId)
-        .gte("created_at", start.toISOString())
-        .lt("created_at", end.toISOString()),
-    ])
+    // Ledger-backed, not a raw COUNT over bookings+queue_entries -- see
+    // the header comment above countBillableVisits for why that matters.
+    const visitCount = await countBillableVisits(supabase, tenantId, billingPeriod)
 
-    const visitCount = (bookingsResult.count ?? 0) + (queueResult.count ?? 0)
-    if (visitCount === 0) continue // no usage, nothing to bill
+    const plan: Plan = rowToPlan({
+      key: planRow.key,
+      name: planRow.key, // invoicing only needs the numbers, not the display name
+      price_cents: planRow.price_cents,
+      currency: planRow.currency,
+      visit_limit: planRow.visit_limit,
+      visit_limit_period: planRow.visit_limit_period,
+      staff_limit: planRow.staff_limit,
+      price_per_visit_cents: planRow.price_per_visit_cents,
+    })
+    const calc = calculateBilling(plan, visitCount)
 
-    const amountCents = visitCount * planRow.price_per_visit_cents
+    if (calc.totalCents === 0) continue // nothing owed at all (shouldn't happen once a plan has a base fee, but stay safe)
 
     const { error: insertError } = await supabase.from("tenant_invoices").insert([
       {
@@ -321,8 +389,11 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
         period_start: periodStart,
         period_end: periodEnd,
         visit_count: visitCount,
-        rate_cents: planRow.price_per_visit_cents,
-        amount_cents: amountCents,
+        rate_cents: calc.perVisitRateCents ?? 0,
+        amount_cents: calc.totalCents,
+        base_fee_cents: calc.baseFeeCents,
+        included_visits: calc.includedVisits,
+        overage_visits: calc.overageVisits,
       },
     ])
 
@@ -331,7 +402,13 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
       continue
     }
 
-    generated.push({ tenantId, visitCount, amountCents })
+    generated.push({
+      tenantId,
+      visitCount,
+      amountCents: calc.totalCents,
+      baseFeeCents: calc.baseFeeCents,
+      overageVisits: calc.overageVisits,
+    })
   }
 
   return generated
