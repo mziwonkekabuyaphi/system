@@ -42,6 +42,14 @@
  *     bordered tiles — the darker gradient stop each card uses is
  *     derived from branding.primaryColor/secondaryColor via darkenHex()
  *     below, so a tenant only ever has to pick their one brand color.
+ *     Text/icon color on each card is NOT hardcoded white: this is
+ *     multi-tenant, so a tenant's primaryColor/secondaryColor could be
+ *     anything, including something light or white itself — hardcoding
+ *     white text produced invisible white-on-white cards for exactly
+ *     that case. tileContrastTokens() below computes each color's
+ *     perceived brightness and picks white or dark-ink text/icon/overlay
+ *     tokens accordingly, so every tenant's card stays legible regardless
+ *     of which color they set.
  *
  * FOOTER: `branding.removePoweredBy` is the same flag the admin Private
  * Label / Kiosk panels write via updateBranding() in
@@ -70,25 +78,79 @@ import {
 } from "@/app/kiosk/[slug]/actions"
 import { printKioskTicket } from "@/lib/kiosk/printTicket"
 
-// Darkens a "#rrggbb" hex color by `amount` (0-1) for the choice screen's
-// button gradients — tenants only ever configure ONE flat color each for
+// Parses "#rgb" or "#rrggbb" into 0-255 channels. Returns null for
+// anything else (bad/legacy value in tenant_branding) so callers can fall
+// back safely instead of producing garbage CSS.
+function parseHex(hex: string): { r: number; g: number; b: number } | null {
+  const value = hex.trim()
+
+  const short = /^#([0-9a-fA-F]{3})$/.exec(value)
+  if (short) {
+    const [r, g, b] = short[1].split("").map((c) => parseInt(c + c, 16))
+    return { r, g, b }
+  }
+
+  const long = /^#([0-9a-fA-F]{6})$/.exec(value)
+  if (long) {
+    const num = parseInt(long[1], 16)
+    return { r: (num >> 16) & 0xff, g: (num >> 8) & 0xff, b: num & 0xff }
+  }
+
+  return null
+}
+
+// Darkens a hex color by `amount` (0-1) for the choice screen's button
+// gradients — tenants only ever configure ONE flat color each for
 // primary/secondary (branding.primaryColor / secondaryColor), so the
 // second, darker stop needed for a convincing gradient is derived here
 // rather than asking every tenant to also pick a matching dark shade.
-// Falls back to the original color unchanged if it isn't a plain 6-digit
-// hex (e.g. a bad/legacy value in tenant_branding).
+// Falls back to the original color unchanged if it can't be parsed.
 function darkenHex(hex: string, amount: number): string {
-  const match = /^#([0-9a-fA-F]{6})$/.exec(hex.trim())
-  if (!match) return hex
-  const num = parseInt(match[1], 16)
-  const channel = (shift: number) => {
-    const value = (num >> shift) & 0xff
-    return Math.max(0, Math.round(value * (1 - amount)))
-  }
-  const r = channel(16)
-  const g = channel(8)
-  const b = channel(0)
+  const rgb = parseHex(hex)
+  if (!rgb) return hex
+  const channel = (value: number) => Math.max(0, Math.round(value * (1 - amount)))
+  const r = channel(rgb.r)
+  const g = channel(rgb.g)
+  const b = channel(rgb.b)
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
+}
+
+// BUG FIX: the choice screen's cards used to hardcode white text/icons on
+// top of whatever solid color a tenant picked. That's invisible the
+// moment a tenant's brand color IS white, or close to it (light gray,
+// pale pastel, etc.) — exactly what happened here. Since this is
+// multi-tenant and any shop can set primaryColor/secondaryColor to
+// anything, "assume it's dark enough for white text" isn't safe.
+//
+// This computes standard YIQ perceived brightness
+// (https://24ways.org/2010/calculating-color-contrast) for a color and
+// picks readable ink-dark or white text/overlay tokens accordingly, so a
+// tenant's card stays legible no matter which color they choose — no
+// admin-side "pick a readable color" burden, no silent white-on-white.
+function tileContrastTokens(hex: string) {
+  const rgb = parseHex(hex)
+  // Unparseable value: keep the original (dark-brand) assumption rather
+  // than guessing, since every shipped default color is dark.
+  if (!rgb) {
+    return {
+      on: "#ffffff",
+      onMuted: "rgba(255, 255, 255, 0.85)",
+      overlay: "rgba(255, 255, 255, 0.2)",
+    }
+  }
+  const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000
+  const isLight = brightness > 150
+  return isLight
+    ? {
+        on: "#171412",
+        onMuted: "rgba(23, 20, 18, 0.7)",
+        overlay: "rgba(23, 20, 18, 0.1)",
+      }
+    : {
+        on: "#ffffff",
+        onMuted: "rgba(255, 255, 255, 0.85)",
+        overlay: "rgba(255, 255, 255, 0.2)",
+      }
 }
 
 // idle | printing | success | failed — drives the small status line and
@@ -368,20 +430,26 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
   const canSubmit = name.trim().length >= 2 && phone.trim().length >= 9
 
-  const cssVars = useMemo(
-    () =>
-      ({
-        "--ink": "#171412",
-        "--paper": "#FAF8F5",
-        "--accent": branding.primaryColor,
-        "--accent-deep": darkenHex(branding.primaryColor, 0.22),
-        "--amber": branding.secondaryColor,
-        "--amber-deep": darkenHex(branding.secondaryColor, 0.22),
-        "--line": "#E4DED4",
-        "--muted": "#6B655C",
-      }) as React.CSSProperties,
-    [branding.primaryColor, branding.secondaryColor],
-  )
+  const cssVars = useMemo(() => {
+    const accentTokens = tileContrastTokens(branding.primaryColor)
+    const amberTokens = tileContrastTokens(branding.secondaryColor)
+    return {
+      "--ink": "#171412",
+      "--paper": "#FAF8F5",
+      "--accent": branding.primaryColor,
+      "--accent-deep": darkenHex(branding.primaryColor, 0.22),
+      "--accent-on": accentTokens.on,
+      "--accent-on-muted": accentTokens.onMuted,
+      "--accent-overlay": accentTokens.overlay,
+      "--amber": branding.secondaryColor,
+      "--amber-deep": darkenHex(branding.secondaryColor, 0.22),
+      "--amber-on": amberTokens.on,
+      "--amber-on-muted": amberTokens.onMuted,
+      "--amber-overlay": amberTokens.overlay,
+      "--line": "#E4DED4",
+      "--muted": "#6B655C",
+    } as React.CSSProperties
+  }, [branding.primaryColor, branding.secondaryColor])
 
   return (
     <div className="kiosk" style={cssVars}>
@@ -608,9 +676,11 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
         }
         .tileBooking {
           background: linear-gradient(155deg, var(--accent), var(--accent-deep));
+          color: var(--accent-on);
         }
         .tileQueue {
           background: linear-gradient(155deg, var(--amber), var(--amber-deep));
+          color: var(--amber-on);
         }
         .tile:active {
           transform: scale(0.97);
@@ -623,7 +693,14 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
           width: 64px;
           height: 64px;
           border-radius: 16px;
-          background: rgba(255, 255, 255, 0.2);
+        }
+        .tileBooking .tileIcon,
+        .tileBooking .tileArrow {
+          background: var(--accent-overlay);
+        }
+        .tileQueue .tileIcon,
+        .tileQueue .tileArrow {
+          background: var(--amber-overlay);
         }
         .tileText {
           display: flex;
@@ -633,13 +710,18 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
         .tileTitle {
           font-size: 30px;
           font-weight: 800;
-          color: #fff;
+          color: inherit;
           line-height: 1.15;
         }
         .tileSub {
           font-size: 18px;
           font-weight: 500;
-          color: rgba(255, 255, 255, 0.85);
+        }
+        .tileBooking .tileSub {
+          color: var(--accent-on-muted);
+        }
+        .tileQueue .tileSub {
+          color: var(--amber-on-muted);
         }
         .tileArrow {
           margin-top: 4px;
@@ -649,8 +731,8 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
           width: 40px;
           height: 40px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.16);
           align-self: flex-end;
+          color: inherit;
         }
         @media (max-width: 720px) {
           .tiles {
@@ -665,13 +747,13 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
 function CalendarIcon() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="3" y="5" width="18" height="16" rx="3" stroke="#fff" strokeWidth="1.8" />
-      <path d="M3 9.5H21" stroke="#fff" strokeWidth="1.8" />
-      <path d="M8 3V6.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M16 3V6.5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="8" cy="13.5" r="1.3" fill="#fff" />
-      <circle cx="12" cy="13.5" r="1.3" fill="#fff" />
-      <circle cx="16" cy="13.5" r="1.3" fill="#fff" />
+      <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3 9.5H21" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 3V6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M16 3V6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="8" cy="13.5" r="1.3" fill="currentColor" />
+      <circle cx="12" cy="13.5" r="1.3" fill="currentColor" />
+      <circle cx="16" cy="13.5" r="1.3" fill="currentColor" />
     </svg>
   )
 }
@@ -679,10 +761,10 @@ function CalendarIcon() {
 function QueueIcon() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="8" cy="8" r="3" stroke="#fff" strokeWidth="1.8" />
-      <circle cx="17" cy="9" r="2.4" stroke="#fff" strokeWidth="1.8" />
-      <path d="M2.5 20c0-3.6 2.9-6 5.5-6s5.5 2.4 5.5 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M14.5 20c0-2.6 1.9-4.6 4-4.6s4 2 4 4.6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="17" cy="9" r="2.4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M2.5 20c0-3.6 2.9-6 5.5-6s5.5 2.4 5.5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M14.5 20c0-2.6 1.9-4.6 4-4.6s4 2 4 4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   )
 }
@@ -690,8 +772,8 @@ function QueueIcon() {
 function ArrowIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M5 12H19" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-      <path d="M13 6L19 12L13 18" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M13 6L19 12L13 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
