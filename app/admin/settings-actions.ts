@@ -81,15 +81,18 @@
  *
  * Screen wording (choiceTitle / bookingCardTitle / bookingCardSubtitle /
  * queueCardTitle / queueCardSubtitle / serviceScreenTitle /
- * dateScreenTitle) is the multi-tenant customization layer for copy that
- * used to be hardcoded in components/kiosk/KioskApp.tsx — every tenant
- * can now rename "Book a time" / "Join the queue" / "What are you here
- * for?" / "Which day works for you?" (and their subtitles) to match their
- * own business without a code change. Length-capped, not content-
- * validated: this is free-text a tenant controls for their own kiosk,
- * same trust level as tagline. An empty string is normalized to null here
- * so the kiosk route's fallback logic only has one "unset" value to
- * check.
+ * dateScreenTitle / timeScreenTitle / detailsScreenTitle /
+ * ticketBookingEyebrow / ticketQueueEyebrow) is the multi-tenant
+ * customization layer for copy that used to be hardcoded in
+ * components/kiosk/KioskApp.tsx — every tenant can now rename "Book a
+ * time" / "Join the queue" / "What are you here for?" / "Which day works
+ * for you?" / "Pick a time" / "Almost done — who are we booking for?" /
+ * "Your booking" / "Your place in line" (and the choice cards' subtitles)
+ * to match their own business without a code change. Length-capped, not
+ * content-validated: this is free-text a tenant controls for their own
+ * kiosk, same trust level as tagline. An empty string is normalized to
+ * null here so the kiosk route's fallback logic only has one "unset"
+ * value to check.
  *
  * registrationType is typed as AdminKioskRegistrationType from ./types,
  * NOT re-imported from app/kiosk/[slug]/page.tsx — this file is
@@ -123,6 +126,9 @@ const MAX_CARD_TITLE_LENGTH = 40
 const MAX_CARD_SUBTITLE_LENGTH = 100
 const MAX_SERVICE_SCREEN_TITLE_LENGTH = 80
 const MAX_DATE_SCREEN_TITLE_LENGTH = 80
+const MAX_TIME_SCREEN_TITLE_LENGTH = 40
+const MAX_DETAILS_SCREEN_TITLE_LENGTH = 80
+const MAX_TICKET_EYEBROW_LENGTH = 30
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 // Mirrors booking_settings' own CHECK constraints — validated here too so
@@ -300,6 +306,16 @@ export async function updateKioskSettings(input: {
   /** Heading on the date-picker screen (booking path). Optional/nullable,
    *  same clear-to-default posture as the rest of this wording block. */
   dateScreenTitle?: string | null
+  /** Prefix on the time-picker screen; the kiosk appends " — {date}"
+   *  itself. Optional/nullable. */
+  timeScreenTitle?: string | null
+  /** Heading on the name/phone screen (both booking and queue paths).
+   *  Optional/nullable. */
+  detailsScreenTitle?: string | null
+  /** Ticket-screen eyebrow label, booking path. Optional/nullable. */
+  ticketBookingEyebrow?: string | null
+  /** Ticket-screen eyebrow label, queue path. Optional/nullable. */
+  ticketQueueEyebrow?: string | null
 }): Promise<ActionResult> {
   try {
     if (
@@ -336,6 +352,10 @@ export async function updateKioskSettings(input: {
       { label: "Queue card subtitle", value: input.queueCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
       { label: "Service screen title", value: input.serviceScreenTitle, max: MAX_SERVICE_SCREEN_TITLE_LENGTH },
       { label: "Date screen title", value: input.dateScreenTitle, max: MAX_DATE_SCREEN_TITLE_LENGTH },
+      { label: "Time screen title", value: input.timeScreenTitle, max: MAX_TIME_SCREEN_TITLE_LENGTH },
+      { label: "Details screen title", value: input.detailsScreenTitle, max: MAX_DETAILS_SCREEN_TITLE_LENGTH },
+      { label: "Ticket booking label", value: input.ticketBookingEyebrow, max: MAX_TICKET_EYEBROW_LENGTH },
+      { label: "Ticket queue label", value: input.ticketQueueEyebrow, max: MAX_TICKET_EYEBROW_LENGTH },
     ]
     for (const field of wordingFields) {
       if (field.value && field.value.trim().length > field.max) {
@@ -359,6 +379,10 @@ export async function updateKioskSettings(input: {
         queue_card_subtitle: input.queueCardSubtitle?.trim() || null,
         service_screen_title: input.serviceScreenTitle?.trim() || null,
         date_screen_title: input.dateScreenTitle?.trim() || null,
+        time_screen_title: input.timeScreenTitle?.trim() || null,
+        details_screen_title: input.detailsScreenTitle?.trim() || null,
+        ticket_booking_eyebrow: input.ticketBookingEyebrow?.trim() || null,
+        ticket_queue_eyebrow: input.ticketQueueEyebrow?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

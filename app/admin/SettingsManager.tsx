@@ -435,6 +435,10 @@ const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
 const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
 const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
+const DEFAULT_TIME_SCREEN_TITLE = "Pick a time"
+const DEFAULT_DETAILS_SCREEN_TITLE = "Almost done — who are we booking for?"
+const DEFAULT_TICKET_BOOKING_EYEBROW = "Your booking"
+const DEFAULT_TICKET_QUEUE_EYEBROW = "Your place in line"
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [tagline, setTagline] = useState(initial.tagline ?? "")
@@ -448,6 +452,10 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const [queueCardSubtitle, setQueueCardSubtitle] = useState(initial.queueCardSubtitle ?? "")
   const [serviceScreenTitle, setServiceScreenTitle] = useState(initial.serviceScreenTitle ?? "")
   const [dateScreenTitle, setDateScreenTitle] = useState(initial.dateScreenTitle ?? "")
+  const [timeScreenTitle, setTimeScreenTitle] = useState(initial.timeScreenTitle ?? "")
+  const [detailsScreenTitle, setDetailsScreenTitle] = useState(initial.detailsScreenTitle ?? "")
+  const [ticketBookingEyebrow, setTicketBookingEyebrow] = useState(initial.ticketBookingEyebrow ?? "")
+  const [ticketQueueEyebrow, setTicketQueueEyebrow] = useState(initial.ticketQueueEyebrow ?? "")
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -466,6 +474,10 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
         queueCardSubtitle: queueCardSubtitle.trim() || null,
         serviceScreenTitle: serviceScreenTitle.trim() || null,
         dateScreenTitle: dateScreenTitle.trim() || null,
+        timeScreenTitle: timeScreenTitle.trim() || null,
+        detailsScreenTitle: detailsScreenTitle.trim() || null,
+        ticketBookingEyebrow: ticketBookingEyebrow.trim() || null,
+        ticketQueueEyebrow: ticketQueueEyebrow.trim() || null,
       })
       setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
     })
@@ -574,6 +586,69 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
             </FieldRow>
           </div>
         )}
+
+        {registrationType !== "queue" && (
+          <div>
+            <FieldRow
+              label="Time screen heading"
+              hint={`Shown on the booking path, right before the time grid. The kiosk adds the date automatically (e.g. "${DEFAULT_TIME_SCREEN_TITLE} — Today"), so just enter the part before the date. Defaults to "${DEFAULT_TIME_SCREEN_TITLE}".`}
+            >
+              <input
+                className={inputClass}
+                value={timeScreenTitle}
+                onChange={(e) => setTimeScreenTitle(e.target.value)}
+                placeholder={DEFAULT_TIME_SCREEN_TITLE}
+                maxLength={40}
+              />
+            </FieldRow>
+          </div>
+        )}
+
+        <div>
+          <FieldRow
+            label="Name/phone screen heading"
+            hint={`Shown on every kiosk path, right before submitting. Defaults to "${DEFAULT_DETAILS_SCREEN_TITLE}".`}
+          >
+            <input
+              className={inputClass}
+              value={detailsScreenTitle}
+              onChange={(e) => setDetailsScreenTitle(e.target.value)}
+              placeholder={DEFAULT_DETAILS_SCREEN_TITLE}
+              maxLength={80}
+            />
+          </FieldRow>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {registrationType !== "queue" && (
+            <FieldRow
+              label="Ticket label — booking"
+              hint={`Small label above the ticket number on the final screen. Defaults to "${DEFAULT_TICKET_BOOKING_EYEBROW}".`}
+            >
+              <input
+                className={inputClass}
+                value={ticketBookingEyebrow}
+                onChange={(e) => setTicketBookingEyebrow(e.target.value)}
+                placeholder={DEFAULT_TICKET_BOOKING_EYEBROW}
+                maxLength={30}
+              />
+            </FieldRow>
+          )}
+          {registrationType !== "booking" && (
+            <FieldRow
+              label="Ticket label — queue"
+              hint={`Small label above the ticket number on the final screen. Defaults to "${DEFAULT_TICKET_QUEUE_EYEBROW}".`}
+            >
+              <input
+                className={inputClass}
+                value={ticketQueueEyebrow}
+                onChange={(e) => setTicketQueueEyebrow(e.target.value)}
+                placeholder={DEFAULT_TICKET_QUEUE_EYEBROW}
+                maxLength={30}
+              />
+            </FieldRow>
+          )}
+        </div>
 
         {registrationType === "both" && (
           <div className="border-t border-stone-200 pt-4">

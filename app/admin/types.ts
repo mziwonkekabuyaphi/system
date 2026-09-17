@@ -236,6 +236,26 @@ export interface AdminKioskSettings {
    *  choice screen, or right after welcome on a booking-only/queue-only
    *  kiosk). Defaults to "What are you here for?". */
   serviceScreenTitle: string | null
+  /** Heading on the date-picker screen (booking path only, right after
+   *  the service picker). Defaults to "Which day works for you?". */
+  dateScreenTitle: string | null
+  /** Heading prefix on the time-picker screen (booking path only, right
+   *  after the date picker — or right after the service picker on a
+   *  same-day-only kiosk, since that path skips the date screen). The
+   *  kiosk appends " — {date label}" itself (e.g. "Pick a time — Today"
+   *  or "Pick a time — Fri 19 Sep"), so this field is just the prefix.
+   *  Defaults to "Pick a time". */
+  timeScreenTitle: string | null
+  /** Heading on the name/phone screen — the last input screen before
+   *  submitting, for both the booking and queue paths. Defaults to
+   *  "Almost done — who are we booking for?". */
+  detailsScreenTitle: string | null
+  /** Small label above the ticket number on the final confirmation
+   *  screen, booking path. Defaults to "Your booking". */
+  ticketBookingEyebrow: string | null
+  /** Small label above the ticket number on the final confirmation
+   *  screen, queue path. Defaults to "Your place in line". */
+  ticketQueueEyebrow: string | null
 }
 
 // ============================================================================
