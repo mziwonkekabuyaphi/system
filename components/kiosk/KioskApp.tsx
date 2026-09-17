@@ -37,6 +37,10 @@
  *     every business (a barbershop vs a clinic vs a car wash all want
  *     different copy). ChoiceScreen just renders whatever page.tsx
  *     resolved, same as every other branding.* field.
+ *   - serviceScreenTitle is the same idea for the very next screen,
+ *     ServiceScreen's "What are you here for?" heading — shown on EVERY
+ *     registrationType (booking-only, queue-only, or both), since every
+ *     path passes through picking a service.
  *   - ChoiceScreen's two cards are solid, filled buttons (accent /
  *     secondary gradient, icon, shadow) rather than plain white
  *     bordered tiles — the darker gradient stop each card uses is
@@ -465,6 +469,7 @@ export function KioskApp({ slug, branding, initialServices }: KioskAppProps) {
 
       {step === "service" && (
         <ServiceScreen
+          title={branding.serviceScreenTitle}
           services={services}
           onSelect={chooseService}
           busy={busy}
@@ -783,11 +788,13 @@ function ArrowIcon() {
 // ----------------------------------------------------------------------------
 
 function ServiceScreen({
+  title,
   services,
   onSelect,
   busy,
   error,
 }: {
+  title: string
   services: CatalogService[]
   onSelect: (service: CatalogService) => void
   busy: boolean
@@ -795,7 +802,7 @@ function ServiceScreen({
 }) {
   if (services.length === 0) {
     return (
-      <Screen title="What are you here for?">
+      <Screen title={title}>
         <p className="empty">No services are available right now. Please ask a member of staff.</p>
         <style jsx>{`
           .empty {
@@ -809,7 +816,7 @@ function ServiceScreen({
   }
 
   return (
-    <Screen title="What are you here for?" error={error} busy={busy}>
+    <Screen title={title} error={error} busy={busy}>
       <div className="grid">
         {services.map((service) => (
           <button key={service.id} className="tile" onClick={() => onSelect(service)} type="button" disabled={busy}>
