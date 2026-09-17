@@ -389,16 +389,30 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
       setError(result.error)
       return
     }
-    setDateOptions(Array.isArray(result.data) ? result.data : [])
+    const options = Array.isArray(result.data) ? result.data : []
+    setDateOptions(options)
+
+    // maxAdvanceDays = 0 ("same-day booking only") makes buildDateOptions
+    // return exactly one option — today. Showing a date screen with a
+    // single button to tap is a wasted step, so go straight to the time
+    // grid for it instead. This also naturally covers any other tenant
+    // config that happens to leave only one day bookable, not just the
+    // maxAdvanceDays = 0 case specifically.
+    if (options.length === 1) {
+      await chooseDate(options[0], service)
+      return
+    }
+
     setStep("date")
   }
 
-  const chooseDate = async (option: DateOption) => {
-    if (!selectedService) return
+  const chooseDate = async (option: DateOption, serviceOverride?: CatalogService) => {
+    const service = serviceOverride ?? selectedService
+    if (!service) return
     setSelectedDate(option)
     setError(null)
     setBusy(true)
-    const result = await fetchKioskTimeSlots(slug, selectedService.id, option.date)
+    const result = await fetchKioskTimeSlots(slug, service.id, option.date)
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
