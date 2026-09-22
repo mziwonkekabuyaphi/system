@@ -33,6 +33,11 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { calculatePeriodDeductions, inclusiveDayCount } from "@/lib/payroll/paye"
+import {
+  completeBooking as completeBookingRecord,
+  BOOKING_NOT_FOUND,
+  BOOKING_NOT_COMPLETABLE,
+} from "@/lib/services/booking"
 import type { AdminActivityCategory, AdminStaffInput } from "./types"
 
 type ActionResult = { ok: true } | { ok: false; error: string }
@@ -159,6 +164,42 @@ export async function cancelBooking(bookingId: string): Promise<ActionResult> {
   }
 
   await logActivity(supabase, tenantId!, { category: "bookings", action: "Cancelled a booking" })
+
+  revalidatePath("/admin")
+  return { ok: true }
+}
+
+/**
+ * Marks a booking as completed -- the customer showed up and was
+ * served. This is what feeds the billing ledger for a booking that was
+ * never promoted into the queue (see lib/services/booking.ts's
+ * completeBooking() and the billing migration's booking-side trigger).
+ * Membership-only, matching cancelBooking() right above it -- there's no
+ * bookings.manage-gated precedent anywhere else in this file to follow
+ * instead (see this file's header: only staff/payroll actions got their
+ * own specific permission keys). If a tighter gate is ever wanted here,
+ * swap the plain getTenantScopedClient() call for
+ * getTenantScopedClient("bookings.manage") -- the permission key already
+ * exists, it's just unused today.
+ */
+export async function completeBooking(bookingId: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  try {
+    await completeBookingRecord(tenantId!, bookingId)
+  } catch (err) {
+    if (err instanceof Error && err.message === BOOKING_NOT_FOUND) {
+      return { ok: false, error: "Booking not found." }
+    }
+    if (err instanceof Error && err.message === BOOKING_NOT_COMPLETABLE) {
+      return { ok: false, error: "This booking has already been completed or cancelled." }
+    }
+    console.error("[admin] Failed to complete booking", { tenantId, bookingId, error: err })
+    return { ok: false, error: "Couldn't mark this booking as completed." }
+  }
+
+  await logActivity(supabase, tenantId!, { category: "bookings", action: "Marked a booking as completed" })
 
   revalidatePath("/admin")
   return { ok: true }
