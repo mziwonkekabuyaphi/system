@@ -64,6 +64,11 @@
  * ASSUMPTIONS — carried over from the original, still true: no real
  * per-staff assignment tracking for walk-ins (see the simulation's doc
  * comment for how that's approximated).
+ *
+ * PLAN BILLING (new): joinQueue() now enforces the tenant's plan visit
+ * cap via lib/services/plans.ts's assertWithinVisitLimit(), same as
+ * booking.ts's createBooking() — see joinQueue()'s doc comment below for
+ * why this was missing here until now.
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
@@ -76,6 +81,7 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
+import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 
 import {
   servicesListMessage,
@@ -483,6 +489,16 @@ export interface JoinQueueResult {
  * disagree. The one place a `queue_entries` row gets created from a
  * customer-facing flow.
  *
+ * PLAN BILLING: enforces the tenant's plan visit cap via
+ * assertWithinVisitLimit(), same as booking.ts's createBooking() — run
+ * first and cheapest, before the ticket-number round trip or the insert,
+ * for the same "check first, write nothing on failure" reason. This was
+ * previously missing here entirely (createBooking() had it, joinQueue()
+ * didn't), which meant a walk-in queue join never counted against a
+ * Free-plan tenant's cap no matter how many they'd already used — fixed
+ * as part of the billing work; see PLAN_VISIT_LIMIT_REACHED handling in
+ * handleServiceSelection below for the customer-facing message.
+ *
  * TICKET NUMBER ASSIGNMENT: resolved via next_queue_ticket_number() —
  * atomic per (tenant, calendar day in the TENANT's own timezone) — and
  * included in the insert. This is a separate round-trip from the insert
@@ -505,6 +521,11 @@ export interface JoinQueueResult {
 export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
   const { service, phone } = params
   const supabase = getClientOrThrow()
+
+  // Plan enforcement runs first and cheapest — no point assigning a
+  // ticket number or claiming anything for a join that's about to be
+  // rejected because the tenant is over their monthly visit cap anyway.
+  await assertWithinVisitLimit(supabase, tenantId)
 
   // Same minimal (phone-only) customer creation as booking.ts's
   // createBooking() — queueing isn't gated behind full registration
@@ -579,6 +600,17 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
       nextState: null,
     }
   } catch (error) {
+    if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
+      // TODO: move this into lib/services/messages/queue.ts as a proper
+      // planLimitReachedMessage(), same as booking.ts's matching TODO —
+      // inlined here for now for the same reason: not guessing at that
+      // file's conventions mid-merge.
+      return {
+        reply: "Sorry, this shop has reached its queue limit for this month. Please try again next month, or contact them directly.",
+        buttons: [],
+        nextState: null,
+      }
+    }
     console.error("[queue] Error joining queue", { tenantId, error })
     return { reply: queueErrorMessage(), buttons: [], nextState: null }
   }

@@ -57,14 +57,33 @@
  * PLAN_VISIT_LIMIT_REACHED before any slot is claimed or written, same
  * "check first, write nothing on failure" posture as
  * assertBookingIsAllowed(). This only actually blocks anything for a
- * tenant on the free Mahala plan; metered plans (Growth/Business) have
- * no visit_limit, so this check is a no-op for them and they're never
- * stopped mid-booking — they just accrue toward next month's invoice.
+ * tenant on the Free plan (no per-visit rate to bill overage at, so a
+ * hard cap is the only option once its 100 lifetime visits are used).
+ * Growth and Business both have a price_per_visit_cents, so usage past
+ * their visit_limit (Growth's included 2,500/month) or all usage
+ * (Business, whose visit_limit is null) simply becomes billable overage
+ * on next month's invoice instead of blocking — see
+ * lib/services/billing-calculator.ts for the actual math.
  *
  * ASSUMPTIONS — unchanged from the original:
  *   - `services`/`staff`/`bookings` tables, "don't care who" staff
  *     assignment (best-effort re-check at confirm time, no DB-level
  *     lock), no payment step.
+ *
+ * COMPLETING A BOOKING (new): completeBooking() is the only place that
+ * ever moves a booking to status='completed'. Nothing in this file (or
+ * anywhere else, as of this addition) called that transition before —
+ * bookings only ever went confirmed -> confirmed or confirmed ->
+ * cancelled. It matters now because 'completed' is what the billing
+ * ledger's booking-side trigger (trg_record_booking_billable_visit,
+ * see the billing migration) listens for: a booking that was never
+ * promoted into the queue only becomes a billable visit once something
+ * calls this. This is a plain exported service function, not a Server
+ * Action — the admin dashboard's "mark as done" button should call it
+ * from a thin Server Action in app/admin/actions.ts (gated by the
+ * existing bookings.manage permission, same as any other write there),
+ * the same relationship createBooking() already has with the kiosk's
+ * Server Action.
  */
 
 import crypto from "node:crypto"
@@ -145,6 +164,17 @@ export const BOOKING_SLOT_NO_LONGER_AVAILABLE = "BOOKING_SLOT_NO_LONGER_AVAILABL
  *  max_advance_days, or the tenant's hours changed underneath it. Same
  *  "never trust a client-provided time" posture as slot staleness. */
 export const BOOKING_OUTSIDE_ALLOWED_WINDOW = "BOOKING_OUTSIDE_ALLOWED_WINDOW"
+
+/** Thrown by completeBooking() when no booking with that id exists for
+ *  this tenant — re-checked server-side rather than trusted from
+ *  whatever id an admin action was passed, same "never trust the
+ *  client" posture as everything else in this file. */
+export const BOOKING_NOT_FOUND = "BOOKING_NOT_FOUND"
+
+/** Thrown by completeBooking() when the booking isn't in a state that
+ *  can transition to 'completed' -- already completed, or cancelled.
+ *  Only a 'confirmed' booking can be completed. */
+export const BOOKING_NOT_COMPLETABLE = "BOOKING_NOT_COMPLETABLE"
 
 function getClientOrThrow(): SupabaseClient {
   const supabase = getSupabaseServerClient()
@@ -507,6 +537,57 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     startTime: startTime.toISOString(),
     endTime: endTime.toISOString(),
   }
+}
+
+// ============================================================================
+// COMPLETING A BOOKING — the customer showed up and was served. See this
+// file's header comment for why this exists and what it feeds into.
+// ============================================================================
+
+export interface CompleteBookingResult {
+  id: string
+  status: "completed"
+}
+
+/**
+ * Marks a booking 'completed' -- the only transition a billable visit
+ * can come from on the booking side (a booking that got promoted into
+ * the queue is billed via its queue_entries completion instead; see the
+ * billing migration's trg_record_booking_billable_visit, which checks
+ * for exactly that and skips inserting a second ledger row when it finds
+ * one). Re-validates tenant ownership and current status server-side --
+ * never trusts that whatever called this already confirmed either.
+ *
+ * Idempotent in effect, not just in the ledger: calling this again on an
+ * already-'completed' booking throws BOOKING_NOT_COMPLETABLE rather than
+ * silently no-op'ing, so a caller can tell "already done" apart from
+ * "this succeeded" -- but even if that check were somehow bypassed, the
+ * ledger's unique(source, source_id) means a duplicate UPDATE could never
+ * produce a second billable visit regardless.
+ */
+export async function completeBooking(tenantId: string, bookingId: string): Promise<CompleteBookingResult> {
+  const supabase = getClientOrThrow()
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("bookings")
+    .select("id, status")
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (fetchError) throw new Error(`Failed to load booking: ${fetchError.message}`)
+  if (!existing) throw new Error(BOOKING_NOT_FOUND)
+  if (existing.status !== "confirmed") throw new Error(BOOKING_NOT_COMPLETABLE)
+
+  const { error: updateError } = await supabase
+    .from("bookings")
+    .update({ status: "completed" })
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+
+  if (updateError) throw new Error(updateError.message)
+
+  return { id: bookingId, status: "completed" }
 }
 
 // ============================================================================
