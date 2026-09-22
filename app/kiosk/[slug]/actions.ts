@@ -38,7 +38,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, type BookingSlot } from "@/lib/services/booking"
-import { joinQueue } from "@/lib/services/queue"
+import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
@@ -245,17 +245,23 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       if (!service) return { ok: false, error: "That service isn't available anymore." }
     }
 
-    const { position, etaMinutes } = await joinQueue(tenantId, { service, phone: input.phone })
+    const { position, etaMinutes, ticketNumber } = await joinQueue(tenantId, { service, phone: input.phone })
     await updateCustomer(tenantId, input.phone, { name })
 
-    const ticketNumber = `Q${String(position).padStart(3, "0")}`
+    // formatQueueTicketNumber() is the single source of truth for the
+    // "Q001" display format — printed slip, WhatsApp text, and (once
+    // built) any "Now Serving" display all go through it, so they can
+    // never disagree on formatting. ticketNumber itself is permanent
+    // (queue_entries.ticket_number) — unlike `position`, which reshuffles
+    // live as the queue moves, this is safe to put on a piece of paper.
+    const formattedTicketNumber = formatQueueTicketNumber(ticketNumber)
 
     try {
       const serviceClause = service ? ` for ${service.name}` : ""
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
-        `Hi ${name}! You're in the queue${serviceClause} — you're number ${position}, ` +
+        `Hi ${name}! You're in the queue${serviceClause} — your ticket is ${formattedTicketNumber}, ` +
           `about ${etaMinutes} min wait. We'll see you soon!`,
       )
     } catch (sendError) {
@@ -266,7 +272,7 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       ok: true,
       data: {
         kind: "queue",
-        ticketNumber,
+        ticketNumber: formattedTicketNumber,
         customerName: name,
         serviceName: service?.name ?? null,
         position,
