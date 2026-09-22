@@ -218,8 +218,8 @@ export async function getTenantVisitBreakdown(supabase: SupabaseClient, tenantId
   if (error) throw new Error(`Failed to load visit breakdown: ${error.message}`)
 
   const rows = data ?? []
-  const queueVisits = rows.filter((r) => r.source === "queue_entry").length
-  const bookingVisits = rows.filter((r) => r.source === "booking").length
+  const queueVisits = rows.filter((r: any) => r.source === "queue_entry").length
+  const bookingVisits = rows.filter((r: any) => r.source === "booking").length
   return { queueVisits, bookingVisits, total: queueVisits + bookingVisits }
 }
 
