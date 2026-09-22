@@ -75,7 +75,7 @@ import type { ConversationState } from "@/lib/services/state"
 
 import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
-import { getBookingSettings, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
+import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 
 import {
   servicesListMessage,
@@ -96,6 +96,19 @@ const QUEUE_STATE_SERVICE_SELECTION = "queue_service_selection"
 // query failed) — the real per-tenant value is normally read from that
 // column so an admin can tune it without a code change.
 const DEFAULT_SERVICE_DURATION_MINUTES = 15
+
+/**
+ * Formats a persisted queue_entries.ticket_number for display/printing —
+ * the ONE place this format is defined, so the kiosk's printed slip, any
+ * future "Now Serving" display, and (if it's ever added) a WhatsApp
+ * confirmation can never disagree on what a ticket number looks like.
+ * Zero-padded to 3 digits (Q001..Q999) purely for a tidy, fixed-width
+ * printed look — the underlying counter isn't capped at 999, a 4-digit
+ * day just prints as "Q1000" rather than wrapping or erroring.
+ */
+export function formatQueueTicketNumber(ticketNumber: number): string {
+  return `Q${String(ticketNumber).padStart(3, "0")}`
+}
 
 function getClientOrThrow(): SupabaseClient {
   const supabase = getSupabaseServerClient()
@@ -453,6 +466,12 @@ export interface JoinQueueResult {
   customer: Customer
   position: number
   etaMinutes: number
+  /** Permanent for this entry's lifetime — see formatQueueTicketNumber()
+   *  and the queue_entries.ticket_number column comment. This is what
+   *  should be printed on a kiosk slip or shown on a "Now Serving"
+   *  display; `position` above is a live number that reshuffles as the
+   *  queue moves and is NOT safe to print on paper. */
+  ticketNumber: number
 }
 
 /**
@@ -463,6 +482,25 @@ export interface JoinQueueResult {
  * looking at the same number, never two separate calculations that can
  * disagree. The one place a `queue_entries` row gets created from a
  * customer-facing flow.
+ *
+ * TICKET NUMBER ASSIGNMENT: resolved via next_queue_ticket_number() —
+ * atomic per (tenant, calendar day in the TENANT's own timezone) — and
+ * included in the insert. This is a separate round-trip from the insert
+ * itself (not one atomic transaction with it), so a network failure
+ * between the two could in principle leave a gap in the day's numbering
+ * (a number allocated but never used). That's an acceptable, standard
+ * trade-off for this kind of ticketing — the guarantee that actually
+ * matters is uniqueness (never two entries sharing a number), not
+ * gaplessness, and uniqueness is guaranteed by the counter table's atomic
+ * UPSERT regardless.
+ *
+ * KNOWN GAP: this is currently the ONLY place that assigns a
+ * ticket_number. A queue_entries row inserted by any other path — most
+ * notably the promote_bookings_to_queue() pg_cron job that unify-with-
+ * queue relies on (see booking_settings.unify_with_queue) — will have
+ * ticket_number = null unless that job is separately updated to call
+ * next_queue_ticket_number() itself. Flagging this rather than silently
+ * leaving promoted bookings ticket-less.
  */
 export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
   const { service, phone } = params
@@ -474,6 +512,16 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
   const customer = await ensureCustomer(tenantId, phone)
   const joinedAt = new Date().toISOString()
 
+  const timezone = await getTenantTimezone(supabase, tenantId)
+  const ticketDate = todayInTimezone(timezone)
+
+  const { data: ticketNumber, error: ticketError } = await supabase.rpc("next_queue_ticket_number", {
+    p_tenant_id: tenantId,
+    p_ticket_date: ticketDate,
+  })
+
+  if (ticketError) throw new Error(`Failed to assign a queue ticket number: ${ticketError.message}`)
+
   const { data: inserted, error } = await supabase
     .from("queue_entries")
     .insert([
@@ -483,6 +531,7 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
         service_id: service?.id ?? null,
         status: "waiting",
         joined_at: joinedAt,
+        ticket_number: ticketNumber,
       },
     ])
     .select("id")
@@ -502,6 +551,7 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
     customer,
     position: own?.position ?? 1,
     etaMinutes: own?.etaMinutes ?? service?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES,
+    ticketNumber,
   }
 }
 
