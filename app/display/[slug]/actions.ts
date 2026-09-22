@@ -19,10 +19,17 @@
  * touching the TV. Cheap enough: four small reads, no writes, same shape
  * whether it's the initial server render or a later client poll.
  *
- * SLIDES: welcome (branding) -> services (menu) -> bookings (next
- * upcoming confirmed appointments) -> queue (who's waiting / being
+ * SLIDES: welcome (branding, shown once) -> services (menu) -> bookings
+ * (next upcoming confirmed appointments) -> queue (who's waiting / being
  * served right now). Hours and the kiosk QR code were dropped from this
- * screen on purpose — see DisplayScreen.tsx.
+ * screen on purpose — see DisplayScreen.tsx. Which of services/bookings/
+ * queue are included, how long each shows, and their headings/labels are
+ * now admin-configurable (Settings -> Display in the dashboard) and come
+ * back from this action as `settings` -- see DisplaySettings below and
+ * migration_display_settings.sql. The welcome slide's own on-screen time
+ * (welcomeSeconds) is also configurable, but it's a one-time slide shown
+ * when the TV tab first loads, not part of the repeating rotation --
+ * DisplayScreen.tsx enforces that split, not this file.
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
@@ -34,6 +41,44 @@ export interface DisplayBranding {
   primaryColor: string | null
   secondaryColor: string | null
   tagline: string | null
+}
+
+// Admin-configurable Display TV behavior -- see migration_display_settings.sql
+// and app/admin/settings-actions.ts' updateDisplaySettings(). Every *Title/
+// *Label field is nullable: null/empty means "use the hardcoded default",
+// same clear-to-default posture as the kiosk's wording fields.
+export interface DisplaySettings {
+  showServices: boolean
+  showBookings: boolean
+  showQueue: boolean
+  /** How long the one-time welcome slide shows before the rotation starts. */
+  welcomeSeconds: number
+  /** Shared rotation duration for the services (menu) and bookings slides. */
+  menuBookingsSeconds: number
+  /** Rotation duration for the live queue slide -- usually longer, since
+   *  there's more to read than a menu or booking row. */
+  queueSeconds: number
+  menuTitle: string | null
+  bookingsTitle: string | null
+  queueTitle: string | null
+  nowServingLabel: string | null
+}
+
+// Fallbacks when a tenant_branding row hasn't been created yet (brand-new
+// tenant, row insert lagging the trigger) -- mirrors the DB column
+// defaults in migration_display_settings.sql so behavior is identical
+// either way.
+const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  showServices: true,
+  showBookings: true,
+  showQueue: true,
+  welcomeSeconds: 6,
+  menuBookingsSeconds: 9,
+  queueSeconds: 20,
+  menuTitle: null,
+  bookingsTitle: null,
+  queueTitle: null,
+  nowServingLabel: null,
 }
 
 export interface DisplayBooking {
@@ -57,6 +102,7 @@ export interface DisplayQueueEntry {
 
 export interface DisplayData {
   branding: DisplayBranding
+  settings: DisplaySettings
   services: CatalogService[]
   bookings: DisplayBooking[]
   queue: DisplayQueueEntry[]
@@ -108,7 +154,12 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
     const [brandingResult, bookingsResult, queueResult, services] = await Promise.all([
       supabase
         .from("tenant_branding")
-        .select("display_name, logo_url, primary_color, secondary_color, tagline")
+        .select(
+          "display_name, logo_url, primary_color, secondary_color, tagline, " +
+            "display_show_services, display_show_bookings, display_show_queue, " +
+            "display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, " +
+            "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label",
+        )
         .eq("tenant_id", tenantId)
         .maybeSingle(),
       supabase
@@ -146,6 +197,22 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       tagline: brandingResult.data?.tagline ?? null,
     }
 
+    const settings: DisplaySettings = brandingResult.data
+      ? {
+          showServices: brandingResult.data.display_show_services ?? DEFAULT_DISPLAY_SETTINGS.showServices,
+          showBookings: brandingResult.data.display_show_bookings ?? DEFAULT_DISPLAY_SETTINGS.showBookings,
+          showQueue: brandingResult.data.display_show_queue ?? DEFAULT_DISPLAY_SETTINGS.showQueue,
+          welcomeSeconds: brandingResult.data.display_welcome_seconds ?? DEFAULT_DISPLAY_SETTINGS.welcomeSeconds,
+          menuBookingsSeconds:
+            brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_SETTINGS.menuBookingsSeconds,
+          queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_SETTINGS.queueSeconds,
+          menuTitle: brandingResult.data.display_menu_title ?? null,
+          bookingsTitle: brandingResult.data.display_bookings_title ?? null,
+          queueTitle: brandingResult.data.display_queue_title ?? null,
+          nowServingLabel: brandingResult.data.display_now_serving_label ?? null,
+        }
+      : DEFAULT_DISPLAY_SETTINGS
+
     const bookings: DisplayBooking[] = (bookingsResult.data ?? []).map((row) => {
       const customer = unwrapJoin<{ full_name: string | null }>(row.customer as never)
       const service = unwrapJoin<{ name: string | null }>(row.service as never)
@@ -178,7 +245,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       }
     })
 
-    return { ok: true, data: { branding, services, bookings, queue } }
+    return { ok: true, data: { branding, settings, services, bookings, queue } }
   } catch (error) {
     console.error("[display] fetchDisplayData failed", { slug, error })
     return { ok: false, error: "Couldn't load display data." }

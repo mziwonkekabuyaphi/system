@@ -10,24 +10,33 @@
  *     as accents (wordmark glow, prices, position numbers, dots) instead.
  *   - Bricolage Grotesque for anything large, Inter for everything small.
  *   - Pricing slide uses menu-board convention (name — leader dots — price).
- *   - Slides are welcome -> services (menu) -> bookings -> queue. Hours
- *     and the kiosk QR code were deliberately dropped from this screen --
- *     this TV is meant to show what's actually happening right now
- *     (what's on offer, who's booked, who's waiting), not static info a
- *     customer would look up once on their phone.
+ *   - TWO PHASES, not one flat rotation:
+ *       1. "welcome" -- shown once, for data.settings.welcomeSeconds, when
+ *          this tab first mounts. Never reappears afterwards this session.
+ *       2. "rotation" -- cycles through whichever of services/bookings/
+ *          queue are both admin-enabled (data.settings.show*) and have
+ *          data. Services and bookings share one duration
+ *          (menuBookingsSeconds); queue gets its own, typically longer,
+ *          duration (queueSeconds) since there's more to read there.
+ *     If nothing ever ends up eligible for rotation, the welcome slide
+ *     just stays up indefinitely rather than cycling to a blank screen.
+ *   - Slide headings and the queue's "now serving" label pull from
+ *     data.settings' wording overrides, falling back to the same
+ *     defaults this screen always used.
  *   - One motion idea: slow crossfade between slides, a quiet glow behind
  *     the wordmark on the welcome slide. Nothing else moves.
  *
  * This tab is expected to stay open for days/weeks on a physical TV, so
  * it polls fetchDisplayData() every POLL_MS to pick up branding/service/
- * booking/queue edits made elsewhere, without ever needing a manual reload.
+ * booking/queue/settings edits made elsewhere, without ever needing a
+ * manual reload. An admin toggling a screen off, or changing a duration,
+ * takes effect on the next poll -- no need to touch the TV.
  */
 
 import { useEffect, useMemo, useState } from "react"
 import type { CSSProperties } from "react"
 import { fetchDisplayData, type DisplayData } from "./actions"
 
-const ROTATE_MS = 9000
 const POLL_MS = 5 * 60 * 1000
 
 const DEFAULT_ACCENT = "#E2B33C"
@@ -58,6 +67,12 @@ function formatClockTime(iso: string): string {
 
 export function DisplayScreen({ slug, initialData }: { slug: string; initialData: DisplayData }) {
   const [data, setData] = useState<DisplayData>(initialData)
+  // "welcome" is a one-time phase for this tab's lifetime -- once it flips
+  // to "rotation" it never goes back, even if the poll below brings in
+  // fresh data. That's the whole point: a TV left open for days shouldn't
+  // re-show the branding slide every rotation, only when the tab is first
+  // opened (or reloaded).
+  const [phase, setPhase] = useState<"welcome" | "rotation">("welcome")
   const [index, setIndex] = useState(0)
 
   useEffect(() => {
@@ -70,19 +85,47 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
     return () => clearInterval(id)
   }, [slug])
 
-  const slides = useMemo<SlideKey[]>(() => {
-    const s: SlideKey[] = ["welcome"]
-    if (data.services.length > 0) s.push("services")
-    if (data.bookings.length > 0) s.push("bookings")
-    if (data.queue.length > 0) s.push("queue")
-    return s
-  }, [data])
+  const settings = data.settings
 
+  // Rotation content only -- welcome is handled as its own phase, not a
+  // member of this array, so it's never cycled back into once left.
+  const slides = useMemo<SlideKey[]>(() => {
+    const s: SlideKey[] = []
+    if (settings.showServices && data.services.length > 0) s.push("services")
+    if (settings.showBookings && data.bookings.length > 0) s.push("bookings")
+    if (settings.showQueue && data.queue.length > 0) s.push("queue")
+    return s
+  }, [data, settings])
+
+  // Phase 1 -> 2: leave the welcome slide after welcomeSeconds, but only
+  // once there's actually something to rotate to -- otherwise stay on
+  // welcome rather than cut to a blank stage. Re-evaluates if slides
+  // arrives late (e.g. the first queue entry joins after this tab has
+  // already been sitting on "welcome").
   useEffect(() => {
-    setIndex((i) => (i >= slides.length ? 0 : i))
-    const id = setInterval(() => setIndex((i) => (i + 1) % slides.length), ROTATE_MS)
-    return () => clearInterval(id)
+    if (phase !== "welcome" || slides.length === 0) return
+    const id = setTimeout(() => setPhase("rotation"), settings.welcomeSeconds * 1000)
+    return () => clearTimeout(id)
+  }, [phase, slides.length, settings.welcomeSeconds])
+
+  // Keep index in range if the rotation set shrinks (e.g. the queue
+  // empties out mid-rotation).
+  useEffect(() => {
+    setIndex((i) => (slides.length === 0 ? 0 : i % slides.length))
   }, [slides.length])
+
+  // Phase 2: advance to the next rotation slide after that slide's own
+  // duration -- services/bookings share menuBookingsSeconds, queue uses
+  // its own (usually longer) queueSeconds. Self-rescheduling setTimeout
+  // rather than one fixed setInterval, since the duration can differ
+  // slide-to-slide.
+  useEffect(() => {
+    if (phase !== "rotation" || slides.length === 0) return
+    const currentKey = slides[index % slides.length]
+    const durationMs = (currentKey === "queue" ? settings.queueSeconds : settings.menuBookingsSeconds) * 1000
+    const id = setTimeout(() => setIndex((i) => (i + 1) % slides.length), durationMs)
+    return () => clearTimeout(id)
+  }, [phase, index, slides, settings.queueSeconds, settings.menuBookingsSeconds])
 
   // "Now serving" (called) surfaces separately from the numbered "up
   // next" (waiting) list -- they read as different things on a TV.
@@ -94,31 +137,35 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   const secondary = data.branding.secondaryColor || DEFAULT_SECONDARY
   const accentSoft = hexToRgba(accent, 0.22)
 
+  const activeKey: SlideKey = phase === "welcome" ? "welcome" : slides[index] ?? "welcome"
+  const menuTitle = settings.menuTitle?.trim() || "On the menu"
+  const bookingsTitle = settings.bookingsTitle?.trim() || "Upcoming bookings"
+  const queueTitle = settings.queueTitle?.trim() || "Live queue"
+  const nowServingLabel = settings.nowServingLabel?.trim() || "Now serving"
+
   return (
     <div
       className="stage"
       style={{ "--accent": accent, "--secondary": secondary, "--accent-soft": accentSoft } as CSSProperties}
     >
-      {slides.map((key) => (
-        <section key={key} className={`slide ${key} ${slides[index] === key ? "active" : ""}`}>
-          {key === "welcome" && (
-            <>
-              <div className="glow" aria-hidden="true" />
-              {data.branding.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
-                <img src={data.branding.logoUrl} alt={brandName} className="logo" />
-              ) : (
-                <div className="monogram">{brandName.charAt(0).toUpperCase()}</div>
-              )}
-              <h1 className="brand-name">{brandName}</h1>
-              {data.branding.tagline && <p className="tagline">{data.branding.tagline}</p>}
-            </>
-          )}
+      <section className={`slide welcome ${activeKey === "welcome" ? "active" : ""}`}>
+        <div className="glow" aria-hidden="true" />
+        {data.branding.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
+          <img src={data.branding.logoUrl} alt={brandName} className="logo" />
+        ) : (
+          <div className="monogram">{brandName.charAt(0).toUpperCase()}</div>
+        )}
+        <h1 className="brand-name">{brandName}</h1>
+        {data.branding.tagline && <p className="tagline">{data.branding.tagline}</p>}
+      </section>
 
+      {slides.map((key) => (
+        <section key={key} className={`slide ${key} ${activeKey === key ? "active" : ""}`}>
           {key === "services" && (
             <>
               <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">On the menu</h2>
+              <h2 className="slide-title">{menuTitle}</h2>
               <ul className="menu-list">
                 {data.services.map((svc) => (
                   <li key={svc.id} className="menu-row">
@@ -134,7 +181,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           {key === "bookings" && (
             <>
               <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">Upcoming bookings</h2>
+              <h2 className="slide-title">{bookingsTitle}</h2>
               <ul className="bookings-list">
                 {data.bookings.map((b) => (
                   <li key={b.id} className="booking-row">
@@ -151,11 +198,11 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           {key === "queue" && (
             <>
               <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">Live queue</h2>
+              <h2 className="slide-title">{queueTitle}</h2>
 
               {calledEntries.length > 0 && (
                 <div className="now-serving">
-                  <p className="now-serving-label">Now serving</p>
+                  <p className="now-serving-label">{nowServingLabel}</p>
                   <ul className="now-serving-list">
                     {calledEntries.map((q) => (
                       <li key={q.id} className="now-serving-row">
@@ -183,11 +230,13 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         </section>
       ))}
 
-      <div className="dots" role="presentation">
-        {slides.map((key, i) => (
-          <span key={key} className={`dot ${i === index ? "on" : ""}`} />
-        ))}
-      </div>
+      {phase === "rotation" && slides.length > 1 && (
+        <div className="dots" role="presentation">
+          {slides.map((key, i) => (
+            <span key={key} className={`dot ${i === index ? "on" : ""}`} />
+          ))}
+        </div>
+      )}
 
       <style jsx global>{`
         @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Inter:wght@400;500;600&display=swap");
