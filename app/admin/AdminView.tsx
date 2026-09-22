@@ -189,7 +189,7 @@ export function AdminView({
   const brandInitial = brandName.charAt(0).toUpperCase() || "S"
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-stone-900">
+    <div className="min-h-screen bg-admin-body text-admin-text">
       {/* ================= SIDEBAR ================= */}
       <aside
         onMouseEnter={() => setHovered(true)}
@@ -199,12 +199,12 @@ export function AdminView({
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setHovered(false)
         }}
         style={{ width: expanded ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED }}
-        className={`fixed inset-y-0 left-0 z-30 flex flex-col overflow-hidden bg-[#241318] transition-[width] duration-200 ease-out ${
+        className={`fixed inset-y-0 left-0 z-30 flex flex-col overflow-hidden bg-admin-sidebar transition-[width] duration-200 ease-out ${
           expanded ? "shadow-2xl" : ""
         }`}
       >
         {/* Brand */}
-        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/10 px-4">
+        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-admin-on-sidebar/10 px-4">
           {branding.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, not a static/local asset
             <img
@@ -213,12 +213,12 @@ export function AdminView({
               className="h-9 w-9 shrink-0 rounded-full border border-white/10 object-cover"
             />
           ) : (
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7A2E3A] font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2]">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-admin-accent font-[family-name:var(--font-admin-serif)] text-base text-admin-on-accent">
               {brandInitial}
             </span>
           )}
           <span
-            className={`truncate font-[family-name:var(--font-admin-serif)] text-base text-[#FAF7F2] transition-opacity duration-150 ${
+            className={`truncate font-[family-name:var(--font-admin-serif)] text-base text-admin-on-sidebar transition-opacity duration-150 ${
               expanded ? "opacity-100 delay-100" : "opacity-0"
             }`}
           >
@@ -239,7 +239,9 @@ export function AdminView({
                 aria-current={active ? "page" : undefined}
                 title={t.label}
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                  active ? "bg-[#7A2E3A] text-[#FAF7F2]" : "text-[#C9B9BC] hover:bg-white/[0.07] hover:text-[#FAF7F2]"
+                  active
+                    ? "bg-admin-accent text-admin-on-accent"
+                    : "text-admin-on-sidebar/60 hover:bg-admin-on-sidebar/[0.07] hover:text-admin-on-sidebar"
                 }`}
               >
                 <Icon className="h-5 w-5 shrink-0" />
@@ -256,19 +258,19 @@ export function AdminView({
         </nav>
 
         {/* Account section — sign out */}
-        <div className="border-t border-white/10 px-3 py-3">
+        <div className="border-t border-admin-on-sidebar/10 px-3 py-3">
           <LogoutButton expanded={expanded} />
         </div>
 
         {/* Pin toggle — lets touch users (no hover) keep it open, and keyboard/mouse users lock it */}
-        <div className="border-t border-white/10 px-3 py-3">
+        <div className="border-t border-admin-on-sidebar/10 px-3 py-3">
           <button
             type="button"
             onClick={() => setPinned((p) => !p)}
             aria-pressed={pinned}
             aria-label={pinned ? "Collapse sidebar" : "Keep sidebar expanded"}
             title={pinned ? "Collapse sidebar" : "Keep sidebar expanded"}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[#C9B9BC] transition-colors hover:bg-white/[0.07] hover:text-[#FAF7F2]"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-admin-on-sidebar/60 transition-colors hover:bg-admin-on-sidebar/[0.07] hover:text-admin-on-sidebar"
           >
             <ChevronIcon className={`h-5 w-5 shrink-0 transition-transform duration-200 ${pinned ? "rotate-180" : ""}`} />
             <span

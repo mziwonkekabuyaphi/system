@@ -36,7 +36,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   return (
     <div
-      className={`${fraunces.variable} ${inter.variable} min-h-screen bg-[#F0EEE6] [font-family:var(--font-inter)] antialiased`}
+      className={`${fraunces.variable} ${inter.variable} min-h-screen bg-admin-body [font-family:var(--font-inter)] antialiased`}
     >
       {children}
     </div>
