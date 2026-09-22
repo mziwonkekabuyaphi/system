@@ -17,6 +17,7 @@ import type {
   AdminBranding,
   AdminBusinessHours,
   AdminConversationSummary,
+  AdminDisplaySettings,
   AdminInboxStats,
   AdminKioskSettings,
   AdminMessageSettings,
@@ -142,6 +143,7 @@ export function AdminView({
   initialBranding,
   initialKioskEnabled,
   initialKioskSettings,
+  initialDisplaySettings,
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
@@ -161,6 +163,7 @@ export function AdminView({
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
   initialKioskSettings: AdminKioskSettings
+  initialDisplaySettings: AdminDisplaySettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
@@ -328,6 +331,7 @@ export function AdminView({
               onBrandingChange={handleBrandingChange}
               initialKioskEnabled={initialKioskEnabled}
               initialKioskSettings={initialKioskSettings}
+              initialDisplaySettings={initialDisplaySettings}
               initialBookingSettings={initialBookingSettings}
               initialQueueSettings={initialQueueSettings}
               initialMessageSettings={initialMessageSettings}

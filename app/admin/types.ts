@@ -148,7 +148,7 @@ export interface AdminInboxStats {
 }
 
 // ============================================================================
-// SETTINGS (General info / Kiosk / Private Label tab)
+// SETTINGS (General info / Kiosk / Display / Private Label tab)
 // ============================================================================
 
 /** Mirrors tenants.plan. Manually flipped in Supabase until billing is wired
@@ -236,6 +236,50 @@ export interface AdminKioskSettings {
    *  choice screen, or right after welcome on a booking-only/queue-only
    *  kiosk). Defaults to "What are you here for?". */
   serviceScreenTitle: string | null
+}
+
+/** tenant_branding's Display-TV columns, one row per tenant. Backs the
+ *  ambient waiting-area TV at /display/[slug] (app/display/[slug]/
+ *  DisplayScreen.tsx), configured from its own Display tab in
+ *  SettingsManager.tsx (separate from Kiosk — different physical device,
+ *  different job: kiosk is customer-operated, this is a passive rotating
+ *  screen) and saved via updateDisplaySettings().
+ *
+ *  The TV shows the welcome/branding slide exactly once per tab session
+ *  (for welcomeSeconds), then rotates indefinitely through whichever of
+ *  services/bookings/queue are both enabled here AND have data —
+ *  DisplayScreen.tsx enforces the "only once" part, this type just
+ *  carries the duration. Services and bookings share one rotation
+ *  duration (menuBookingsSeconds); queue gets its own, typically longer,
+ *  duration (queueSeconds). */
+export interface AdminDisplaySettings {
+  showServices: boolean
+  showBookings: boolean
+  showQueue: boolean
+  /** Seconds the one-time welcome slide shows before the rotation starts.
+   *  2–30. */
+  welcomeSeconds: number
+  /** Seconds each of the services and bookings slides shows during
+   *  rotation. 3–120. */
+  menuBookingsSeconds: number
+  /** Seconds the live queue slide shows during rotation. 3–300. */
+  queueSeconds: number
+
+  // -- Wording (same clear-to-default posture as AdminKioskSettings' -----
+  // screen wording above: null/empty falls back to the hardcoded English
+  // copy DisplayScreen.tsx has always used, resolved there the same way
+  // the kiosk's DEFAULT_CHOICE_TITLE etc. are.
+
+  /** Heading on the services/menu slide. Defaults to "On the menu". */
+  menuTitle: string | null
+  /** Heading on the upcoming-bookings slide. Defaults to
+   *  "Upcoming bookings". */
+  bookingsTitle: string | null
+  /** Heading on the live-queue slide. Defaults to "Live queue". */
+  queueTitle: string | null
+  /** Label above the "being served now" list on the queue slide. Defaults
+   *  to "Now serving". */
+  nowServingLabel: string | null
 }
 
 // ============================================================================
