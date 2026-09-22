@@ -1,1 +1,18 @@
 @import "tailwindcss";
+@import "./theme.css"; /* adjust this path if theme.css doesn't sit next to globals.css */
+
+@theme {
+  --color-admin-sidebar: var(--qless-navy-deep);
+  --color-admin-accent: var(--qless-amber);
+  --color-admin-accent-dim: var(--qless-amber-dim);
+  --color-admin-on-accent: var(--qless-navy-deep);
+  --color-admin-on-sidebar: var(--qless-paper);
+  --color-admin-body: var(--qless-paper);
+  --color-admin-surface: var(--qless-paper-dim);
+  --color-admin-text: var(--qless-ink);
+  --color-admin-text-muted: var(--qless-ink-soft);
+  --color-admin-border: var(--qless-line);
+  --color-admin-focus: var(--qless-focus);
+  --color-admin-error: var(--qless-error);
+  --color-admin-success: var(--qless-success);
+}
