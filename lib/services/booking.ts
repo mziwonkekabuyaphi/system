@@ -136,6 +136,7 @@ import {
   bookingConfirmedMessage,
   nameCollectionRetryMessage,
   nameCollectionThanksMessage,
+  planLimitReachedMessage,
 } from "@/lib/services/messages/booking"
 
 // ============================================================================
@@ -831,15 +832,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       return { reply: bookingWindowClosedMessage(), buttons: [], nextState: null }
     }
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
-      // TODO: move this into lib/services/messages/booking.ts as a proper
-      // planLimitReachedMessage() alongside the other booking copy, once
-      // that file's conventions are in hand — inlined here for now so this
-      // merge doesn't guess at that file's shape.
-      return {
-        reply: "Sorry, this shop has reached its booking limit for this month. Please try again next month, or contact them directly.",
-        buttons: [],
-        nextState: null,
-      }
+      return { reply: planLimitReachedMessage(), buttons: [], nextState: null }
     }
     console.error("[booking] Error creating booking", { tenantId, error })
     return { reply: bookingErrorMessage(), buttons: [], nextState: null }

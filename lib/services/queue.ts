@@ -89,6 +89,7 @@ import {
   invalidSelectionMessage,
   joinedQueueMessage,
   queueErrorMessage,
+  planLimitReachedMessage,
 } from "@/lib/services/messages/queue"
 
 // ============================================================================
@@ -110,10 +111,29 @@ const DEFAULT_SERVICE_DURATION_MINUTES = 15
  * confirmation can never disagree on what a ticket number looks like.
  * Zero-padded to 3 digits (Q001..Q999) purely for a tidy, fixed-width
  * printed look — the underlying counter isn't capped at 999, a 4-digit
- * day just prints as "Q1000" rather than wrapping or erroring.
+ * day just prints as "Q1000" rather than wrapping or erroring. `prefix`
+ * is the tenant's own queue_settings.ticket_number_prefix (defaults to
+ * "Q" at the DB level, so this parameter is only ever actually optional
+ * as a defensive fallback — every real call site has a real value to
+ * pass).
  */
-export function formatQueueTicketNumber(ticketNumber: number): string {
-  return `Q${String(ticketNumber).padStart(3, "0")}`
+export function formatQueueTicketNumber(ticketNumber: number, prefix: string = "Q"): string {
+  return `${prefix}${String(ticketNumber).padStart(3, "0")}`
+}
+
+async function getTicketNumberPrefix(supabase: SupabaseClient, tenantId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("queue_settings")
+    .select("ticket_number_prefix")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    console.error("[queue] Failed to load ticket_number_prefix, using fallback", { tenantId, error })
+    return "Q"
+  }
+
+  return data?.ticket_number_prefix ?? "Q"
 }
 
 function getClientOrThrow(): SupabaseClient {
@@ -478,6 +498,10 @@ export interface JoinQueueResult {
    *  display; `position` above is a live number that reshuffles as the
    *  queue moves and is NOT safe to print on paper. */
   ticketNumber: number
+  /** This tenant's queue_settings.ticket_number_prefix — pass this to
+   *  formatQueueTicketNumber() alongside ticketNumber rather than
+   *  hardcoding "Q" at the call site. */
+  ticketPrefix: string
 }
 
 /**
@@ -543,6 +567,8 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
 
   if (ticketError) throw new Error(`Failed to assign a queue ticket number: ${ticketError.message}`)
 
+  const ticketPrefix = await getTicketNumberPrefix(supabase, tenantId)
+
   const { data: inserted, error } = await supabase
     .from("queue_entries")
     .insert([
@@ -573,6 +599,7 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
     position: own?.position ?? 1,
     etaMinutes: own?.etaMinutes ?? service?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES,
     ticketNumber,
+    ticketPrefix,
   }
 }
 
@@ -601,15 +628,7 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
     }
   } catch (error) {
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
-      // TODO: move this into lib/services/messages/queue.ts as a proper
-      // planLimitReachedMessage(), same as booking.ts's matching TODO —
-      // inlined here for now for the same reason: not guessing at that
-      // file's conventions mid-merge.
-      return {
-        reply: "Sorry, this shop has reached its queue limit for this month. Please try again next month, or contact them directly.",
-        buttons: [],
-        nextState: null,
-      }
+      return { reply: planLimitReachedMessage(), buttons: [], nextState: null }
     }
     console.error("[queue] Error joining queue", { tenantId, error })
     return { reply: queueErrorMessage(), buttons: [], nextState: null }
