@@ -6,6 +6,15 @@
  * queue logic — same convention as messages/booking.ts and
  * messages/registration.ts. queue.ts imports everything it needs from
  * here; nothing in this file talks to Supabase or holds any state.
+ *
+ * ADDED: planLimitReachedMessage(), for queue.ts's new
+ * PLAN_VISIT_LIMIT_REACHED case (thrown by assertWithinVisitLimit() in
+ * lib/services/plans.ts, now enforced in joinQueue() the same way
+ * createBooking() already enforces it) — same copy as
+ * messages/booking.ts's planLimitReachedMessage(), kept as two separate
+ * exports rather than a shared one since these files intentionally don't
+ * import from each other. Only ever reachable on Free — see that
+ * function's comment in messages/booking.ts for why.
  */
 
 import type { CatalogService } from "@/lib/services/shared/services-catalog"
@@ -35,4 +44,8 @@ export function joinedQueueMessage(service: CatalogService, position: number, et
 
 export function queueErrorMessage(): string {
   return "Sorry, something went wrong joining the queue. Please try again, or reply *support* for help."
+}
+
+export function planLimitReachedMessage(): string {
+  return "Sorry, this shop has reached its queue limit for this month. Please try again next month, or contact them directly."
 }

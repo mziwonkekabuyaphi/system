@@ -13,6 +13,15 @@
  * caught up to it). Deliberately distinct copy from slotStaleMessage()
  * (which means "someone else took it") since the cause and the
  * customer-facing framing are different.
+ *
+ * ADDED: planLimitReachedMessage(), for booking.ts's
+ * PLAN_VISIT_LIMIT_REACHED case (thrown by assertWithinVisitLimit() in
+ * lib/services/plans.ts) — the tenant's own Free-plan visit cap, not
+ * anything about this specific slot or customer, so it gets its own
+ * distinct copy rather than reusing bookingErrorMessage()'s generic
+ * "something went wrong" framing. Only ever reachable on Free: Growth
+ * and Business bill overage instead of blocking, so a customer never
+ * sees this message for a tenant on a paid plan.
  */
 
 import type { CatalogService } from "@/lib/services/shared/services-catalog"
@@ -105,6 +114,10 @@ export function slotStaleMessage(): string {
 
 export function bookingWindowClosedMessage(): string {
   return "Sorry, that time's no longer bookable — please reply *menu* and pick a new time."
+}
+
+export function planLimitReachedMessage(): string {
+  return "Sorry, this shop has reached its booking limit for this month. Please try again next month, or contact them directly."
 }
 
 export function bookingCancelledMessage(): string {
