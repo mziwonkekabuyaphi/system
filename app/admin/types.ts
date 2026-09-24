@@ -96,7 +96,7 @@ export interface AdminBooking {
   startTime: string
   /** ISO timestamp */
   endTime: string
-  status: "confirmed" | "cancelled"
+  status: "confirmed" | "cancelled" | "completed"
   bookingReference: string
   serviceName: string
   staffName: string
