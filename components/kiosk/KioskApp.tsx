@@ -523,11 +523,12 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
       )}
 
       {step === "date" && (
-        <DateScreen options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
+        <DateScreen title={branding.dateScreenTitle} options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
       )}
 
       {step === "time" && (
         <TimeScreen
+          titlePrefix={branding.timeScreenTitle}
           slots={slots}
           dateLabel={selectedDate?.label ?? ""}
           onSelect={chooseSlot}
@@ -538,6 +539,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
 
       {step === "details" && (
         <DetailsScreen
+          title={branding.detailsScreenTitle}
           name={name}
           phone={phone}
           onNameChange={setName}
@@ -552,6 +554,8 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
       {step === "ticket" && ticket && (
         <TicketScreen
           ticket={ticket}
+          bookingEyebrow={branding.ticketBookingEyebrow}
+          queueEyebrow={branding.ticketQueueEyebrow}
           onDone={resetAll}
           printStatus={printStatus}
           onRetryPrint={() => attemptPrint(ticket)}
@@ -922,18 +926,20 @@ function ServiceScreen({
 // ----------------------------------------------------------------------------
 
 function DateScreen({
+  title,
   options,
   onSelect,
   busy,
   error,
 }: {
+  title: string
   options: DateOption[]
   onSelect: (option: DateOption) => void
   busy: boolean
   error: string | null
 }) {
   return (
-    <Screen title="Which day works for you?" error={error} busy={busy}>
+    <Screen title={title} error={error} busy={busy}>
       <div className="grid">
         {options.map((option) => (
           <button key={option.date} className="tile" onClick={() => onSelect(option)} type="button" disabled={busy}>
@@ -978,12 +984,14 @@ function DateScreen({
 // ----------------------------------------------------------------------------
 
 function TimeScreen({
+  titlePrefix,
   slots,
   dateLabel,
   onSelect,
   busy,
   error,
 }: {
+  titlePrefix: string
   slots: BookingSlot[]
   dateLabel: string
   onSelect: (slot: BookingSlot) => void
@@ -1006,7 +1014,7 @@ function TimeScreen({
   }
 
   return (
-    <Screen title={`Pick a time — ${dateLabel}`} error={error} busy={busy}>
+    <Screen title={`${titlePrefix} — ${dateLabel}`} error={error} busy={busy}>
       <div className="grid">
         {slots.map((slot) => (
           <button key={slot.start} className="tile" onClick={() => onSelect(slot)} type="button" disabled={busy}>
@@ -1053,6 +1061,7 @@ function TimeScreen({
 // ----------------------------------------------------------------------------
 
 function DetailsScreen({
+  title,
   name,
   phone,
   onNameChange,
@@ -1062,6 +1071,7 @@ function DetailsScreen({
   busy,
   error,
 }: {
+  title: string
   name: string
   phone: string
   onNameChange: (v: string) => void
@@ -1072,14 +1082,14 @@ function DetailsScreen({
   error: string | null
 }) {
   return (
-    <Screen title="Almost done — who are we booking for?" error={error} busy={busy}>
+    <Screen title={title} error={error} busy={busy}>
       <div className="form">
         <label>
           <span>Your name</span>
           <input
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            placeholder="e.g. Thandiwe"
+            placeholder="e.g. Mziwonke"
             autoComplete="off"
             inputMode="text"
           />
@@ -1161,11 +1171,15 @@ function DetailsScreen({
 
 function TicketScreen({
   ticket,
+  bookingEyebrow,
+  queueEyebrow,
   onDone,
   printStatus,
   onRetryPrint,
 }: {
   ticket: Ticket
+  bookingEyebrow: string
+  queueEyebrow: string
   onDone: () => void
   printStatus: "idle" | "printing" | "success" | "failed"
   onRetryPrint: () => void
@@ -1176,7 +1190,7 @@ function TicketScreen({
     <div className="ticketScreen">
       <div className="stub">
         <div className="top">
-          <p className="eyebrow">{isBooking ? "Your booking" : "Your place in line"}</p>
+          <p className="eyebrow">{isBooking ? bookingEyebrow : queueEyebrow}</p>
           <p className="number">{ticket.ticketNumber}</p>
         </div>
 
