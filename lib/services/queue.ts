@@ -89,7 +89,6 @@ import {
   invalidSelectionMessage,
   joinedQueueMessage,
   queueErrorMessage,
-  planLimitReachedMessage,
 } from "@/lib/services/messages/queue"
 
 // ============================================================================
@@ -628,7 +627,15 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
     }
   } catch (error) {
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
-      return { reply: planLimitReachedMessage(), buttons: [], nextState: null }
+      // TODO: move this into lib/services/messages/queue.ts as a proper
+      // planLimitReachedMessage(), same as booking.ts's matching TODO —
+      // inlined here for now for the same reason: not guessing at that
+      // file's conventions mid-merge.
+      return {
+        reply: "Sorry, this shop has reached its queue limit for this month. Please try again next month, or contact them directly.",
+        buttons: [],
+        nextState: null,
+      }
     }
     console.error("[queue] Error joining queue", { tenantId, error })
     return { reply: queueErrorMessage(), buttons: [], nextState: null }
