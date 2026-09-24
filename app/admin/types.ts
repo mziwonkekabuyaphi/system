@@ -324,6 +324,12 @@ export interface AdminQueueSettings {
    *  joinQueue) in place of a real service duration, so a no-service
    *  entry doesn't get treated as taking 0 minutes. */
   defaultServiceDurationMinutes: number
+  /** Tenant's own prefix for their printed/displayed queue ticket
+   *  numbers — e.g. "Q" for Q001, or a shop's own initials. 1-4
+   *  characters (see queue_settings.ticket_number_prefix's CHECK
+   *  constraint). Used by formatQueueTicketNumber() in
+   *  lib/services/queue.ts, never hardcoded at the call site. */
+  ticketNumberPrefix: string
 }
 
 /** message_settings, one row per tenant. WhatsApp copy used by the booking
