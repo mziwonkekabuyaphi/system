@@ -34,6 +34,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
+import { formatQueueTicketNumber } from "@/lib/services/queue"
 
 export interface DisplayBranding {
   displayName: string | null
@@ -98,6 +99,14 @@ export interface DisplayQueueEntry {
   serviceName: string | null
   /** 1-based position among *waiting* entries, in joined_at order. 0 for a "called" entry. */
   position: number
+  /** Formatted via the same formatQueueTicketNumber() the kiosk's printed
+   *  slip uses (e.g. "Q003") -- this is the PERMANENT number for this
+   *  entry, unlike `position` above, which is just this row's rank among
+   *  currently-waiting entries and shifts as the queue moves. Null for
+   *  any entry with no ticket_number on the row -- rows inserted before
+   *  that column existed, or (currently) any promoted-booking entry from
+   *  the unify-with-queue pg_cron job, which doesn't assign one yet. */
+  ticketNumber: string | null
 }
 
 export interface DisplayData {
@@ -151,7 +160,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
     const now = new Date()
     const bookingsWindowEnd = new Date(now.getTime() + BOOKINGS_WINDOW_HOURS * 60 * 60 * 1000)
 
-    const [brandingResult, bookingsResult, queueResult, services] = await Promise.all([
+    const [brandingResult, bookingsResult, queueResult, queueSettingsResult, services] = await Promise.all([
       supabase
         .from("tenant_branding")
         .select(
@@ -176,18 +185,31 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       supabase
         .from("queue_entries")
         .select(
-          "id, status, joined_at, called_at, customer:tenant_customers(full_name), service:services(name)",
+          "id, status, joined_at, called_at, ticket_number, customer:tenant_customers(full_name), service:services(name)",
         )
         .eq("tenant_id", tenantId)
         .in("status", ["waiting", "called"])
         .order("joined_at", { ascending: true })
         .limit(QUEUE_LIMIT),
+      // Same table the kiosk's own ticket formatting reads from
+      // (lib/services/queue.ts's getTicketNumberPrefix) -- kept as its
+      // own small query rather than folded into the queue_entries one
+      // above since it's a different table (queue_settings, not
+      // queue_entries) and this tenant-wide value doesn't repeat per row.
+      supabase.from("queue_settings").select("ticket_number_prefix").eq("tenant_id", tenantId).maybeSingle(),
       getBookableServices(tenantId),
     ])
 
     if (brandingResult.error) throw new Error(`Failed to load branding: ${brandingResult.error.message}`)
     if (bookingsResult.error) throw new Error(`Failed to load bookings: ${bookingsResult.error.message}`)
     if (queueResult.error) throw new Error(`Failed to load queue: ${queueResult.error.message}`)
+    if (queueSettingsResult.error) {
+      // Non-fatal -- same "fall back rather than fail the whole screen"
+      // posture as everything else here. Worst case a ticket number is
+      // missing its prefix's fallback ("Q"), never a broken TV.
+      console.error("[display] queue_settings lookup failed", { slug, error: queueSettingsResult.error })
+    }
+    const ticketNumberPrefix = queueSettingsResult.data?.ticket_number_prefix ?? "Q"
 
     const branding: DisplayBranding = {
       displayName: brandingResult.data?.display_name ?? null,
@@ -234,6 +256,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       const service = unwrapJoin<{ name: string | null }>(row.service as never)
       const status = row.status as "waiting" | "called"
       if (status === "waiting") waitingPosition += 1
+      const rawTicketNumber = row.ticket_number as number | null
       return {
         id: row.id as string,
         status,
@@ -242,6 +265,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         customerName: customer?.full_name ?? null,
         serviceName: service?.name ?? null,
         position: status === "waiting" ? waitingPosition : 0,
+        ticketNumber: rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null,
       }
     })
 

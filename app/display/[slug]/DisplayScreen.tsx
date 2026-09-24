@@ -206,6 +206,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                   <ul className="now-serving-list">
                     {calledEntries.map((q) => (
                       <li key={q.id} className="now-serving-row">
+                        {q.ticketNumber && <span className="now-serving-ticket">{q.ticketNumber}</span>}
                         <span className="now-serving-name">{q.customerName ?? "Guest"}</span>
                         {q.serviceName && <span className="now-serving-service">{q.serviceName}</span>}
                       </li>
@@ -220,6 +221,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                     <li key={q.id} className="queue-row">
                       <span className="queue-position">{q.position}</span>
                       <span className="queue-name">{q.customerName ?? "Guest"}</span>
+                      {q.ticketNumber && <span className="queue-ticket">{q.ticketNumber}</span>}
                       <span className="queue-service">{q.serviceName ?? ""}</span>
                     </li>
                   ))}
@@ -461,6 +463,13 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           align-items: baseline;
           gap: 1.2vw;
         }
+        .now-serving-ticket {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+          font-weight: 800;
+          color: var(--accent);
+          letter-spacing: 0.02em;
+        }
         .now-serving-name {
           font-family: "Bricolage Grotesque", sans-serif;
           font-size: clamp(1.8rem, 3.4vw, 2.8rem);
@@ -495,6 +504,12 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           font-family: "Bricolage Grotesque", sans-serif;
           font-size: clamp(1.4rem, 2.4vw, 2rem);
           font-weight: 500;
+        }
+        .queue-ticket {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-size: clamp(1rem, 1.6vw, 1.3rem);
+          font-weight: 600;
+          color: rgba(245, 241, 232, 0.5);
         }
         .queue-service {
           font-size: clamp(1rem, 1.6vw, 1.4rem);
