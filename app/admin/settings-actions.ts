@@ -146,6 +146,17 @@ const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority"
 const MIN_TICKET_NUMBER_PREFIX_LENGTH = 1
 const MAX_TICKET_NUMBER_PREFIX_LENGTH = 4
 
+// Mirrors tenant_branding's own display_* CHECK constraints — validated
+// here too, same reasoning as every other bounds check in this file.
+const MIN_DISPLAY_WELCOME_SECONDS = 2
+const MAX_DISPLAY_WELCOME_SECONDS = 30
+const MIN_DISPLAY_MENU_BOOKINGS_SECONDS = 3
+const MAX_DISPLAY_MENU_BOOKINGS_SECONDS = 120
+const MIN_DISPLAY_QUEUE_SECONDS = 3
+const MAX_DISPLAY_QUEUE_SECONDS = 300
+const MAX_DISPLAY_TITLE_LENGTH = 60
+const MAX_DISPLAY_LABEL_LENGTH = 40
+
 async function tenantContext() {
   const { tenantId } = await requireTenantMember()
   const supabase = getSupabaseServerClient()
@@ -545,6 +556,117 @@ export async function updateQueueSettings(input: {
         require_service_selection: input.requireServiceSelection,
         default_service_duration_minutes: input.defaultServiceDurationMinutes,
         ticket_number_prefix: ticketNumberPrefix,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Display settings — tenant_branding's display_* columns (the ambient
+// waiting-area TV at /display/[slug], separate from the kiosk's own
+// tenant_branding columns above).
+// ---------------------------------------------------------------------------
+export async function updateDisplaySettings(input: {
+  showServices: boolean
+  showBookings: boolean
+  showQueue: boolean
+  welcomeSeconds: number
+  menuBookingsSeconds: number
+  queueSeconds: number
+  menuTitle?: string | null
+  bookingsTitle?: string | null
+  queueTitle?: string | null
+  nowServingLabel?: string | null
+  // Per-field toggles for the queue slide specifically -- independent of
+  // showQueue above. showQueuePhone is the one worth flagging: the
+  // display route is public and unauthenticated, so app/display/[slug]/
+  // actions.ts always masks the number before it ever leaves the server,
+  // regardless of this flag -- this only controls whether that masked
+  // string is sent at all.
+  showQueueTicketNumber: boolean
+  showQueueService: boolean
+  showQueuePhone: boolean
+  showQueueWaitEstimate: boolean
+  showQueueDuration: boolean
+  showQueueReference: boolean
+}): Promise<ActionResult> {
+  try {
+    if (
+      !Number.isFinite(input.welcomeSeconds) ||
+      input.welcomeSeconds < MIN_DISPLAY_WELCOME_SECONDS ||
+      input.welcomeSeconds > MAX_DISPLAY_WELCOME_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Welcome slide duration must be between ${MIN_DISPLAY_WELCOME_SECONDS} and ${MAX_DISPLAY_WELCOME_SECONDS} seconds.`,
+      }
+    }
+
+    if (
+      !Number.isFinite(input.menuBookingsSeconds) ||
+      input.menuBookingsSeconds < MIN_DISPLAY_MENU_BOOKINGS_SECONDS ||
+      input.menuBookingsSeconds > MAX_DISPLAY_MENU_BOOKINGS_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Menu / bookings duration must be between ${MIN_DISPLAY_MENU_BOOKINGS_SECONDS} and ${MAX_DISPLAY_MENU_BOOKINGS_SECONDS} seconds.`,
+      }
+    }
+
+    if (
+      !Number.isFinite(input.queueSeconds) ||
+      input.queueSeconds < MIN_DISPLAY_QUEUE_SECONDS ||
+      input.queueSeconds > MAX_DISPLAY_QUEUE_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Live queue duration must be between ${MIN_DISPLAY_QUEUE_SECONDS} and ${MAX_DISPLAY_QUEUE_SECONDS} seconds.`,
+      }
+    }
+
+    const titleFields: Array<{ label: string; value: string | null | undefined }> = [
+      { label: "Menu screen heading", value: input.menuTitle },
+      { label: "Bookings screen heading", value: input.bookingsTitle },
+      { label: "Queue screen heading", value: input.queueTitle },
+    ]
+    for (const field of titleFields) {
+      if (field.value && field.value.trim().length > MAX_DISPLAY_TITLE_LENGTH) {
+        return { success: false, error: `${field.label} must be ${MAX_DISPLAY_TITLE_LENGTH} characters or fewer.` }
+      }
+    }
+    if (input.nowServingLabel && input.nowServingLabel.trim().length > MAX_DISPLAY_LABEL_LENGTH) {
+      return { success: false, error: `"Now serving" label must be ${MAX_DISPLAY_LABEL_LENGTH} characters or fewer.` }
+    }
+
+    const { supabase, tenantId } = await tenantContext()
+
+    const { error } = await supabase
+      .from("tenant_branding")
+      .update({
+        display_show_services: input.showServices,
+        display_show_bookings: input.showBookings,
+        display_show_queue: input.showQueue,
+        display_welcome_seconds: input.welcomeSeconds,
+        display_menu_bookings_seconds: input.menuBookingsSeconds,
+        display_queue_seconds: input.queueSeconds,
+        display_menu_title: input.menuTitle?.trim() || null,
+        display_bookings_title: input.bookingsTitle?.trim() || null,
+        display_queue_title: input.queueTitle?.trim() || null,
+        display_now_serving_label: input.nowServingLabel?.trim() || null,
+        display_queue_show_ticket_number: input.showQueueTicketNumber,
+        display_queue_show_service: input.showQueueService,
+        display_queue_show_phone: input.showQueuePhone,
+        display_queue_show_wait_estimate: input.showQueueWaitEstimate,
+        display_queue_show_duration: input.showQueueDuration,
+        display_queue_show_reference: input.showQueueReference,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

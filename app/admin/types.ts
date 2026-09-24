@@ -280,6 +280,19 @@ export interface AdminDisplaySettings {
   /** Label above the "being served now" list on the queue slide. Defaults
    *  to "Now serving". */
   nowServingLabel: string | null
+
+  // -- Queue slide, per-entry fields ---------------------------------------
+  // Independent of showQueue above (whole-screen on/off). showQueuePhone
+  // defaults to false: app/display/[slug]/actions.ts always sends a
+  // masked number when this is on (e.g. "071 *** **34"), never the raw
+  // value, since the display route is public and unauthenticated -- this
+  // flag only controls whether that masked string is sent at all.
+  showQueueTicketNumber: boolean
+  showQueueService: boolean
+  showQueuePhone: boolean
+  showQueueWaitEstimate: boolean
+  showQueueDuration: boolean
+  showQueueReference: boolean
 }
 
 // ============================================================================
