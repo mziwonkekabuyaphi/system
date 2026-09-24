@@ -39,6 +39,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, type BookingSlot } from "@/lib/services/booking"
 import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
+import { PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
@@ -201,6 +202,18 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
       return { ok: false, error: "That time was just taken. Please pick another." }
     }
+    // Mirrors booking.ts's own PLAN_VISIT_LIMIT_REACHED message
+    // (handleServiceSelection's catch block) — a plan-capped tenant gets
+    // the same wording whether the booking came from WhatsApp or the
+    // kiosk, and "Something went wrong, please try again" would be
+    // actively misleading here since retrying can't ever succeed this
+    // month.
+    if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
+      return {
+        ok: false,
+        error: "Sorry, this shop has reached its booking limit for this month. Please check in with staff.",
+      }
+    }
     console.error("[kiosk] submitKioskBooking failed", { slug, error })
     return { ok: false, error: "Something went wrong. Please try again." }
   }
@@ -245,16 +258,18 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       if (!service) return { ok: false, error: "That service isn't available anymore." }
     }
 
-    const { position, etaMinutes, ticketNumber } = await joinQueue(tenantId, { service, phone: input.phone })
+    const { position, etaMinutes, ticketNumber, ticketPrefix } = await joinQueue(tenantId, { service, phone: input.phone })
     await updateCustomer(tenantId, input.phone, { name })
 
     // formatQueueTicketNumber() is the single source of truth for the
-    // "Q001" display format — printed slip, WhatsApp text, and (once
-    // built) any "Now Serving" display all go through it, so they can
-    // never disagree on formatting. ticketNumber itself is permanent
-    // (queue_entries.ticket_number) — unlike `position`, which reshuffles
-    // live as the queue moves, this is safe to put on a piece of paper.
-    const formattedTicketNumber = formatQueueTicketNumber(ticketNumber)
+    // display format — printed slip, WhatsApp text, and (once built) any
+    // "Now Serving" display all go through it, so they can never disagree.
+    // ticketPrefix is this tenant's own queue_settings.ticket_number_prefix
+    // (e.g. "Q", "T", a shop's initials) — never hardcoded here.
+    // ticketNumber itself is permanent (queue_entries.ticket_number) —
+    // unlike `position`, which reshuffles live as the queue moves, this
+    // is safe to put on a piece of paper.
+    const formattedTicketNumber = formatQueueTicketNumber(ticketNumber, ticketPrefix)
 
     try {
       const serviceClause = service ? ` for ${service.name}` : ""
@@ -280,6 +295,15 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       },
     }
   } catch (error) {
+    // Mirrors queue.ts's own PLAN_VISIT_LIMIT_REACHED message
+    // (handleServiceSelection's catch block) — same reasoning as
+    // submitKioskBooking's version of this above.
+    if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
+      return {
+        ok: false,
+        error: "Sorry, this shop has reached its queue limit for this month. Please check in with staff.",
+      }
+    }
     console.error("[kiosk] submitKioskQueueJoin failed", { slug, error })
     return { ok: false, error: "Something went wrong. Please try again." }
   }

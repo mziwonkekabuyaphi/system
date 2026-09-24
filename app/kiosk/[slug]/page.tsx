@@ -181,9 +181,27 @@ interface TenantBrandingRow {
   ticket_queue_eyebrow: string | null
 }
 
+// Per-tenant queue behavior that KioskApp needs but that doesn't live on
+// tenant_branding — pulled from queue_settings alongside everything else
+// this route resolves server-side. Defaults to `true` (service required)
+// on any missing row or query error, matching the DB column default —
+// fail closed, since skipping a service prompt is the more surprising
+// behavior for a tenant that never configured this.
+interface KioskQueueBehavior {
+  requireServiceSelection: boolean
+}
+
+const DEFAULT_REQUIRE_SERVICE_SELECTION = true
+
 type KioskLoadResult =
-  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: true; services: Awaited<ReturnType<typeof getBookableServices>> }
-  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: [] }
+  | {
+      tenant: TenantRow
+      branding: KioskBranding
+      kioskEnabled: true
+      services: Awaited<ReturnType<typeof getBookableServices>>
+      queueBehavior: KioskQueueBehavior
+    }
+  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: []; queueBehavior: KioskQueueBehavior }
 
 // Same two-step lookup as setKioskEnabled/updateGeneralInfo's sibling in
 // app/admin/settings-actions.ts: resolve the `kiosk` row on `modules`,
@@ -282,16 +300,34 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
 
   const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
 
+  // Same fail-closed posture as resolveKioskModuleEnabled above: a missing
+  // row or query error means "behave as if service selection is
+  // required", not "silently skip it" — an admin who hasn't touched this
+  // setting yet gets the flow they already had.
+  const { data: queueSettingsRow, error: queueSettingsError } = await supabase
+    .from("queue_settings")
+    .select("require_service_selection")
+    .eq("tenant_id", tenant.id)
+    .maybeSingle()
+
+  if (queueSettingsError) {
+    console.error("[kiosk] queue_settings lookup failed", { tenantId: tenant.id, error: queueSettingsError })
+  }
+
+  const queueBehavior: KioskQueueBehavior = {
+    requireServiceSelection: queueSettingsRow?.require_service_selection ?? DEFAULT_REQUIRE_SERVICE_SELECTION,
+  }
+
   // Don't even touch the services catalog when the module's off — the
   // whole point of a server-side gate is that the booking flow's data
   // never loads for a kiosk that shouldn't be running it.
   if (!kioskEnabled) {
-    return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [] }
+    return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [], queueBehavior }
   }
 
   const services = await getBookableServices(tenant.id)
 
-  return { tenant, branding: resolvedBranding, kioskEnabled: true, services }
+  return { tenant, branding: resolvedBranding, kioskEnabled: true, services, queueBehavior }
 }
 
 export default async function KioskPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -299,7 +335,7 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
   const data = await loadKioskData(slug)
   if (!data) notFound()
 
-  const { tenant, branding, kioskEnabled, services } = data
+  const { tenant, branding, kioskEnabled, services, queueBehavior } = data
 
   if (!kioskEnabled) {
     return (
@@ -311,7 +347,12 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
 
   return (
     <div className={manrope.className}>
-      <KioskApp slug={tenant.slug} branding={branding} initialServices={services} />
+      <KioskApp
+        slug={tenant.slug}
+        branding={branding}
+        initialServices={services}
+        requireServiceSelection={queueBehavior.requireServiceSelection}
+      />
     </div>
   )
 }
