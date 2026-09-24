@@ -158,7 +158,14 @@ const MAX_DISPLAY_TITLE_LENGTH = 60
 const MAX_DISPLAY_LABEL_LENGTH = 40
 
 async function tenantContext() {
-  const { tenantId } = await requireTenantMember()
+  const { tenantId, roleKey } = await requireTenantMember()
+  // tenant_staff has no settings.manage permission; this file uses the
+  // service-role client which bypasses RLS entirely, so this role check
+  // is the only thing preventing tenant_staff from writing to settings
+  // tables.
+  if (roleKey !== "tenant_owner") {
+    throw new Error("Not authorized")
+  }
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Admin isn't configured")
   return { supabase, tenantId }
