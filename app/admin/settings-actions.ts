@@ -113,18 +113,6 @@ const MAX_IDLE_REFRESH_SECONDS = 600
 const MIN_CONFIRMATION_REFRESH_SECONDS = 3
 const MAX_CONFIRMATION_REFRESH_SECONDS = 120
 
-// Display TV bounds -- mirror the CHECK constraints in
-// migration_display_settings.sql, same defense-in-depth reasoning as the
-// kiosk bounds above.
-const MIN_DISPLAY_WELCOME_SECONDS = 2
-const MAX_DISPLAY_WELCOME_SECONDS = 30
-const MIN_DISPLAY_MENU_BOOKINGS_SECONDS = 3
-const MAX_DISPLAY_MENU_BOOKINGS_SECONDS = 120
-const MIN_DISPLAY_QUEUE_SECONDS = 3
-const MAX_DISPLAY_QUEUE_SECONDS = 300
-const MAX_DISPLAY_TITLE_LENGTH = 60
-const MAX_DISPLAY_LABEL_LENGTH = 40
-
 // Kiosk wording bounds — generous enough for translated copy (which often
 // runs longer than English) while keeping the choice screen's two cards
 // from overflowing a touch layout designed around ~1-2 short lines each.
@@ -151,6 +139,12 @@ const MIN_NOTICE_MINUTES_FLOOR = 0
 const MIN_MAX_ADVANCE_DAYS = 0
 const MIN_CANCELLATION_WINDOW_MINUTES = 0
 const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
+
+// Mirrors queue_settings.ticket_number_prefix's own CHECK constraint
+// (char_length BETWEEN 1 AND 4) — validated here too for a clean error
+// message rather than a raw Postgres constraint violation.
+const MIN_TICKET_NUMBER_PREFIX_LENGTH = 1
+const MAX_TICKET_NUMBER_PREFIX_LENGTH = 4
 
 async function tenantContext() {
   const { tenantId } = await requireTenantMember()
@@ -376,102 +370,6 @@ export async function updateKioskSettings(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Display TV settings — tenant_branding
-//
-// Same table, same "every field optional/nullable = clear to default"
-// wording posture as updateKioskSettings above. show*/*.Seconds are always
-// sent (they're never in a cleared state — a duration always has some
-// value), the four wording fields follow the trim-to-null pattern.
-// ---------------------------------------------------------------------------
-export async function updateDisplaySettings(input: {
-  showServices: boolean
-  showBookings: boolean
-  showQueue: boolean
-  welcomeSeconds: number
-  menuBookingsSeconds: number
-  queueSeconds: number
-  menuTitle?: string | null
-  bookingsTitle?: string | null
-  queueTitle?: string | null
-  nowServingLabel?: string | null
-}): Promise<ActionResult> {
-  try {
-    if (
-      !Number.isFinite(input.welcomeSeconds) ||
-      input.welcomeSeconds < MIN_DISPLAY_WELCOME_SECONDS ||
-      input.welcomeSeconds > MAX_DISPLAY_WELCOME_SECONDS
-    ) {
-      return {
-        success: false,
-        error: `Welcome slide duration must be between ${MIN_DISPLAY_WELCOME_SECONDS} and ${MAX_DISPLAY_WELCOME_SECONDS} seconds.`,
-      }
-    }
-
-    if (
-      !Number.isFinite(input.menuBookingsSeconds) ||
-      input.menuBookingsSeconds < MIN_DISPLAY_MENU_BOOKINGS_SECONDS ||
-      input.menuBookingsSeconds > MAX_DISPLAY_MENU_BOOKINGS_SECONDS
-    ) {
-      return {
-        success: false,
-        error: `Menu / bookings duration must be between ${MIN_DISPLAY_MENU_BOOKINGS_SECONDS} and ${MAX_DISPLAY_MENU_BOOKINGS_SECONDS} seconds.`,
-      }
-    }
-
-    if (
-      !Number.isFinite(input.queueSeconds) ||
-      input.queueSeconds < MIN_DISPLAY_QUEUE_SECONDS ||
-      input.queueSeconds > MAX_DISPLAY_QUEUE_SECONDS
-    ) {
-      return {
-        success: false,
-        error: `Live queue duration must be between ${MIN_DISPLAY_QUEUE_SECONDS} and ${MAX_DISPLAY_QUEUE_SECONDS} seconds.`,
-      }
-    }
-
-    const titleFields: Array<{ label: string; value: string | null | undefined }> = [
-      { label: "Menu screen heading", value: input.menuTitle },
-      { label: "Bookings screen heading", value: input.bookingsTitle },
-      { label: "Queue screen heading", value: input.queueTitle },
-    ]
-    for (const field of titleFields) {
-      if (field.value && field.value.trim().length > MAX_DISPLAY_TITLE_LENGTH) {
-        return { success: false, error: `${field.label} must be ${MAX_DISPLAY_TITLE_LENGTH} characters or fewer.` }
-      }
-    }
-    if (input.nowServingLabel && input.nowServingLabel.trim().length > MAX_DISPLAY_LABEL_LENGTH) {
-      return { success: false, error: `"Now serving" label must be ${MAX_DISPLAY_LABEL_LENGTH} characters or fewer.` }
-    }
-
-    const { supabase, tenantId } = await tenantContext()
-
-    const { error } = await supabase
-      .from("tenant_branding")
-      .update({
-        display_show_services: input.showServices,
-        display_show_bookings: input.showBookings,
-        display_show_queue: input.showQueue,
-        display_welcome_seconds: input.welcomeSeconds,
-        display_menu_bookings_seconds: input.menuBookingsSeconds,
-        display_queue_seconds: input.queueSeconds,
-        display_menu_title: input.menuTitle?.trim() || null,
-        display_bookings_title: input.bookingsTitle?.trim() || null,
-        display_queue_title: input.queueTitle?.trim() || null,
-        display_now_serving_label: input.nowServingLabel?.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("tenant_id", tenantId)
-
-    if (error) return { success: false, error: error.message }
-
-    revalidatePath("/admin")
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: (err as Error).message }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Logo — Storage ('branding' bucket) + tenant_branding.logo_url
 // ---------------------------------------------------------------------------
 function extensionFor(mimeType: string): string {
@@ -623,9 +521,18 @@ export async function updateQueueSettings(input: {
   allowWalkinKiosk: boolean
   requireServiceSelection: boolean
   defaultServiceDurationMinutes: number
+  ticketNumberPrefix: string
 }): Promise<ActionResult> {
   try {
     const { supabase, tenantId } = await tenantContext()
+
+    const ticketNumberPrefix = input.ticketNumberPrefix.trim().toUpperCase()
+    if (
+      ticketNumberPrefix.length < MIN_TICKET_NUMBER_PREFIX_LENGTH ||
+      ticketNumberPrefix.length > MAX_TICKET_NUMBER_PREFIX_LENGTH
+    ) {
+      return { success: false, error: `Ticket prefix must be ${MIN_TICKET_NUMBER_PREFIX_LENGTH}-${MAX_TICKET_NUMBER_PREFIX_LENGTH} characters.` }
+    }
 
     const { error } = await supabase
       .from("queue_settings")
@@ -637,6 +544,7 @@ export async function updateQueueSettings(input: {
         allow_walkin_kiosk: input.allowWalkinKiosk,
         require_service_selection: input.requireServiceSelection,
         default_service_duration_minutes: input.defaultServiceDurationMinutes,
+        ticket_number_prefix: ticketNumberPrefix,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

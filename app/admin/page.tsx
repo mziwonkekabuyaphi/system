@@ -49,7 +49,6 @@ import type {
   AdminBranding,
   AdminBusinessHours,
   AdminConversationSummary,
-  AdminDisplaySettings,
   AdminInboxStats,
   AdminKioskSettings,
   AdminMessageSettings,
@@ -206,15 +205,6 @@ const DEFAULT_IDLE_REFRESH_SECONDS = 75
 const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
 const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
 
-// Display TV defaults -- mirror migration_display_settings.sql's column
-// defaults, same "belt and suspenders" reasoning as the kiosk constants
-// above (the DB should always have a value once the row exists, but a
-// fallback here means a missing/lagging row still renders something
-// sane instead of NaN-second timers).
-const DEFAULT_DISPLAY_WELCOME_SECONDS = 6
-const DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS = 9
-const DEFAULT_DISPLAY_QUEUE_SECONDS = 20
-
 async function getSettingsData(
   supabase: ServerClient,
   tenantId: string,
@@ -225,7 +215,6 @@ async function getSettingsData(
   branding: AdminBranding
   kioskEnabled: boolean
   kioskSettings: AdminKioskSettings
-  displaySettings: AdminDisplaySettings
   bookingSettings: AdminBookingSettings
   queueSettings: AdminQueueSettings
   messageSettings: AdminMessageSettings
@@ -250,8 +239,7 @@ async function getSettingsData(
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
-          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label",
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -274,7 +262,7 @@ async function getSettingsData(
     supabase
       .from("queue_settings")
       .select(
-        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes",
+        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -344,22 +332,6 @@ async function getSettingsData(
       queueCardSubtitle: brandingResult.data.queue_card_subtitle,
       serviceScreenTitle: brandingResult.data.service_screen_title,
     },
-    displaySettings: {
-      showServices: brandingResult.data.display_show_services ?? true,
-      showBookings: brandingResult.data.display_show_bookings ?? true,
-      showQueue: brandingResult.data.display_show_queue ?? true,
-      welcomeSeconds: brandingResult.data.display_welcome_seconds ?? DEFAULT_DISPLAY_WELCOME_SECONDS,
-      menuBookingsSeconds:
-        brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS,
-      queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_QUEUE_SECONDS,
-      // Kept raw/nullable, same reasoning as the kiosk wording fields above
-      // — DisplayPanel shows an empty field with the default as placeholder
-      // text, and DisplayScreen.tsx is where null resolves to that default.
-      menuTitle: brandingResult.data.display_menu_title,
-      bookingsTitle: brandingResult.data.display_bookings_title,
-      queueTitle: brandingResult.data.display_queue_title,
-      nowServingLabel: brandingResult.data.display_now_serving_label,
-    },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
       queueLeadTimeMinutes: bookingSettingsResult.data.queue_lead_time_minutes,
@@ -381,6 +353,7 @@ async function getSettingsData(
       // this flag before deciding whether to prompt for a service.
       requireServiceSelection: queueSettingsResult.data.require_service_selection,
       defaultServiceDurationMinutes: queueSettingsResult.data.default_service_duration_minutes,
+      ticketNumberPrefix: queueSettingsResult.data.ticket_number_prefix,
     },
     messageSettings: {
       aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,
@@ -587,7 +560,6 @@ export default async function AdminPage() {
       initialBranding={settingsData.branding}
       initialKioskEnabled={settingsData.kioskEnabled}
       initialKioskSettings={settingsData.kioskSettings}
-      initialDisplaySettings={settingsData.displaySettings}
       initialBookingSettings={settingsData.bookingSettings}
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}

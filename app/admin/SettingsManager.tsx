@@ -3,15 +3,12 @@
 
 import { useEffect, useRef, useState, useTransition } from "react"
 
-import { Toggle } from "@/components/admin/Toggle"
-
 import {
   removeLogo,
   setKioskEnabled,
   updateBookingSettings,
   updateBranding,
   updateBusinessHours,
-  updateDisplaySettings,
   updateGeneralInfo,
   updateKioskSettings,
   updateMessageSettings,
@@ -22,7 +19,6 @@ import type {
   AdminBookingSettings,
   AdminBranding,
   AdminBusinessHours,
-  AdminDisplaySettings,
   AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
@@ -37,12 +33,11 @@ const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+
 
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
-type SubTab = "general" | "kiosk" | "display" | "private-label" | "booking" | "queue" | "messages"
+type SubTab = "general" | "kiosk" | "private-label" | "booking" | "queue" | "messages"
 
 const SUB_TABS: Array<{ id: SubTab; label: string }> = [
   { id: "general", label: "Business Info" },
   { id: "kiosk", label: "Kiosk" },
-  { id: "display", label: "Display" },
   { id: "private-label", label: "Private Label" },
   { id: "booking", label: "Booking" },
   { id: "queue", label: "Queue" },
@@ -81,7 +76,6 @@ export function SettingsManager({
   onBrandingChange,
   initialKioskEnabled,
   initialKioskSettings,
-  initialDisplaySettings,
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
@@ -97,7 +91,6 @@ export function SettingsManager({
   onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
   initialKioskEnabled: boolean
   initialKioskSettings: AdminKioskSettings
-  initialDisplaySettings: AdminDisplaySettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
@@ -136,9 +129,6 @@ export function SettingsManager({
           tenantSlug={tenantSlug}
           initialKioskSettings={initialKioskSettings}
         />
-      )}
-      {subTab === "display" && (
-        <DisplayPanel tenantSlug={tenantSlug} initial={initialDisplaySettings} />
       )}
       {subTab === "private-label" && (
         <PrivateLabelPanel plan={initialPlan} initial={initialBranding} onBrandingChange={onBrandingChange} />
@@ -742,265 +732,6 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
 }
 
 // ---------------------------------------------------------------------------
-// Display — the ambient TV screen for the waiting area. Its own tab
-// (separate from Kiosk) since it's a different physical device with a
-// different job: kiosk is customer-operated self-service, display is a
-// passive, unattended screen that just rotates through what's showing
-// right now. Wording/timing here writes to tenant_branding's display_*
-// columns via updateDisplaySettings — see migration_display_settings.sql
-// and DisplayScreen.tsx (which is what actually renders these).
-//
-// Branding (name, logo, colors) still isn't edited here, same reasoning
-// as the Kiosk tab — Private Label is the single source of truth for
-// that, this tab only configures Display-specific behavior.
-// ---------------------------------------------------------------------------
-const DEFAULT_DISPLAY_MENU_TITLE = "On the menu"
-const DEFAULT_DISPLAY_BOOKINGS_TITLE = "Upcoming bookings"
-const DEFAULT_DISPLAY_QUEUE_TITLE = "Live queue"
-const DEFAULT_DISPLAY_NOW_SERVING_LABEL = "Now serving"
-
-function DisplayPanel({ tenantSlug, initial }: { tenantSlug: string; initial: AdminDisplaySettings }) {
-  return (
-    <div className="space-y-3">
-      <DisplayUrlPanel tenantSlug={tenantSlug} />
-      <DisplayBehaviorPanel initial={initial} />
-    </div>
-  )
-}
-
-// ---- Display URL + QR code -------------------------------------------------
-
-function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
-  const [origin, setOrigin] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    setOrigin(window.location.origin)
-  }, [])
-
-  const displayUrl = origin ? `${origin}/display/${tenantSlug}` : null
-
-  async function copyUrl() {
-    if (!displayUrl) return
-    try {
-      await navigator.clipboard.writeText(displayUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Clipboard API can be unavailable (e.g. insecure context) — the URL
-      // is already selectable in the input, so this just skips the toast.
-    }
-  }
-
-  return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Display URL</p>
-      <p className="text-sm text-stone-500">Open this on the waiting-area TV's browser and leave the tab open.</p>
-
-      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
-        <div className="flex-1 space-y-2">
-          <div className="flex gap-2">
-            <input className={inputClass} readOnly value={displayUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
-            <button type="button" className={secondaryButtonClass} onClick={copyUrl} disabled={!displayUrl}>
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <p className="text-xs text-stone-400">
-            No login needed — it&apos;s a public, read-only URL, same as the kiosk.
-          </p>
-        </div>
-
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
-          {displayUrl ? (
-            // Third-party QR generator — same reasoning as the kiosk's own
-            // QR code above: this URL isn't sensitive.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(displayUrl)}`}
-              alt="QR code linking to the display"
-              width={160}
-              height={160}
-            />
-          ) : (
-            <div className="flex h-40 w-40 items-center justify-center text-xs text-stone-400">Loading…</div>
-          )}
-          <span className="text-xs text-stone-500">Scan to open on a phone/tablet for testing</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---- Screens, timing, and wording ------------------------------------------
-
-function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
-  const [showServices, setShowServices] = useState(initial.showServices)
-  const [showBookings, setShowBookings] = useState(initial.showBookings)
-  const [showQueue, setShowQueue] = useState(initial.showQueue)
-  const [welcomeSeconds, setWelcomeSeconds] = useState(initial.welcomeSeconds)
-  const [menuBookingsSeconds, setMenuBookingsSeconds] = useState(initial.menuBookingsSeconds)
-  const [queueSeconds, setQueueSeconds] = useState(initial.queueSeconds)
-  const [menuTitle, setMenuTitle] = useState(initial.menuTitle ?? "")
-  const [bookingsTitle, setBookingsTitle] = useState(initial.bookingsTitle ?? "")
-  const [queueTitle, setQueueTitle] = useState(initial.queueTitle ?? "")
-  const [nowServingLabel, setNowServingLabel] = useState(initial.nowServingLabel ?? "")
-  const [isPending, startTransition] = useTransition()
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
-
-  function save() {
-    setMessage(null)
-    startTransition(async () => {
-      const result = await updateDisplaySettings({
-        showServices,
-        showBookings,
-        showQueue,
-        welcomeSeconds,
-        menuBookingsSeconds,
-        queueSeconds,
-        menuTitle: menuTitle.trim() || null,
-        bookingsTitle: bookingsTitle.trim() || null,
-        queueTitle: queueTitle.trim() || null,
-        nowServingLabel: nowServingLabel.trim() || null,
-      })
-      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
-    })
-  }
-
-  return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Display behavior</p>
-      <p className="text-sm text-stone-500">
-        The TV shows your branding once when it starts up, then rotates through whichever screens below are on for
-        as long as the tab stays open.
-      </p>
-
-      <div className="mt-4 space-y-4">
-        <FieldRow
-          label="Welcome slide duration (seconds)"
-          hint="How long your logo and name show for when the screen first starts, before the rotation below begins. This slide never repeats after that."
-        >
-          <input
-            type="number"
-            min={2}
-            max={30}
-            className={inputClass}
-            value={welcomeSeconds}
-            onChange={(e) => setWelcomeSeconds(Number(e.target.value))}
-          />
-        </FieldRow>
-
-        <div className="border-t border-stone-200 pt-4">
-          <span className="mb-1 block text-sm font-medium text-stone-800">Screens in rotation</span>
-          <p className="mb-3 text-xs text-stone-400">
-            A screen is skipped automatically if there&apos;s nothing to show on it right now (e.g. no upcoming
-            bookings), even when it&apos;s switched on below.
-          </p>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 p-3">
-              <div>
-                <p className="text-sm font-medium text-stone-800">Menu</p>
-                <p className="text-xs text-stone-500">Your bookable services and prices.</p>
-              </div>
-              <Toggle checked={showServices} disabled={isPending} onChange={setShowServices} />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 p-3">
-              <div>
-                <p className="text-sm font-medium text-stone-800">Upcoming bookings</p>
-                <p className="text-xs text-stone-500">Confirmed appointments coming up next.</p>
-              </div>
-              <Toggle checked={showBookings} disabled={isPending} onChange={setShowBookings} />
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 p-3">
-              <div>
-                <p className="text-sm font-medium text-stone-800">Live queue</p>
-                <p className="text-xs text-stone-500">Who&apos;s being served now and who&apos;s waiting.</p>
-              </div>
-              <Toggle checked={showQueue} disabled={isPending} onChange={setShowQueue} />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-4 border-t border-stone-200 pt-4 sm:grid-cols-2">
-          <FieldRow
-            label="Menu / bookings duration (seconds)"
-            hint="How long the Menu and Upcoming bookings screens each show before moving to the next one."
-          >
-            <input
-              type="number"
-              min={3}
-              max={120}
-              className={inputClass}
-              value={menuBookingsSeconds}
-              onChange={(e) => setMenuBookingsSeconds(Number(e.target.value))}
-            />
-          </FieldRow>
-          <FieldRow
-            label="Live queue duration (seconds)"
-            hint="Usually longer than above — there's more to read (who's being served, and who's next)."
-          >
-            <input
-              type="number"
-              min={3}
-              max={300}
-              className={inputClass}
-              value={queueSeconds}
-              onChange={(e) => setQueueSeconds(Number(e.target.value))}
-            />
-          </FieldRow>
-        </div>
-
-        <div className="border-t border-stone-200 pt-4">
-          <span className="mb-1 block text-sm font-medium text-stone-800">Wording</span>
-          <p className="mb-3 text-xs text-stone-400">Headings shown at the top of each screen.</p>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldRow label="Menu heading" hint={`Defaults to "${DEFAULT_DISPLAY_MENU_TITLE}".`}>
-              <input
-                className={inputClass}
-                value={menuTitle}
-                onChange={(e) => setMenuTitle(e.target.value)}
-                placeholder={DEFAULT_DISPLAY_MENU_TITLE}
-                maxLength={60}
-              />
-            </FieldRow>
-            <FieldRow label="Bookings heading" hint={`Defaults to "${DEFAULT_DISPLAY_BOOKINGS_TITLE}".`}>
-              <input
-                className={inputClass}
-                value={bookingsTitle}
-                onChange={(e) => setBookingsTitle(e.target.value)}
-                placeholder={DEFAULT_DISPLAY_BOOKINGS_TITLE}
-                maxLength={60}
-              />
-            </FieldRow>
-            <FieldRow label="Queue heading" hint={`Defaults to "${DEFAULT_DISPLAY_QUEUE_TITLE}".`}>
-              <input
-                className={inputClass}
-                value={queueTitle}
-                onChange={(e) => setQueueTitle(e.target.value)}
-                placeholder={DEFAULT_DISPLAY_QUEUE_TITLE}
-                maxLength={60}
-              />
-            </FieldRow>
-            <FieldRow label='"Now serving" label' hint={`Defaults to "${DEFAULT_DISPLAY_NOW_SERVING_LABEL}".`}>
-              <input
-                className={inputClass}
-                value={nowServingLabel}
-                onChange={(e) => setNowServingLabel(e.target.value)}
-                placeholder={DEFAULT_DISPLAY_NOW_SERVING_LABEL}
-                maxLength={40}
-              />
-            </FieldRow>
-          </div>
-        </div>
-      </div>
-
-      <SaveRow isPending={isPending} onSave={save} message={message} />
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Private Label — the SINGLE place branding is edited. Controls how the
 // business appears across every customer-facing surface (kiosk, booking &
 // queue confirmations, WhatsApp). Two cards:
@@ -1515,6 +1246,21 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
             />
           </FieldRow>
         )}
+
+        <FieldRow label="Queue ticket number format">
+          <input
+            type="text"
+            maxLength={4}
+            placeholder="e.g. Q"
+            className={inputClass}
+            value={form.ticketNumberPrefix}
+            onChange={(e) => setForm({ ...form, ticketNumberPrefix: e.target.value.toUpperCase() })}
+          />
+          <p className="text-sm text-stone-500 mt-1">
+            Shown on printed kiosk tickets and WhatsApp confirmations — e.g. &quot;Q&quot; gives tickets like Q001,
+            Q002. Use your own initials or a short word instead if you&apos;d rather not use Q (1–4 characters).
+          </p>
+        </FieldRow>
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />
@@ -1678,3 +1424,31 @@ function SaveRow({
   )
 }
 
+function Toggle({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean
+  disabled?: boolean
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset ring-black/10 transition-colors disabled:cursor-not-allowed ${
+        checked ? (disabled ? "bg-[#7A2E3A]/60" : "bg-[#7A2E3A]") : disabled ? "bg-stone-200" : "bg-stone-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+          checked ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  )
+}
