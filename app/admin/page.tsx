@@ -28,6 +28,14 @@
 // in Postgres) checks per tenant before promoting a confirmed booking
 // into queue_entries.
 //
+// DISPLAY TAB: the TV screen's own tenant_branding columns (display_*)
+// are read in the SAME query as the rest of branding/kiosk below, not a
+// separate round trip — same reasoning as kioskSettings already sharing
+// brandingResult. See AdminDisplaySettings in ./types and
+// app/display/[slug]/actions.ts's DisplaySettings, which mirrors this
+// shape field-for-field (that route re-derives its own copy server-side
+// rather than importing this admin-only file).
+//
 // business_hours (Settings > Business Info) is one row per day_of_week
 // (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
 // bookings and queue_entries enforce them (see the business_hours_
@@ -49,6 +57,7 @@ import type {
   AdminBranding,
   AdminBusinessHours,
   AdminConversationSummary,
+  AdminDisplaySettings,
   AdminInboxStats,
   AdminKioskSettings,
   AdminMessageSettings,
@@ -205,6 +214,14 @@ const DEFAULT_IDLE_REFRESH_SECONDS = 75
 const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
 const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
 
+// Mirrors tenant_branding's own display_* column DEFAULTs (see
+// migration_display_settings.sql) — used only if a tenant's branding row
+// is somehow missing entirely, same "don't crash, degrade" posture as
+// DEFAULT_IDLE_REFRESH_SECONDS above.
+const DEFAULT_DISPLAY_WELCOME_SECONDS = 6
+const DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS = 9
+const DEFAULT_DISPLAY_QUEUE_SECONDS = 20
+
 async function getSettingsData(
   supabase: ServerClient,
   tenantId: string,
@@ -215,6 +232,7 @@ async function getSettingsData(
   branding: AdminBranding
   kioskEnabled: boolean
   kioskSettings: AdminKioskSettings
+  displaySettings: AdminDisplaySettings
   bookingSettings: AdminBookingSettings
   queueSettings: AdminQueueSettings
   messageSettings: AdminMessageSettings
@@ -239,7 +257,8 @@ async function getSettingsData(
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title",
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
+          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -331,6 +350,25 @@ async function getSettingsData(
       queueCardTitle: brandingResult.data.queue_card_title,
       queueCardSubtitle: brandingResult.data.queue_card_subtitle,
       serviceScreenTitle: brandingResult.data.service_screen_title,
+    },
+    // Same clear-to-default posture as kioskSettings' wording fields
+    // above: *Title/*Label kept raw/nullable so SettingsManager.tsx can
+    // show the hardcoded default as placeholder text rather than baking
+    // it into the saved value. app/display/[slug]/actions.ts is where
+    // null actually resolves to the default string DisplayScreen.tsx
+    // renders — this admin-only object is never read by that route.
+    displaySettings: {
+      showServices: brandingResult.data.display_show_services ?? true,
+      showBookings: brandingResult.data.display_show_bookings ?? true,
+      showQueue: brandingResult.data.display_show_queue ?? true,
+      welcomeSeconds: brandingResult.data.display_welcome_seconds ?? DEFAULT_DISPLAY_WELCOME_SECONDS,
+      menuBookingsSeconds:
+        brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS,
+      queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_QUEUE_SECONDS,
+      menuTitle: brandingResult.data.display_menu_title,
+      bookingsTitle: brandingResult.data.display_bookings_title,
+      queueTitle: brandingResult.data.display_queue_title,
+      nowServingLabel: brandingResult.data.display_now_serving_label,
     },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
@@ -560,6 +598,7 @@ export default async function AdminPage() {
       initialBranding={settingsData.branding}
       initialKioskEnabled={settingsData.kioskEnabled}
       initialKioskSettings={settingsData.kioskSettings}
+      initialDisplaySettings={settingsData.displaySettings}
       initialBookingSettings={settingsData.bookingSettings}
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}
