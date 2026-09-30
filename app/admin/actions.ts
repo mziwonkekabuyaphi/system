@@ -225,7 +225,7 @@ function validateServiceInput(input: ServiceInput): string | null {
 }
 
 export async function addService(input: ServiceInput): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient("services.manage")
   if (!supabase) return { ok: false, error: error! }
 
   const validationError = validateServiceInput(input)
@@ -250,7 +250,7 @@ export async function addService(input: ServiceInput): Promise<ActionResult> {
 }
 
 export async function updateService(id: string, input: ServiceInput): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient("services.manage")
   if (!supabase) return { ok: false, error: error! }
 
   const validationError = validateServiceInput(input)
@@ -275,7 +275,7 @@ export async function updateService(id: string, input: ServiceInput): Promise<Ac
 }
 
 export async function toggleServiceActive(id: string, active: boolean): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient("services.manage")
   if (!supabase) return { ok: false, error: error! }
 
   const { error: updateError } = await supabase
