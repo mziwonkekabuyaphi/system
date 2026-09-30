@@ -1,5 +1,6 @@
 import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
+import { Logo } from "@/components/Logo";
 
 export const metadata = {
   title: "ZozoQueue — WhatsApp booking & queueing for real shops",
@@ -13,7 +14,10 @@ export default function DemoPage() {
     <div className={styles.page}>
       <nav className={styles.siteNav}>
         <div className={`${styles.wrapWide} ${styles.siteNavInner}`}>
-          <span className={styles.siteNavBrand}>ZozoQueue</span>
+          <span className={styles.siteNavBrand}>
+            <Logo size={20} />
+            ZozoQueue
+          </span>
           <div className={styles.siteNavActions}>
             <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
               Sign in
@@ -27,7 +31,10 @@ export default function DemoPage() {
 
       <section className={styles.heroSplit}>
         <aside className={styles.heroStub}>
-          <span className={styles.heroStubBrand}>ZozoQueue</span>
+          <span className={styles.heroStubBrand}>
+          <Logo size={22} />
+          ZozoQueue
+        </span>
           <div className={styles.heroStubTicket}>
             <span className={styles.heroStubLabel}>Now serving</span>
             <span className={styles.heroStubNumber}>001</span>

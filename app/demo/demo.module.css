@@ -61,6 +61,9 @@
 }
 
 .siteNavBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--qless-font-mono);
   font-size: 0.95rem;
   letter-spacing: 0.02em;
@@ -143,6 +146,9 @@
 }
 
 .heroStubBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--qless-font-mono);
   font-size: 1.05rem;
   letter-spacing: 0.02em;
