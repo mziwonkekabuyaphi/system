@@ -1,6 +1,6 @@
 /* Auth theme — QLess */
-
-.qless-auth-page {
+/* Design tokens — shared globally (auth pages + /admin) */
+:root {
   --qless-navy: #131b2e;
   --qless-navy-deep: #0c1220;
   --qless-amber: #f5a623;
@@ -14,9 +14,14 @@
   --qless-success: #3f7a56;
   --qless-focus: #2557a7;
 
-  --qless-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --qless-font-body: "Inter", -apple-system, "Segoe UI", sans-serif;
+  /* --font-ibm-plex-mono / --font-inter come from next/font/google in app/layout.tsx.
+     Falling back to the old named-font stack in case this file is ever used
+     somewhere those variables aren't applied (e.g. an email template). */
+  --qless-font-mono: var(--font-ibm-plex-mono), "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --qless-font-body: var(--font-inter), "Inter", -apple-system, "Segoe UI", sans-serif;
+}
 
+.qless-auth-page {
   display: grid;
   grid-template-columns: minmax(300px, 380px) 1fr;
   min-height: 100vh;
