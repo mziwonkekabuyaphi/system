@@ -17,7 +17,7 @@ const COM_PORT = "COM3"
 
 // 2) The address of your kiosk website (just the start, no path).
 //    Example: "https://my-kiosk.vercel.app"
-const ALLOWED_ORIGINS = ["https://your-kiosk-domain.com", "http://localhost:3000"]
+const ALLOWED_ORIGINS = ["https://system-eta-azure.vercel.app", "http://localhost:3000"]
 // ===================================================================
 
 const PORT = 4000
