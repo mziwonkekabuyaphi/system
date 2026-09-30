@@ -43,6 +43,7 @@ export type PermissionKey =
   | "payroll.manage"
   | "bookings.view"
   | "bookings.manage"
+  | "services.manage"
   | "queue.view"
   | "queue.manage"
 
