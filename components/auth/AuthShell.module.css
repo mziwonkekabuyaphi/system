@@ -50,6 +50,9 @@
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--qless-font-mono);
   font-size: 1.05rem;
   letter-spacing: 0.02em;
@@ -98,6 +101,8 @@
 
 .mobileBrand {
   display: none;
+  align-items: center;
+  gap: 6px;
   font-family: var(--qless-font-mono);
   font-size: 0.95rem;
   color: var(--qless-ink-soft);
@@ -106,7 +111,7 @@
 
 @media (max-width: 860px) {
   .mobileBrand {
-    display: block;
+    display: flex;
   }
 }
 
