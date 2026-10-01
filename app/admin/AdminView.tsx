@@ -159,20 +159,31 @@ export function AdminView({
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
   tenantSlug: string
-  initialTenantSettings: AdminTenantSettings
+  initialTenantSettings: AdminTenantSettings | null
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
-  initialKioskSettings: AdminKioskSettings
-  initialDisplaySettings: AdminDisplaySettings
-  initialBookingSettings: AdminBookingSettings
-  initialQueueSettings: AdminQueueSettings
-  initialMessageSettings: AdminMessageSettings
-  initialBusinessHours: AdminBusinessHours
+  initialKioskSettings: AdminKioskSettings | null
+  initialDisplaySettings: AdminDisplaySettings | null
+  initialBookingSettings: AdminBookingSettings | null
+  initialQueueSettings: AdminQueueSettings | null
+  initialMessageSettings: AdminMessageSettings | null
+  initialBusinessHours: AdminBusinessHours | null
 }) {
   const [tab, setTab] = useState<Tab>("today")
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
   const expanded = hovered || pinned
+
+  // Services/Settings tabs are hidden from a caller without the matching
+  // permission — this mirrors, but does not replace, the data-layer fix
+  // in page.tsx: initialServices is already [] and the settings fields
+  // are already null for such a caller, so this only controls whether
+  // the (now-empty/inapplicable) tab is shown at all.
+  const visibleTabs = TABS.filter((t) => {
+    if (t.id === "services") return staffPermissions.servicesManage
+    if (t.id === "settings") return staffPermissions.settingsManage
+    return true
+  })
 
   // Branding is lifted into state (seeded from the server-fetched
   // initialBranding) so the sidebar badge and header logo update the
@@ -231,7 +242,7 @@ export function AdminView({
 
         {/* Nav */}
         <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-          {TABS.map((t) => {
+          {visibleTabs.map((t) => {
             const Icon = t.icon
             const active = tab === t.id
             return (
@@ -312,7 +323,9 @@ export function AdminView({
           {tab === "inbox" && (
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}
-          {tab === "services" && <ServicesManager initialServices={initialServices} />}
+          {tab === "services" && staffPermissions.servicesManage && (
+            <ServicesManager initialServices={initialServices} />
+          )}
           {tab === "staff" && (
             <StaffManager
               initialStaff={initialStaff}
@@ -322,20 +335,27 @@ export function AdminView({
             />
           )}
           {tab === "billing" && <BillingPanel />}
-          {tab === "settings" && (
+          {/* initialTenantSettings/initialKioskSettings/initialDisplaySettings/
+              initialBookingSettings/initialQueueSettings/initialMessageSettings/
+              initialBusinessHours are guaranteed non-null exactly when
+              staffPermissions.settingsManage is true — page.tsx's
+              permissions.settingsManage ternary (getSettingsData vs.
+              getTenantIdentity) is the single source of that invariant, so
+              the assertions below are safe. */}
+          {tab === "settings" && staffPermissions.settingsManage && (
             <SettingsManager
               initialPlan={initialPlan}
               tenantSlug={tenantSlug}
-              initialSettings={initialTenantSettings}
+              initialSettings={initialTenantSettings!}
               initialBranding={initialBranding}
               onBrandingChange={handleBrandingChange}
               initialKioskEnabled={initialKioskEnabled}
-              initialKioskSettings={initialKioskSettings}
-              initialDisplaySettings={initialDisplaySettings}
-              initialBookingSettings={initialBookingSettings}
-              initialQueueSettings={initialQueueSettings}
-              initialMessageSettings={initialMessageSettings}
-              initialBusinessHours={initialBusinessHours}
+              initialKioskSettings={initialKioskSettings!}
+              initialDisplaySettings={initialDisplaySettings!}
+              initialBookingSettings={initialBookingSettings!}
+              initialQueueSettings={initialQueueSettings!}
+              initialMessageSettings={initialMessageSettings!}
+              initialBusinessHours={initialBusinessHours!}
             />
           )}
         </main>

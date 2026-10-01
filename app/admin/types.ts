@@ -68,6 +68,8 @@ export interface AdminStaffPermissions {
   staffManage: boolean
   payrollView: boolean
   payrollManage: boolean
+  settingsManage: boolean
+  servicesManage: boolean
 }
 
 /** A currently-open row in staff_shifts, joined with the staff member's

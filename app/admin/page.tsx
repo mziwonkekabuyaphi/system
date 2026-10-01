@@ -424,6 +424,59 @@ async function getSettingsData(
   }
 }
 
+/** Reduced-column fallback for callers without settings.manage. Exists
+ *  only so AdminView's header chrome (shop name/logo) and StaffManager's
+ *  clock-in link (tenant slug) keep working for tenant_staff — nothing
+ *  else in the settings/branding-config/kiosk/display/booking/queue/
+ *  message/business-hours columns is ever queried here. displayName/
+ *  logoUrl aren't treated as sensitive: both are already public on
+ *  /kiosk/[slug], the same surface any customer sees.
+ */
+async function getTenantIdentity(
+  supabase: ServerClient,
+  tenantId: string,
+): Promise<{
+  plan: AdminPlan
+  slug: string
+  settings: AdminTenantSettings | null
+  branding: AdminBranding
+  kioskEnabled: boolean
+  kioskSettings: AdminKioskSettings | null
+  displaySettings: AdminDisplaySettings | null
+  bookingSettings: AdminBookingSettings | null
+  queueSettings: AdminQueueSettings | null
+  messageSettings: AdminMessageSettings | null
+  businessHours: AdminBusinessHours | null
+}> {
+  const [tenantResult, brandingResult] = await Promise.all([
+    supabase.from("tenants").select("plan, slug").eq("id", tenantId).single(),
+    supabase.from("tenant_branding").select("display_name, logo_url").eq("tenant_id", tenantId).single(),
+  ])
+
+  if (tenantResult.error) throw new Error(`Failed to load tenant identity: ${tenantResult.error.message}`)
+  if (brandingResult.error) throw new Error(`Failed to load branding identity: ${brandingResult.error.message}`)
+
+  return {
+    plan: tenantResult.data.plan as AdminPlan,
+    slug: tenantResult.data.slug as string,
+    settings: null,
+    branding: {
+      displayName: brandingResult.data.display_name,
+      logoUrl: brandingResult.data.logo_url,
+      primaryColor: null,
+      secondaryColor: null,
+      removePoweredBy: false,
+    },
+    kioskEnabled: false,
+    kioskSettings: null,
+    displaySettings: null,
+    bookingSettings: null,
+    queueSettings: null,
+    messageSettings: null,
+    businessHours: null,
+  }
+}
+
 // ============================================================================
 // INBOX
 // ============================================================================
@@ -558,31 +611,52 @@ export default async function AdminPage() {
   // ones granted — it does NOT return flat booleans, so that Set is
   // converted into AdminStaffPermissions' shape here. The try/catch is
   // kept as a safety net (a transient RPC failure degrades to "no staff/
-  // payroll access" for this one request rather than 500ing the whole
-  // page) now that the call itself is actually correct.
-  const STAFF_PERMISSION_KEYS: PermissionKey[] = ["staff.view", "staff.manage", "payroll.view", "payroll.manage"]
+  // payroll/settings/services access" for this one request rather than
+  // 500ing the whole page) now that the call itself is actually correct.
+  const ADMIN_PERMISSION_KEYS: PermissionKey[] = [
+    "staff.view",
+    "staff.manage",
+    "payroll.view",
+    "payroll.manage",
+    "settings.manage",
+    "services.manage",
+  ]
 
   let permissions: AdminStaffPermissions
   try {
-    const { granted } = await getTenantPermissions(STAFF_PERMISSION_KEYS)
+    const { granted } = await getTenantPermissions(ADMIN_PERMISSION_KEYS)
     permissions = {
       staffView: granted.has("staff.view"),
       staffManage: granted.has("staff.manage"),
       payrollView: granted.has("payroll.view"),
       payrollManage: granted.has("payroll.manage"),
+      settingsManage: granted.has("settings.manage"),
+      servicesManage: granted.has("services.manage"),
     }
   } catch (err) {
-    console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll access", err)
-    permissions = { staffView: false, staffManage: false, payrollView: false, payrollManage: false }
+    console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
+    permissions = {
+      staffView: false,
+      staffManage: false,
+      payrollView: false,
+      payrollManage: false,
+      settingsManage: false,
+      servicesManage: false,
+    }
   }
 
+  // Services and full Settings data are owner-only. A tenant_staff caller
+  // never triggers getAllServices()/getSettingsData() at all for this
+  // request — not just "doesn't receive the data" but "the data is never
+  // fetched" — getTenantIdentity() is the only thing a non-
+  // settings.manage caller pays for.
   const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
-    getAllServices(supabase, tenantId),
+    permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
     getAllStaff(supabase, tenantId, permissions.payrollView),
     getInboxData(supabase, tenantId),
-    getSettingsData(supabase, tenantId),
+    permissions.settingsManage ? getSettingsData(supabase, tenantId) : getTenantIdentity(supabase, tenantId),
   ])
 
   // Same hotfix posture as permissions above — staff_shifts is another
