@@ -757,6 +757,25 @@ const DEFAULT_DISPLAY_BOOKINGS_TITLE = "Upcoming bookings"
 const DEFAULT_DISPLAY_QUEUE_TITLE = "Live queue"
 const DEFAULT_DISPLAY_NOW_SERVING_LABEL = "Now serving"
 
+// DB column only accepts #RRGGBB, but the shared ColorField also allows #RGB.
+function toSixDigitHex(value: string): string | null {
+  if (!HEX_COLOR_PATTERN.test(value)) return null
+  const clean = value.slice(1)
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean
+  return `#${full.toUpperCase()}`
+}
+
+const DISPLAY_THEME_OPTIONS: Array<{
+  value: AdminDisplaySettings["theme"]
+  title: string
+  description: string
+  swatch: string
+}> = [
+  { value: "dark", title: "Dark", description: "Near-black with light text. Easy on the eyes in dim rooms.", swatch: "#15110D" },
+  { value: "light", title: "Light", description: "Off-white with dark text. Suits bright, airy spaces.", swatch: "#FAF8F5" },
+  { value: "custom", title: "Custom color", description: "Pick your own background. Text color adjusts automatically.", swatch: "" },
+]
+
 function DisplayPanel({ tenantSlug, initial }: { tenantSlug: string; initial: AdminDisplaySettings }) {
   return (
     <div className="space-y-3">
@@ -848,6 +867,9 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
   const [showQueueWaitEstimate, setShowQueueWaitEstimate] = useState(initial.showQueueWaitEstimate)
   const [showQueueDuration, setShowQueueDuration] = useState(initial.showQueueDuration)
   const [showQueueReference, setShowQueueReference] = useState(initial.showQueueReference)
+  const [theme, setTheme] = useState(initial.theme)
+  const [backgroundColor, setBackgroundColor] = useState(initial.backgroundColor ?? "#15110D")
+  const [tagline, setTagline] = useState(initial.tagline ?? "")
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -855,6 +877,9 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
     setMessage(null)
     startTransition(async () => {
       const result = await updateDisplaySettings({
+        theme,
+        backgroundColor: toSixDigitHex(backgroundColor),
+        tagline: tagline.trim() || null,
         showServices,
         showBookings,
         showQueue,
@@ -898,6 +923,62 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
             onChange={(e) => setWelcomeSeconds(Number(e.target.value))}
           />
         </FieldRow>
+
+        <div className="border-t border-stone-200 pt-4">
+          <span className="mb-1 block text-sm font-medium text-stone-800">Appearance</span>
+          <p className="mb-3 text-xs text-stone-400">
+            Text color is chosen for you so it stays readable on any background, and your brand colors are
+            lightened or darkened slightly if they would be hard to read on the one you pick.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {DISPLAY_THEME_OPTIONS.map((option) => {
+              const selected = theme === option.value
+              const swatch = option.value === "custom" ? (HEX_COLOR_PATTERN.test(backgroundColor) ? backgroundColor : "#15110D") : option.swatch
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => setTheme(option.value)}
+                  aria-pressed={selected}
+                  className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                    selected
+                      ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                      : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 shrink-0 rounded-full border border-stone-300" style={{ background: swatch }} />
+                    <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                      {option.title}
+                    </span>
+                  </span>
+                  <span className="text-xs text-stone-500">{option.description}</span>
+                </button>
+              )
+            })}
+          </div>
+          {theme === "custom" && (
+            <div className="mt-3 max-w-xs">
+              <ColorField label="Background color" value={backgroundColor} onChange={setBackgroundColor} />
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-stone-200 pt-4">
+          <FieldRow
+            label="Welcome slide tagline"
+            hint="Shown under your name on the welcome slide. Separate from the kiosk tagline, so “Tap anywhere to check in” won't show up on the TV. Leave empty for no tagline."
+          >
+            <input
+              className={inputClass}
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              placeholder="e.g. Walk-ins welcome"
+              maxLength={80}
+            />
+          </FieldRow>
+        </div>
 
         <div className="border-t border-stone-200 pt-4">
           <span className="mb-1 block text-sm font-medium text-stone-800">Screens in rotation</span>
