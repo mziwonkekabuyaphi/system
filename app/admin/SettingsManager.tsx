@@ -765,6 +765,23 @@ function toSixDigitHex(value: string): string | null {
   return `#${full.toUpperCase()}`
 }
 
+const DISPLAY_LAYOUT_OPTIONS: Array<{
+  value: AdminDisplaySettings["layout"]
+  title: string
+  description: string
+}> = [
+  {
+    value: "rotation",
+    title: "Rotating slides",
+    description: "One big screen at a time: menu, bookings, queue. Best for a TV people glance at from across the room.",
+  },
+  {
+    value: "board",
+    title: "Live board",
+    description: "Everything at once: Waiting, Now serving and Upcoming bookings as ticket columns, with your menu scrolling along the bottom.",
+  },
+]
+
 const DISPLAY_THEME_OPTIONS: Array<{
   value: AdminDisplaySettings["theme"]
   title: string
@@ -868,6 +885,7 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
   const [showQueueDuration, setShowQueueDuration] = useState(initial.showQueueDuration)
   const [showQueueReference, setShowQueueReference] = useState(initial.showQueueReference)
   const [theme, setTheme] = useState(initial.theme)
+  const [layout, setLayout] = useState(initial.layout)
   const [backgroundColor, setBackgroundColor] = useState(initial.backgroundColor ?? "#15110D")
   const [tagline, setTagline] = useState(initial.tagline ?? "")
   const [isPending, startTransition] = useTransition()
@@ -878,6 +896,7 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
     startTransition(async () => {
       const result = await updateDisplaySettings({
         theme,
+        layout,
         backgroundColor: toSixDigitHex(backgroundColor),
         tagline: tagline.trim() || null,
         showServices,
@@ -905,11 +924,43 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
       <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Display behavior</p>
       <p className="text-sm text-stone-500">
-        The TV shows your branding once when it starts up, then rotates through whichever screens below are on for
-        as long as the tab stays open.
+        Choose how the TV looks and what it shows. With rotating slides, it shows your branding once on start-up,
+        then cycles through the screens you switch on below.
       </p>
 
       <div className="mt-4 space-y-4">
+        <div>
+          <span className="mb-1 block text-sm font-medium text-stone-800">Layout</span>
+          <p className="mb-3 text-xs text-stone-400">
+            How the TV is arranged. Your screen toggles, headings, theme and queue fields below apply to both.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {DISPLAY_LAYOUT_OPTIONS.map((option) => {
+              const selected = layout === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => setLayout(option.value)}
+                  aria-pressed={selected}
+                  className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                    selected
+                      ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                      : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                  }`}
+                >
+                  <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                    {option.title}
+                  </span>
+                  <span className="text-xs text-stone-500">{option.description}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {layout === "rotation" && (
         <FieldRow
           label="Welcome slide duration (seconds)"
           hint="How long your logo and name show for when the screen first starts, before the rotation below begins. This slide never repeats after that."
@@ -923,6 +974,7 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
             onChange={(e) => setWelcomeSeconds(Number(e.target.value))}
           />
         </FieldRow>
+        )}
 
         <div className="border-t border-stone-200 pt-4">
           <span className="mb-1 block text-sm font-medium text-stone-800">Appearance</span>
@@ -1012,6 +1064,7 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
           </div>
         </div>
 
+        {layout === "rotation" && (
         <div className="grid gap-4 border-t border-stone-200 pt-4 sm:grid-cols-2">
           <FieldRow
             label="Menu / bookings duration (seconds)"
@@ -1040,6 +1093,7 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
             />
           </FieldRow>
         </div>
+        )}
 
         <div className="border-t border-stone-200 pt-4">
           <span className="mb-1 block text-sm font-medium text-stone-800">Wording</span>
