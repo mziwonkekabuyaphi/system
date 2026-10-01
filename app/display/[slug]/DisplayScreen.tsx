@@ -4,10 +4,13 @@
 /**
  * Ambient, non-interactive rotation for a TV in the waiting area. Design
  * notes (see conversation for the full brief):
- *   - Dark neutral canvas, not the tenant's raw primary_color as the
- *     background -- an admin-picked hex has no guaranteed contrast against
- *     text at TV viewing distance. primary_color/secondary_color are used
- *     as accents (wordmark glow, prices, position numbers, dots) instead.
+ *   - Background is admin-selectable (dark / light / custom hex) but text
+ *     color is NEVER admin-picked: it's derived from the background by
+ *     contrast, and primary/secondary accents are nudged toward the text
+ *     color until they clear a minimum contrast ratio against the chosen
+ *     background. So any background + any brand color stays readable at
+ *     TV distance. Accents are used for the wordmark glow, prices, times,
+ *     ticket numbers and dots.
  *   - Bricolage Grotesque for anything large, Inter for everything small.
  *   - Pricing slide uses menu-board convention (name — leader dots — price).
  *   - TWO PHASES, not one flat rotation:
@@ -35,7 +38,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { CSSProperties } from "react"
-import { fetchDisplayData, type DisplayData } from "./actions"
+import { fetchDisplayData, type DisplayData, type DisplayTheme } from "./actions"
 
 const POLL_MS = 5 * 60 * 1000
 
@@ -44,18 +47,84 @@ const DEFAULT_SECONDARY = "#3E7C74"
 
 type SlideKey = "welcome" | "services" | "bookings" | "queue"
 
+const DARK_BG_SOLID = "#15110d"
+const DARK_BG = "radial-gradient(120% 100% at 50% -10%, #221a12 0%, #15110d 55%, #100c09 100%)"
+const LIGHT_BG_SOLID = "#FAF8F5"
+const LIGHT_BG = "radial-gradient(120% 100% at 50% -10%, #FFFFFF 0%, #FAF8F5 55%, #F1EDE6 100%)"
+const INK = "#171412"
+const PAPER = "#F5F1E8"
+
+function toRgb(hex: string | null | undefined): [number, number, number] | null {
+  const clean = (hex ?? "").replace("#", "")
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean
+  if (!/^[0-9a-f]{6}$/i.test(full)) return null
+  const int = Number.parseInt(full, 16)
+  return [(int >> 16) & 255, (int >> 8) & 255, int & 255]
+}
+
+function toHex([r, g, b]: [number, number, number]): string {
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`
+}
+
 /** Plain rgba conversion instead of CSS color-mix() -- some smart TV
  *  browsers (older Tizen/webOS/Android TV WebView builds) don't support
  *  color-mix() yet, and this only needs to run once per render anyway. */
 function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace("#", "")
-  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean
-  const int = Number.parseInt(full, 16)
-  if (full.length !== 6 || Number.isNaN(int)) return `rgba(226, 179, 60, ${alpha})` // DEFAULT_ACCENT fallback
-  const r = (int >> 16) & 255
-  const g = (int >> 8) & 255
-  const b = int & 255
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  const rgb = toRgb(hex) ?? [226, 179, 60] // DEFAULT_ACCENT fallback
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`
+}
+
+/** WCAG relative luminance. */
+function luminance(hex: string): number {
+  const rgb = toRgb(hex) ?? [0, 0, 0]
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function contrastRatio(a: string, b: string): number {
+  const la = luminance(a)
+  const lb = luminance(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+function mixHex(from: string, to: string, amount: number): string {
+  const a = toRgb(from)
+  const b = toRgb(to)
+  if (!a || !b) return from
+  return toHex([0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * amount)) as [number, number, number])
+}
+
+/** Moves `color` toward `target` (the readable text color) in small steps
+ *  until it clears `min` contrast against `bg`. Colors that already pass
+ *  are returned unchanged, so a good brand color is never altered. */
+function ensureContrast(color: string, bg: string, target: string, min: number): string {
+  if (!toRgb(color)) return color
+  let out = color
+  for (let i = 1; i <= 10 && contrastRatio(out, bg) < min; i++) out = mixHex(color, target, i / 10)
+  return out
+}
+
+interface ThemeTokens {
+  bgCss: string
+  bgSolid: string
+  fg: string
+}
+
+function resolveThemeTokens(theme: DisplayTheme, custom: string | null): ThemeTokens {
+  if (theme === "light") return { bgCss: LIGHT_BG, bgSolid: LIGHT_BG_SOLID, fg: INK }
+  if (theme === "custom" && toRgb(custom)) {
+    const bg = toHex(toRgb(custom) as [number, number, number])
+    return { bgCss: bg, bgSolid: bg, fg: contrastRatio(bg, INK) >= contrastRatio(bg, PAPER) ? INK : PAPER }
+  }
+  return { bgCss: DARK_BG, bgSolid: DARK_BG_SOLID, fg: PAPER }
+}
+
+function formatMinutes(total: number): string {
+  if (total < 60) return `${total} min`
+  return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, "0")} min`
 }
 
 /** "14:30" for a booking's start_time. Rendered in the TV's local time,
@@ -86,6 +155,17 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   }, [slug])
 
   const settings = data.settings
+
+  // "Time waited so far" needs a clock that ticks between the 5-minute data
+  // polls. Only runs when that field is switched on. Starts null so server
+  // and client first render match (no hydration mismatch on the minute).
+  const [nowMs, setNowMs] = useState<number | null>(null)
+  useEffect(() => {
+    if (!settings.showQueueDuration) return
+    setNowMs(Date.now())
+    const id = setInterval(() => setNowMs(Date.now()), 30 * 1000)
+    return () => clearInterval(id)
+  }, [settings.showQueueDuration])
 
   // Rotation content only -- welcome is handled as its own phase, not a
   // member of this array, so it's never cycled back into once left.
@@ -133,8 +213,10 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   const waitingEntries = useMemo(() => data.queue.filter((q) => q.status === "waiting"), [data.queue])
 
   const brandName = data.branding.displayName?.trim() || "Welcome"
-  const accent = data.branding.primaryColor || DEFAULT_ACCENT
-  const secondary = data.branding.secondaryColor || DEFAULT_SECONDARY
+  const theme = resolveThemeTokens(settings.theme, settings.backgroundColor)
+  // 3:1 is WCAG's floor for large text; everything accented here is large.
+  const accent = ensureContrast(data.branding.primaryColor || DEFAULT_ACCENT, theme.bgSolid, theme.fg, 3)
+  const secondary = ensureContrast(data.branding.secondaryColor || DEFAULT_SECONDARY, theme.bgSolid, theme.fg, 3)
   const accentSoft = hexToRgba(accent, 0.22)
 
   const activeKey: SlideKey = phase === "welcome" ? "welcome" : slides[index] ?? "welcome"
@@ -146,7 +228,18 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   return (
     <div
       className="stage"
-      style={{ "--accent": accent, "--secondary": secondary, "--accent-soft": accentSoft } as CSSProperties}
+      style={
+        {
+          "--accent": accent,
+          "--secondary": secondary,
+          "--accent-soft": accentSoft,
+          "--bg": theme.bgCss,
+          "--fg": theme.fg,
+          "--fg-70": hexToRgba(theme.fg, 0.7),
+          "--fg-55": hexToRgba(theme.fg, 0.55),
+          "--fg-28": hexToRgba(theme.fg, 0.28),
+        } as CSSProperties
+      }
     >
       <section className={`slide welcome ${activeKey === "welcome" ? "active" : ""}`}>
         <div className="glow" aria-hidden="true" />
@@ -206,9 +299,15 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                   <ul className="now-serving-list">
                     {calledEntries.map((q) => (
                       <li key={q.id} className="now-serving-row">
-                        {q.ticketNumber && <span className="now-serving-ticket">{q.ticketNumber}</span>}
+                        {settings.showQueueTicketNumber && q.ticketNumber && (
+                          <span className="now-serving-ticket">{q.ticketNumber}</span>
+                        )}
                         <span className="now-serving-name">{q.customerName ?? "Guest"}</span>
-                        {q.serviceName && <span className="now-serving-service">{q.serviceName}</span>}
+                        {settings.showQueueService && q.serviceName && (
+                          <span className="now-serving-service">{q.serviceName}</span>
+                        )}
+                        {q.phoneMasked && <span className="now-serving-service">{q.phoneMasked}</span>}
+                        {q.bookingReference && <span className="now-serving-service">{q.bookingReference}</span>}
                       </li>
                     ))}
                   </ul>
@@ -217,14 +316,34 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
 
               {waitingEntries.length > 0 && (
                 <ul className="queue-list">
-                  {waitingEntries.map((q) => (
-                    <li key={q.id} className="queue-row">
-                      <span className="queue-position">{q.position}</span>
-                      <span className="queue-name">{q.customerName ?? "Guest"}</span>
-                      {q.ticketNumber && <span className="queue-ticket">{q.ticketNumber}</span>}
-                      <span className="queue-service">{q.serviceName ?? ""}</span>
-                    </li>
-                  ))}
+                  {waitingEntries.map((q) => {
+                    // Ticket number replaces the plain position when on (and
+                    // when the entry has one -- older/promoted entries may not).
+                    const lead = settings.showQueueTicketNumber && q.ticketNumber ? q.ticketNumber : q.position
+                    const waited =
+                      settings.showQueueDuration && nowMs !== null
+                        ? Math.max(0, Math.floor((nowMs - new Date(q.joinedAt).getTime()) / 60000))
+                        : null
+                    return (
+                      <li key={q.id} className="queue-row">
+                        <span className="queue-position">{lead}</span>
+                        <span className="queue-name">{q.customerName ?? "Guest"}</span>
+                        {settings.showQueueService && q.serviceName && (
+                          <span className="queue-service">{q.serviceName}</span>
+                        )}
+                        {q.phoneMasked && <span className="queue-service">{q.phoneMasked}</span>}
+                        {q.bookingReference && <span className="queue-service">{q.bookingReference}</span>}
+                        {(q.estimatedWaitMinutes !== null || waited !== null) && (
+                          <span className="queue-meta">
+                            {q.estimatedWaitMinutes !== null && (
+                              <span>{q.estimatedWaitMinutes === 0 ? "Next up" : `~${formatMinutes(q.estimatedWaitMinutes)}`}</span>
+                            )}
+                            {waited !== null && <span>{waited < 1 ? "Just joined" : `Waiting ${formatMinutes(waited)}`}</span>}
+                          </span>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </>
@@ -246,7 +365,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         body {
           margin: 0;
           padding: 0;
-          background: #15110d;
+          background: ${theme.bgSolid};
         }
       `}</style>
 
@@ -255,8 +374,8 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           position: fixed;
           inset: 0;
           overflow: hidden;
-          background: radial-gradient(120% 100% at 50% -10%, #221a12 0%, #15110d 55%, #100c09 100%);
-          color: #f5f1e8;
+          background: var(--bg);
+          color: var(--fg);
           font-family: "Inter", -apple-system, sans-serif;
           padding: 6vh 6vw;
           box-sizing: border-box;
@@ -280,7 +399,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           margin: 0 0 4vh 0;
           font-size: 1.1rem;
           letter-spacing: 0.02em;
-          color: rgba(245, 241, 232, 0.5);
+          color: var(--fg-55);
           font-weight: 500;
         }
 
@@ -346,7 +465,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         .tagline {
           margin: 2vh 0 0 0;
           font-size: clamp(1.2rem, 2.2vw, 2rem);
-          color: rgba(245, 241, 232, 0.72);
+          color: var(--fg-70);
           font-weight: 400;
           position: relative;
         }
@@ -382,7 +501,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .leader {
           flex: 1;
-          border-bottom: 0.3vh dotted rgba(245, 241, 232, 0.28);
+          border-bottom: 0.3vh dotted var(--fg-28);
           margin-bottom: 0.8vh;
         }
         .menu-price {
@@ -424,12 +543,12 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .booking-leader {
           flex: 1;
-          border-bottom: 0.3vh dotted rgba(245, 241, 232, 0.28);
+          border-bottom: 0.3vh dotted var(--fg-28);
           margin-bottom: 0.7vh;
         }
         .booking-service {
           font-size: clamp(1.1rem, 1.8vw, 1.6rem);
-          color: rgba(245, 241, 232, 0.65);
+          color: var(--fg-70);
           white-space: nowrap;
         }
 
@@ -477,7 +596,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .now-serving-service {
           font-size: clamp(1.1rem, 1.8vw, 1.5rem);
-          color: rgba(245, 241, 232, 0.7);
+          color: var(--fg-70);
         }
         .queue-list {
           list-style: none;
@@ -499,21 +618,25 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           font-weight: 600;
           color: var(--secondary);
           min-width: 2.4ch;
+          white-space: nowrap;
         }
         .queue-name {
           font-family: "Bricolage Grotesque", sans-serif;
           font-size: clamp(1.4rem, 2.4vw, 2rem);
           font-weight: 500;
         }
-        .queue-ticket {
-          font-family: "Bricolage Grotesque", sans-serif;
-          font-size: clamp(1rem, 1.6vw, 1.3rem);
-          font-weight: 600;
-          color: rgba(245, 241, 232, 0.5);
+        .queue-meta {
+          margin-left: auto;
+          display: flex;
+          gap: 1.6vw;
+          font-size: clamp(1rem, 1.6vw, 1.4rem);
+          font-weight: 500;
+          color: var(--fg-70);
+          white-space: nowrap;
         }
         .queue-service {
           font-size: clamp(1rem, 1.6vw, 1.4rem);
-          color: rgba(245, 241, 232, 0.6);
+          color: var(--fg-55);
         }
 
         /* ---- Progress dots ---- */
@@ -529,7 +652,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           width: 1.1vh;
           height: 1.1vh;
           border-radius: 50%;
-          background: rgba(245, 241, 232, 0.25);
+          background: var(--fg-28);
           transition: background 0.4s ease;
         }
         .dot.on {

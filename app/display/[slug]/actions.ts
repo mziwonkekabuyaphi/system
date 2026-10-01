@@ -63,7 +63,21 @@ export interface DisplaySettings {
   bookingsTitle: string | null
   queueTitle: string | null
   nowServingLabel: string | null
+  /** "dark" / "light" are built-in looks; "custom" uses backgroundColor. */
+  theme: DisplayTheme
+  /** Hex (#RRGGBB). Only used when theme === "custom". */
+  backgroundColor: string | null
+  /** Queue slide fields -- see DisplayScreen.tsx. phone/reference/wait are
+   *  only populated on DisplayQueueEntry when their toggle is on. */
+  showQueueTicketNumber: boolean
+  showQueueService: boolean
+  showQueuePhone: boolean
+  showQueueWaitEstimate: boolean
+  showQueueDuration: boolean
+  showQueueReference: boolean
 }
+
+export type DisplayTheme = "dark" | "light" | "custom"
 
 // Fallbacks when a tenant_branding row hasn't been created yet (brand-new
 // tenant, row insert lagging the trigger) -- mirrors the DB column
@@ -80,6 +94,14 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   bookingsTitle: null,
   queueTitle: null,
   nowServingLabel: null,
+  theme: "dark",
+  backgroundColor: null,
+  showQueueTicketNumber: true,
+  showQueueService: true,
+  showQueuePhone: false,
+  showQueueWaitEstimate: true,
+  showQueueDuration: false,
+  showQueueReference: true,
 }
 
 export interface DisplayBooking {
@@ -107,6 +129,14 @@ export interface DisplayQueueEntry {
    *  that column existed, or (currently) any promoted-booking entry from
    *  the unify-with-queue pg_cron job, which doesn't assign one yet. */
   ticketNumber: string | null
+  /** Masked (e.g. "071 *** **34"). Null unless showQueuePhone is on -- the
+   *  raw number is never sent to this public screen. */
+  phoneMasked: string | null
+  /** From the linked booking. Null for walk-ins or when showQueueReference is off. */
+  bookingReference: string | null
+  /** Rough minutes until this *waiting* entry is called. Null for "called"
+   *  entries or when showQueueWaitEstimate is off. */
+  estimatedWaitMinutes: number | null
 }
 
 export interface DisplayData {
@@ -118,6 +148,10 @@ export interface DisplayData {
 }
 
 export type DisplayResult = { ok: true; data: DisplayData } | { ok: false; error: string }
+
+function resolveTheme(value: unknown): DisplayTheme {
+  return value === "light" || value === "custom" ? value : "dark"
+}
 
 async function resolveActiveTenantId(slug: string): Promise<string> {
   const supabase = getSupabaseServerClient()
@@ -144,6 +178,27 @@ function unwrapJoin<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null
 }
 
+/** "0711234567" -> "071 *** **67". Keeps 3 leading + 2 trailing digits only. */
+function maskPhone(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/\D/g, "")
+  if (digits.length < 7) return null
+  return `${digits.slice(0, 3)} *** **${digits.slice(-2)}`
+}
+
+// Simple serial estimate: everyone ahead in line takes their service's
+// duration (or the tenant default), minus time already spent on anyone
+// currently being served. It does NOT know how many staff are working in
+// parallel, so it overestimates for multi-chair shops. If you already have
+// an estimator in lib/services/queue.ts, call it here instead -- this is
+// the only place the display computes one.
+function estimateWaitMinutes(
+  aheadDurations: number[],
+  inServiceRemaining: number[],
+): number {
+  const total = [...aheadDurations, ...inServiceRemaining].reduce((a, b) => a + b, 0)
+  return Math.max(0, Math.round(total))
+}
+
 // How far ahead of "now" to pull confirmed bookings for the slide.
 // Keeps a slow-moving TV screen from showing next week's appointments
 // alongside today's, without needing tenant-timezone-aware day math.
@@ -164,10 +219,13 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       supabase
         .from("tenant_branding")
         .select(
-          "display_name, logo_url, primary_color, secondary_color, tagline, " +
+          "display_name, logo_url, primary_color, secondary_color, " +
             "display_show_services, display_show_bookings, display_show_queue, " +
             "display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, " +
-            "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label",
+            "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
+            "display_theme, display_background_color, display_tagline, " +
+            "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, " +
+            "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference",
         )
         .eq("tenant_id", tenantId)
         .maybeSingle(),
@@ -185,7 +243,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       supabase
         .from("queue_entries")
         .select(
-          "id, status, joined_at, called_at, ticket_number, customer:tenant_customers(full_name), service:services(name)",
+          "id, status, joined_at, called_at, ticket_number, customer:tenant_customers(full_name, phone), " +
+            "service:services(name, duration_minutes), booking:bookings(booking_reference)",
         )
         .eq("tenant_id", tenantId)
         .in("status", ["waiting", "called"])
@@ -196,7 +255,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       // own small query rather than folded into the queue_entries one
       // above since it's a different table (queue_settings, not
       // queue_entries) and this tenant-wide value doesn't repeat per row.
-      supabase.from("queue_settings").select("ticket_number_prefix").eq("tenant_id", tenantId).maybeSingle(),
+      supabase.from("queue_settings").select("ticket_number_prefix, default_service_duration_minutes").eq("tenant_id", tenantId).maybeSingle(),
       getBookableServices(tenantId),
     ])
 
@@ -210,13 +269,17 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       console.error("[display] queue_settings lookup failed", { slug, error: queueSettingsResult.error })
     }
     const ticketNumberPrefix = queueSettingsResult.data?.ticket_number_prefix ?? "Q"
+    const defaultServiceMinutes = queueSettingsResult.data?.default_service_duration_minutes ?? 15
 
     const branding: DisplayBranding = {
       displayName: brandingResult.data?.display_name ?? null,
       logoUrl: brandingResult.data?.logo_url ?? null,
       primaryColor: brandingResult.data?.primary_color ?? null,
       secondaryColor: brandingResult.data?.secondary_color ?? null,
-      tagline: brandingResult.data?.tagline ?? null,
+      // Display has its own tagline. It used to read tenant_branding.tagline,
+      // which is the KIOSK's welcome text ("Tap anywhere to check in") --
+      // wrong wording for a screen nobody can tap.
+      tagline: brandingResult.data?.display_tagline?.trim() || null,
     }
 
     const settings: DisplaySettings = brandingResult.data
@@ -232,6 +295,19 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           bookingsTitle: brandingResult.data.display_bookings_title ?? null,
           queueTitle: brandingResult.data.display_queue_title ?? null,
           nowServingLabel: brandingResult.data.display_now_serving_label ?? null,
+          theme: resolveTheme(brandingResult.data.display_theme),
+          backgroundColor: brandingResult.data.display_background_color ?? null,
+          showQueueTicketNumber:
+            brandingResult.data.display_queue_show_ticket_number ?? DEFAULT_DISPLAY_SETTINGS.showQueueTicketNumber,
+          showQueueService:
+            brandingResult.data.display_queue_show_service ?? DEFAULT_DISPLAY_SETTINGS.showQueueService,
+          showQueuePhone: brandingResult.data.display_queue_show_phone ?? DEFAULT_DISPLAY_SETTINGS.showQueuePhone,
+          showQueueWaitEstimate:
+            brandingResult.data.display_queue_show_wait_estimate ?? DEFAULT_DISPLAY_SETTINGS.showQueueWaitEstimate,
+          showQueueDuration:
+            brandingResult.data.display_queue_show_duration ?? DEFAULT_DISPLAY_SETTINGS.showQueueDuration,
+          showQueueReference:
+            brandingResult.data.display_queue_show_reference ?? DEFAULT_DISPLAY_SETTINGS.showQueueReference,
         }
       : DEFAULT_DISPLAY_SETTINGS
 
@@ -250,13 +326,36 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
 
     // "called" entries (being served right now) surface separately in the
     // UI, so only "waiting" entries get a queue position number.
+    const queueRows = queueResult.data ?? []
+    const durationOf = (row: (typeof queueRows)[number]) => {
+      const svc = unwrapJoin<{ duration_minutes: number | null }>(row.service as never)
+      return svc?.duration_minutes ?? defaultServiceMinutes
+    }
+    const nowMs = now.getTime()
+    // Minutes still left on whoever is being served right now.
+    const inServiceRemaining = queueRows
+      .filter((row) => row.status === "called")
+      .map((row) => {
+        const calledAt = row.called_at ? new Date(row.called_at as string).getTime() : nowMs
+        return Math.max(0, durationOf(row) - (nowMs - calledAt) / 60000)
+      })
+    const aheadDurations: number[] = []
+
     let waitingPosition = 0
-    const queue: DisplayQueueEntry[] = (queueResult.data ?? []).map((row) => {
-      const customer = unwrapJoin<{ full_name: string | null }>(row.customer as never)
+    const queue: DisplayQueueEntry[] = queueRows.map((row) => {
+      const customer = unwrapJoin<{ full_name: string | null; phone: string | null }>(row.customer as never)
       const service = unwrapJoin<{ name: string | null }>(row.service as never)
+      const booking = unwrapJoin<{ booking_reference: string | null }>(row.booking as never)
       const status = row.status as "waiting" | "called"
       if (status === "waiting") waitingPosition += 1
       const rawTicketNumber = row.ticket_number as number | null
+
+      let estimatedWaitMinutes: number | null = null
+      if (status === "waiting" && settings.showQueueWaitEstimate) {
+        estimatedWaitMinutes = estimateWaitMinutes(aheadDurations, inServiceRemaining)
+      }
+      if (status === "waiting") aheadDurations.push(durationOf(row))
+
       return {
         id: row.id as string,
         status,
@@ -266,6 +365,9 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         serviceName: service?.name ?? null,
         position: status === "waiting" ? waitingPosition : 0,
         ticketNumber: rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null,
+        phoneMasked: settings.showQueuePhone ? maskPhone(customer?.phone) : null,
+        bookingReference: settings.showQueueReference ? (booking?.booking_reference ?? null) : null,
+        estimatedWaitMinutes,
       }
     })
 
