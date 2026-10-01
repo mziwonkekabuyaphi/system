@@ -27,8 +27,9 @@
  * hard visit cap — there's no rate to bill overage at, so
  * assertWithinVisitLimit() throws once the 100 lifetime visits are used.
  * Growth and Business both have a price_per_visit_cents, so they NEVER
- * block; usage past visit_limit (Growth) or all usage (Business, whose
- * visit_limit is null) simply becomes billable overage instead. See
+ * block on visits; usage past the included allowance (visits_per_staff x
+ * billed staff) simply becomes billable overage instead. Staff is different:
+ * every plan has a hard staff_limit, enforced by staffLimitError() below. See
  * lib/services/billing-calculator.ts for the actual math.
  *
  * ENFORCEMENT POINTS (see call sites):
@@ -56,6 +57,12 @@ export interface Plan {
   visitLimitPeriod: "monthly" | "lifetime"
   staffLimit: number | null // null = unlimited
   pricePerVisitCents: number | null // null = not metered (flat fee or free)
+  /** Active staff covered by the base price. Staff beyond this cost extraStaffPriceCents each. */
+  includedStaff: number
+  /** Monthly cents per active staff member above includedStaff. null = extra staff not offered. */
+  extraStaffPriceCents: number | null
+  /** Visits included per billed staff member per month. null = flat plan (Free): visitLimit applies as is. */
+  visitsPerStaff: number | null
 }
 
 export interface PlanUsage {
@@ -77,6 +84,10 @@ export interface PlanUsage {
    *  the shared calculator. Present for every plan, including Free (where
    *  it's always a R0 total) so the UI has one consistent shape to render. */
   currentBilling: BillingCalculation
+  /** Active staff right now (staff.active = true). What the staff limit and extra-staff fee are computed from. */
+  staffCount: number
+  /** The plan's hard cap on active staff. null = unlimited. */
+  staffLimit: number | null
 }
 
 export interface VisitBreakdown {
@@ -99,6 +110,9 @@ function rowToPlan(row: {
   visit_limit_period: "monthly" | "lifetime"
   staff_limit: number | null
   price_per_visit_cents: number | null
+  included_staff: number
+  extra_staff_price_cents: number | null
+  visits_per_staff: number | null
 }): Plan {
   return {
     key: row.key,
@@ -109,14 +123,20 @@ function rowToPlan(row: {
     visitLimitPeriod: row.visit_limit_period,
     staffLimit: row.staff_limit,
     pricePerVisitCents: row.price_per_visit_cents,
+    includedStaff: row.included_staff,
+    extraStaffPriceCents: row.extra_staff_price_cents,
+    visitsPerStaff: row.visits_per_staff,
   }
 }
+
+const PLAN_COLUMNS =
+  "key, name, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents, included_staff, extra_staff_price_cents, visits_per_staff"
 
 /** All active plans, cheapest first — for a pricing/upgrade screen. */
 export async function listPlans(supabase: SupabaseClient): Promise<Plan[]> {
   const { data, error } = await supabase
     .from("plans")
-    .select("key, name, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents")
+    .select(PLAN_COLUMNS)
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
 
@@ -136,7 +156,7 @@ export async function getTenantPlan(supabase: SupabaseClient, tenantId: string):
 
   const { data: plan, error: planError } = await supabase
     .from("plans")
-    .select("key, name, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents")
+    .select(PLAN_COLUMNS)
     .eq("key", tenant.plan)
     .single()
 
@@ -254,11 +274,17 @@ export async function getTenantPlanUsage(supabase: SupabaseClient, tenantId: str
     visitsUsed = visitsThisMonth
   }
 
-  const visitsRemaining = plan.visitLimit === null ? null : Math.max(plan.visitLimit - visitsUsed, 0)
-  const atLimit = plan.pricePerVisitCents === null && plan.visitLimit !== null && visitsUsed >= plan.visitLimit
-  const currentBilling = calculateBilling(plan, visitsThisMonth)
+  const staffCount = await countActiveStaff(supabase, tenantId)
+  const currentBilling = calculateBilling(plan, visitsThisMonth, staffCount)
 
-  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, currentBilling }
+  // On per-staff plans the allowance grows with staff (visitsPerStaff x billed
+  // staff), so what's left comes from the calculator's includedVisits, not the
+  // raw visitLimit. For Free (flat allowance) the two are the same number.
+  const allowance = currentBilling.includedVisits
+  const visitsRemaining = allowance === null ? null : Math.max(allowance - visitsUsed, 0)
+  const atLimit = plan.pricePerVisitCents === null && plan.visitLimit !== null && visitsUsed >= plan.visitLimit
+
+  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, currentBilling, staffCount, staffLimit: plan.staffLimit }
 }
 
 /**
@@ -274,6 +300,40 @@ export async function assertWithinVisitLimit(supabase: SupabaseClient, tenantId:
   if (usage.atLimit) {
     throw new Error(PLAN_VISIT_LIMIT_REACHED)
   }
+}
+
+/** Active staff (staff.active = true) for a tenant. Both the staff limit and
+ *  the extra-staff fee count active rows only, so deactivating someone frees a seat. */
+async function countActiveStaff(supabase: SupabaseClient, tenantId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("staff")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("active", true)
+
+  if (error) throw new Error(`Failed to count active staff: ${error.message}`)
+  return count ?? 0
+}
+
+/**
+ * Call this before adding a staff member or reactivating one. Returns a
+ * customer-facing error message when the tenant's plan has no free staff seat,
+ * or null when it's fine to proceed (same shape as assertPinAvailable in
+ * app/admin/actions.ts, so callers can `if (err) return { ok: false, error: err }`).
+ *
+ * Only staff_limit is a hard cap. Staff above included_staff but within the
+ * limit are allowed and simply billed at extra_staff_price_cents each.
+ * Not race-proof: two simultaneous adds can overshoot the limit by one.
+ */
+export async function staffLimitError(supabase: SupabaseClient, tenantId: string): Promise<string | null> {
+  const plan = await getTenantPlan(supabase, tenantId)
+  if (plan.staffLimit === null) return null
+
+  const active = await countActiveStaff(supabase, tenantId)
+  if (active < plan.staffLimit) return null
+
+  const noun = plan.staffLimit === 1 ? "staff member" : "staff members"
+  return `Your ${plan.name} plan allows up to ${plan.staffLimit} active ${noun}. Upgrade your plan in Billing to add more.`
 }
 
 // ============================================================================
@@ -298,6 +358,7 @@ export interface GeneratedInvoice {
   visitCount: number
   amountCents: number
   baseFeeCents: number
+  extraStaffFeeCents: number
   overageVisits: number
 }
 
@@ -332,7 +393,9 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
   // owe their flat base_fee_cents.
   const { data: meteredTenants, error: tenantsError } = await supabase
     .from("tenants")
-    .select("id, plan, plans!inner(key, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents)")
+    .select(
+      "id, plan, plans!inner(key, price_cents, currency, visit_limit, visit_limit_period, staff_limit, price_per_visit_cents, included_staff, extra_staff_price_cents, visits_per_staff)",
+    )
     .not("plans.price_per_visit_cents", "is", null)
 
   if (tenantsError) throw new Error(`Failed to load metered tenants: ${tenantsError.message}`)
@@ -348,6 +411,9 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
       visit_limit_period: "monthly" | "lifetime"
       staff_limit: number | null
       price_per_visit_cents: number
+      included_staff: number
+      extra_staff_price_cents: number | null
+      visits_per_staff: number | null
     }
     const tenantId = (tenant as any).id as string
 
@@ -377,8 +443,14 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
       visit_limit_period: planRow.visit_limit_period,
       staff_limit: planRow.staff_limit,
       price_per_visit_cents: planRow.price_per_visit_cents,
+      included_staff: planRow.included_staff,
+      extra_staff_price_cents: planRow.extra_staff_price_cents,
+      visits_per_staff: planRow.visits_per_staff,
     })
-    const calc = calculateBilling(plan, visitCount)
+    // Staff history isn't stored, so bill the active staff at generation time
+    // (the cron runs on the 1st, effectively the end of the month just ended).
+    const staffCount = await countActiveStaff(supabase, tenantId)
+    const calc = calculateBilling(plan, visitCount, staffCount)
 
     if (calc.totalCents === 0) continue // nothing owed at all (shouldn't happen once a plan has a base fee, but stay safe)
 
@@ -394,6 +466,10 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
         base_fee_cents: calc.baseFeeCents,
         included_visits: calc.includedVisits,
         overage_visits: calc.overageVisits,
+        staff_count: calc.staffCount,
+        included_staff: calc.includedStaff,
+        extra_staff: calc.extraStaff,
+        extra_staff_fee_cents: calc.extraStaffFeeCents,
       },
     ])
 
@@ -407,6 +483,7 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
       visitCount,
       amountCents: calc.totalCents,
       baseFeeCents: calc.baseFeeCents,
+      extraStaffFeeCents: calc.extraStaffFeeCents,
       overageVisits: calc.overageVisits,
     })
   }
