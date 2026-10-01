@@ -44,6 +44,7 @@ export type PermissionKey =
   | "bookings.view"
   | "bookings.manage"
   | "services.manage"
+  | "settings.manage"
   | "queue.view"
   | "queue.manage"
 
