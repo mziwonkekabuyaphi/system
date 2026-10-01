@@ -1096,7 +1096,7 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
             <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 p-3">
               <div>
                 <p className="text-sm font-medium text-stone-800">Ticket number</p>
-                <p className="text-xs text-stone-500">e.g. Q014 — replaces the plain position number when on.</p>
+                <p className="text-xs text-stone-500">e.g. Q014 — fills the first column (headed &quot;Ticket&quot;). When off, that column shows plain positions: 1, 2, 3…</p>
               </div>
               <Toggle checked={showQueueTicketNumber} disabled={isPending} onChange={setShowQueueTicketNumber} />
             </div>
