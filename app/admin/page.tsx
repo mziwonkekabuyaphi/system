@@ -258,7 +258,9 @@ async function getSettingsData(
       .from("tenant_branding")
       .select(
         "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
-          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label",
+          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
+          "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
+          "display_theme, display_layout, display_background_color, display_tagline",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -369,6 +371,18 @@ async function getSettingsData(
       bookingsTitle: brandingResult.data.display_bookings_title,
       queueTitle: brandingResult.data.display_queue_title,
       nowServingLabel: brandingResult.data.display_now_serving_label,
+      showQueueTicketNumber: brandingResult.data.display_queue_show_ticket_number ?? true,
+      showQueueService: brandingResult.data.display_queue_show_service ?? true,
+      showQueuePhone: brandingResult.data.display_queue_show_phone ?? false,
+      showQueueWaitEstimate: brandingResult.data.display_queue_show_wait_estimate ?? true,
+      showQueueDuration: brandingResult.data.display_queue_show_duration ?? false,
+      showQueueReference: brandingResult.data.display_queue_show_reference ?? true,
+      theme: brandingResult.data.display_theme === "light" || brandingResult.data.display_theme === "custom"
+        ? brandingResult.data.display_theme
+        : "dark",
+      layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
+      backgroundColor: brandingResult.data.display_background_color ?? null,
+      tagline: brandingResult.data.display_tagline ?? null,
     },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
