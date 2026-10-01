@@ -225,6 +225,50 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   const queueTitle = settings.queueTitle?.trim() || "Live queue"
   const nowServingLabel = settings.nowServingLabel?.trim() || "Now serving"
 
+  // Queue slide is a table: one labelled column per field the admin turned
+  // on. A column is also dropped when NOBODY in the queue has a value for
+  // it right now (e.g. "Booking ref" when everyone is a walk-in), so the
+  // table never shows a heading above a wall of dashes.
+  const cols = {
+    service: settings.showQueueService && data.queue.some((q) => q.serviceName),
+    phone: settings.showQueuePhone && data.queue.some((q) => q.phoneMasked),
+    reference: settings.showQueueReference && data.queue.some((q) => q.bookingReference),
+    wait: settings.showQueueWaitEstimate && waitingEntries.some((q) => q.estimatedWaitMinutes !== null),
+    waited: settings.showQueueDuration,
+  }
+  const colCount = 2 + Object.values(cols).filter(Boolean).length
+
+  function renderQueueRow(q: DisplayData["queue"][number]) {
+    const isCalled = q.status === "called"
+    // First column: the ticket when that field is on, else the position.
+    // Entries with no ticket (old rows, promoted bookings) show a dash
+    // rather than a position, so one column never mixes two meanings.
+    const lead = settings.showQueueTicketNumber ? (q.ticketNumber ?? "—") : isCalled ? "Now" : String(q.position)
+    const waitedMin =
+      nowMs !== null && !isCalled ? Math.max(0, Math.floor((nowMs - new Date(q.joinedAt).getTime()) / 60000)) : null
+    return (
+      <tr key={q.id} className={isCalled ? "row called" : "row"}>
+        <td className="c-lead">{lead}</td>
+        <td className="c-name">{q.customerName ?? "Guest"}</td>
+        {cols.service && <td className="c-muted">{q.serviceName ?? "—"}</td>}
+        {cols.phone && <td className="c-muted">{q.phoneMasked ?? "—"}</td>}
+        {cols.reference && <td className="c-muted">{q.bookingReference ?? "—"}</td>}
+        {cols.wait && (
+          <td className="c-num">
+            {isCalled || q.estimatedWaitMinutes === null
+              ? "—"
+              : q.estimatedWaitMinutes === 0
+                ? "Next up"
+                : `~${formatMinutes(q.estimatedWaitMinutes)}`}
+          </td>
+        )}
+        {cols.waited && (
+          <td className="c-num">{waitedMin === null ? "—" : waitedMin < 1 ? "Just now" : formatMinutes(waitedMin)}</td>
+        )}
+      </tr>
+    )
+  }
+
   return (
     <div
       className="stage"
@@ -293,59 +337,35 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
               <p className="corner-mark">{brandName}</p>
               <h2 className="slide-title">{queueTitle}</h2>
 
-              {calledEntries.length > 0 && (
-                <div className="now-serving">
-                  <p className="now-serving-label">{nowServingLabel}</p>
-                  <ul className="now-serving-list">
-                    {calledEntries.map((q) => (
-                      <li key={q.id} className="now-serving-row">
-                        {settings.showQueueTicketNumber && q.ticketNumber && (
-                          <span className="now-serving-ticket">{q.ticketNumber}</span>
-                        )}
-                        <span className="now-serving-name">{q.customerName ?? "Guest"}</span>
-                        {settings.showQueueService && q.serviceName && (
-                          <span className="now-serving-service">{q.serviceName}</span>
-                        )}
-                        {q.phoneMasked && <span className="now-serving-service">{q.phoneMasked}</span>}
-                        {q.bookingReference && <span className="now-serving-service">{q.bookingReference}</span>}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {waitingEntries.length > 0 && (
-                <ul className="queue-list">
-                  {waitingEntries.map((q) => {
-                    // Ticket number replaces the plain position when on (and
-                    // when the entry has one -- older/promoted entries may not).
-                    const lead = settings.showQueueTicketNumber && q.ticketNumber ? q.ticketNumber : q.position
-                    const waited =
-                      settings.showQueueDuration && nowMs !== null
-                        ? Math.max(0, Math.floor((nowMs - new Date(q.joinedAt).getTime()) / 60000))
-                        : null
-                    return (
-                      <li key={q.id} className="queue-row">
-                        <span className="queue-position">{lead}</span>
-                        <span className="queue-name">{q.customerName ?? "Guest"}</span>
-                        {settings.showQueueService && q.serviceName && (
-                          <span className="queue-service">{q.serviceName}</span>
-                        )}
-                        {q.phoneMasked && <span className="queue-service">{q.phoneMasked}</span>}
-                        {q.bookingReference && <span className="queue-service">{q.bookingReference}</span>}
-                        {(q.estimatedWaitMinutes !== null || waited !== null) && (
-                          <span className="queue-meta">
-                            {q.estimatedWaitMinutes !== null && (
-                              <span>{q.estimatedWaitMinutes === 0 ? "Next up" : `~${formatMinutes(q.estimatedWaitMinutes)}`}</span>
-                            )}
-                            {waited !== null && <span>{waited < 1 ? "Just joined" : `Waiting ${formatMinutes(waited)}`}</span>}
-                          </span>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
+              <div className="queue-table-wrap">
+                <table className="queue-table">
+                  <thead>
+                    <tr>
+                      <th>{settings.showQueueTicketNumber ? "Ticket" : "#"}</th>
+                      <th>Name</th>
+                      {cols.service && <th>Service</th>}
+                      {cols.phone && <th>Phone</th>}
+                      {cols.reference && <th>Booking ref</th>}
+                      {cols.wait && <th className="c-num">Est. wait</th>}
+                      {cols.waited && <th className="c-num">Waited</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calledEntries.length > 0 && (
+                      <tr className="group-row serving">
+                        <td colSpan={colCount}>{nowServingLabel}</td>
+                      </tr>
+                    )}
+                    {calledEntries.map(renderQueueRow)}
+                    {calledEntries.length > 0 && waitingEntries.length > 0 && (
+                      <tr className="group-row">
+                        <td colSpan={colCount}>Up next</td>
+                      </tr>
+                    )}
+                    {waitingEntries.map(renderQueueRow)}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </section>
@@ -552,91 +572,71 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           white-space: nowrap;
         }
 
-        /* ---- Live queue slide ---- */
-        .now-serving {
-          margin-bottom: 4vh;
-          padding: 2.4vh 2.6vw;
-          border-radius: 1.4vh;
-          background: var(--accent-soft);
-          border: 2px solid var(--accent);
-          max-width: 60vw;
-        }
-        .now-serving-label {
-          margin: 0 0 1.4vh 0;
-          font-size: 1.1rem;
-          font-weight: 600;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--accent);
-        }
-        .now-serving-list {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 1vh;
-        }
-        .now-serving-row {
-          display: flex;
-          align-items: baseline;
-          gap: 1.2vw;
-        }
-        .now-serving-ticket {
-          font-family: "Bricolage Grotesque", sans-serif;
-          font-size: clamp(1.8rem, 3.4vw, 2.8rem);
-          font-weight: 800;
-          color: var(--accent);
-          letter-spacing: 0.02em;
-        }
-        .now-serving-name {
-          font-family: "Bricolage Grotesque", sans-serif;
-          font-size: clamp(1.8rem, 3.4vw, 2.8rem);
-          font-weight: 700;
-        }
-        .now-serving-service {
-          font-size: clamp(1.1rem, 1.8vw, 1.5rem);
-          color: var(--fg-70);
-        }
-        .queue-list {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 1.8vh;
+        /* ---- Live queue slide: a labelled table ---- */
+        .queue-table-wrap {
           overflow: hidden;
         }
-        .queue-row {
-          display: flex;
-          align-items: center;
-          gap: 1.4vw;
+        .queue-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: clamp(1rem, 1.9vw, 1.7rem);
+          color: var(--fg);
         }
-        .queue-position {
-          font-family: "Bricolage Grotesque", sans-serif;
-          font-size: clamp(1.2rem, 2vw, 1.7rem);
+        .queue-table th {
+          text-align: left;
+          font-size: clamp(0.85rem, 1.2vw, 1.1rem);
           font-weight: 600;
-          color: var(--secondary);
-          min-width: 2.4ch;
-          white-space: nowrap;
-        }
-        .queue-name {
-          font-family: "Bricolage Grotesque", sans-serif;
-          font-size: clamp(1.4rem, 2.4vw, 2rem);
-          font-weight: 500;
-        }
-        .queue-meta {
-          margin-left: auto;
-          display: flex;
-          gap: 1.6vw;
-          font-size: clamp(1rem, 1.6vw, 1.4rem);
-          font-weight: 500;
-          color: var(--fg-70);
-          white-space: nowrap;
-        }
-        .queue-service {
-          font-size: clamp(1rem, 1.6vw, 1.4rem);
+          letter-spacing: 0.04em;
           color: var(--fg-55);
+          padding: 0 1.2vw 1.2vh 1.2vw;
+          border-bottom: 2px solid var(--fg-28);
+          white-space: nowrap;
+        }
+        .queue-table td {
+          padding: 1.1vh 1.2vw;
+          border-bottom: 1px solid var(--fg-28);
+          white-space: nowrap;
+          max-width: 28vw;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .queue-table .c-num {
+          text-align: right;
+        }
+        .queue-table .c-lead {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-weight: 700;
+          color: var(--accent);
+          width: 1%;
+        }
+        .queue-table .c-name {
+          font-family: "Bricolage Grotesque", sans-serif;
+          font-weight: 600;
+        }
+        .queue-table .c-muted {
+          color: var(--fg-70);
+        }
+        .queue-table .c-num {
+          color: var(--fg-70);
+          font-variant-numeric: tabular-nums;
+        }
+        .queue-table .group-row td {
+          padding: 1.6vh 1.2vw 0.6vh 1.2vw;
+          border-bottom: none;
+          font-size: clamp(0.85rem, 1.2vw, 1.1rem);
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          color: var(--fg-55);
+        }
+        .queue-table .group-row.serving td {
+          color: var(--accent);
+        }
+        .queue-table .row.called td {
+          background: var(--accent-soft);
+          border-bottom-color: var(--accent);
+        }
+        .queue-table .row.called .c-name {
+          font-weight: 700;
         }
 
         /* ---- Progress dots ---- */
