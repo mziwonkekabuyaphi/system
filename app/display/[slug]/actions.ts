@@ -65,6 +65,8 @@ export interface DisplaySettings {
   nowServingLabel: string | null
   /** "dark" / "light" are built-in looks; "custom" uses backgroundColor. */
   theme: DisplayTheme
+  /** "rotation" = classic slides; "board" = always-on columns of tickets. */
+  layout: DisplayLayout
   /** Hex (#RRGGBB). Only used when theme === "custom". */
   backgroundColor: string | null
   /** Queue slide fields -- see DisplayScreen.tsx. phone/reference/wait are
@@ -78,6 +80,7 @@ export interface DisplaySettings {
 }
 
 export type DisplayTheme = "dark" | "light" | "custom"
+export type DisplayLayout = "rotation" | "board"
 
 // Fallbacks when a tenant_branding row hasn't been created yet (brand-new
 // tenant, row insert lagging the trigger) -- mirrors the DB column
@@ -95,6 +98,7 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   queueTitle: null,
   nowServingLabel: null,
   theme: "dark",
+  layout: "rotation",
   backgroundColor: null,
   showQueueTicketNumber: true,
   showQueueService: true,
@@ -129,6 +133,8 @@ export interface DisplayQueueEntry {
    *  that column existed, or (currently) any promoted-booking entry from
    *  the unify-with-queue pg_cron job, which doesn't assign one yet. */
   ticketNumber: string | null
+  /** queue_entries.source: "walk_in" | "booking" (shown as a badge on the board). */
+  source: string | null
   /** Masked (e.g. "071 *** **34"). Null unless showQueuePhone is on -- the
    *  raw number is never sent to this public screen. */
   phoneMasked: string | null
@@ -223,7 +229,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
             "display_show_services, display_show_bookings, display_show_queue, " +
             "display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, " +
             "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
-            "display_theme, display_background_color, display_tagline, " +
+            "display_theme, display_layout, display_background_color, display_tagline, " +
             "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, " +
             "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference",
         )
@@ -243,7 +249,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       supabase
         .from("queue_entries")
         .select(
-          "id, status, joined_at, called_at, ticket_number, customer:tenant_customers(full_name, phone), " +
+          "id, status, joined_at, called_at, ticket_number, source, customer:tenant_customers(full_name, phone), " +
             "service:services(name, duration_minutes), booking:bookings(booking_reference)",
         )
         .eq("tenant_id", tenantId)
@@ -296,6 +302,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           queueTitle: brandingResult.data.display_queue_title ?? null,
           nowServingLabel: brandingResult.data.display_now_serving_label ?? null,
           theme: resolveTheme(brandingResult.data.display_theme),
+          layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
           backgroundColor: brandingResult.data.display_background_color ?? null,
           showQueueTicketNumber:
             brandingResult.data.display_queue_show_ticket_number ?? DEFAULT_DISPLAY_SETTINGS.showQueueTicketNumber,
@@ -365,6 +372,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         serviceName: service?.name ?? null,
         position: status === "waiting" ? waitingPosition : 0,
         ticketNumber: rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null,
+        source: (row.source as string | null) ?? null,
         phoneMasked: settings.showQueuePhone ? maskPhone(customer?.phone) : null,
         bookingReference: settings.showQueueReference ? (booking?.booking_reference ?? null) : null,
         estimatedWaitMinutes,
