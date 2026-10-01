@@ -368,7 +368,7 @@ export default function DemoPage() {
             <div className={styles.plan}>
               <p className={styles.planName}>Mahala</p>
               <p className={styles.planPrice}>R0</p>
-              <p className={styles.planMeter}>100 visits, once off &middot; up to 2 staff</p>
+              <p className={styles.planMeter}>100 visits, once off &middot; 1 staff</p>
               <h3>Try it on real customers, no card needed</h3>
               <ul>
                 <li>WhatsApp AI booking &amp; queue assistant</li>
@@ -384,7 +384,8 @@ export default function DemoPage() {
                 R499<span className={styles.planPriceUnit}>/month</span>
               </p>
               <p className={styles.planMeter}>
-                2,500 visits/month included, then R2/visit &middot; up to 8 staff
+                Includes 2 staff &middot; R149 per extra staff, up to 8 &middot; 250 visits per staff/month,
+                then R1.50/visit
               </p>
               <h3>For a shop that&rsquo;s outgrown &ldquo;just trying it out&rdquo;</h3>
               <ul>
@@ -400,14 +401,15 @@ export default function DemoPage() {
                 R1,499<span className={styles.planPriceUnit}>/month</span>
               </p>
               <p className={styles.planMeter}>
-                Unlimited visits, metered at R1.50/visit &middot; unlimited staff
+                Includes 5 staff &middot; R129 per extra staff, no limit &middot; 250 visits per staff/month,
+                then R1.00/visit
               </p>
               <h3>Growth, fully under your own name</h3>
               <ul>
                 <li>Everything in Growth</li>
                 <li>Custom brand colours &amp; logo throughout</li>
                 <li>Remove &ldquo;Powered by ZozoQueue&rdquo; entirely</li>
-                <li>Unlimited staff &amp; visits</li>
+                <li>Add as many staff as you need</li>
               </ul>
             </div>
           </div>
@@ -515,9 +517,9 @@ export default function DemoPage() {
                 </svg>
               </summary>
               <p className={styles.faqAnswer}>
-                You&rsquo;re never cut off. On Growth, visits past your included 2,500/month
-                are billed at R2 each; on Business every visit is metered at R1.50 with no
-                cap at all.
+                You&rsquo;re never cut off. Every staff member comes with 250 visits a month.
+                Past that, extra visits are billed at R1.50 each on Growth and R1.00 each on
+                Business, with no cap.
               </p>
             </details>
             <details className={styles.faqItem}>
@@ -576,7 +578,7 @@ export default function DemoPage() {
               </summary>
               <p className={styles.faqAnswer}>
                 Yes — the Mahala plan is free, with 100 visits to test on real customers and
-                up to 2 staff, so you can see it running in your own shop before deciding to
+                one staff member, so you can see it running in your own shop before deciding to
                 upgrade.
               </p>
             </details>
