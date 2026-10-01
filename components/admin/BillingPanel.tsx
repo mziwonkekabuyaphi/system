@@ -174,6 +174,7 @@ export function BillingPanel() {
           targetPlan={upgradeTarget}
           currentPlanName={currentPlan.name}
           visitsThisMonth={usage.visitsThisMonth}
+          staffCount={usage.staffCount}
           submitting={requesting}
           onCancel={() => setUpgradeTarget(null)}
           onConfirm={handleConfirmUpgrade}
@@ -227,7 +228,7 @@ function PanelHeader({
 
 function UsageSection({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage }) {
   if (currentPlan.visitLimitPeriod === "lifetime") return <FreeUsage currentPlan={currentPlan} usage={usage} />
-  if (currentPlan.visitLimit === null) return <BusinessUsage currentPlan={currentPlan} usage={usage} />
+  if (usage.currentBilling.includedVisits === null) return <BusinessUsage currentPlan={currentPlan} usage={usage} />
   return <GrowthUsage currentPlan={currentPlan} usage={usage} />
 }
 
@@ -273,8 +274,24 @@ function FreeUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage
           remaining.
         </p>
       )}
+
+      <StaffUsageRow usage={usage} />
     </section>
   )
+}
+
+function growthSummary(plan: Plan, perVisitRateCents: number | null, included: number): string {
+  const parts = [`${plan.includedStaff} staff included`]
+  if (plan.extraStaffPriceCents !== null) {
+    parts.push(`${formatCents(plan.extraStaffPriceCents, plan.currency)} per extra staff`)
+  }
+  parts.push(
+    plan.visitsPerStaff !== null
+      ? `${plan.visitsPerStaff.toLocaleString("en-ZA")} visits per staff`
+      : `${included.toLocaleString("en-ZA")} visits included`,
+  )
+  parts.push(`${formatCents(perVisitRateCents ?? 0, plan.currency)} per additional visit`)
+  return parts.join(" · ")
 }
 
 function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage }) {
@@ -288,10 +305,7 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
         <h3 className="text-base font-semibold text-[#1C1A17]">{currentPlan.name}</h3>
         <span className="text-sm text-[#8A8375]">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
       </div>
-      <p className="mt-1 text-sm text-[#8A8375]">
-        {included.toLocaleString("en-ZA")} visits included · {formatCents(calc.perVisitRateCents ?? 0, currentPlan.currency)} per
-        additional visit
-      </p>
+      <p className="mt-1 text-sm text-[#8A8375]">{growthSummary(currentPlan, calc.perVisitRateCents, included)}</p>
 
       <div className="mt-4">
         <div className="flex items-baseline justify-between text-sm text-[#8A8375]">
@@ -303,12 +317,16 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
         <UsageProgressBar used={calc.actualVisits} total={included} state={state} />
       </div>
 
-      {state === "overage" ? (
+      {state === "overage" || calc.extraStaff > 0 ? (
         <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-[#FAF8F3] p-4 sm:grid-cols-4">
           <UsageStat label="Visits used" value={calc.actualVisits.toLocaleString("en-ZA")} />
           <UsageStat label="Included" value={included.toLocaleString("en-ZA")} />
           <UsageStat label="Additional" value={calc.overageVisits.toLocaleString("en-ZA")} />
           <UsageStat label="Overage" value={formatCents(calc.usageChargeCents, currentPlan.currency)} />
+          <UsageStat
+            label={`Extra staff (${calc.extraStaff})`}
+            value={formatCents(calc.extraStaffFeeCents, currentPlan.currency)}
+          />
           <div className="col-span-2 border-t border-[#E6E1D4] pt-3 sm:col-span-4">
             <UsageStat label="Current estimated bill" value={formatCents(calc.totalCents, currentPlan.currency)} emphasize />
           </div>
@@ -320,6 +338,8 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
           <span className="font-medium text-[#1C1A17]">{formatCents(calc.totalCents, currentPlan.currency)}</span>
         </p>
       )}
+
+      <StaffUsageRow usage={usage} />
     </section>
   )
 }
@@ -346,6 +366,41 @@ function BusinessUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanU
         </div>
       </dl>
     </section>
+  )
+}
+
+function StaffUsageRow({ usage }: { usage: PlanUsage }) {
+  const { staffCount, staffLimit, plan } = usage
+  const state: UsageState =
+    staffLimit === null ? "normal" : staffCount > staffLimit ? "blocked" : staffCount === staffLimit ? "near" : "normal"
+  const extra = Math.max(staffCount - plan.includedStaff, 0)
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-baseline justify-between text-sm text-[#8A8375]">
+        <span>Active staff</span>
+        <span className="font-medium text-[#1C1A17]">
+          {staffCount}
+          {staffLimit !== null ? ` / ${staffLimit}` : ""}
+        </span>
+      </div>
+      {staffLimit !== null && <UsageProgressBar used={staffCount} total={staffLimit} state={state} />}
+      {state === "blocked" ? (
+        <p className="mt-2 text-sm text-[#7A2E2E]">
+          You have more active staff than this plan allows. Deactivate some, or upgrade to add more.
+        </p>
+      ) : state === "near" ? (
+        <p className="mt-2 text-sm" style={{ color: AMBER }}>
+          Staff limit reached — upgrade to add more staff.
+        </p>
+      ) : null}
+      {plan.extraStaffPriceCents !== null && extra > 0 && (
+        <p className="mt-2 text-sm text-[#8A8375]">
+          {extra} extra staff × {formatCents(plan.extraStaffPriceCents, plan.currency)} ={" "}
+          <span className="font-medium text-[#1C1A17]">{formatCents(extra * plan.extraStaffPriceCents, plan.currency)}</span> / month
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -393,8 +448,20 @@ function VisitBreakdownSection({ breakdown }: { breakdown: { queueVisits: number
 
 function planVisitLine(plan: Plan): string {
   if (plan.visitLimitPeriod === "lifetime") return `${plan.visitLimit} lifetime visits`
+  if (plan.visitsPerStaff !== null) return `${plan.visitsPerStaff.toLocaleString("en-ZA")} visits per staff/month included`
   if (plan.visitLimit === null) return "No visit limit"
   return `${plan.visitLimit.toLocaleString("en-ZA")} visits/month included`
+}
+
+function planStaffLines(plan: Plan): string[] {
+  if (plan.extraStaffPriceCents === null) {
+    return [`${plan.includedStaff} staff member${plan.includedStaff === 1 ? "" : "s"}`]
+  }
+  const limit = plan.staffLimit === null ? "no limit" : `up to ${plan.staffLimit}`
+  return [
+    `${plan.includedStaff} staff included`,
+    `${formatCents(plan.extraStaffPriceCents, plan.currency)} per extra staff (${limit})`,
+  ]
 }
 
 function planRateLine(plan: Plan): string | null {
@@ -433,6 +500,9 @@ function PlanComparisonSection({
               </p>
 
               <ul className="mt-3 space-y-1 text-sm text-[#1C1A17]">
+                {planStaffLines(plan).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
                 <li>{planVisitLine(plan)}</li>
                 {planRateLine(plan) && <li>{planRateLine(plan)}</li>}
               </ul>
@@ -475,6 +545,7 @@ function UpgradeConfirmModal({
   targetPlan,
   currentPlanName,
   visitsThisMonth,
+  staffCount,
   submitting,
   onCancel,
   onConfirm,
@@ -482,12 +553,13 @@ function UpgradeConfirmModal({
   targetPlan: Plan
   currentPlanName: string
   visitsThisMonth: number
+  staffCount: number
   submitting: boolean
   onCancel: () => void
   onConfirm: (note: string) => void
 }) {
   const [note, setNote] = useState("")
-  const preview: BillingCalculation = useMemo(() => calculateBilling(targetPlan, visitsThisMonth), [targetPlan, visitsThisMonth])
+  const preview: BillingCalculation = useMemo(() => calculateBilling(targetPlan, visitsThisMonth, staffCount), [targetPlan, visitsThisMonth, staffCount])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C1A17]/40 p-4" role="dialog" aria-modal="true">
@@ -500,10 +572,18 @@ function UpgradeConfirmModal({
             <dt className="text-[#8A8375]">Base fee</dt>
             <dd className="font-medium text-[#1C1A17]">{formatCentsCompact(targetPlan.priceCents, targetPlan.currency)}/mo</dd>
           </div>
+          {preview.extraStaff > 0 && (
+            <div className="flex justify-between">
+              <dt className="text-[#8A8375]">
+                Extra staff ({preview.extraStaff} × {formatCents(targetPlan.extraStaffPriceCents ?? 0, targetPlan.currency)})
+              </dt>
+              <dd className="font-medium text-[#1C1A17]">{formatCents(preview.extraStaffFeeCents, targetPlan.currency)}/mo</dd>
+            </div>
+          )}
           <div className="flex justify-between">
             <dt className="text-[#8A8375]">Included visits</dt>
             <dd className="font-medium text-[#1C1A17]">
-              {targetPlan.visitLimit === null ? "No limit" : targetPlan.visitLimit.toLocaleString("en-ZA")}
+              {preview.includedVisits === null ? "No limit" : preview.includedVisits.toLocaleString("en-ZA")}
             </dd>
           </div>
           {targetPlan.pricePerVisitCents !== null && (
@@ -517,6 +597,13 @@ function UpgradeConfirmModal({
             <dd className="font-semibold text-[#1C1A17]">{formatCents(preview.totalCents, targetPlan.currency)}</dd>
           </div>
         </dl>
+
+        {targetPlan.staffLimit !== null && staffCount > targetPlan.staffLimit && (
+          <p className="mt-3 text-sm text-[#7A2E2E]">
+            You have {staffCount} active staff, but {targetPlan.name} allows {targetPlan.staffLimit}. Deactivate some before
+            switching.
+          </p>
+        )}
 
         <label className="mt-4 block text-sm text-[#8A8375]">
           Note for the platform team (optional)
@@ -606,6 +693,8 @@ function InvoiceHistorySection({
                   <UsageStat label="Included visits" value={inv.includedVisits === null ? "No limit" : inv.includedVisits.toLocaleString("en-ZA")} />
                   <UsageStat label="Additional visits" value={inv.overageVisits.toLocaleString("en-ZA")} />
                   <UsageStat label="Rate" value={formatCents(inv.rateCents, inv.currency)} />
+                  <UsageStat label="Staff billed" value={`${inv.staffCount} (${inv.includedStaff} included)`} />
+                  <UsageStat label="Extra staff" value={formatCents(inv.extraStaffFeeCents, inv.currency)} />
                   <div className="col-span-2 border-t border-[#E6E1D4] pt-2 sm:col-span-4">
                     <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
                   </div>
