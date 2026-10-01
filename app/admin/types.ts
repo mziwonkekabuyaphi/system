@@ -156,7 +156,7 @@ export interface AdminInboxStats {
 /** Mirrors tenants.plan. Manually flipped in Supabase until billing is wired
  *  up — see the migration comment on the column itself. Gates whether
  *  AdminBranding.removePoweredBy can be set to true. */
-export type AdminPlan = "starter" | "business"
+export type AdminPlan = "free" | "growth" | "business"
 
 /** tenant_settings, one row per tenant. */
 export interface AdminTenantSettings {
