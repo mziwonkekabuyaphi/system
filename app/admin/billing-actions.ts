@@ -65,10 +65,18 @@ export interface TenantInvoice {
   status: string
   /** Flat monthly platform fee on this invoice. 0 for anything issued before this column existed. */
   baseFeeCents: number
-  /** Visits included in the base fee at the time this was issued. null = no included allotment (Business). */
+  /** Visits included in the base fee at the time this was issued. null = no included allotment. */
   includedVisits: number | null
   /** visitCount beyond includedVisits -- what rateCents actually got multiplied by. */
   overageVisits: number
+  /** Active staff counted when this was issued. 0 for anything issued before per-staff pricing. */
+  staffCount: number
+  /** Staff covered by the base fee at the time. */
+  includedStaff: number
+  /** staffCount beyond includedStaff. */
+  extraStaff: number
+  /** extraStaff x the plan's per-extra-staff price at the time, in cents. */
+  extraStaffFeeCents: number
 }
 
 /** Derived, not stored -- see the file header for why. Ordered roughly by
@@ -146,7 +154,7 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
     const { data: invoiceRows } = await supabase
       .from("tenant_invoices")
       .select(
-        "id, period_start, period_end, visit_count, rate_cents, amount_cents, currency, status, base_fee_cents, included_visits, overage_visits",
+        "id, period_start, period_end, visit_count, rate_cents, amount_cents, currency, status, base_fee_cents, included_visits, overage_visits, staff_count, included_staff, extra_staff, extra_staff_fee_cents",
       )
       .eq("tenant_id", tenantId)
       .order("period_start", { ascending: false })
@@ -164,6 +172,10 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
       baseFeeCents: row.base_fee_cents,
       includedVisits: row.included_visits,
       overageVisits: row.overage_visits,
+      staffCount: row.staff_count,
+      includedStaff: row.included_staff,
+      extraStaff: row.extra_staff,
+      extraStaffFeeCents: row.extra_staff_fee_cents,
     }))
 
     const outstandingCents = invoices

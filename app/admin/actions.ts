@@ -32,6 +32,7 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
+import { staffLimitError } from "@/lib/services/plans"
 import { calculatePeriodDeductions, inclusiveDayCount } from "@/lib/payroll/paye"
 import {
   completeBooking as completeBookingRecord,
@@ -411,6 +412,11 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
     if (pinError) return { ok: false, error: pinError }
   }
 
+  // Plan staff cap (Mahala 1, Growth 8, Business unlimited). Staff above the
+  // plan's included seats but under the cap are allowed and billed as extra staff.
+  const limitError = await staffLimitError(supabase, tenantId!)
+  if (limitError) return { ok: false, error: limitError }
+
   const { error: insertError } = await supabase.from("staff").insert([
     {
       tenant_id: tenantId,
@@ -485,6 +491,13 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
 export async function toggleStaffActive(id: string, active: boolean): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient("staff.manage")
   if (!supabase) return { ok: false, error: error! }
+
+  // Reactivating takes a seat back, so it must respect the plan's staff cap too.
+  // (Deactivating is always allowed -- it's how an over-limit tenant gets back under.)
+  if (active) {
+    const limitError = await staffLimitError(supabase, tenantId!)
+    if (limitError) return { ok: false, error: limitError }
+  }
 
   const { error: updateError } = await supabase
     .from("staff")
