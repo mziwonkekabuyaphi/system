@@ -156,6 +156,7 @@ const MIN_DISPLAY_QUEUE_SECONDS = 3
 const MAX_DISPLAY_QUEUE_SECONDS = 300
 const MAX_DISPLAY_TITLE_LENGTH = 60
 const MAX_DISPLAY_LABEL_LENGTH = 40
+const MAX_DISPLAY_TAGLINE_LENGTH = 80
 
 async function tenantContext() {
   const { tenantId, roleKey } = await requireTenantMember()
@@ -582,6 +583,15 @@ export async function updateQueueSettings(input: {
 // tenant_branding columns above).
 // ---------------------------------------------------------------------------
 export async function updateDisplaySettings(input: {
+  theme: "dark" | "light" | "custom"
+  layout: "rotation" | "board"
+  /** Hex (#RRGGBB), or null. Only meaningful when theme === "custom", but
+   *  accepted regardless -- same "store whatever was sent, resolve at
+   *  read-time" posture as the rest of this action. */
+  backgroundColor: string | null
+  /** Welcome-slide tagline. Separate column from the kiosk's own tagline
+   *  -- see AdminDisplaySettings.tagline's comment in types.ts. */
+  tagline?: string | null
   showServices: boolean
   showBookings: boolean
   showQueue: boolean
@@ -606,6 +616,19 @@ export async function updateDisplaySettings(input: {
   showQueueReference: boolean
 }): Promise<ActionResult> {
   try {
+    if (!["dark", "light", "custom"].includes(input.theme)) {
+      return { success: false, error: "Invalid theme." }
+    }
+    if (!["rotation", "board"].includes(input.layout)) {
+      return { success: false, error: "Invalid layout." }
+    }
+    if (input.backgroundColor !== null && !/^#[0-9A-Fa-f]{6}$/.test(input.backgroundColor)) {
+      return { success: false, error: "Background colour must be a hex value like #15110D." }
+    }
+    if (input.tagline && input.tagline.trim().length > MAX_DISPLAY_TAGLINE_LENGTH) {
+      return { success: false, error: `Tagline must be ${MAX_DISPLAY_TAGLINE_LENGTH} characters or fewer.` }
+    }
+
     if (
       !Number.isFinite(input.welcomeSeconds) ||
       input.welcomeSeconds < MIN_DISPLAY_WELCOME_SECONDS ||
@@ -664,6 +687,10 @@ export async function updateDisplaySettings(input: {
         display_welcome_seconds: input.welcomeSeconds,
         display_menu_bookings_seconds: input.menuBookingsSeconds,
         display_queue_seconds: input.queueSeconds,
+        display_theme: input.theme,
+        display_layout: input.layout,
+        display_background_color: input.backgroundColor,
+        display_tagline: input.tagline?.trim() || null,
         display_menu_title: input.menuTitle?.trim() || null,
         display_bookings_title: input.bookingsTitle?.trim() || null,
         display_queue_title: input.queueTitle?.trim() || null,

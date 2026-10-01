@@ -265,6 +265,21 @@ export interface AdminDisplaySettings {
   /** Seconds the live queue slide shows during rotation. 3–300. */
   queueSeconds: number
 
+  // -- Look -----------------------------------------------------------------
+  // "dark"/"light" are built-in looks; "custom" uses backgroundColor.
+  // "rotation" is the classic welcome -> services -> bookings -> queue
+  // slideshow; "board" is BoardScreen.tsx's always-on columns-of-tickets
+  // layout (no rotation timing applies when layout is "board").
+  theme: "dark" | "light" | "custom"
+  layout: "rotation" | "board"
+  /** Hex (#RRGGBB). Only meaningful when theme === "custom". */
+  backgroundColor: string | null
+  /** Shown under the business name on the welcome slide. Deliberately its
+   *  own field, separate from the kiosk's tagline (AdminKioskSettings.
+   *  tagline, "Tap anywhere to check in") -- that wording never belongs on
+   *  a screen nobody can tap. Null/empty means no tagline shown. */
+  tagline: string | null
+
   // -- Wording (same clear-to-default posture as AdminKioskSettings' -----
   // screen wording above: null/empty falls back to the hardcoded English
   // copy DisplayScreen.tsx has always used, resolved there the same way
