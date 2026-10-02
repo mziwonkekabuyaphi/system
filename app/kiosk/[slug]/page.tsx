@@ -78,7 +78,7 @@ import { Manrope } from "next/font/google"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
-import { isKioskEnabled, shouldShowPoweredBy } from "@/lib/services/plans"
+import { isKioskEnabled, shouldShowPoweredBy, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import { KioskApp } from "@/components/kiosk/KioskApp"
 
 const manrope = Manrope({ subsets: ["latin"], weight: ["500", "600", "700", "800"] })
@@ -250,11 +250,18 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
 
+  // Custom logo and colours only apply while the tenant's CURRENT plan
+  // includes the 'branding' module -- stored values from before a downgrade
+  // (or from before this gate existed) are simply ignored, not deleted, so
+  // they come back on upgrade. Display name is free on every plan. Any
+  // lookup error falls back to the default look.
+  const brandingEntitled = await tenantHasModule(supabase, tenant.id, MODULE_KEYS.branding).catch(() => false)
+
   const resolvedBranding: KioskBranding = {
     displayName: branding?.display_name || tenant.name,
-    logoUrl: branding?.logo_url ?? null,
-    primaryColor: branding?.primary_color || DEFAULT_PRIMARY_COLOR,
-    secondaryColor: branding?.secondary_color || DEFAULT_SECONDARY_COLOR,
+    logoUrl: brandingEntitled ? (branding?.logo_url ?? null) : null,
+    primaryColor: (brandingEntitled && branding?.primary_color) || DEFAULT_PRIMARY_COLOR,
+    secondaryColor: (brandingEntitled && branding?.secondary_color) || DEFAULT_SECONDARY_COLOR,
     // No row (tenant hasn't touched branding yet) and NULL (column default)
     // both mean "hasn't been granted/enabled" — false either way. This is
     // also independent of `plan`: a tenant that downgrades off Business
