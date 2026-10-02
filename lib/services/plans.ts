@@ -224,12 +224,26 @@ export async function tenantHasModule(supabase: SupabaseClient, tenantId: string
   return isModuleAllowedForPlan(supabase, tenant.plan, moduleKey)
 }
 
-/** Plan includes the module AND the tenant's own tenant_modules switch is
- *  on. For features an admin turns on/off themselves (the kiosk): the plan
- *  says whether they're ALLOWED to, the switch says whether they WANT to.
- *  A downgrade therefore shuts the feature off immediately without anyone
- *  having to remember to flip the switch. Fails closed on any error. */
-export async function isTenantModuleEnabled(supabase: SupabaseClient, tenantId: string, moduleKey: ModuleKey): Promise<boolean> {
+/** Plan includes the module AND the tenant hasn't switched it off. For
+ *  features an admin can turn on/off themselves: the plan says whether
+ *  they're ALLOWED to, tenant_modules says whether they've OPTED OUT (or,
+ *  with defaultOn false, whether they've OPTED IN).
+ *
+ *  defaultOn controls what "no tenant_modules row" means:
+ *    true  -> on. The row only exists once an admin has touched the switch,
+ *             so an untouched tenant gets whatever their plan includes, and
+ *             only an explicit enabled=false turns it off.
+ *    false -> off until an admin explicitly enables it (the default).
+ *
+ *  A downgrade shuts the feature off immediately either way, because the
+ *  plan check comes first. Fails closed on any error. */
+export async function isTenantModuleEnabled(
+  supabase: SupabaseClient,
+  tenantId: string,
+  moduleKey: ModuleKey,
+  options: { defaultOn?: boolean } = {},
+): Promise<boolean> {
+  const defaultOn = options.defaultOn ?? false
   try {
     if (!(await tenantHasModule(supabase, tenantId, moduleKey))) return false
 
@@ -241,11 +255,20 @@ export async function isTenantModuleEnabled(supabase: SupabaseClient, tenantId: 
       .maybeSingle()
 
     if (error) throw new Error(error.message)
-    return data?.enabled === true
+    if (!data) return defaultOn
+    return data.enabled === true
   } catch (err) {
     console.error("[plans] isTenantModuleEnabled failed, treating as disabled", { tenantId, moduleKey, error: err })
     return false
   }
+}
+
+/** The kiosk is automatic on every plan that includes it (Growth and
+ *  Business): on unless the tenant's admin has explicitly switched it off.
+ *  Single definition so the kiosk page, the kiosk server actions and the
+ *  admin settings screen can never disagree about what "enabled" means. */
+export async function isKioskEnabled(supabase: SupabaseClient, tenantId: string): Promise<boolean> {
+  return isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.kiosk, { defaultOn: true })
 }
 
 /** Thrown by assertTenantHasModule so callers can catch it by name, the
