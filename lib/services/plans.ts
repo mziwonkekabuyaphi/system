@@ -193,6 +193,85 @@ export async function isModuleAllowedForPlan(
   return Boolean(data)
 }
 
+/** Keys of the rows in `modules`. Use these instead of string literals so a
+ *  typo is a compile error rather than a silently-locked feature. */
+export const MODULE_KEYS = {
+  booking: "booking",
+  queue: "queue",
+  whatsapp: "whatsapp",
+  liveDashboard: "live_dashboard",
+  staffClockIn: "staff_clock_in",
+  kiosk: "kiosk",
+  businessHours: "business_hours",
+  payroll: "payroll",
+  branding: "branding",
+  prioritySupport: "priority_support",
+  removePoweredBy: "remove_powered_by",
+} as const
+
+export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
+
+/** Whether this tenant's CURRENT PLAN includes a module. Plan entitlement
+ *  (plan_modules) is the source of truth here, deliberately NOT
+ *  tenant_modules: that table is a sparse per-tenant on/off switch that
+ *  defaults to false and only has rows for tenants an admin has touched,
+ *  so requiring a row there would lock out features the plan already
+ *  grants. Upgrades and downgrades take effect immediately because
+ *  tenants.plan is the only thing that changes. */
+export async function tenantHasModule(supabase: SupabaseClient, tenantId: string, moduleKey: ModuleKey): Promise<boolean> {
+  const { data: tenant, error } = await supabase.from("tenants").select("plan").eq("id", tenantId).single()
+  if (error) throw new Error(`Failed to resolve tenant's plan: ${error.message}`)
+  return isModuleAllowedForPlan(supabase, tenant.plan, moduleKey)
+}
+
+/** Plan includes the module AND the tenant's own tenant_modules switch is
+ *  on. For features an admin turns on/off themselves (the kiosk): the plan
+ *  says whether they're ALLOWED to, the switch says whether they WANT to.
+ *  A downgrade therefore shuts the feature off immediately without anyone
+ *  having to remember to flip the switch. Fails closed on any error. */
+export async function isTenantModuleEnabled(supabase: SupabaseClient, tenantId: string, moduleKey: ModuleKey): Promise<boolean> {
+  try {
+    if (!(await tenantHasModule(supabase, tenantId, moduleKey))) return false
+
+    const { data, error } = await supabase
+      .from("tenant_modules")
+      .select("enabled, modules!inner(key)")
+      .eq("tenant_id", tenantId)
+      .eq("modules.key", moduleKey)
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    return data?.enabled === true
+  } catch (err) {
+    console.error("[plans] isTenantModuleEnabled failed, treating as disabled", { tenantId, moduleKey, error: err })
+    return false
+  }
+}
+
+/** Thrown by assertTenantHasModule so callers can catch it by name, the
+ *  same way PLAN_VISIT_LIMIT_REACHED is handled. */
+export const PLAN_MODULE_NOT_AVAILABLE = "PLAN_MODULE_NOT_AVAILABLE"
+
+/** Hard gate for server code (kiosk server actions, API routes). Fails
+ *  CLOSED: if the entitlement can't be verified, access is denied. */
+export async function assertTenantHasModule(supabase: SupabaseClient, tenantId: string, moduleKey: ModuleKey): Promise<void> {
+  const allowed = await tenantHasModule(supabase, tenantId, moduleKey)
+  if (!allowed) throw new Error(`${PLAN_MODULE_NOT_AVAILABLE}:${moduleKey}`)
+}
+
+/** Whether to render the "Powered by ZozoQueue" label for this tenant.
+ *  Fails OPEN, the opposite of the kiosk gate: if the lookup errors, keep
+ *  the label so a transient DB hiccup never silently strips attribution
+ *  from a tenant who hasn't paid to remove it. */
+export async function shouldShowPoweredBy(supabase: SupabaseClient, tenantId: string): Promise<boolean> {
+  try {
+    return !(await tenantHasModule(supabase, tenantId, MODULE_KEYS.removePoweredBy))
+  } catch (err) {
+    console.error("[plans] shouldShowPoweredBy failed, defaulting to showing label", { tenantId, error: err })
+    return true
+  }
+}
+
 /** "2026-09" for the current UTC calendar month -- matches how the
  *  billable_visits.billing_period column is populated by the DB triggers,
  *  so counting against it is always an exact string match, not a range
