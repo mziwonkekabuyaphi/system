@@ -78,7 +78,7 @@ import { Manrope } from "next/font/google"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
-import { isTenantModuleEnabled, shouldShowPoweredBy, MODULE_KEYS } from "@/lib/services/plans"
+import { isKioskEnabled, shouldShowPoweredBy } from "@/lib/services/plans"
 import { KioskApp } from "@/components/kiosk/KioskApp"
 
 const manrope = Manrope({ subsets: ["latin"], weight: ["500", "600", "700", "800"] })
@@ -204,22 +204,21 @@ type KioskLoadResult =
     }
   | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: []; queueBehavior: KioskQueueBehavior }
 
-// Same two-step lookup as setKioskEnabled/updateGeneralInfo's sibling in
-// app/admin/settings-actions.ts: resolve the `kiosk` row on `modules`,
-// then read this tenant's `tenant_modules` row for it. Any failure to
-// resolve either row — module not registered, no tenant_modules row yet,
-// or a real query error — is treated as "not enabled" rather than
-// bubbling an error, since a booking flow silently failing open on a
-// misconfigured module row would be far worse than an idle kiosk
-// correctly showing "not available."
+// Is the kiosk live for this tenant? The rule lives in plans.ts's
+// isKioskEnabled(): the plan must include the kiosk module, and the tenant
+// must not have switched it off in Settings > Kiosk (setKioskEnabled in
+// app/admin/settings-actions.ts). No tenant_modules row means "never
+// touched" and counts as ON. Any lookup error counts as OFF -- a booking
+// flow silently failing open on a bad lookup would be far worse than an
+// idle kiosk correctly showing "not available."
 async function resolveKioskModuleEnabled(
   supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
   tenantId: string,
 ): Promise<boolean> {
-  // Plan must include the kiosk module (Growth/Business) AND the tenant's
-  // own tenant_modules switch must be on. A downgrade to Mahala therefore
-  // takes the kiosk offline immediately. Fails closed on any error.
-  return isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.kiosk)
+  // Automatic on any plan that includes the kiosk (Growth/Business);
+  // only an explicit "off" from the tenant's admin disables it, and a
+  // downgrade to Mahala shuts it off immediately. Fails closed on error.
+  return isKioskEnabled(supabase, tenantId)
 }
 
 function resolveRegistrationType(value: string | null | undefined): KioskRegistrationType {

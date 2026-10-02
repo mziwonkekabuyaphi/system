@@ -39,7 +39,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, type BookingSlot } from "@/lib/services/booking"
 import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
-import { PLAN_VISIT_LIMIT_REACHED, isTenantModuleEnabled, MODULE_KEYS } from "@/lib/services/plans"
+import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
@@ -70,12 +70,12 @@ const KIOSK_UNAVAILABLE_MESSAGE = "This kiosk isn't available right now. Please 
 // kiosk is off, but these actions are public and callable directly with
 // just a slug, so the page's check protects nothing on its own. Every
 // action resolves its tenant through here: the plan must include the
-// kiosk module AND the tenant's own switch must be on. Fails closed.
+// kiosk module AND the tenant must not have switched it off. Fails closed.
 async function resolveKioskTenantId(slug: string): Promise<string> {
   const tenantId = await resolveActiveTenantId(slug)
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Supabase server client is unavailable")
-  if (!(await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.kiosk))) throw new Error(KIOSK_UNAVAILABLE)
+  if (!(await isKioskEnabled(supabase, tenantId))) throw new Error(KIOSK_UNAVAILABLE)
   return tenantId
 }
 
