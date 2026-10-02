@@ -78,6 +78,8 @@ export function SettingsManager({
   initialBranding,
   onBrandingChange,
   initialKioskEnabled,
+  kioskIncludedInPlan = true,
+  canRemovePoweredBy,
   initialKioskSettings,
   initialDisplaySettings,
   initialBookingSettings,
@@ -94,6 +96,14 @@ export function SettingsManager({
   // pick up initialBranding again.
   onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
   initialKioskEnabled: boolean
+  /** Whether the tenant's plan includes the kiosk module (plan_modules).
+   *  Computed server-side with tenantHasModule(). Defaults to true so an
+   *  un-updated parent keeps today's behavior; the server still enforces. */
+  kioskIncludedInPlan?: boolean
+  /** Whether the plan includes remove_powered_by. Computed server-side with
+   *  tenantHasModule(). Falls back to the old plan === "business" check if
+   *  the parent doesn't pass it yet. */
+  canRemovePoweredBy?: boolean
   initialKioskSettings: AdminKioskSettings
   initialDisplaySettings: AdminDisplaySettings
   initialBookingSettings: AdminBookingSettings
@@ -131,6 +141,7 @@ export function SettingsManager({
       {subTab === "kiosk" && (
         <KioskPanel
           initialEnabled={initialKioskEnabled}
+          includedInPlan={kioskIncludedInPlan}
           tenantSlug={tenantSlug}
           initialKioskSettings={initialKioskSettings}
         />
@@ -139,7 +150,12 @@ export function SettingsManager({
         <DisplayPanel tenantSlug={tenantSlug} initial={initialDisplaySettings} />
       )}
       {subTab === "private-label" && (
-        <PrivateLabelPanel plan={initialPlan} initial={initialBranding} onBrandingChange={onBrandingChange} />
+        <PrivateLabelPanel
+          plan={initialPlan}
+          canRemovePoweredBy={canRemovePoweredBy ?? initialPlan === "business"}
+          initial={initialBranding}
+          onBrandingChange={onBrandingChange}
+        />
       )}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
       {subTab === "queue" && <QueueSettingsPanel initial={initialQueueSettings} />}
@@ -313,10 +329,12 @@ function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
 // ---------------------------------------------------------------------------
 function KioskPanel({
   initialEnabled,
+  includedInPlan,
   tenantSlug,
   initialKioskSettings,
 }: {
   initialEnabled: boolean
+  includedInPlan: boolean
   tenantSlug: string
   initialKioskSettings: AdminKioskSettings
 }) {
@@ -335,6 +353,21 @@ function KioskPanel({
         setToggleError(result.error)
       }
     })
+  }
+
+  // Plan doesn't include the kiosk: show a locked card instead of a toggle
+  // that would only bounce off the server. The URL and behavior panels are
+  // hidden too -- the public kiosk page is unavailable on this plan.
+  if (!includedInPlan) {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
+        <p className="mt-1 text-sm text-stone-500">
+          The self-service kiosk isn&apos;t included in your current plan. Upgrade from Plans &amp; Billing to give
+          walk-ins a booking and queue screen.
+        </p>
+      </div>
+    )
   }
 
   return (
@@ -1217,10 +1250,12 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
 // ---------------------------------------------------------------------------
 function PrivateLabelPanel({
   plan,
+  canRemovePoweredBy,
   initial,
   onBrandingChange,
 }: {
   plan: AdminPlan
+  canRemovePoweredBy: boolean
   initial: AdminBranding
   onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
 }) {
@@ -1233,17 +1268,19 @@ function PrivateLabelPanel({
         </p>
       </div>
 
-      <BrandingFields plan={plan} initial={initial} onBrandingChange={onBrandingChange} />
+      <BrandingFields plan={plan} canRemovePoweredBy={canRemovePoweredBy} initial={initial} onBrandingChange={onBrandingChange} />
     </div>
   )
 }
 
 function BrandingFields({
   plan,
+  canRemovePoweredBy,
   initial,
   onBrandingChange,
 }: {
   plan: AdminPlan
+  canRemovePoweredBy: boolean
   initial: AdminBranding
   onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
 }) {
@@ -1263,7 +1300,6 @@ function BrandingFields({
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
-  const isBusiness = plan === "business"
 
   function save() {
     setMessage(null)
@@ -1280,7 +1316,7 @@ function BrandingFields({
   }
 
   function handleRemovePoweredByChange(next: boolean) {
-    if (next && !isBusiness) {
+    if (next && !canRemovePoweredBy) {
       setShowUpgradePrompt(true)
       return
     }
