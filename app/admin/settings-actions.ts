@@ -14,10 +14,13 @@
  * RLS entirely, so the manual filter is the only thing standing between a
  * bug and cross-tenant writes.
  *
- * The one rule that matters most here: remove_powered_by can only be set to
- * true when tenants.plan = 'business'. That's checked below AND by a DB
- * trigger on tenant_branding (added in the same migration as the columns),
- * so even a direct SQL write or a future admin tool can't bypass it.
+ * The one rule that matters most here: remove_powered_by can only be switched
+ * ON when the tenant's plan includes the 'remove_powered_by' module (today:
+ * Business, via plan_modules). That's checked below AND by a DB trigger on
+ * tenant_branding (enforce_remove_powered_by_requires_business, which reads
+ * the same plan_modules table), so even a direct SQL write or a future admin
+ * tool can't bypass it. Plan contents live ONLY in plan_modules -- never
+ * hardcode a plan key here.
  *
  * Logo upload writes to the 'branding' Storage bucket (public read, 2MB
  * limit, image/png|jpeg|webp|svg+xml only — enforced by the bucket itself,
@@ -99,6 +102,7 @@ import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
+import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import type { AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
 
 type ActionResult = { success: true } | { success: false; error: string }
@@ -223,15 +227,34 @@ export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
       return { success: false, error: "Kiosk module is not registered" }
     }
 
-    const { error } = await supabase
-      .from("tenant_modules")
-      .update({
+    // Turning the kiosk OFF is always allowed; turning it ON requires the
+    // plan to include it. (The kiosk page and actions re-check this on
+    // every request, so this is for a clear message, not the only gate.)
+    if (enabled) {
+      let allowed = false
+      try {
+        allowed = await tenantHasModule(supabase, tenantId, MODULE_KEYS.kiosk)
+      } catch {
+        return { success: false, error: "Could not verify plan" }
+      }
+      if (!allowed) {
+        return { success: false, error: "The self-service kiosk isn't included in your current plan. Upgrade to enable it." }
+      }
+    }
+
+    // upsert, not update: a tenant has no tenant_modules row for a module
+    // until something creates one, and .update() on a missing row changes
+    // nothing while still reporting success.
+    const { error } = await supabase.from("tenant_modules").upsert(
+      {
+        tenant_id: tenantId,
+        module_id: kioskModule.id,
         enabled,
         enabled_at: enabled ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
-      })
-      .eq("tenant_id", tenantId)
-      .eq("module_id", kioskModule.id)
+      },
+      { onConflict: "tenant_id,module_id" },
+    )
 
     if (error) return { success: false, error: error.message }
 
@@ -255,15 +278,14 @@ export async function updateBranding(input: {
     const { supabase, tenantId } = await tenantContext()
 
     if (input.removePoweredBy) {
-      const { data: tenant, error: planError } = await supabase
-        .from("tenants")
-        .select("plan")
-        .eq("id", tenantId)
-        .single()
+      let allowed = false
+      try {
+        allowed = await tenantHasModule(supabase, tenantId, MODULE_KEYS.removePoweredBy)
+      } catch {
+        return { success: false, error: "Could not verify plan" }
+      }
 
-      if (planError || !tenant) return { success: false, error: "Could not verify plan" }
-
-      if (tenant.plan !== "business") {
+      if (!allowed) {
         return {
           success: false,
           error: 'Removing "Powered by" requires the Business plan. Upgrade to enable this.',
