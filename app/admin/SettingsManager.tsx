@@ -80,6 +80,7 @@ export function SettingsManager({
   initialKioskEnabled,
   kioskIncludedInPlan = true,
   canRemovePoweredBy,
+  canCustomizeBranding,
   initialKioskSettings,
   initialDisplaySettings,
   initialBookingSettings,
@@ -104,6 +105,10 @@ export function SettingsManager({
    *  tenantHasModule(). Falls back to the old plan === "business" check if
    *  the parent doesn't pass it yet. */
   canRemovePoweredBy?: boolean
+  /** Whether the plan includes the 'branding' module (custom logo + colours).
+   *  Computed server-side with tenantHasModule(). Falls back to the old
+   *  plan === "business" check if the parent doesn't pass it yet. */
+  canCustomizeBranding?: boolean
   initialKioskSettings: AdminKioskSettings
   initialDisplaySettings: AdminDisplaySettings
   initialBookingSettings: AdminBookingSettings
@@ -153,6 +158,7 @@ export function SettingsManager({
         <PrivateLabelPanel
           plan={initialPlan}
           canRemovePoweredBy={canRemovePoweredBy ?? initialPlan === "business"}
+          canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
           initial={initialBranding}
           onBrandingChange={onBrandingChange}
         />
@@ -1251,11 +1257,13 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
 function PrivateLabelPanel({
   plan,
   canRemovePoweredBy,
+  canCustomizeBranding,
   initial,
   onBrandingChange,
 }: {
   plan: AdminPlan
   canRemovePoweredBy: boolean
+  canCustomizeBranding: boolean
   initial: AdminBranding
   onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
 }) {
@@ -1268,7 +1276,7 @@ function PrivateLabelPanel({
         </p>
       </div>
 
-      <BrandingFields plan={plan} canRemovePoweredBy={canRemovePoweredBy} initial={initial} onBrandingChange={onBrandingChange} />
+      <BrandingFields plan={plan} canRemovePoweredBy={canRemovePoweredBy} canCustomizeBranding={canCustomizeBranding} initial={initial} onBrandingChange={onBrandingChange} />
     </div>
   )
 }
@@ -1276,11 +1284,13 @@ function PrivateLabelPanel({
 function BrandingFields({
   plan,
   canRemovePoweredBy,
+  canCustomizeBranding,
   initial,
   onBrandingChange,
 }: {
   plan: AdminPlan
   canRemovePoweredBy: boolean
+  canCustomizeBranding: boolean
   initial: AdminBranding
   onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
 }) {
@@ -1370,6 +1380,12 @@ function BrandingFields({
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Brand identity</p>
         <p className="text-sm text-stone-500">Set the name, logo, and colors customers see when interacting with your business.</p>
+        {!canCustomizeBranding && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Custom logo and brand colours are a Business plan feature. Your display name can be changed on any plan.
+            Upgrade from Plans &amp; Billing to unlock the rest.
+          </p>
+        )}
 
         <div className="mt-4 space-y-4">
           <FieldRow label="Display name">
@@ -1395,7 +1411,7 @@ function BrandingFields({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isLogoPending}
+                    disabled={isLogoPending || !canCustomizeBranding}
                     className={secondaryButtonClass}
                   >
                     {isLogoPending ? "Uploading…" : logoUrl ? "Change logo" : "Upload logo"}
@@ -1424,7 +1440,10 @@ function BrandingFields({
             {logoError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{logoError}</p>}
           </FieldRow>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div
+            className={`grid grid-cols-2 gap-3 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+            aria-disabled={!canCustomizeBranding}
+          >
             <ColorField
               label="Primary color"
               value={form.primaryColor ?? "#7A2E3A"}

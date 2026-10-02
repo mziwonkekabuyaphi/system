@@ -293,16 +293,47 @@ export async function updateBranding(input: {
       }
     }
 
-    const { error } = await supabase
-      .from("tenant_branding")
-      .update({
-        display_name: input.displayName,
-        primary_color: input.primaryColor,
-        secondary_color: input.secondaryColor,
-        remove_powered_by: input.removePoweredBy,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("tenant_id", tenantId)
+    // Custom brand colours (and the logo, see uploadLogo) need the
+    // 'branding' module. Display name stays free on every plan. Without the
+    // module, colours may be SAVED UNCHANGED (the form always re-sends the
+    // current values) but not changed -- and we never write the colour
+    // columns at all, so a tampered request can't slip a new colour through.
+    let canCustomizeBranding = false
+    try {
+      canCustomizeBranding = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding)
+    } catch {
+      return { success: false, error: "Could not verify plan" }
+    }
+
+    const updates: Record<string, unknown> = {
+      display_name: input.displayName,
+      remove_powered_by: input.removePoweredBy,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (canCustomizeBranding) {
+      updates.primary_color = input.primaryColor
+      updates.secondary_color = input.secondaryColor
+    } else {
+      const { data: current } = await supabase
+        .from("tenant_branding")
+        .select("primary_color, secondary_color")
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+
+      const norm = (v: string | null | undefined) => (v ?? "").toLowerCase()
+      if (
+        norm(input.primaryColor) !== norm(current?.primary_color) ||
+        norm(input.secondaryColor) !== norm(current?.secondary_color)
+      ) {
+        return {
+          success: false,
+          error: "Custom brand colours aren't included in your current plan. Upgrade to change them.",
+        }
+      }
+    }
+
+    const { error } = await supabase.from("tenant_branding").update(updates).eq("tenant_id", tenantId)
 
     if (error) {
       if (error.message.includes("remove_powered_by can only be enabled")) {
@@ -431,6 +462,19 @@ function extensionFor(mimeType: string): string {
 export async function uploadLogo(formData: FormData): Promise<LogoActionResult> {
   try {
     const { supabase, tenantId } = await tenantContext()
+
+    // Logo is part of the 'branding' module. removeLogo() below is
+    // deliberately NOT gated: a tenant that downgrades must always be able
+    // to take their logo down.
+    let canCustomizeBranding = false
+    try {
+      canCustomizeBranding = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding)
+    } catch {
+      return { success: false, error: "Could not verify plan" }
+    }
+    if (!canCustomizeBranding) {
+      return { success: false, error: "A custom logo isn't included in your current plan. Upgrade to add one." }
+    }
 
     const file = formData.get("file")
     if (!(file instanceof File) || file.size === 0) {
