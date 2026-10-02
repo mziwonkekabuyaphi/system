@@ -78,6 +78,7 @@ import { Manrope } from "next/font/google"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
+import { isTenantModuleEnabled, shouldShowPoweredBy, MODULE_KEYS } from "@/lib/services/plans"
 import { KioskApp } from "@/components/kiosk/KioskApp"
 
 const manrope = Manrope({ subsets: ["latin"], weight: ["500", "600", "700", "800"] })
@@ -215,30 +216,10 @@ async function resolveKioskModuleEnabled(
   supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
   tenantId: string,
 ): Promise<boolean> {
-  const { data: kioskModule, error: moduleLookupError } = await supabase
-    .from("modules")
-    .select("id")
-    .eq("key", "kiosk")
-    .single()
-
-  if (moduleLookupError || !kioskModule) {
-    console.error("[kiosk] kiosk module lookup failed", { tenantId, error: moduleLookupError })
-    return false
-  }
-
-  const { data: tenantModule, error: tenantModuleError } = await supabase
-    .from("tenant_modules")
-    .select("enabled")
-    .eq("tenant_id", tenantId)
-    .eq("module_id", kioskModule.id)
-    .maybeSingle()
-
-  if (tenantModuleError) {
-    console.error("[kiosk] tenant_modules lookup failed", { tenantId, error: tenantModuleError })
-    return false
-  }
-
-  return tenantModule?.enabled === true
+  // Plan must include the kiosk module (Growth/Business) AND the tenant's
+  // own tenant_modules switch must be on. A downgrade to Mahala therefore
+  // takes the kiosk offline immediately. Fails closed on any error.
+  return isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.kiosk)
 }
 
 function resolveRegistrationType(value: string | null | undefined): KioskRegistrationType {
@@ -280,7 +261,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     // also independent of `plan`: a tenant that downgrades off Business
     // after having it set stays governed by whatever's actually stored
     // here, since that's what updateBranding's own plan check maintains.
-    removePoweredBy: branding?.remove_powered_by === true,
+    removePoweredBy: false, // resolved below, once the plan check has run
     tagline: branding?.tagline?.trim() || DEFAULT_TAGLINE,
     idleRefreshSeconds: branding?.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
     confirmationRefreshSeconds: branding?.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
@@ -296,6 +277,14 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     detailsScreenTitle: branding?.details_screen_title?.trim() || DEFAULT_DETAILS_SCREEN_TITLE,
     ticketBookingEyebrow: branding?.ticket_booking_eyebrow?.trim() || DEFAULT_TICKET_BOOKING_EYEBROW,
     ticketQueueEyebrow: branding?.ticket_queue_eyebrow?.trim() || DEFAULT_TICKET_QUEUE_EYEBROW,
+  }
+
+  // The stored flag only counts while the tenant's CURRENT plan still
+  // includes remove_powered_by. Without this, a tenant that downgrades off
+  // Business keeps the label hidden forever. shouldShowPoweredBy fails
+  // open (label stays) if the plan lookup errors.
+  if (branding?.remove_powered_by === true && !(await shouldShowPoweredBy(supabase, tenant.id))) {
+    resolvedBranding.removePoweredBy = true
   }
 
   const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)

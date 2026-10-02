@@ -39,7 +39,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, type BookingSlot } from "@/lib/services/booking"
 import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
-import { PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { PLAN_VISIT_LIMIT_REACHED, isTenantModuleEnabled, MODULE_KEYS } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
@@ -61,6 +61,26 @@ async function resolveActiveTenantId(slug: string): Promise<string> {
   if (!data) throw new Error("KIOSK_TENANT_NOT_FOUND")
 
   return data.id as string
+}
+
+const KIOSK_UNAVAILABLE = "KIOSK_UNAVAILABLE"
+const KIOSK_UNAVAILABLE_MESSAGE = "This kiosk isn't available right now. Please check in at the counter."
+
+// SERVER-SIDE KIOSK GATE. page.tsx already shows "unavailable" when the
+// kiosk is off, but these actions are public and callable directly with
+// just a slug, so the page's check protects nothing on its own. Every
+// action resolves its tenant through here: the plan must include the
+// kiosk module AND the tenant's own switch must be on. Fails closed.
+async function resolveKioskTenantId(slug: string): Promise<string> {
+  const tenantId = await resolveActiveTenantId(slug)
+  const supabase = getSupabaseServerClient()
+  if (!supabase) throw new Error("Supabase server client is unavailable")
+  if (!(await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.kiosk))) throw new Error(KIOSK_UNAVAILABLE)
+  return tenantId
+}
+
+function kioskErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message === KIOSK_UNAVAILABLE ? KIOSK_UNAVAILABLE_MESSAGE : fallback
 }
 
 // Same fail-closed posture as app/kiosk/[slug]/page.tsx's queueBehavior
@@ -93,22 +113,22 @@ async function resolveRequireServiceSelection(tenantId: string): Promise<boolean
 
 export async function fetchKioskServices(slug: string): Promise<KioskActionResult<CatalogService[]>> {
   try {
-    const tenantId = await resolveActiveTenantId(slug)
+    const tenantId = await resolveKioskTenantId(slug)
     const services = await getBookableServices(tenantId)
     return { ok: true, data: services }
   } catch (error) {
     console.error("[kiosk] fetchKioskServices failed", { slug, error })
-    return { ok: false, error: "Couldn't load services. Please try again." }
+    return { ok: false, error: kioskErrorMessage(error, "Couldn't load services. Please try again.") }
   }
 }
 
 export async function fetchKioskDateOptions(slug: string): Promise<KioskActionResult<Array<{ date: string; label: string }>>> {
   try {
-    const tenantId = await resolveActiveTenantId(slug)
+    const tenantId = await resolveKioskTenantId(slug)
     return { ok: true, data: await buildDateOptions(tenantId) }
   } catch (error) {
     console.error("[kiosk] fetchKioskDateOptions failed", { slug, error })
-    return { ok: false, error: "Something went wrong. Please try again." }
+    return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
   }
 }
 
@@ -118,7 +138,7 @@ export async function fetchKioskTimeSlots(
   dateISO: string,
 ): Promise<KioskActionResult<BookingSlot[]>> {
   try {
-    const tenantId = await resolveActiveTenantId(slug)
+    const tenantId = await resolveKioskTenantId(slug)
     const services = await getBookableServices(tenantId)
     const service = services.find((s) => s.id === serviceId)
     if (!service) return { ok: false, error: "That service isn't available anymore." }
@@ -127,7 +147,7 @@ export async function fetchKioskTimeSlots(
     return { ok: true, data: slots }
   } catch (error) {
     console.error("[kiosk] fetchKioskTimeSlots failed", { slug, serviceId, dateISO, error })
-    return { ok: false, error: "Couldn't load available times. Please try again." }
+    return { ok: false, error: kioskErrorMessage(error, "Couldn't load available times. Please try again.") }
   }
 }
 
@@ -159,7 +179,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
   if (!isPlausiblePhoneNumber(input.phone)) return { ok: false, error: "Please enter a valid cellphone number." }
 
   try {
-    const tenantId = await resolveActiveTenantId(slug)
+    const tenantId = await resolveKioskTenantId(slug)
     const services = await getBookableServices(tenantId)
     const service = services.find((s) => s.id === input.serviceId)
     if (!service) return { ok: false, error: "That service isn't available anymore." }
@@ -215,7 +235,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       }
     }
     console.error("[kiosk] submitKioskBooking failed", { slug, error })
-    return { ok: false, error: "Something went wrong. Please try again." }
+    return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
   }
 }
 
@@ -244,7 +264,7 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
   if (!isPlausiblePhoneNumber(input.phone)) return { ok: false, error: "Please enter a valid cellphone number." }
 
   try {
-    const tenantId = await resolveActiveTenantId(slug)
+    const tenantId = await resolveKioskTenantId(slug)
     const requireServiceSelection = await resolveRequireServiceSelection(tenantId)
 
     if (requireServiceSelection && !input.serviceId) {
@@ -305,6 +325,6 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       }
     }
     console.error("[kiosk] submitKioskQueueJoin failed", { slug, error })
-    return { ok: false, error: "Something went wrong. Please try again." }
+    return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
   }
 }
