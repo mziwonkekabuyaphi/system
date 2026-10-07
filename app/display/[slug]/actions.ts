@@ -35,6 +35,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { formatQueueTicketNumber } from "@/lib/services/queue"
+import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 
 export interface DisplayBranding {
   displayName: string | null
@@ -277,11 +278,18 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
     const ticketNumberPrefix = queueSettingsResult.data?.ticket_number_prefix ?? "Q"
     const defaultServiceMinutes = queueSettingsResult.data?.default_service_duration_minutes ?? 15
 
+    // Custom logo and brand colours only apply while the tenant's CURRENT
+    // plan includes the 'branding' module. Stored values are ignored, not
+    // deleted, so they return on upgrade. Same rule as the kiosk page.
+    // Display name is free on every plan. Any lookup error means the
+    // default look.
+    const brandingEntitled = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding).catch(() => false)
+
     const branding: DisplayBranding = {
       displayName: brandingResult.data?.display_name ?? null,
-      logoUrl: brandingResult.data?.logo_url ?? null,
-      primaryColor: brandingResult.data?.primary_color ?? null,
-      secondaryColor: brandingResult.data?.secondary_color ?? null,
+      logoUrl: brandingEntitled ? (brandingResult.data?.logo_url ?? null) : null,
+      primaryColor: brandingEntitled ? (brandingResult.data?.primary_color ?? null) : null,
+      secondaryColor: brandingEntitled ? (brandingResult.data?.secondary_color ?? null) : null,
       // Display has its own tagline. It used to read tenant_branding.tagline,
       // which is the KIOSK's welcome text ("Tap anywhere to check in") --
       // wrong wording for a screen nobody can tap.
