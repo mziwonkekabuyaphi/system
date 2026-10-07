@@ -152,7 +152,11 @@ export function SettingsManager({
         />
       )}
       {subTab === "display" && (
-        <DisplayPanel tenantSlug={tenantSlug} initial={initialDisplaySettings} />
+        <DisplayPanel
+          tenantSlug={tenantSlug}
+          initial={initialDisplaySettings}
+          canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
+        />
       )}
       {subTab === "private-label" && (
         <PrivateLabelPanel
@@ -832,11 +836,19 @@ const DISPLAY_THEME_OPTIONS: Array<{
   { value: "custom", title: "Custom color", description: "Pick your own background. Text color adjusts automatically.", swatch: "" },
 ]
 
-function DisplayPanel({ tenantSlug, initial }: { tenantSlug: string; initial: AdminDisplaySettings }) {
+function DisplayPanel({
+  tenantSlug,
+  initial,
+  canCustomizeBranding,
+}: {
+  tenantSlug: string
+  initial: AdminDisplaySettings
+  canCustomizeBranding: boolean
+}) {
   return (
     <div className="space-y-3">
       <DisplayUrlPanel tenantSlug={tenantSlug} />
-      <DisplayBehaviorPanel initial={initial} />
+      <DisplayBehaviorPanel initial={initial} canCustomizeBranding={canCustomizeBranding} />
     </div>
   )
 }
@@ -906,7 +918,13 @@ function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
 
 // ---- Screens, timing, and wording ------------------------------------------
 
-function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
+function DisplayBehaviorPanel({
+  initial,
+  canCustomizeBranding,
+}: {
+  initial: AdminDisplaySettings
+  canCustomizeBranding: boolean
+}) {
   const [showServices, setShowServices] = useState(initial.showServices)
   const [showBookings, setShowBookings] = useState(initial.showBookings)
   const [showQueue, setShowQueue] = useState(initial.showQueue)
@@ -1024,15 +1042,18 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
           <div className="grid gap-2 sm:grid-cols-3">
             {DISPLAY_THEME_OPTIONS.map((option) => {
               const selected = theme === option.value
+              const locked = option.value === "custom" && !canCustomizeBranding
               const swatch = option.value === "custom" ? (HEX_COLOR_PATTERN.test(backgroundColor) ? backgroundColor : "#15110D") : option.swatch
               return (
                 <button
                   key={option.value}
                   type="button"
-                  disabled={isPending}
+                  disabled={isPending || locked}
                   onClick={() => setTheme(option.value)}
                   aria-pressed={selected}
                   className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                    locked ? "cursor-not-allowed opacity-60 " : ""
+                  }${
                     selected
                       ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
                       : "border-stone-300 bg-stone-50 hover:bg-stone-100"
@@ -1044,12 +1065,14 @@ function DisplayBehaviorPanel({ initial }: { initial: AdminDisplaySettings }) {
                       {option.title}
                     </span>
                   </span>
-                  <span className="text-xs text-stone-500">{option.description}</span>
+                  <span className="text-xs text-stone-500">
+                    {locked ? "Custom background colors are a Business plan feature." : option.description}
+                  </span>
                 </button>
               )
             })}
           </div>
-          {theme === "custom" && (
+          {theme === "custom" && canCustomizeBranding && (
             <div className="mt-3 max-w-xs">
               <ColorField label="Background color" value={backgroundColor} onChange={setBackgroundColor} />
             </div>

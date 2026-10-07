@@ -744,6 +744,37 @@ export async function updateDisplaySettings(input: {
 
     const { supabase, tenantId } = await tenantContext()
 
+    // The "custom" theme (your own background colour) is part of the
+    // 'branding' module. Dark and Light stay free on every plan. Without the
+    // module: choosing "custom" is only accepted if it is exactly what is
+    // already stored (a re-save), and display_background_color is never
+    // written, so a tampered request can't slip a new colour in.
+    let canCustomizeBranding = false
+    try {
+      canCustomizeBranding = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding)
+    } catch {
+      return { success: false, error: "Could not verify plan" }
+    }
+
+    if (!canCustomizeBranding && input.theme === "custom") {
+      const { data: current } = await supabase
+        .from("tenant_branding")
+        .select("display_theme, display_background_color")
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+
+      const unchanged =
+        current?.display_theme === "custom" &&
+        (current.display_background_color ?? "").toLowerCase() === (input.backgroundColor ?? "").toLowerCase()
+
+      if (!unchanged) {
+        return {
+          success: false,
+          error: "A custom display background colour isn't included in your current plan. Upgrade to use it.",
+        }
+      }
+    }
+
     const { error } = await supabase
       .from("tenant_branding")
       .update({
@@ -755,7 +786,7 @@ export async function updateDisplaySettings(input: {
         display_queue_seconds: input.queueSeconds,
         display_theme: input.theme,
         display_layout: input.layout,
-        display_background_color: input.backgroundColor,
+        ...(canCustomizeBranding ? { display_background_color: input.backgroundColor } : {}),
         display_tagline: input.tagline?.trim() || null,
         display_menu_title: input.menuTitle?.trim() || null,
         display_bookings_title: input.bookingsTitle?.trim() || null,
