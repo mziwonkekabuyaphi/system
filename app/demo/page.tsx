@@ -371,7 +371,7 @@ export default function DemoPage() {
               <p className={styles.planMeter}>100 visits, once off &middot; 1 staff</p>
               <h3>Try it on real customers, no card needed</h3>
               <ul>
-                <li>WhatsApp AI booking &amp; queue assistant</li>
+                <li>Appointment booking &amp; queue management</li>
                 <li>Live admin dashboard</li>
                 <li>Self-service kiosk</li>
                 <li>Staff profiles &amp; PIN clock-in</li>
@@ -390,9 +390,9 @@ export default function DemoPage() {
               <h3>For a shop that&rsquo;s outgrown &ldquo;just trying it out&rdquo;</h3>
               <ul>
                 <li>Everything in Mahala</li>
+                <li>WhatsApp AI booking &amp; queue assistant</li>
                 <li>Staff shift tracking &amp; PAYE/UIF payroll</li>
                 <li>Higher visit &amp; staff limits</li>
-                <li>Priority support</li>
               </ul>
             </div>
             <div className={styles.plan}>
@@ -407,6 +407,7 @@ export default function DemoPage() {
               <h3>Growth, fully under your own name</h3>
               <ul>
                 <li>Everything in Growth</li>
+                <li>Priority support</li>
                 <li>Custom brand colours &amp; logo throughout</li>
                 <li>Remove &ldquo;Powered by ZozoQueue&rdquo; entirely</li>
                 <li>Add as many staff as you need</li>
@@ -577,9 +578,10 @@ export default function DemoPage() {
                 </svg>
               </summary>
               <p className={styles.faqAnswer}>
-                Yes — the Mahala plan is free, with 100 visits to test on real customers and
-                one staff member, so you can see it running in your own shop before deciding to
-                upgrade.
+                Yes — the Mahala plan is free, with 100 visits once off to test on real customers
+                and one staff member, with the self-service kiosk included, so you can see it
+                running in your own shop before deciding to upgrade. WhatsApp booking comes with
+                Growth.
               </p>
             </details>
           </div>
