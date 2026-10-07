@@ -296,7 +296,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       tagline: brandingResult.data?.display_tagline?.trim() || null,
     }
 
-    const settings: DisplaySettings = brandingResult.data
+    const rawSettings: DisplaySettings = brandingResult.data
       ? {
           showServices: brandingResult.data.display_show_services ?? DEFAULT_DISPLAY_SETTINGS.showServices,
           showBookings: brandingResult.data.display_show_bookings ?? DEFAULT_DISPLAY_SETTINGS.showBookings,
@@ -325,6 +325,14 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
             brandingResult.data.display_queue_show_reference ?? DEFAULT_DISPLAY_SETTINGS.showQueueReference,
         }
       : DEFAULT_DISPLAY_SETTINGS
+
+    // The "custom" theme (own background colour) needs the 'branding' module,
+    // same as the logo and brand colours. Without it the screen falls back
+    // to the built-in dark look; the stored colour is kept for an upgrade.
+    // Copied rather than mutated: rawSettings may be the shared defaults.
+    const settings: DisplaySettings = brandingEntitled
+      ? rawSettings
+      : { ...rawSettings, theme: rawSettings.theme === "custom" ? "dark" : rawSettings.theme, backgroundColor: null }
 
     const bookings: DisplayBooking[] = (bookingsResult.data ?? []).map((row) => {
       const customer = unwrapJoin<{ full_name: string | null }>(row.customer as never)
