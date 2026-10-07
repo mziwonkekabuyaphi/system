@@ -1,15 +1,25 @@
 import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
+import { PlanCards } from "./PlanCards";
+import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
 export const metadata = {
   title: "ZozoQueue — WhatsApp booking & queueing for real shops",
 };
 
+// Plans on this page are read from the database (same tables as the admin
+// Billing panel), so re-generate every 5 minutes to pick up price changes.
+export const revalidate = 300;
+
 const SIGN_IN_URL = "https://system-eta-azure.vercel.app/login";
 const SIGN_UP_URL = "https://system-eta-azure.vercel.app/signup";
+/** The full pricing page. Change this if your landing page doesn't live at /demo. */
+const PRICING_URL = "/demo/pricing";
 
-export default function DemoPage() {
+export default async function DemoPage() {
+  const pricing = await getPublicPricing();
+
   return (
     <div className={styles.page}>
       <nav className={styles.siteNav}>
@@ -364,55 +374,18 @@ export default function DemoPage() {
           <div className={styles.sectionHead}>
             <h2>Start simple. Go private-label when you&rsquo;re ready.</h2>
           </div>
-          <div className={styles.plans}>
-            <div className={styles.plan}>
-              <p className={styles.planName}>Mahala</p>
-              <p className={styles.planPrice}>R0</p>
-              <p className={styles.planMeter}>100 visits, once off &middot; 1 staff</p>
-              <h3>Try it on real customers, no card needed</h3>
-              <ul>
-                <li>Appointment booking &amp; queue management</li>
-                <li>Live admin dashboard</li>
-                <li>Self-service kiosk</li>
-                <li>Staff profiles &amp; PIN clock-in</li>
-                <li>Business-hours enforcement</li>
-              </ul>
-            </div>
-            <div className={`${styles.plan} ${styles.planBusiness}`}>
-              <p className={styles.planName}>Growth</p>
-              <p className={styles.planPrice}>
-                R499<span className={styles.planPriceUnit}>/month</span>
-              </p>
-              <p className={styles.planMeter}>
-                Includes 2 staff &middot; R149 per extra staff, up to 8 &middot; 250 visits per staff/month,
-                then R1.50/visit
-              </p>
-              <h3>For a shop that&rsquo;s outgrown &ldquo;just trying it out&rdquo;</h3>
-              <ul>
-                <li>Everything in Mahala</li>
-                <li>WhatsApp AI booking &amp; queue assistant</li>
-                <li>Staff shift tracking &amp; PAYE/UIF payroll</li>
-                <li>Higher visit &amp; staff limits</li>
-              </ul>
-            </div>
-            <div className={styles.plan}>
-              <p className={styles.planName}>Business</p>
-              <p className={styles.planPrice}>
-                R1,499<span className={styles.planPriceUnit}>/month</span>
-              </p>
-              <p className={styles.planMeter}>
-                Includes 5 staff &middot; R129 per extra staff, no limit &middot; 250 visits per staff/month,
-                then R1.00/visit
-              </p>
-              <h3>Growth, fully under your own name</h3>
-              <ul>
-                <li>Everything in Growth</li>
-                <li>Priority support</li>
-                <li>Custom brand colours &amp; logo throughout</li>
-                <li>Remove &ldquo;Powered by ZozoQueue&rdquo; entirely</li>
-                <li>Add as many staff as you need</li>
-              </ul>
-            </div>
+          {pricing ? (
+            <PlanCards plans={pricing.plans} />
+          ) : (
+            <p>
+              Our pricing is being updated. <a href="mailto:hello@ndithini.com">Get in touch</a> and we&rsquo;ll send it to
+              you.
+            </p>
+          )}
+          <div style={{ marginTop: 28, textAlign: "center" }}>
+            <a className={`${styles.btn} ${styles.btnSecondary}`} href={PRICING_URL}>
+              See full pricing and examples
+            </a>
           </div>
         </div>
       </section>
@@ -518,9 +491,7 @@ export default function DemoPage() {
                 </svg>
               </summary>
               <p className={styles.faqAnswer}>
-                You&rsquo;re never cut off. Every staff member comes with 250 visits a month.
-                Past that, extra visits are billed at R1.50 each on Growth and R1.00 each on
-                Business, with no cap.
+                {overageFaq(pricing?.plans)}
               </p>
             </details>
             <details className={styles.faqItem}>
@@ -578,10 +549,7 @@ export default function DemoPage() {
                 </svg>
               </summary>
               <p className={styles.faqAnswer}>
-                Yes — the Mahala plan is free, with 100 visits once off to test on real customers
-                and one staff member, with the self-service kiosk included, so you can see it
-                running in your own shop before deciding to upgrade. WhatsApp booking comes with
-                Growth.
+                {freePlanFaq(pricing?.plans)}
               </p>
             </details>
           </div>
