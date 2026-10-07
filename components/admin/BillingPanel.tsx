@@ -249,7 +249,7 @@ function FreeUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage
   return (
     <section className="rounded-xl border border-[#E6E1D4] p-5">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-[#1C1A17]">Free — {total} lifetime visits</h3>
+        <h3 className="text-base font-semibold text-[#1C1A17]">Free — {total} visits, once off</h3>
         <span className="text-sm text-[#8A8375]">R0 / month</span>
       </div>
 
@@ -447,7 +447,7 @@ function VisitBreakdownSection({ breakdown }: { breakdown: { queueVisits: number
 // ============================================================================
 
 function planVisitLine(plan: Plan): string {
-  if (plan.visitLimitPeriod === "lifetime") return `${plan.visitLimit} lifetime visits`
+  if (plan.visitLimitPeriod === "lifetime") return `${plan.visitLimit} visits, once off`
   if (plan.visitsPerStaff !== null) return `${plan.visitsPerStaff.toLocaleString("en-ZA")} visits per staff/month included`
   if (plan.visitLimit === null) return "No visit limit"
   return `${plan.visitLimit.toLocaleString("en-ZA")} visits/month included`
