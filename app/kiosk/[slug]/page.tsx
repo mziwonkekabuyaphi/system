@@ -1,416 +1,728 @@
-// app/kiosk/[slug]/page.tsx
-/**
- * Public, unauthenticated kiosk landing page for one tenant, at
- * /kiosk/[their-slug] — e.g. /kiosk/rands-cape-town if that's what
- * `tenants.slug` is set to for that shop.
- *
- * Resolves the tenant by (slug, status = 'active') using the same
- * privileged server client booking.ts/queue.ts/send-message.ts already
- * use — NOT a cookie/anon-scoped client. This matters here specifically:
- * `tenants_select` and `services_select` RLS policies only allow
- * `is_platform_admin()` or `is_tenant_member(...)` — there is no public
- * SELECT path on either table. A kiosk visitor has no auth.uid() at all,
- * so an anon-scoped read would 404 a real, active shop. This route is
- * trusted server code resolving a public slug (the same trust model the
- * WhatsApp webhook already uses for unauthenticated inbound traffic),
- * not an RLS-gated user request — so it deliberately reaches for the
- * service-role client instead.
- *
- * `tenant_branding` IS public-selectable (`tenant_branding_select: true`)
- * but is keyed 1:1 on tenant_id with every color column nullable, and a
- * tenant may have no branding row at all yet — both cases fall back to
- * the default palette below, which is also passed to KioskApp so a shop
- * that sets only one color still gets sane values for the rest.
- *
- * KIOSK CONFIG (new): tenant_branding also now carries the behavioral
- * settings admins control from Settings > Kiosk — tagline,
- * idle_refresh_seconds, confirmation_refresh_seconds, registration_type
- * (migration_kiosk_settings.sql). Same fallback posture as the colors:
- * NULL/no-row means "hasn't configured it yet", not an error, so every
- * field below has an explicit default matched to what KioskApp used to
- * hardcode (75s idle, "Tap anywhere to check in", etc).
- *
- * SCREEN WORDING (new): tenant_branding also carries choice_title,
- * booking_card_title, booking_card_subtitle, queue_card_title,
- * queue_card_subtitle, service_screen_title, date_screen_title,
- * time_screen_title, details_screen_title, ticket_booking_eyebrow, and
- * ticket_queue_eyebrow (migration_kiosk_wording.sql) — the copy on every
- * screen in the kiosk flow after welcome, which used to be hardcoded in
- * components/kiosk/KioskApp.tsx (ChoiceScreen / ServiceScreen /
- * DateScreen / TimeScreen / DetailsScreen / TicketScreen). Same
- * NULL-means-default posture as everything else here. time_screen_title
- * is a PREFIX, not the full heading — TimeScreen appends
- * " — {date label}" itself (e.g. "Pick a time — Today", "Pick a time —
- * Fri 19 Sep"), so a tenant only configures the part before the dash.
- * ticket_booking_eyebrow/ticket_queue_eyebrow are the small label above
- * the ticket number on the final confirmation screen, one per path.
- * Registration-type scoping: service_screen_title and
- * details_screen_title apply on every path; date_screen_title and
- * time_screen_title only ever render on the booking path; the two ticket
- * eyebrows are each scoped to their own path.
- *
- * NEXT.JS 15/16 FIX: `params` is now a Promise (not a plain object) in
- * route/page components — must be awaited before use. The old sync
- * `{ params: { slug: string } }` shape silently resolved `params.slug`
- * to `undefined`, which made loadKioskData(undefined) return null via
- * an empty (not erroring) Supabase query, which triggered notFound() —
- * a real tenant 404'ing with zero errors logged anywhere. Both the page
- * component and generateMetadata needed this fix, since each
- * independently destructures `params`.
- *
- * KIOSK-AVAILABILITY GATE: a tenant existing and being active (checked
- * above) is not the same as that tenant having the kiosk *module* turned
- * on — that's a separate on/off switch admins flip from Settings
- * (setKioskEnabled in app/admin/settings-actions.ts), keyed on
- * `modules.key = 'kiosk'` / `tenant_modules.enabled`. This route reuses
- * that exact lookup (see resolveKioskModuleEnabled below) so a tenant
- * that's paused their kiosk gets an explicit "not available" screen
- * instead of the booking flow. This check happens here, server-side, in
- * loadKioskData — before KioskApp is ever rendered and before
- * getBookableServices() is ever called — not as a client-side redirect
- * after the flow has already mounted. No tenant_modules row for 'kiosk'
- * is treated the same as `enabled: false` (fail closed): an unprovisioned
- * module is not an on module.
- */
-
-import { notFound } from "next/navigation"
-import { Manrope } from "next/font/google"
+// app/admin/page.tsx
+//
+// Access protection lives in layout.tsx (requireTenantMember) — every
+// query below additionally filters by .eq("tenant_id", tenantId) as a
+// second, independent guard: even if a bug ever let this Server
+// Component render without the layout's check, it still couldn't return
+// another shop's data. Belt and suspenders on purpose, since this reads
+// through the service-role client and bypasses RLS entirely.
+//
+// Schema fix vs the previous version: bookings.customer_id and
+// queue_entries.customer_id point at tenant_customers, not profiles —
+// profiles is the platform-wide identity (1:1 with auth.users);
+// tenant_customers is the per-shop customer record (name/phone/email as
+// given to *this* shop). The two can diverge, and a booking may not even
+// have a linked profiles row. This now joins tenant_customers, which
+// also means no more splitting a nonexistent name/surname pair — it's
+// one full_name column.
+//
+// Settings tab: plan lives on tenants (manually flipped in Supabase until
+// billing is wired up), general info on tenant_settings, and branding
+// (incl. remove_powered_by, gated by the plan's remove_powered_by module, plus the kiosk
+// config fields — tagline / idle+confirmation refresh / registration
+// type) on tenant_branding. The kiosk toggle reads/writes tenant_modules
+// for the 'kiosk' module row. Booking / Queue / Messages tabs read
+// booking_settings / queue_settings / message_settings — one row per
+// tenant, same shape as tenant_settings. booking_settings.unify_with_queue
+// is what the promote_bookings_to_queue() pg_cron job (runs every minute
+// in Postgres) checks per tenant before promoting a confirmed booking
+// into queue_entries.
+//
+// DISPLAY TAB: the TV screen's own tenant_branding columns (display_*)
+// are read in the SAME query as the rest of branding/kiosk below, not a
+// separate round trip — same reasoning as kioskSettings already sharing
+// brandingResult. See AdminDisplaySettings in ./types and
+// app/display/[slug]/actions.ts's DisplaySettings, which mirrors this
+// shape field-for-field (that route re-derives its own copy server-side
+// rather than importing this admin-only file).
+//
+// business_hours (Settings > Business Info) is one row per day_of_week
+// (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
+// bookings and queue_entries enforce them (see the business_hours_
+// enforcement migration), so this is the actual gate on what the kiosk and
+// WhatsApp bot are allowed to accept, not only a label shown to customers.
+//
+// tenants.slug is now also fetched here (alongside plan) purely so the
+// Settings > Kiosk tab can render the public Kiosk URL and its QR code —
+// it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { getBookableServices } from "@/lib/services/shared/services-catalog"
-import { isKioskEnabled, shouldShowPoweredBy, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
-import { KioskApp } from "@/components/kiosk/KioskApp"
+import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
+import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
+import { isKioskEnabled, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 
-const manrope = Manrope({ subsets: ["latin"], weight: ["500", "600", "700", "800"] })
+import { AdminView } from "./AdminView"
+import type {
+  AdminBooking,
+  AdminBookingSettings,
+  AdminBranding,
+  AdminBusinessHours,
+  AdminConversationSummary,
+  AdminDisplaySettings,
+  AdminInboxStats,
+  AdminKioskSettings,
+  AdminMessageSettings,
+  AdminPlan,
+  AdminQueueEntry,
+  AdminQueueSettings,
+  AdminService,
+  AdminStaff,
+  AdminStaffPermissions,
+  AdminStaffShift,
+  AdminTenantSettings,
+} from "./types"
 
-// Kiosk data (services, branding) can change any time a shop owner edits
-// their catalog, colors, or kiosk config — a walk-in kiosk should never
-// serve a cached version of any of it.
-export const dynamic = "force-dynamic"
+type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
-export type KioskRegistrationType = "booking" | "queue" | "both"
-
-export interface KioskBranding {
-  displayName: string
-  logoUrl: string | null
-  primaryColor: string
-  secondaryColor: string
-  removePoweredBy: boolean
-  tagline: string
-  idleRefreshSeconds: number
-  confirmationRefreshSeconds: number
-  registrationType: KioskRegistrationType
-  // Screen wording — admin-configurable from Settings > Kiosk (see
-  // updateKioskSettings in app/admin/settings-actions.ts). Every field is
-  // already resolved to a non-null display string here, same fallback
-  // posture as tagline above, so KioskApp/ChoiceScreen never has to think
-  // about null.
-  choiceTitle: string
-  bookingCardTitle: string
-  bookingCardSubtitle: string
-  queueCardTitle: string
-  queueCardSubtitle: string
-  serviceScreenTitle: string
-  dateScreenTitle: string
-  timeScreenTitle: string
-  detailsScreenTitle: string
-  ticketBookingEyebrow: string
-  ticketQueueEyebrow: string
+function todayUtcRange(): { start: string; end: string } {
+  const dateISO = new Date().toISOString().slice(0, 10)
+  return {
+    start: new Date(`${dateISO}T00:00:00.000Z`).toISOString(),
+    end: new Date(`${dateISO}T23:59:59.999Z`).toISOString(),
+  }
 }
 
-// Fallback palette from the design brief. tenant_branding.primary_color
-// overrides `primaryColor` (used for the main accent/CTA color);
-// secondary_color overrides `secondaryColor` (used for the ticket-stub
-// accent). Every other token (ink, paper, line, muted) is structural,
-// not brand, and stays fixed regardless of tenant.
-const DEFAULT_PRIMARY_COLOR = "#2B6F5C" // accent
-const DEFAULT_SECONDARY_COLOR = "#C97A3D" // ticket-amber
+async function getTodaysBookings(supabase: ServerClient, tenantId: string): Promise<AdminBooking[]> {
+  const { start, end } = todayUtcRange()
 
-// Kiosk config defaults — these match what KioskApp used to hardcode
-// before it became admin-configurable, so an unconfigured tenant's kiosk
-// behaves exactly as it always has.
-const DEFAULT_TAGLINE = "Tap anywhere to check in"
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(
+      `id, start_time, end_time, status, booking_reference,
+       services ( name ),
+       staff ( name ),
+       tenant_customers ( full_name, phone )`,
+    )
+    .eq("tenant_id", tenantId)
+    .gte("start_time", start)
+    .lte("start_time", end)
+    .order("start_time", { ascending: true })
+
+  if (error) throw new Error(`Failed to load today's bookings: ${error.message}`)
+
+  return (data ?? []).map((b: any) => ({
+    id: b.id,
+    startTime: b.start_time,
+    endTime: b.end_time,
+    status: b.status,
+    bookingReference: b.booking_reference,
+    serviceName: b.services?.name ?? "Unknown service",
+    staffName: b.staff?.name ?? "Unassigned",
+    customerName: b.tenant_customers?.full_name ?? null,
+    customerPhone: b.tenant_customers?.phone ?? "",
+  }))
+}
+
+async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise<AdminQueueEntry[]> {
+  const { data, error } = await supabase
+    .from("queue_entries")
+    .select(
+      `id, status, joined_at,
+       services ( name ),
+       tenant_customers ( full_name, phone )`,
+    )
+    .eq("tenant_id", tenantId)
+    .in("status", ["waiting", "called"])
+    .order("joined_at", { ascending: true })
+
+  if (error) throw new Error(`Failed to load today's queue: ${error.message}`)
+
+  return (data ?? []).map((q: any) => ({
+    id: q.id,
+    status: q.status,
+    joinedAt: q.joined_at,
+    serviceName: q.services?.name ?? "Unknown service",
+    customerName: q.tenant_customers?.full_name ?? null,
+    customerPhone: q.tenant_customers?.phone ?? "",
+  }))
+}
+
+async function getAllServices(supabase: ServerClient, tenantId: string): Promise<AdminService[]> {
+  const { data, error } = await supabase
+    .from("services")
+    .select("id, name, price, duration_minutes, active")
+    .eq("tenant_id", tenantId)
+    .order("name", { ascending: true })
+
+  if (error) throw new Error(`Failed to load services: ${error.message}`)
+
+  return (data ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    price: Number(s.price),
+    durationMinutes: s.duration_minutes,
+    active: s.active,
+  }))
+}
+
+// AdminStaff requires jobTitle/phone/email/clockInPin always, and
+// hourlyRate ONLY as a present-or-absent key gated on payroll.view (see
+// that field's doc comment in types.ts) — never sent as `null` to signal
+// "no permission", since a real rate can legitimately be null too.
+async function getAllStaff(supabase: ServerClient, tenantId: string, includeHourlyRate: boolean): Promise<AdminStaff[]> {
+  const columns = includeHourlyRate
+    ? "id, name, active, job_title, phone, email, clock_in_pin, hourly_rate"
+    : "id, name, active, job_title, phone, email, clock_in_pin"
+
+  const { data, error } = await supabase.from("staff").select(columns).eq("tenant_id", tenantId).order("name", { ascending: true })
+
+  if (error) throw new Error(`Failed to load staff: ${error.message}`)
+
+  return (data ?? []).map((s: any) => {
+    const base = {
+      id: s.id,
+      name: s.name,
+      active: s.active,
+      jobTitle: s.job_title,
+      phone: s.phone,
+      email: s.email,
+      clockInPin: s.clock_in_pin,
+    }
+    // Spreading conditionally, rather than always setting hourlyRate (even
+    // to null), is what keeps the key itself absent for a non-payroll.view
+    // caller — StaffManager.tsx checks `"hourlyRate" in member`, not
+    // `!= null`, specifically because of this.
+    return includeHourlyRate ? { ...base, hourlyRate: s.hourly_rate } : base
+  })
+}
+
+// staff_shifts rows with status='active' -- the same set forceClockOutShift()
+// in actions.ts operates on, joined with the staff member's name for
+// display in StaffManager's "Currently clocked in" panel.
+async function getActiveShifts(supabase: ServerClient, tenantId: string): Promise<AdminStaffShift[]> {
+  const { data, error } = await supabase
+    .from("staff_shifts")
+    .select("id, staff_id, login_time, staff ( name )")
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .order("login_time", { ascending: true })
+
+  if (error) throw new Error(`Failed to load active shifts: ${error.message}`)
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    staffId: row.staff_id,
+    staffName: row.staff?.name ?? "Unknown staff",
+    loginTime: row.login_time,
+  }))
+}
+
+// ============================================================================
+// SETTINGS
+// ============================================================================
+
 const DEFAULT_IDLE_REFRESH_SECONDS = 75
 const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
-const DEFAULT_REGISTRATION_TYPE: KioskRegistrationType = "both"
-const VALID_REGISTRATION_TYPES: KioskRegistrationType[] = ["booking", "queue", "both"]
+const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
 
-// Wording defaults — the exact strings ChoiceScreen used to hardcode.
-// Must stay in sync with the placeholder text shown in
-// app/admin/SettingsManager.tsx's KioskBehaviorPanel, so an admin who
-// hasn't customized anything sees the same copy their kiosk is actually
-// rendering.
-const DEFAULT_CHOICE_TITLE = "How can we help you today?"
-const DEFAULT_BOOKING_CARD_TITLE = "Book a time"
-const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
-const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
-const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
-const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
-const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
-const DEFAULT_TIME_SCREEN_TITLE = "Pick a time"
-const DEFAULT_DETAILS_SCREEN_TITLE = "Almost done — who are we booking for?"
-const DEFAULT_TICKET_BOOKING_EYEBROW = "Your booking"
-const DEFAULT_TICKET_QUEUE_EYEBROW = "Your place in line"
+// Mirrors tenant_branding's own display_* column DEFAULTs (see
+// migration_display_settings.sql) — used only if a tenant's branding row
+// is somehow missing entirely, same "don't crash, degrade" posture as
+// DEFAULT_IDLE_REFRESH_SECONDS above.
+const DEFAULT_DISPLAY_WELCOME_SECONDS = 6
+const DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS = 9
+const DEFAULT_DISPLAY_QUEUE_SECONDS = 20
 
-interface TenantRow {
-  id: string
-  name: string
-  slug: string
-  status: string
+/** Plan entitlements the admin UI needs, all read from plan_modules via
+ *  plans.ts so the screen can never disagree with the server actions.
+ *  Each check fails closed (false) on error: the worst case is a feature
+ *  shown as locked for one request, while the server actions still decide. */
+async function getPlanEntitlements(supabase: ServerClient, tenantId: string) {
+  const safe = (p: Promise<boolean>) => p.catch(() => false)
+  const [kioskIncludedInPlan, canRemovePoweredBy, canCustomizeBranding, kioskEnabled] = await Promise.all([
+    safe(tenantHasModule(supabase, tenantId, MODULE_KEYS.kiosk)),
+    safe(tenantHasModule(supabase, tenantId, MODULE_KEYS.removePoweredBy)),
+    safe(tenantHasModule(supabase, tenantId, MODULE_KEYS.branding)),
+    // "No tenant_modules row" counts as ON for plans that include the kiosk,
+    // exactly like the public kiosk page and actions.
+    isKioskEnabled(supabase, tenantId),
+  ])
+  return { kioskIncludedInPlan, canRemovePoweredBy, canCustomizeBranding, kioskEnabled }
 }
 
-interface TenantBrandingRow {
-  display_name: string | null
-  logo_url: string | null
-  primary_color: string | null
-  secondary_color: string | null
-  remove_powered_by: boolean | null
-  tagline: string | null
-  idle_refresh_seconds: number | null
-  confirmation_refresh_seconds: number | null
-  registration_type: string | null
-  choice_title: string | null
-  booking_card_title: string | null
-  booking_card_subtitle: string | null
-  queue_card_title: string | null
-  queue_card_subtitle: string | null
-  service_screen_title: string | null
-  date_screen_title: string | null
-  time_screen_title: string | null
-  details_screen_title: string | null
-  ticket_booking_eyebrow: string | null
-  ticket_queue_eyebrow: string | null
-}
-
-// Per-tenant queue behavior that KioskApp needs but that doesn't live on
-// tenant_branding — pulled from queue_settings alongside everything else
-// this route resolves server-side. Defaults to `true` (service required)
-// on any missing row or query error, matching the DB column default —
-// fail closed, since skipping a service prompt is the more surprising
-// behavior for a tenant that never configured this.
-interface KioskQueueBehavior {
-  requireServiceSelection: boolean
-}
-
-const DEFAULT_REQUIRE_SERVICE_SELECTION = true
-
-type KioskLoadResult =
-  | {
-      tenant: TenantRow
-      branding: KioskBranding
-      kioskEnabled: true
-      services: Awaited<ReturnType<typeof getBookableServices>>
-      queueBehavior: KioskQueueBehavior
-    }
-  | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: []; queueBehavior: KioskQueueBehavior }
-
-// Is the kiosk live for this tenant? The rule lives in plans.ts's
-// isKioskEnabled(): the plan must include the kiosk module, and the tenant
-// must not have switched it off in Settings > Kiosk (setKioskEnabled in
-// app/admin/settings-actions.ts). No tenant_modules row means "never
-// touched" and counts as ON. Any lookup error counts as OFF -- a booking
-// flow silently failing open on a bad lookup would be far worse than an
-// idle kiosk correctly showing "not available."
-async function resolveKioskModuleEnabled(
-  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+async function getSettingsData(
+  supabase: ServerClient,
   tenantId: string,
-): Promise<boolean> {
-  // Automatic on any plan that includes the kiosk (Growth/Business);
-  // only an explicit "off" from the tenant's admin disables it, and a
-  // downgrade to Mahala shuts it off immediately. Fails closed on error.
-  return isKioskEnabled(supabase, tenantId)
-}
+): Promise<{
+  plan: AdminPlan
+  slug: string
+  settings: AdminTenantSettings
+  branding: AdminBranding
+  kioskEnabled: boolean
+  kioskIncludedInPlan: boolean
+  canRemovePoweredBy: boolean
+  canCustomizeBranding: boolean
+  kioskSettings: AdminKioskSettings
+  displaySettings: AdminDisplaySettings
+  bookingSettings: AdminBookingSettings
+  queueSettings: AdminQueueSettings
+  messageSettings: AdminMessageSettings
+  businessHours: AdminBusinessHours
+}> {
+  const [
+    tenantResult,
+    settingsResult,
+    brandingResult,
+    entitlements,
+    bookingSettingsResult,
+    queueSettingsResult,
+    messageSettingsResult,
+    businessHoursResult,
+  ] = await Promise.all([
+    supabase.from("tenants").select("plan, slug").eq("id", tenantId).single(),
+    supabase
+      .from("tenant_settings")
+      .select("timezone, currency, contact_email, contact_phone, address")
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("tenant_branding")
+      .select(
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
+          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
+          "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
+          "display_theme, display_layout, display_background_color, display_tagline",
+      )
+      .eq("tenant_id", tenantId)
+      .single(),
+    getPlanEntitlements(supabase, tenantId),
+    supabase
+      .from("booking_settings")
+      .select(
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes",
+      )
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("queue_settings")
+      .select(
+        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix",
+      )
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("message_settings")
+      .select(
+        "ai_enabled_default, booking_confirmation_template, booking_reminder_template, queue_joined_template, queue_almost_turn_template, queue_called_template",
+      )
+      .eq("tenant_id", tenantId)
+      .single(),
+    supabase
+      .from("business_hours")
+      .select("day_of_week, is_closed, open_time, close_time")
+      .eq("tenant_id", tenantId)
+      .order("day_of_week", { ascending: true }),
+  ])
 
-function resolveRegistrationType(value: string | null | undefined): KioskRegistrationType {
-  if (value && (VALID_REGISTRATION_TYPES as string[]).includes(value)) {
-    return value as KioskRegistrationType
-  }
-  return DEFAULT_REGISTRATION_TYPE
-}
+  if (tenantResult.error) throw new Error(`Failed to load plan: ${tenantResult.error.message}`)
+  if (settingsResult.error) throw new Error(`Failed to load tenant settings: ${settingsResult.error.message}`)
+  if (brandingResult.error) throw new Error(`Failed to load branding: ${brandingResult.error.message}`)
+  if (bookingSettingsResult.error)
+    throw new Error(`Failed to load booking settings: ${bookingSettingsResult.error.message}`)
+  if (queueSettingsResult.error) throw new Error(`Failed to load queue settings: ${queueSettingsResult.error.message}`)
+  if (messageSettingsResult.error)
+    throw new Error(`Failed to load message settings: ${messageSettingsResult.error.message}`)
+  if (businessHoursResult.error)
+    throw new Error(`Failed to load business hours: ${businessHoursResult.error.message}`)
 
-async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
-  const supabase = getSupabaseServerClient()
-  if (!supabase) throw new Error("Supabase server client is unavailable")
-
-  const { data: tenant, error: tenantError } = await supabase
-    .from("tenants")
-    .select("id, name, slug, status")
-    .eq("slug", slug)
-    .eq("status", "active")
-    .maybeSingle<TenantRow>()
-
-  if (tenantError) throw new Error(`Failed to resolve tenant for slug "${slug}": ${tenantError.message}`)
-  if (!tenant) return null
-
-  const { data: branding } = await supabase
-    .from("tenant_branding")
-    .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow",
-    )
-    .eq("tenant_id", tenant.id)
-    .maybeSingle<TenantBrandingRow>()
-
-  // Custom logo and colours only apply while the tenant's CURRENT plan
-  // includes the 'branding' module -- stored values from before a downgrade
-  // (or from before this gate existed) are simply ignored, not deleted, so
-  // they come back on upgrade. Display name is free on every plan. Any
-  // lookup error falls back to the default look.
-  const brandingEntitled = await tenantHasModule(supabase, tenant.id, MODULE_KEYS.branding).catch(() => false)
-
-  const resolvedBranding: KioskBranding = {
-    displayName: branding?.display_name || tenant.name,
-    logoUrl: brandingEntitled ? (branding?.logo_url ?? null) : null,
-    primaryColor: (brandingEntitled && branding?.primary_color) || DEFAULT_PRIMARY_COLOR,
-    secondaryColor: (brandingEntitled && branding?.secondary_color) || DEFAULT_SECONDARY_COLOR,
-    // No row (tenant hasn't touched branding yet) and NULL (column default)
-    // both mean "hasn't been granted/enabled" — false either way. This is
-    // also independent of `plan`: a tenant that downgrades off Business
-    // after having it set stays governed by whatever's actually stored
-    // here, since that's what updateBranding's own plan check maintains.
-    removePoweredBy: false, // resolved below, once the plan check has run
-    tagline: branding?.tagline?.trim() || DEFAULT_TAGLINE,
-    idleRefreshSeconds: branding?.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
-    confirmationRefreshSeconds: branding?.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
-    registrationType: resolveRegistrationType(branding?.registration_type),
-    choiceTitle: branding?.choice_title?.trim() || DEFAULT_CHOICE_TITLE,
-    bookingCardTitle: branding?.booking_card_title?.trim() || DEFAULT_BOOKING_CARD_TITLE,
-    bookingCardSubtitle: branding?.booking_card_subtitle?.trim() || DEFAULT_BOOKING_CARD_SUBTITLE,
-    queueCardTitle: branding?.queue_card_title?.trim() || DEFAULT_QUEUE_CARD_TITLE,
-    queueCardSubtitle: branding?.queue_card_subtitle?.trim() || DEFAULT_QUEUE_CARD_SUBTITLE,
-    serviceScreenTitle: branding?.service_screen_title?.trim() || DEFAULT_SERVICE_SCREEN_TITLE,
-    dateScreenTitle: branding?.date_screen_title?.trim() || DEFAULT_DATE_SCREEN_TITLE,
-    timeScreenTitle: branding?.time_screen_title?.trim() || DEFAULT_TIME_SCREEN_TITLE,
-    detailsScreenTitle: branding?.details_screen_title?.trim() || DEFAULT_DETAILS_SCREEN_TITLE,
-    ticketBookingEyebrow: branding?.ticket_booking_eyebrow?.trim() || DEFAULT_TICKET_BOOKING_EYEBROW,
-    ticketQueueEyebrow: branding?.ticket_queue_eyebrow?.trim() || DEFAULT_TICKET_QUEUE_EYEBROW,
-  }
-
-  // The stored flag only counts while the tenant's CURRENT plan still
-  // includes remove_powered_by. Without this, a tenant that downgrades off
-  // Business keeps the label hidden forever. shouldShowPoweredBy fails
-  // open (label stays) if the plan lookup errors.
-  if (branding?.remove_powered_by === true && !(await shouldShowPoweredBy(supabase, tenant.id))) {
-    resolvedBranding.removePoweredBy = true
-  }
-
-  const kioskEnabled = await resolveKioskModuleEnabled(supabase, tenant.id)
-
-  // Same fail-closed posture as resolveKioskModuleEnabled above: a missing
-  // row or query error means "behave as if service selection is
-  // required", not "silently skip it" — an admin who hasn't touched this
-  // setting yet gets the flow they already had.
-  const { data: queueSettingsRow, error: queueSettingsError } = await supabase
-    .from("queue_settings")
-    .select("require_service_selection")
-    .eq("tenant_id", tenant.id)
-    .maybeSingle()
-
-  if (queueSettingsError) {
-    console.error("[kiosk] queue_settings lookup failed", { tenantId: tenant.id, error: queueSettingsError })
-  }
-
-  const queueBehavior: KioskQueueBehavior = {
-    requireServiceSelection: queueSettingsRow?.require_service_selection ?? DEFAULT_REQUIRE_SERVICE_SELECTION,
-  }
-
-  // Don't even touch the services catalog when the module's off — the
-  // whole point of a server-side gate is that the booking flow's data
-  // never loads for a kiosk that shouldn't be running it.
-  if (!kioskEnabled) {
-    return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [], queueBehavior }
-  }
-
-  const services = await getBookableServices(tenant.id)
-
-  return { tenant, branding: resolvedBranding, kioskEnabled: true, services, queueBehavior }
-}
-
-export default async function KioskPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const data = await loadKioskData(slug)
-  if (!data) notFound()
-
-  const { tenant, branding, kioskEnabled, services, queueBehavior } = data
-
-  if (!kioskEnabled) {
-    return (
-      <div className={manrope.className}>
-        <KioskUnavailable branding={branding} />
-      </div>
-    )
-  }
-
-  return (
-    <div className={manrope.className}>
-      <KioskApp
-        slug={tenant.slug}
-        branding={branding}
-        initialServices={services}
-        requireServiceSelection={queueBehavior.requireServiceSelection}
-      />
-    </div>
-  )
-}
-
-// ----------------------------------------------------------------------------
-// Kiosk-module-off state — deliberately plain: no idle timer, no tap
-// target, nothing for a walk-in to interact with. Uses the same
-// paper/ink/accent tokens KioskApp's own <style jsx> uses so a paused
-// kiosk still looks like it belongs to the shop, not like a generic error
-// page. Plain inline styles here (not styled-jsx like KioskApp) because
-// this renders inside KioskPage, a Server Component — styled-jsx's
-// runtime only works under a "use client" boundary, which is exactly
-// what KioskApp has and this doesn't need.
-// ----------------------------------------------------------------------------
-
-const UNAVAILABLE_INK = "#171412"
-const UNAVAILABLE_PAPER = "#FAF8F5"
-const UNAVAILABLE_MUTED = "#6B655C"
-
-function KioskUnavailable({ branding }: { branding: KioskBranding }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        width: "100%",
-        background: UNAVAILABLE_PAPER,
-        color: UNAVAILABLE_INK,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 20,
-        padding: 40,
-        textAlign: "center",
-      }}
-    >
-      {branding.logoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={branding.logoUrl}
-          alt=""
-          style={{ maxHeight: 96, maxWidth: 320, objectFit: "contain", marginBottom: 8 }}
-        />
-      )}
-      <h1 style={{ fontSize: 48, fontWeight: 800, margin: 0, color: UNAVAILABLE_INK, lineHeight: 1.1 }}>
-        {branding.displayName}
-      </h1>
-      <p style={{ fontSize: 26, fontWeight: 700, color: branding.primaryColor, margin: 0 }}>
-        This kiosk isn&apos;t available right now.
-      </p>
-      <p style={{ fontSize: 19, fontWeight: 500, color: UNAVAILABLE_MUTED, margin: 0 }}>
-        Please check in at the counter instead.
-      </p>
-    </div>
-  )
-}
-
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const data = await loadKioskData(slug)
-  if (!data) return { title: "Kiosk" }
+  const registrationType = ["booking", "queue", "both"].includes(brandingResult.data.registration_type)
+    ? (brandingResult.data.registration_type as AdminKioskSettings["registrationType"])
+    : DEFAULT_REGISTRATION_TYPE
 
   return {
-    title: data.kioskEnabled ? `${data.branding.displayName} — Check in` : `${data.branding.displayName} — Kiosk unavailable`,
+    plan: tenantResult.data.plan as AdminPlan,
+    slug: tenantResult.data.slug as string,
+    settings: {
+      timezone: settingsResult.data.timezone,
+      currency: settingsResult.data.currency,
+      contactEmail: settingsResult.data.contact_email,
+      contactPhone: settingsResult.data.contact_phone,
+      address: settingsResult.data.address,
+    },
+    branding: {
+      displayName: brandingResult.data.display_name,
+      // Stored logo/colours are kept in the DB but only surfaced while the
+      // plan includes 'branding' (they reappear on upgrade).
+      logoUrl: entitlements.canCustomizeBranding ? brandingResult.data.logo_url : null,
+      primaryColor: entitlements.canCustomizeBranding ? brandingResult.data.primary_color : null,
+      secondaryColor: entitlements.canCustomizeBranding ? brandingResult.data.secondary_color : null,
+      removePoweredBy: brandingResult.data.remove_powered_by && entitlements.canRemovePoweredBy,
+    },
+    kioskEnabled: entitlements.kioskEnabled,
+    kioskIncludedInPlan: entitlements.kioskIncludedInPlan,
+    canRemovePoweredBy: entitlements.canRemovePoweredBy,
+    canCustomizeBranding: entitlements.canCustomizeBranding,
+    kioskSettings: {
+      tagline: brandingResult.data.tagline,
+      idleRefreshSeconds: brandingResult.data.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
+      confirmationRefreshSeconds:
+        brandingResult.data.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
+      registrationType,
+      // Kept raw/nullable here (not defaulted) same as tagline above —
+      // SettingsManager.tsx shows an empty field with the default as
+      // placeholder text, so it's visually obvious the tenant hasn't
+      // overridden it yet. The kiosk route (app/kiosk/[slug]/page.tsx) is
+      // where null actually resolves to the default string that renders.
+      choiceTitle: brandingResult.data.choice_title,
+      bookingCardTitle: brandingResult.data.booking_card_title,
+      bookingCardSubtitle: brandingResult.data.booking_card_subtitle,
+      queueCardTitle: brandingResult.data.queue_card_title,
+      queueCardSubtitle: brandingResult.data.queue_card_subtitle,
+      serviceScreenTitle: brandingResult.data.service_screen_title,
+    },
+    // Same clear-to-default posture as kioskSettings' wording fields
+    // above: *Title/*Label kept raw/nullable so SettingsManager.tsx can
+    // show the hardcoded default as placeholder text rather than baking
+    // it into the saved value. app/display/[slug]/actions.ts is where
+    // null actually resolves to the default string DisplayScreen.tsx
+    // renders — this admin-only object is never read by that route.
+    displaySettings: {
+      showServices: brandingResult.data.display_show_services ?? true,
+      showBookings: brandingResult.data.display_show_bookings ?? true,
+      showQueue: brandingResult.data.display_show_queue ?? true,
+      welcomeSeconds: brandingResult.data.display_welcome_seconds ?? DEFAULT_DISPLAY_WELCOME_SECONDS,
+      menuBookingsSeconds:
+        brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS,
+      queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_QUEUE_SECONDS,
+      menuTitle: brandingResult.data.display_menu_title,
+      bookingsTitle: brandingResult.data.display_bookings_title,
+      queueTitle: brandingResult.data.display_queue_title,
+      nowServingLabel: brandingResult.data.display_now_serving_label,
+      showQueueTicketNumber: brandingResult.data.display_queue_show_ticket_number ?? true,
+      showQueueService: brandingResult.data.display_queue_show_service ?? true,
+      showQueuePhone: brandingResult.data.display_queue_show_phone ?? false,
+      showQueueWaitEstimate: brandingResult.data.display_queue_show_wait_estimate ?? true,
+      showQueueDuration: brandingResult.data.display_queue_show_duration ?? false,
+      showQueueReference: brandingResult.data.display_queue_show_reference ?? true,
+      // "custom" (own background colour) needs the branding module; without
+      // it the effective theme is dark, matching the public display screen.
+      theme:
+        brandingResult.data.display_theme === "light"
+          ? "light"
+          : brandingResult.data.display_theme === "custom" && entitlements.canCustomizeBranding
+            ? "custom"
+            : "dark",
+      layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
+      backgroundColor: entitlements.canCustomizeBranding ? (brandingResult.data.display_background_color ?? null) : null,
+      tagline: brandingResult.data.display_tagline ?? null,
+    },
+    bookingSettings: {
+      unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
+      queueLeadTimeMinutes: bookingSettingsResult.data.queue_lead_time_minutes,
+      minNoticeMinutes: bookingSettingsResult.data.min_notice_minutes,
+      maxAdvanceDays: bookingSettingsResult.data.max_advance_days,
+      cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
+    },
+    queueSettings: {
+      autoCallNext: queueSettingsResult.data.auto_call_next,
+      maxQueueSize: queueSettingsResult.data.max_queue_size,
+      notifyBeforeTurnPosition: queueSettingsResult.data.notify_before_turn_position,
+      allowWalkinWhatsapp: queueSettingsResult.data.allow_walkin_whatsapp,
+      allowWalkinKiosk: queueSettingsResult.data.allow_walkin_kiosk,
+      // When false, walk-ins (WhatsApp/kiosk/manual) can join this
+      // tenant's queue without picking a service first — some business
+      // models (e.g. a single-line clinic) have nothing to choose
+      // between. See queue_entries.service_id (nullable) and
+      // submitKioskQueueJoin/the WhatsApp state machine, which both check
+      // this flag before deciding whether to prompt for a service.
+      requireServiceSelection: queueSettingsResult.data.require_service_selection,
+      defaultServiceDurationMinutes: queueSettingsResult.data.default_service_duration_minutes,
+      ticketNumberPrefix: queueSettingsResult.data.ticket_number_prefix,
+    },
+    messageSettings: {
+      aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,
+      bookingConfirmationTemplate: messageSettingsResult.data.booking_confirmation_template,
+      bookingReminderTemplate: messageSettingsResult.data.booking_reminder_template,
+      queueJoinedTemplate: messageSettingsResult.data.queue_joined_template,
+      queueAlmostTurnTemplate: messageSettingsResult.data.queue_almost_turn_template,
+      queueCalledTemplate: messageSettingsResult.data.queue_called_template,
+    },
+    businessHours: (businessHoursResult.data ?? []).map((d) => ({
+      dayOfWeek: d.day_of_week,
+      isClosed: d.is_closed,
+      openTime: d.open_time,
+      closeTime: d.close_time,
+    })),
   }
+}
+
+/** Reduced-column fallback for callers without settings.manage. Exists
+ *  only so AdminView's header chrome (shop name/logo) and StaffManager's
+ *  clock-in link (tenant slug) keep working for tenant_staff — nothing
+ *  else in the settings/branding-config/kiosk/display/booking/queue/
+ *  message/business-hours columns is ever queried here. displayName/
+ *  logoUrl aren't treated as sensitive: both are already public on
+ *  /kiosk/[slug], the same surface any customer sees.
+ */
+async function getTenantIdentity(
+  supabase: ServerClient,
+  tenantId: string,
+): Promise<{
+  plan: AdminPlan
+  slug: string
+  settings: AdminTenantSettings | null
+  branding: AdminBranding
+  kioskEnabled: boolean
+  kioskIncludedInPlan: boolean
+  canRemovePoweredBy: boolean
+  canCustomizeBranding: boolean
+  kioskSettings: AdminKioskSettings | null
+  displaySettings: AdminDisplaySettings | null
+  bookingSettings: AdminBookingSettings | null
+  queueSettings: AdminQueueSettings | null
+  messageSettings: AdminMessageSettings | null
+  businessHours: AdminBusinessHours | null
+}> {
+  const [tenantResult, brandingResult, canCustomizeBranding] = await Promise.all([
+    supabase.from("tenants").select("plan, slug").eq("id", tenantId).single(),
+    supabase.from("tenant_branding").select("display_name, logo_url").eq("tenant_id", tenantId).single(),
+    tenantHasModule(supabase, tenantId, MODULE_KEYS.branding).catch(() => false),
+  ])
+
+  if (tenantResult.error) throw new Error(`Failed to load tenant identity: ${tenantResult.error.message}`)
+  if (brandingResult.error) throw new Error(`Failed to load branding identity: ${brandingResult.error.message}`)
+
+  return {
+    plan: tenantResult.data.plan as AdminPlan,
+    slug: tenantResult.data.slug as string,
+    settings: null,
+    branding: {
+      displayName: brandingResult.data.display_name,
+      logoUrl: canCustomizeBranding ? brandingResult.data.logo_url : null,
+      primaryColor: null,
+      secondaryColor: null,
+      removePoweredBy: false,
+    },
+    kioskEnabled: false,
+    kioskIncludedInPlan: false,
+    canRemovePoweredBy: false,
+    canCustomizeBranding,
+    kioskSettings: null,
+    displaySettings: null,
+    bookingSettings: null,
+    queueSettings: null,
+    messageSettings: null,
+    businessHours: null,
+  }
+}
+
+// ============================================================================
+// INBOX
+// ============================================================================
+
+type ConversationRow = {
+  id: string
+  phone: string
+  customer_name: string | null
+  last_message_at: string | null
+}
+
+function bucketAiState(state: string | null | undefined): AdminConversationSummary["aiState"] {
+  const s = (state ?? "").toLowerCase()
+  if (s === "resolved" || s === "closed") return "resolved"
+  if (s === "paused") return "paused"
+  if (s === "handoff" || s === "human" || s === "manual") return "handoff"
+  return "active"
+}
+
+async function getInboxData(
+  supabase: ServerClient,
+  tenantId: string,
+): Promise<{ conversations: AdminConversationSummary[]; stats: AdminInboxStats }> {
+  const [conversationsResult, statesResult, messagesResult] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select("id, phone, customer_name, last_message_at")
+      .eq("tenant_id", tenantId)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(100),
+    // conversation_states is keyed on (tenant_id, phone) precisely because
+    // phone numbers repeat across tenants — this filter isn't optional.
+    supabase.from("conversation_states").select("phone, state").eq("tenant_id", tenantId),
+    supabase
+      .from("messages")
+      .select("id, conversation_id, direction, message_text, created_at")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(1000),
+  ])
+
+  if (conversationsResult.error) throw new Error(`Failed to load conversations: ${conversationsResult.error.message}`)
+  if (statesResult.error) throw new Error(`Failed to load conversation states: ${statesResult.error.message}`)
+  if (messagesResult.error) throw new Error(`Failed to load messages: ${messagesResult.error.message}`)
+
+  const conversationRows = (conversationsResult.data ?? []) as ConversationRow[]
+  const stateByPhone = new Map((statesResult.data ?? []).map((s) => [s.phone, s.state as string | null]))
+  const messages = messagesResult.data ?? []
+
+  const previewByConversation = new Map<string, { text: string | null; at: string }>()
+  const countByConversation = new Map<string, number>()
+  for (const m of messages) {
+    countByConversation.set(m.conversation_id, (countByConversation.get(m.conversation_id) ?? 0) + 1)
+    if (!previewByConversation.has(m.conversation_id)) {
+      previewByConversation.set(m.conversation_id, { text: m.message_text, at: m.created_at })
+    }
+  }
+
+  const conversations: AdminConversationSummary[] = conversationRows.map((c) => ({
+    id: c.id,
+    phone: c.phone,
+    customerName: c.customer_name,
+    lastMessagePreview: previewByConversation.get(c.id)?.text ?? null,
+    lastMessageAt: c.last_message_at ?? previewByConversation.get(c.id)?.at ?? null,
+    aiState: bucketAiState(stateByPhone.get(c.phone)),
+    messageCount: countByConversation.get(c.id) ?? 0,
+  }))
+
+  const dayBuckets = new Map<string, { incoming: number; outgoing: number }>()
+  const days: string[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() - i)
+    const key = d.toISOString().slice(0, 10)
+    days.push(key)
+    dayBuckets.set(key, { incoming: 0, outgoing: 0 })
+  }
+  for (const m of messages) {
+    const key = m.created_at.slice(0, 10)
+    const bucket = dayBuckets.get(key)
+    if (!bucket) continue
+    if (m.direction === "incoming") bucket.incoming += 1
+    else bucket.outgoing += 1
+  }
+  const volumeByDay = days.map((date) => ({ date, ...dayBuckets.get(date)! }))
+
+  const topCustomers = [...conversations]
+    .sort((a, b) => b.messageCount - a.messageCount)
+    .slice(0, 5)
+    .filter((c) => c.messageCount > 0)
+    .map((c) => ({ name: c.customerName ?? c.phone, phone: c.phone, messageCount: c.messageCount }))
+
+  const stats: AdminInboxStats = {
+    totalConversations: conversations.length,
+    aiActiveCount: conversations.filter((c) => c.aiState === "active").length,
+    needsHumanCount: conversations.filter((c) => c.aiState === "handoff").length,
+    volumeByDay,
+    topCustomers,
+  }
+
+  return { conversations, stats }
+}
+
+export default async function AdminPage() {
+  // Redirects to /login if there's no session or no active tenant
+  // membership — see layout.tsx, which already calls this once per
+  // request; React's cache() means this call is free.
+  const { tenantId } = await requireTenantMember()
+
+  const supabase = getSupabaseServerClient()
+
+  if (!supabase) {
+    return (
+      <main className="mx-auto max-w-lg px-6 py-16 text-center">
+        <h1 className="text-2xl text-stone-900">Admin isn&apos;t configured</h1>
+        <p className="mt-3 text-stone-600">
+          Set <code className="rounded bg-stone-100 px-1.5 py-0.5 text-sm">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+          <code className="rounded bg-stone-100 px-1.5 py-0.5 text-sm">SUPABASE_SERVICE_ROLE_KEY</code> to use this
+          page.
+        </p>
+      </main>
+    )
+  }
+
+  // Resolved once per request, same cache() pattern as requireTenantMember
+  // — see AdminStaffPermissions' doc comment in types.ts. Staff/payroll
+  // data fetched below is shaped around this: hourlyRate is only
+  // requested from the DB at all when payrollView is true.
+  //
+  // getTenantPermissions() takes the specific permission keys to check
+  // (batched into one round trip internally) and returns a Set of the
+  // ones granted — it does NOT return flat booleans, so that Set is
+  // converted into AdminStaffPermissions' shape here. The try/catch is
+  // kept as a safety net (a transient RPC failure degrades to "no staff/
+  // payroll/settings/services access" for this one request rather than
+  // 500ing the whole page) now that the call itself is actually correct.
+  const ADMIN_PERMISSION_KEYS: PermissionKey[] = [
+    "staff.view",
+    "staff.manage",
+    "payroll.view",
+    "payroll.manage",
+    "settings.manage",
+    "services.manage",
+  ]
+
+  let permissions: AdminStaffPermissions
+  try {
+    const { granted } = await getTenantPermissions(ADMIN_PERMISSION_KEYS)
+    permissions = {
+      staffView: granted.has("staff.view"),
+      staffManage: granted.has("staff.manage"),
+      payrollView: granted.has("payroll.view"),
+      payrollManage: granted.has("payroll.manage"),
+      settingsManage: granted.has("settings.manage"),
+      servicesManage: granted.has("services.manage"),
+    }
+  } catch (err) {
+    console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
+    permissions = {
+      staffView: false,
+      staffManage: false,
+      payrollView: false,
+      payrollManage: false,
+      settingsManage: false,
+      servicesManage: false,
+    }
+  }
+
+  // Services and full Settings data are owner-only. A tenant_staff caller
+  // never triggers getAllServices()/getSettingsData() at all for this
+  // request — not just "doesn't receive the data" but "the data is never
+  // fetched" — getTenantIdentity() is the only thing a non-
+  // settings.manage caller pays for.
+  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
+    getTodaysBookings(supabase, tenantId),
+    getTodaysQueue(supabase, tenantId),
+    permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
+    getAllStaff(supabase, tenantId, permissions.payrollView),
+    getInboxData(supabase, tenantId),
+    permissions.settingsManage ? getSettingsData(supabase, tenantId) : getTenantIdentity(supabase, tenantId),
+  ])
+
+  // Same hotfix posture as permissions above — staff_shifts is another
+  // brand-new query I added without confirming against your actual
+  // schema. Falling back to "nobody's clocked in" rather than crashing
+  // the whole page if this table/join doesn't match what's really there.
+  let activeShifts: AdminStaffShift[] = []
+  try {
+    activeShifts = await getActiveShifts(supabase, tenantId)
+  } catch (err) {
+    console.error("[admin] getActiveShifts failed — falling back to empty list", err)
+  }
+
+  return (
+    <AdminView
+      initialBookings={bookings}
+      initialQueue={queue}
+      initialServices={services}
+      initialStaff={staff}
+      initialActiveShifts={activeShifts}
+      staffPermissions={permissions}
+      initialConversations={inbox.conversations}
+      initialInboxStats={inbox.stats}
+      initialPlan={settingsData.plan}
+      tenantSlug={settingsData.slug}
+      initialTenantSettings={settingsData.settings}
+      initialBranding={settingsData.branding}
+      initialKioskEnabled={settingsData.kioskEnabled}
+      kioskIncludedInPlan={settingsData.kioskIncludedInPlan}
+      canRemovePoweredBy={settingsData.canRemovePoweredBy}
+      canCustomizeBranding={settingsData.canCustomizeBranding}
+      initialKioskSettings={settingsData.kioskSettings}
+      initialDisplaySettings={settingsData.displaySettings}
+      initialBookingSettings={settingsData.bookingSettings}
+      initialQueueSettings={settingsData.queueSettings}
+      initialMessageSettings={settingsData.messageSettings}
+      initialBusinessHours={settingsData.businessHours}
+    />
+  )
 }
