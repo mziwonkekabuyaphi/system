@@ -38,7 +38,7 @@ export default async function DemoPage() {
       <section className={styles.heroSplit}>
         <aside className={styles.heroStub}>
           <span className={styles.heroStubBrand}>
-          <Logo size={22} />
+          <Logo size={44} />
           ZozoQueue
         </span>
           <div className={styles.heroStubTicket}>

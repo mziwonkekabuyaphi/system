@@ -102,10 +102,12 @@
 .siteNavBrand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--qless-font-mono);
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
+  gap: 12px;
+  font-family: var(--qless-font-body), -apple-system, sans-serif;
+  font-size: clamp(1.4rem, 2.4vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
   color: var(--qless-ink);
   text-decoration: none;
 }
@@ -222,10 +224,12 @@
 .heroStubBrand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--qless-font-mono);
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
+  gap: 14px;
+  font-family: var(--qless-font-body), -apple-system, sans-serif;
+  font-size: clamp(1.6rem, 3vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
   color: var(--qless-paper);
 }
 
