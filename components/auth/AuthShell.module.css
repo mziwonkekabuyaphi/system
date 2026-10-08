@@ -49,13 +49,17 @@
   }
 }
 
+/* Brand lockup sized to match the landing page's blue panel
+   (.heroStubBrand in app/demo/demo.module.css). */
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--qless-font-mono);
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
+  gap: 14px;
+  font-family: var(--qless-font-body), -apple-system, sans-serif;
+  font-size: clamp(1.6rem, 3vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
   color: var(--qless-paper);
 }
 
@@ -102,11 +106,14 @@
 .mobileBrand {
   display: none;
   align-items: center;
-  gap: 6px;
-  font-family: var(--qless-font-mono);
-  font-size: 0.95rem;
-  color: var(--qless-ink-soft);
-  margin-bottom: 1.5rem;
+  gap: 12px;
+  font-family: var(--qless-font-body), -apple-system, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--qless-ink);
+  margin-bottom: 1.75rem;
 }
 
 @media (max-width: 860px) {

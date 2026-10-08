@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./AuthForm.module.css";
+import { PasswordInput } from "./PasswordInput";
 
 export function SignupForm() {
   const router = useRouter();
@@ -99,16 +100,14 @@ export function SignupForm() {
 
       <div className={styles.field}>
         <label htmlFor="password">Password</label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="new-password"
-          required
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          aria-invalid={!!error}
+          invalid={!!error}
         />
       </div>
 

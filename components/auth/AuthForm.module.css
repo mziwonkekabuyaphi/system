@@ -48,6 +48,51 @@
   border-bottom-color: var(--qless-error);
 }
 
+/* Password field with a show/hide (eye) button, see PasswordInput.tsx */
+.passwordWrap {
+  position: relative;
+  display: flex;
+}
+
+.field .passwordInput {
+  flex: 1;
+  min-width: 0;
+  padding-right: 2.6rem;
+}
+
+.reveal {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--qless-ink-soft);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.reveal:hover {
+  color: var(--qless-ink);
+  background: rgba(23, 26, 31, 0.06);
+}
+
+.reveal:focus-visible {
+  outline: 2px solid var(--qless-focus);
+  outline-offset: 1px;
+}
+
+.reveal[aria-pressed="true"] {
+  color: var(--qless-navy);
+}
+
 .submit {
   margin-top: 0.5rem;
   border: none;

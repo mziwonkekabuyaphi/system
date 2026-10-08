@@ -20,22 +20,22 @@ export function AuthShell({
     <div className="qless-auth-page">
       <aside className={styles.stub}>
         <span className={styles.brand}>
-          <Logo size={18} />
-          QLess
+          <Logo size={44} />
+          ZozoQueue
         </span>
         <div className={styles.ticketBlock}>
           <span className={styles.ticketLabel}>Now serving</span>
           <span className={styles.ticketNumber}>{ticketNumber}</span>
           <p className={styles.tagline}>{tagline}</p>
         </div>
-        <span className={styles.ticketLabel}>qless.systems</span>
+        <span className={styles.ticketLabel}>A Ndithini product</span>
       </aside>
 
       <section className={styles.formPanel}>
         <div className={styles.formInner}>
           <div className={styles.mobileBrand}>
-            <Logo size={16} />
-            QLess
+            <Logo size={36} />
+            ZozoQueue
           </div>
           <h1 className={styles.heading}>{heading}</h1>
           <p className={styles.subheading}>{subheading}</p>
