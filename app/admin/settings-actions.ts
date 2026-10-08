@@ -161,6 +161,8 @@ const MAX_DISPLAY_QUEUE_SECONDS = 300
 const MAX_DISPLAY_TITLE_LENGTH = 60
 const MAX_DISPLAY_LABEL_LENGTH = 40
 const MAX_DISPLAY_TAGLINE_LENGTH = 80
+const MAX_DISPLAY_EMPTY_TEXT_LENGTH = 100
+const MAX_DISPLAY_BADGE_LENGTH = 20
 
 async function tenantContext() {
   const { tenantId, roleKey } = await requireTenantMember()
@@ -668,6 +670,12 @@ export async function updateDisplaySettings(input: {
   bookingsTitle?: string | null
   queueTitle?: string | null
   nowServingLabel?: string | null
+  waitingLabel?: string | null
+  waitingEmptyText?: string | null
+  servingEmptyText?: string | null
+  bookingsEmptyText?: string | null
+  walkInBadgeLabel?: string | null
+  bookingBadgeLabel?: string | null
   // Per-field toggles for the queue slide specifically -- independent of
   // showQueue above. showQueuePhone is the one worth flagging: the
   // display route is public and unauthenticated, so app/display/[slug]/
@@ -741,6 +749,28 @@ export async function updateDisplaySettings(input: {
     if (input.nowServingLabel && input.nowServingLabel.trim().length > MAX_DISPLAY_LABEL_LENGTH) {
       return { success: false, error: `"Now serving" label must be ${MAX_DISPLAY_LABEL_LENGTH} characters or fewer.` }
     }
+    if (input.waitingLabel && input.waitingLabel.trim().length > MAX_DISPLAY_LABEL_LENGTH) {
+      return { success: false, error: `"Waiting" label must be ${MAX_DISPLAY_LABEL_LENGTH} characters or fewer.` }
+    }
+    const emptyTextFields: Array<{ label: string; value: string | null | undefined }> = [
+      { label: "Waiting column empty message", value: input.waitingEmptyText },
+      { label: "Now serving column empty message", value: input.servingEmptyText },
+      { label: "Bookings column empty message", value: input.bookingsEmptyText },
+    ]
+    for (const field of emptyTextFields) {
+      if (field.value && field.value.trim().length > MAX_DISPLAY_EMPTY_TEXT_LENGTH) {
+        return { success: false, error: `${field.label} must be ${MAX_DISPLAY_EMPTY_TEXT_LENGTH} characters or fewer.` }
+      }
+    }
+    const badgeFields: Array<{ label: string; value: string | null | undefined }> = [
+      { label: "Walk-in badge", value: input.walkInBadgeLabel },
+      { label: "Booking badge", value: input.bookingBadgeLabel },
+    ]
+    for (const field of badgeFields) {
+      if (field.value && field.value.trim().length > MAX_DISPLAY_BADGE_LENGTH) {
+        return { success: false, error: `${field.label} must be ${MAX_DISPLAY_BADGE_LENGTH} characters or fewer.` }
+      }
+    }
 
     const { supabase, tenantId } = await tenantContext()
 
@@ -788,6 +818,12 @@ export async function updateDisplaySettings(input: {
         display_layout: input.layout,
         ...(canCustomizeBranding ? { display_background_color: input.backgroundColor } : {}),
         display_tagline: input.tagline?.trim() || null,
+        display_waiting_label: input.waitingLabel?.trim() || null,
+        display_waiting_empty_text: input.waitingEmptyText?.trim() || null,
+        display_serving_empty_text: input.servingEmptyText?.trim() || null,
+        display_bookings_empty_text: input.bookingsEmptyText?.trim() || null,
+        display_walkin_badge_label: input.walkInBadgeLabel?.trim() || null,
+        display_booking_badge_label: input.bookingBadgeLabel?.trim() || null,
         display_menu_title: input.menuTitle?.trim() || null,
         display_bookings_title: input.bookingsTitle?.trim() || null,
         display_queue_title: input.queueTitle?.trim() || null,

@@ -260,7 +260,8 @@ async function getSettingsData(
         "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
           "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
-          "display_theme, display_layout, display_background_color, display_tagline",
+          "display_theme, display_layout, display_background_color, display_tagline, " +
+          "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -383,6 +384,12 @@ async function getSettingsData(
       layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
       backgroundColor: brandingResult.data.display_background_color ?? null,
       tagline: brandingResult.data.display_tagline ?? null,
+      waitingLabel: brandingResult.data.display_waiting_label ?? null,
+      waitingEmptyText: brandingResult.data.display_waiting_empty_text ?? null,
+      servingEmptyText: brandingResult.data.display_serving_empty_text ?? null,
+      bookingsEmptyText: brandingResult.data.display_bookings_empty_text ?? null,
+      walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
+      bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
     },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,

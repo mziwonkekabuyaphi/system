@@ -297,6 +297,15 @@ export interface AdminDisplaySettings {
   /** Label above the "being served now" list on the queue slide. Defaults
    *  to "Now serving". */
   nowServingLabel: string | null
+  /** Heading on the board layout's "waiting" column only. Defaults to "Waiting". */
+  waitingLabel: string | null
+  /** Board layout only. Empty-state text per column, and the badge shown on tickets
+   *  by origin. Null/empty falls back to the English default. */
+  waitingEmptyText: string | null
+  servingEmptyText: string | null
+  bookingsEmptyText: string | null
+  walkInBadgeLabel: string | null
+  bookingBadgeLabel: string | null
 
   // -- Queue slide, per-entry fields ---------------------------------------
   // Independent of showQueue above (whole-screen on/off). showQueuePhone

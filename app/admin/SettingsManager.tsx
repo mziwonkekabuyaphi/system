@@ -799,6 +799,12 @@ const DEFAULT_DISPLAY_MENU_TITLE = "On the menu"
 const DEFAULT_DISPLAY_BOOKINGS_TITLE = "Upcoming bookings"
 const DEFAULT_DISPLAY_QUEUE_TITLE = "Live queue"
 const DEFAULT_DISPLAY_NOW_SERVING_LABEL = "Now serving"
+const DEFAULT_DISPLAY_WAITING_LABEL = "Waiting"
+const DEFAULT_DISPLAY_WAITING_EMPTY = "Nobody waiting right now."
+const DEFAULT_DISPLAY_SERVING_EMPTY = "No one is being served right now."
+const DEFAULT_DISPLAY_BOOKINGS_EMPTY = "No upcoming bookings."
+const DEFAULT_DISPLAY_WALKIN_BADGE = "Walk-in"
+const DEFAULT_DISPLAY_BOOKING_BADGE = "Booking"
 
 // DB column only accepts #RRGGBB, but the shared ColorField also allows #RGB.
 function toSixDigitHex(value: string): string | null {
@@ -935,6 +941,12 @@ function DisplayBehaviorPanel({
   const [bookingsTitle, setBookingsTitle] = useState(initial.bookingsTitle ?? "")
   const [queueTitle, setQueueTitle] = useState(initial.queueTitle ?? "")
   const [nowServingLabel, setNowServingLabel] = useState(initial.nowServingLabel ?? "")
+  const [waitingLabel, setWaitingLabel] = useState(initial.waitingLabel ?? "")
+  const [waitingEmptyText, setWaitingEmptyText] = useState(initial.waitingEmptyText ?? "")
+  const [servingEmptyText, setServingEmptyText] = useState(initial.servingEmptyText ?? "")
+  const [bookingsEmptyText, setBookingsEmptyText] = useState(initial.bookingsEmptyText ?? "")
+  const [walkInBadgeLabel, setWalkInBadgeLabel] = useState(initial.walkInBadgeLabel ?? "")
+  const [bookingBadgeLabel, setBookingBadgeLabel] = useState(initial.bookingBadgeLabel ?? "")
   const [showQueueTicketNumber, setShowQueueTicketNumber] = useState(initial.showQueueTicketNumber)
   const [showQueueService, setShowQueueService] = useState(initial.showQueueService)
   const [showQueuePhone, setShowQueuePhone] = useState(initial.showQueuePhone)
@@ -966,6 +978,12 @@ function DisplayBehaviorPanel({
         bookingsTitle: bookingsTitle.trim() || null,
         queueTitle: queueTitle.trim() || null,
         nowServingLabel: nowServingLabel.trim() || null,
+        waitingLabel: waitingLabel.trim() || null,
+        waitingEmptyText: waitingEmptyText.trim() || null,
+        servingEmptyText: servingEmptyText.trim() || null,
+        bookingsEmptyText: bookingsEmptyText.trim() || null,
+        walkInBadgeLabel: walkInBadgeLabel.trim() || null,
+        bookingBadgeLabel: bookingBadgeLabel.trim() || null,
         showQueueTicketNumber,
         showQueueService,
         showQueuePhone,
@@ -1196,6 +1214,74 @@ function DisplayBehaviorPanel({
                 onChange={(e) => setNowServingLabel(e.target.value)}
                 placeholder={DEFAULT_DISPLAY_NOW_SERVING_LABEL}
                 maxLength={40}
+              />
+            </FieldRow>
+            <FieldRow
+              label='"Waiting" column heading'
+              hint={`Live board layout only. Defaults to "${DEFAULT_DISPLAY_WAITING_LABEL}".`}
+            >
+              <input
+                className={inputClass}
+                value={waitingLabel}
+                onChange={(e) => setWaitingLabel(e.target.value)}
+                placeholder={DEFAULT_DISPLAY_WAITING_LABEL}
+                maxLength={40}
+              />
+            </FieldRow>
+          </div>
+        </div>
+
+        <div className="border-t border-stone-200 pt-4">
+          <span className="mb-1 block text-sm font-medium text-stone-800">Live board wording</span>
+          <p className="mb-3 text-xs text-stone-400">
+            Messages and ticket badges on the Live board layout. Leave a field empty to use the default shown in it.
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldRow label="Waiting column — empty message" hint="Shown when nobody is waiting.">
+              <input
+                className={inputClass}
+                value={waitingEmptyText}
+                onChange={(e) => setWaitingEmptyText(e.target.value)}
+                placeholder={DEFAULT_DISPLAY_WAITING_EMPTY}
+                maxLength={100}
+              />
+            </FieldRow>
+            <FieldRow label="Now serving column — empty message" hint="Shown when nobody is being served.">
+              <input
+                className={inputClass}
+                value={servingEmptyText}
+                onChange={(e) => setServingEmptyText(e.target.value)}
+                placeholder={DEFAULT_DISPLAY_SERVING_EMPTY}
+                maxLength={100}
+              />
+            </FieldRow>
+            <FieldRow label="Bookings column — empty message" hint="Shown when there are no upcoming bookings.">
+              <input
+                className={inputClass}
+                value={bookingsEmptyText}
+                onChange={(e) => setBookingsEmptyText(e.target.value)}
+                placeholder={DEFAULT_DISPLAY_BOOKINGS_EMPTY}
+                maxLength={100}
+              />
+            </FieldRow>
+            <div />
+            <FieldRow label="Walk-in ticket badge" hint="Small label on tickets from customers who walked in.">
+              <input
+                className={inputClass}
+                value={walkInBadgeLabel}
+                onChange={(e) => setWalkInBadgeLabel(e.target.value)}
+                placeholder={DEFAULT_DISPLAY_WALKIN_BADGE}
+                maxLength={20}
+              />
+            </FieldRow>
+            <FieldRow label="Booking ticket badge" hint="Small label on tickets that came from a booking.">
+              <input
+                className={inputClass}
+                value={bookingBadgeLabel}
+                onChange={(e) => setBookingBadgeLabel(e.target.value)}
+                placeholder={DEFAULT_DISPLAY_BOOKING_BADGE}
+                maxLength={20}
               />
             </FieldRow>
           </div>
