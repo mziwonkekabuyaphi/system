@@ -150,8 +150,8 @@ export default async function PricingPage() {
 
   return (
     <div className={styles.page}>
-      <nav className={styles.siteNav}>
-        <div className={`${styles.wrapWide} ${styles.siteNavInner}`}>
+      <nav className={`${styles.siteNav} ${styles.siteNavBar}`}>
+        <div className={`${styles.siteNavInner} ${styles.siteNavInnerBar}`}>
           <span className={styles.siteNavBrand}>
             <Logo size={20} />
             ZozoQueue
@@ -164,7 +164,7 @@ export default async function PricingPage() {
               Sign in
             </a>
             <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
-              Sign up
+              Try for free
             </a>
           </div>
         </div>
