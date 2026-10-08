@@ -265,7 +265,14 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
 
   try {
     const tenantId = await resolveKioskTenantId(slug)
-    const requireServiceSelection = await resolveRequireServiceSelection(tenantId)
+    const requireServiceSetting = await resolveRequireServiceSelection(tenantId)
+    const catalog = await getBookableServices(tenantId)
+    const services = Array.isArray(catalog) ? catalog : []
+
+    // A shop with no services can't require one: there would be nothing to
+    // choose, and the walk-in would be stuck. KioskPage applies the same
+    // rule to the UI, so the screen and this server check always agree.
+    const requireServiceSelection = requireServiceSetting && services.length > 0
 
     if (requireServiceSelection && !input.serviceId) {
       return { ok: false, error: "Please choose a service." }
@@ -273,7 +280,6 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
 
     let service: CatalogService | null = null
     if (input.serviceId) {
-      const services = await getBookableServices(tenantId)
       service = services.find((s) => s.id === input.serviceId) ?? null
       if (!service) return { ok: false, error: "That service isn't available anymore." }
     }

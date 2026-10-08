@@ -340,13 +340,25 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
     )
   }
 
+  // A shop that hasn't added any services yet shouldn't have a kiosk that
+  // dead-ends. With nothing to choose from: don't ask for a service, and
+  // (when the kiosk would offer both) show only the walk-in queue, since a
+  // booking needs a service to look up times against. A booking-only kiosk
+  // is left alone -- that is a deliberate choice, and its service screen
+  // already tells the customer to ask staff. The same rule is applied on
+  // the server in actions.ts (submitKioskQueueJoin).
+  const hasServices = Array.isArray(services) && services.length > 0
+  const requireServiceSelection = queueBehavior.requireServiceSelection && hasServices
+  const kioskBranding: KioskBranding =
+    !hasServices && branding.registrationType === "both" ? { ...branding, registrationType: "queue" } : branding
+
   return (
     <div className={manrope.className}>
       <KioskApp
         slug={tenant.slug}
-        branding={branding}
+        branding={kioskBranding}
         initialServices={services}
-        requireServiceSelection={queueBehavior.requireServiceSelection}
+        requireServiceSelection={requireServiceSelection}
       />
     </div>
   )
