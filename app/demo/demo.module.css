@@ -3,6 +3,7 @@
    Everything is scoped under .page so nothing leaks into other routes. */
 
 .page {
+  position: relative; /* anchors the floating Sign in / Sign up buttons */
   /* two tokens the shared theme doesn't define, scoped locally */
   --demo-muted-on-dark: rgba(250, 247, 240, 0.62);
   --demo-line-on-dark: rgba(255, 255, 255, 0.12);
@@ -47,34 +48,39 @@
 
 /* ---------- Site nav ---------- */
 
+/* No bar any more: the Sign in / Sign up buttons float over the top-right
+   of the hero so the blue ticket panel can start at the very top edge. */
 .siteNav {
-  border-bottom: 1px solid var(--qless-line);
-  background: var(--qless-paper);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  pointer-events: none; /* only the buttons themselves catch clicks */
 }
 
 .siteNavInner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 0;
-  gap: 16px;
-}
-
-.siteNavBrand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--qless-font-mono);
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
-  color: var(--qless-ink);
-  text-decoration: none;
+  justify-content: flex-end;
+  padding: 16px 24px;
 }
 
 .siteNavActions {
   display: flex;
   align-items: center;
   gap: 10px;
+  pointer-events: auto;
+}
+
+/* Phone / tablet portrait: the blue panel is on top, so the buttons sit on
+   dark navy and need light-on-dark colours. */
+@media (max-width: 860px) {
+  .siteNavInner { padding: 14px 16px; }
+  .siteNavActions .btnSecondary {
+    color: var(--qless-paper);
+    border-color: var(--demo-line-on-dark);
+  }
 }
 
 .btnSm {
@@ -84,15 +90,49 @@
 
 /* ---------- Hero: ticket-stub split, echoing AuthShell ---------- */
 
-.heroSplit {
+/* Hero sizing knobs, one set per device class. Tweak these to adjust the
+   hero without touching the rules below.
+     --hero-stub-width   width of the blue ticket panel (desktop/tablet)
+     --hero-min-height   minimum hero height
+     --hero-stub-pad     padding inside the blue panel
+     --hero-main-pad     padding around the headline area               */
+.page .heroSplit {
+  --hero-stub-width: minmax(320px, 400px);
+  --hero-min-height: 100vh;
+  --hero-stub-pad: 4.5rem 2.5rem 3rem; /* top padding clears the floating buttons */
+  --hero-main-pad: 96px 56px 64px;
+
   display: grid;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  min-height: 480px;
+  grid-template-columns: var(--hero-stub-width) 1fr;
+  min-height: var(--hero-min-height);
+  padding: 0; /* cancel the global ".page section" 72px padding so the panel touches the top edge */
 }
 
+/* Tablet landscape / small laptop */
+@media (max-width: 1100px) {
+  .page .heroSplit {
+    --hero-stub-width: minmax(280px, 320px);
+    --hero-min-height: 560px;
+    --hero-stub-pad: 4.5rem 2rem 2.5rem;
+    --hero-main-pad: 96px 36px 56px;
+  }
+}
+
+/* Tablet portrait + phones: stack, blue panel on top */
 @media (max-width: 860px) {
-  .heroSplit {
+  .page .heroSplit {
     grid-template-columns: 1fr;
+    --hero-min-height: 0;
+    --hero-stub-pad: 4.25rem 1.75rem 2.5rem;
+    --hero-main-pad: 40px 28px 56px;
+  }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+  .page .heroSplit {
+    --hero-stub-pad: 4rem 1.25rem 2.25rem;
+    --hero-main-pad: 32px 20px 48px;
   }
 }
 
@@ -102,7 +142,7 @@
   flex-direction: column;
   justify-content: space-between;
   gap: 2rem;
-  padding: 2.5rem 2.25rem 2.75rem;
+  padding: var(--hero-stub-pad);
   background: linear-gradient(180deg, var(--qless-navy) 0%, var(--qless-navy-deep) 100%);
   color: var(--qless-paper);
 }
@@ -125,9 +165,6 @@
 }
 
 @media (max-width: 860px) {
-  .heroStub {
-    padding: 2rem 1.75rem;
-  }
   .heroStub::after {
     top: auto;
     right: 0;
@@ -189,11 +226,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 64px 48px;
-}
-
-@media (max-width: 860px) {
-  .heroMain { padding: 48px 28px; }
+  padding: var(--hero-main-pad);
 }
 
 .heroMain h1 {

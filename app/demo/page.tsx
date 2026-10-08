@@ -23,11 +23,7 @@ export default async function DemoPage() {
   return (
     <div className={styles.page}>
       <nav className={styles.siteNav}>
-        <div className={`${styles.wrapWide} ${styles.siteNavInner}`}>
-          <span className={styles.siteNavBrand}>
-            <Logo size={20} />
-            ZozoQueue
-          </span>
+        <div className={styles.siteNavInner}>
           <div className={styles.siteNavActions}>
             <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
               Sign in
