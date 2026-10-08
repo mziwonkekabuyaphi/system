@@ -153,7 +153,7 @@ export default async function PricingPage() {
       <nav className={`${styles.siteNav} ${styles.siteNavBar}`}>
         <div className={`${styles.siteNavInner} ${styles.siteNavInnerBar}`}>
           <span className={styles.siteNavBrand}>
-            <Logo size={20} />
+            <Logo size={40} />
             ZozoQueue
           </span>
           <div className={styles.siteNavActions}>
