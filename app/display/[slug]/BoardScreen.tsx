@@ -56,10 +56,12 @@ function toneFor(mins: number, t: { warn: number; hot: number }): Tone {
   return "calm"
 }
 
-function sourceLabel(source: string | null): string {
-  if (source === "walk_in") return "Walk-in"
-  if (source === "booking") return "Booking"
-  if (!source) return "Walk-in"
+/** Badge text by ticket origin. The two business-facing labels come from the
+ *  tenant's wording settings; any other (future) source falls back to a
+ *  prettified version of its raw value. */
+function sourceLabel(source: string | null, walkIn: string, booking: string): string {
+  if (source === "walk_in" || !source) return walkIn
+  if (source === "booking") return booking
   return source.charAt(0).toUpperCase() + source.slice(1).replace(/_/g, " ")
 }
 
@@ -148,6 +150,12 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
   const bookingsTitle = settings.bookingsTitle?.trim() || "Upcoming bookings"
   const nowServingLabel = settings.nowServingLabel?.trim() || "Now serving"
   const menuTitle = settings.menuTitle?.trim() || "On the menu"
+  const waitingLabel = settings.waitingLabel?.trim() || "Waiting"
+  const waitingEmpty = settings.waitingEmptyText?.trim() || "Nobody waiting right now."
+  const servingEmpty = settings.servingEmptyText?.trim() || "No one is being served right now."
+  const bookingsEmpty = settings.bookingsEmptyText?.trim() || "No upcoming bookings."
+  const walkInBadge = settings.walkInBadgeLabel?.trim() || "Walk-in"
+  const bookingBadge = settings.bookingBadgeLabel?.trim() || "Booking"
 
   const showMenu = settings.showServices && data.services.length > 0
   const columnCount = (settings.showQueue ? 2 : 0) + (settings.showBookings ? 1 : 0)
@@ -166,7 +174,7 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
         <div className="bd-clip" />
         <div className="bd-ticket-top">
           <div className="bd-num">{lead}</div>
-          <div className="bd-badge">{sourceLabel(q.source)}</div>
+          <div className="bd-badge">{sourceLabel(q.source, walkInBadge, bookingBadge)}</div>
         </div>
         <div className="bd-customer">
           {q.customerName ?? "Guest"}
@@ -204,7 +212,7 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
         <div className="bd-clip" />
         <div className="bd-ticket-top">
           <div className="bd-num">{formatClockTime(b.startTime)}</div>
-          <div className="bd-badge">Booking</div>
+          <div className="bd-badge">{bookingBadge}</div>
         </div>
         <div className="bd-customer">{b.customerName ?? "Guest"}</div>
         {(b.serviceName || b.staffName) && (
@@ -294,17 +302,17 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
             <>
               <section className="bd-col">
                 <div className="bd-col-head">
-                  <h2>Waiting</h2>
+                  <h2>{waitingLabel}</h2>
                   <span className="bd-count">{waiting.length}</span>
                 </div>
-                <Rail empty="Nobody waiting right now.">{waiting.map(queueTicket)}</Rail>
+                <Rail empty={waitingEmpty}>{waiting.map(queueTicket)}</Rail>
               </section>
               <section className="bd-col serving">
                 <div className="bd-col-head">
                   <h2>{nowServingLabel}</h2>
                   <span className="bd-count">{serving.length}</span>
                 </div>
-                <Rail empty="No one is being served right now.">{serving.map(queueTicket)}</Rail>
+                <Rail empty={servingEmpty}>{serving.map(queueTicket)}</Rail>
               </section>
             </>
           )}
@@ -314,7 +322,7 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
                 <h2>{bookingsTitle}</h2>
                 <span className="bd-count">{data.bookings.length}</span>
               </div>
-              <Rail empty="No upcoming bookings.">{data.bookings.map(bookingTicket)}</Rail>
+              <Rail empty={bookingsEmpty}>{data.bookings.map(bookingTicket)}</Rail>
             </section>
           )}
         </div>

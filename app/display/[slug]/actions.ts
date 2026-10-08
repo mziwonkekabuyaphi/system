@@ -64,6 +64,16 @@ export interface DisplaySettings {
   bookingsTitle: string | null
   queueTitle: string | null
   nowServingLabel: string | null
+  /** Heading on the board layout's "waiting" column (BoardScreen.tsx). Null/empty
+   *  falls back to "Waiting". The rotation layout has no equivalent. */
+  waitingLabel: string | null
+  /** Board layout only: empty-state text per column, and the badge on a ticket by
+   *  origin. Null/empty falls back to the English default in BoardScreen.tsx. */
+  waitingEmptyText: string | null
+  servingEmptyText: string | null
+  bookingsEmptyText: string | null
+  walkInBadgeLabel: string | null
+  bookingBadgeLabel: string | null
   /** "dark" / "light" are built-in looks; "custom" uses backgroundColor. */
   theme: DisplayTheme
   /** "rotation" = classic slides; "board" = always-on columns of tickets. */
@@ -98,6 +108,12 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   bookingsTitle: null,
   queueTitle: null,
   nowServingLabel: null,
+  waitingLabel: null,
+  waitingEmptyText: null,
+  servingEmptyText: null,
+  bookingsEmptyText: null,
+  walkInBadgeLabel: null,
+  bookingBadgeLabel: null,
   theme: "dark",
   layout: "rotation",
   backgroundColor: null,
@@ -229,7 +245,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           "display_name, logo_url, primary_color, secondary_color, " +
             "display_show_services, display_show_bookings, display_show_queue, " +
             "display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, " +
-            "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
+            "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, display_waiting_label, " +
+            "display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
             "display_theme, display_layout, display_background_color, display_tagline, " +
             "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, " +
             "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference",
@@ -309,6 +326,12 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           bookingsTitle: brandingResult.data.display_bookings_title ?? null,
           queueTitle: brandingResult.data.display_queue_title ?? null,
           nowServingLabel: brandingResult.data.display_now_serving_label ?? null,
+          waitingLabel: brandingResult.data.display_waiting_label ?? null,
+          waitingEmptyText: brandingResult.data.display_waiting_empty_text ?? null,
+          servingEmptyText: brandingResult.data.display_serving_empty_text ?? null,
+          bookingsEmptyText: brandingResult.data.display_bookings_empty_text ?? null,
+          walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
+          bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
           theme: resolveTheme(brandingResult.data.display_theme),
           layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
           backgroundColor: brandingResult.data.display_background_color ?? null,
