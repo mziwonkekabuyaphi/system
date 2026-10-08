@@ -29,7 +29,7 @@ export default async function DemoPage() {
               Sign in
             </a>
             <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
-              Sign up
+              Try for free
             </a>
           </div>
         </div>
