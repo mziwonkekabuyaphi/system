@@ -243,7 +243,7 @@ function useConfirmationAutoReset(active: boolean, timeoutMs: number, onExpire: 
 function PoweredByFooter() {
   return (
     <div className="poweredBy">
-      <span>Powered by QLess</span>
+      <span>Powered by ZozoQueue</span>
 
       <style jsx>{`
         .poweredBy {
