@@ -54,9 +54,9 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   font-family: var(--qless-font-body), -apple-system, sans-serif;
-  font-size: clamp(1.6rem, 3vw, 2rem);
+  font-size: clamp(0.8rem, 1.5vw, 1rem);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -106,9 +106,9 @@
 .mobileBrand {
   display: none;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   font-family: var(--qless-font-body), -apple-system, sans-serif;
-  font-size: 1.5rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1;

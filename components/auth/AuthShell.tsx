@@ -20,7 +20,7 @@ export function AuthShell({
     <div className="qless-auth-page">
       <aside className={styles.stub}>
         <span className={styles.brand}>
-          <Logo size={44} />
+          <Logo size={22} />
           ZozoQueue
         </span>
         <div className={styles.ticketBlock}>
@@ -34,7 +34,7 @@ export function AuthShell({
       <section className={styles.formPanel}>
         <div className={styles.formInner}>
           <div className={styles.mobileBrand}>
-            <Logo size={36} />
+            <Logo size={18} />
             ZozoQueue
           </div>
           <h1 className={styles.heading}>{heading}</h1>
