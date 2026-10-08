@@ -119,12 +119,12 @@ function ChevronIcon(props: SVGProps<SVGSVGElement>) {
 }
 
 const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement>) => JSX.Element }> = [
-  { id: "today", label: "Today", icon: CalendarIcon },
+  { id: "today", label: "Appointments", icon: CalendarIcon },
   { id: "queue", label: "Queue", icon: TicketIcon },
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "services", label: "Services", icon: TagIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
-  { id: "billing", label: "Billing", icon: CreditCardIcon },
+  { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
   { id: "settings", label: "Settings", icon: GearIcon },
 ]
 
@@ -313,7 +313,9 @@ export function AdminView({
             <h1 className="font-[family-name:var(--font-admin-serif)] text-2xl tracking-tight text-stone-900">
               {brandName}
             </h1>
-            <p className="mt-1 text-sm text-stone-500">Bookings, queue, inbox, services and staff</p>
+            <p className="mt-1 text-sm text-stone-500">
+              {TABS.find((t) => t.id === tab)?.label ?? ""}
+            </p>
           </div>
         </header>
 
