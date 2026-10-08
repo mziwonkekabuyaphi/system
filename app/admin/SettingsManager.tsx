@@ -9,6 +9,7 @@ import {
   updateBookingSettings,
   updateBranding,
   updateBusinessHours,
+  updateDisplaySettings,
   updateGeneralInfo,
   updateKioskSettings,
   updateMessageSettings,
@@ -19,6 +20,7 @@ import type {
   AdminBookingSettings,
   AdminBranding,
   AdminBusinessHours,
+  AdminDisplaySettings,
   AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
@@ -33,16 +35,80 @@ const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+
 
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
-type SubTab = "general" | "kiosk" | "private-label" | "booking" | "queue" | "messages"
+type SubTab = "general" | "kiosk" | "display" | "private-label" | "booking" | "queue" | "messages"
 
-const SUB_TABS: Array<{ id: SubTab; label: string }> = [
-  { id: "general", label: "Business Info" },
-  { id: "kiosk", label: "Kiosk" },
-  { id: "private-label", label: "Private Label" },
-  { id: "booking", label: "Booking" },
-  { id: "queue", label: "Queue" },
-  { id: "messages", label: "Messages" },
+// Settings are grouped by what the owner is thinking about, not by which
+// part of the system they happen to touch. Labels avoid clashing with the
+// main sidebar ("Queue" there is the live queue manager; here it's the rules).
+const SETTINGS_NAV: Array<{
+  group: string
+  items: Array<{ id: SubTab; label: string; title: string; description: string }>
+}> = [
+  {
+    group: "Business",
+    items: [
+      {
+        id: "general",
+        label: "Business info",
+        title: "Business info",
+        description: "Your contact details, timezone and opening hours.",
+      },
+      {
+        id: "private-label",
+        label: "Branding",
+        title: "Branding (private label)",
+        description: "Your name, logo and colours. Shown on the kiosk, the TV display and customer messages.",
+      },
+    ],
+  },
+  {
+    group: "Customer screens",
+    items: [
+      {
+        id: "kiosk",
+        label: "Kiosk",
+        title: "Self-service kiosk",
+        description: "The touch screen customers use to check in, book or join the queue.",
+      },
+      {
+        id: "display",
+        label: "TV display",
+        title: "TV display",
+        description: "The screen in your waiting area showing the queue, bookings and menu.",
+      },
+    ],
+  },
+  {
+    group: "Operations",
+    items: [
+      {
+        id: "booking",
+        label: "Booking rules",
+        title: "Booking rules",
+        description: "How far ahead customers can book, notice periods and cancellations.",
+      },
+      {
+        id: "queue",
+        label: "Queue rules",
+        title: "Queue rules",
+        description: "How the walk-in queue behaves: calling, limits, ticket numbers and wait estimates.",
+      },
+    ],
+  },
+  {
+    group: "Messaging",
+    items: [
+      {
+        id: "messages",
+        label: "WhatsApp messages",
+        title: "WhatsApp messages",
+        description: "The messages customers receive for bookings and queue updates.",
+      },
+    ],
+  },
 ]
+
+const SETTINGS_PAGES = SETTINGS_NAV.flatMap((g) => g.items)
 
 // ---------------------------------------------------------------------------
 // Shared styling
@@ -73,8 +139,13 @@ export function SettingsManager({
   tenantSlug,
   initialSettings,
   initialBranding,
+  onBrandingChange,
   initialKioskEnabled,
+  kioskIncludedInPlan = true,
+  canRemovePoweredBy,
+  canCustomizeBranding,
   initialKioskSettings,
+  initialDisplaySettings,
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
@@ -84,8 +155,25 @@ export function SettingsManager({
   tenantSlug: string
   initialSettings: AdminTenantSettings
   initialBranding: AdminBranding
+  // Notifies AdminView (sidebar badge + header) the moment the name or
+  // logo save succeeds, so it doesn't have to wait for a page reload to
+  // pick up initialBranding again.
+  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
   initialKioskEnabled: boolean
+  /** Whether the tenant's plan includes the kiosk module (plan_modules).
+   *  Computed server-side with tenantHasModule(). Defaults to true so an
+   *  un-updated parent keeps today's behavior; the server still enforces. */
+  kioskIncludedInPlan?: boolean
+  /** Whether the plan includes remove_powered_by. Computed server-side with
+   *  tenantHasModule(). Falls back to the old plan === "business" check if
+   *  the parent doesn't pass it yet. */
+  canRemovePoweredBy?: boolean
+  /** Whether the plan includes the 'branding' module (custom logo + colours).
+   *  Computed server-side with tenantHasModule(). Falls back to the old
+   *  plan === "business" check if the parent doesn't pass it yet. */
+  canCustomizeBranding?: boolean
   initialKioskSettings: AdminKioskSettings
+  initialDisplaySettings: AdminDisplaySettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
@@ -93,14 +181,18 @@ export function SettingsManager({
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
+  const activePage = SETTINGS_PAGES.find((p) => p.id === subTab) ?? SETTINGS_PAGES[0]
+
   return (
-    <div className="space-y-4">
-      <div className="flex gap-1 overflow-x-auto">
-        {SUB_TABS.map((t) => (
+    <div className="md:grid md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8">
+      {/* Phone / small tablet: one scrolling row of pills */}
+      <div className="mb-4 flex gap-1 overflow-x-auto md:hidden">
+        {SETTINGS_PAGES.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setSubTab(t.id)}
+            aria-current={subTab === t.id ? "page" : undefined}
             className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium ${
               subTab === t.id
                 ? "border-stone-800 bg-stone-800 text-white"
@@ -112,6 +204,41 @@ export function SettingsManager({
         ))}
       </div>
 
+      {/* Desktop: grouped menu, so it's always clear which area you're in */}
+      <nav aria-label="Settings sections" className="hidden md:block">
+        <div className="sticky top-4 space-y-5">
+          {SETTINGS_NAV.map((group) => (
+            <div key={group.group}>
+              <p className="px-3 text-xs font-semibold uppercase tracking-wider text-stone-400">{group.group}</p>
+              <ul className="mt-1 space-y-0.5">
+                {group.items.map((item) => {
+                  const active = subTab === item.id
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSubTab(item.id)}
+                        aria-current={active ? "page" : undefined}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                          active
+                            ? "bg-stone-800 font-semibold text-white"
+                            : "font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </nav>
+
+      <div className="min-w-0 space-y-4">
+        <SettingsPageHeader title={activePage.title} description={activePage.description} />
+
       {subTab === "general" && (
         <div className="space-y-3">
           <BusinessInfoPanel initial={initialSettings} />
@@ -121,14 +248,31 @@ export function SettingsManager({
       {subTab === "kiosk" && (
         <KioskPanel
           initialEnabled={initialKioskEnabled}
+          includedInPlan={kioskIncludedInPlan}
           tenantSlug={tenantSlug}
           initialKioskSettings={initialKioskSettings}
         />
       )}
-      {subTab === "private-label" && <PrivateLabelPanel plan={initialPlan} initial={initialBranding} />}
+      {subTab === "display" && (
+        <DisplayPanel
+          tenantSlug={tenantSlug}
+          initial={initialDisplaySettings}
+          canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
+        />
+      )}
+      {subTab === "private-label" && (
+        <PrivateLabelPanel
+          plan={initialPlan}
+          canRemovePoweredBy={canRemovePoweredBy ?? initialPlan === "business"}
+          canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
+          initial={initialBranding}
+          onBrandingChange={onBrandingChange}
+        />
+      )}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
       {subTab === "queue" && <QueueSettingsPanel initial={initialQueueSettings} />}
       {subTab === "messages" && <MessageSettingsPanel initial={initialMessageSettings} />}
+      </div>
     </div>
   )
 }
@@ -151,7 +295,7 @@ function BusinessInfoPanel({ initial }: { initial: AdminTenantSettings }) {
 
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Business Info</p>
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Contact &amp; defaults</p>
       <p className="text-sm text-stone-500">Contact details and defaults shown to customers.</p>
 
       <div className="mt-4 space-y-3">
@@ -298,10 +442,12 @@ function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) {
 // ---------------------------------------------------------------------------
 function KioskPanel({
   initialEnabled,
+  includedInPlan,
   tenantSlug,
   initialKioskSettings,
 }: {
   initialEnabled: boolean
+  includedInPlan: boolean
   tenantSlug: string
   initialKioskSettings: AdminKioskSettings
 }) {
@@ -320,6 +466,21 @@ function KioskPanel({
         setToggleError(result.error)
       }
     })
+  }
+
+  // Plan doesn't include the kiosk: show a locked card instead of a toggle
+  // that would only bounce off the server. The URL and behavior panels are
+  // hidden too -- the public kiosk page is unavailable on this plan.
+  if (!includedInPlan) {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
+        <p className="mt-1 text-sm text-stone-500">
+          The self-service kiosk isn&apos;t included in your current plan. Upgrade from Plans &amp; Billing to give
+          walk-ins a booking and queue screen.
+        </p>
+      </div>
+    )
   }
 
   return (
@@ -374,7 +535,7 @@ function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
 
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk URL</p>
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk address</p>
       <p className="text-sm text-stone-500">The registration URL used for your kiosk.</p>
 
       <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -435,97 +596,527 @@ const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
 const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
 const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
+const DEFAULT_TIME_SCREEN_TITLE = "Pick a time"
+const DEFAULT_DETAILS_SCREEN_TITLE = "Almost done — who are we booking for?"
+const DEFAULT_TICKET_BOOKING_EYEBROW = "Your booking"
+const DEFAULT_TICKET_QUEUE_EYEBROW = "Your place in line"
+
+// Form-state shape for the kiosk behaviour page (empty strings, not nulls).
+type KioskDraft = {
+  tagline: string
+  idleRefreshSeconds: number
+  confirmationRefreshSeconds: number
+  registrationType: AdminKioskSettings["registrationType"]
+  choiceTitle: string
+  bookingCardTitle: string
+  bookingCardSubtitle: string
+  queueCardTitle: string
+  queueCardSubtitle: string
+  serviceScreenTitle: string
+  dateScreenTitle: string
+  timeScreenTitle: string
+  detailsScreenTitle: string
+  ticketBookingEyebrow: string
+  ticketQueueEyebrow: string
+}
+
+function toKioskDraft(s: AdminKioskSettings): KioskDraft {
+  return {
+    tagline: s.tagline ?? "",
+    idleRefreshSeconds: s.idleRefreshSeconds,
+    confirmationRefreshSeconds: s.confirmationRefreshSeconds,
+    registrationType: s.registrationType,
+    choiceTitle: s.choiceTitle ?? "",
+    bookingCardTitle: s.bookingCardTitle ?? "",
+    bookingCardSubtitle: s.bookingCardSubtitle ?? "",
+    queueCardTitle: s.queueCardTitle ?? "",
+    queueCardSubtitle: s.queueCardSubtitle ?? "",
+    serviceScreenTitle: s.serviceScreenTitle ?? "",
+    dateScreenTitle: s.dateScreenTitle ?? "",
+    timeScreenTitle: s.timeScreenTitle ?? "",
+    detailsScreenTitle: s.detailsScreenTitle ?? "",
+    ticketBookingEyebrow: s.ticketBookingEyebrow ?? "",
+    ticketQueueEyebrow: s.ticketQueueEyebrow ?? "",
+  }
+}
+
+// Return type intentionally inferred (not annotated) so the same keys the
+// page already sent before this redesign keep flowing through unchanged.
+function toKioskPayload(d: KioskDraft) {
+  return {
+    tagline: d.tagline.trim() || null,
+    idleRefreshSeconds: d.idleRefreshSeconds,
+    confirmationRefreshSeconds: d.confirmationRefreshSeconds,
+    registrationType: d.registrationType,
+    choiceTitle: d.choiceTitle.trim() || null,
+    bookingCardTitle: d.bookingCardTitle.trim() || null,
+    bookingCardSubtitle: d.bookingCardSubtitle.trim() || null,
+    queueCardTitle: d.queueCardTitle.trim() || null,
+    queueCardSubtitle: d.queueCardSubtitle.trim() || null,
+    serviceScreenTitle: d.serviceScreenTitle.trim() || null,
+    dateScreenTitle: d.dateScreenTitle.trim() || null,
+    timeScreenTitle: d.timeScreenTitle.trim() || null,
+    detailsScreenTitle: d.detailsScreenTitle.trim() || null,
+    ticketBookingEyebrow: d.ticketBookingEyebrow.trim() || null,
+    ticketQueueEyebrow: d.ticketQueueEyebrow.trim() || null,
+  }
+}
+
+const KIOSK_OPTIONS_KEYS: Array<keyof KioskDraft> = ["registrationType"]
+const KIOSK_TIMING_KEYS: Array<keyof KioskDraft> = ["idleRefreshSeconds", "confirmationRefreshSeconds"]
+const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
+  "tagline",
+  "choiceTitle",
+  "bookingCardTitle",
+  "bookingCardSubtitle",
+  "queueCardTitle",
+  "queueCardSubtitle",
+  "serviceScreenTitle",
+  "dateScreenTitle",
+  "timeScreenTitle",
+  "detailsScreenTitle",
+  "ticketBookingEyebrow",
+  "ticketQueueEyebrow",
+]
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
-  const [tagline, setTagline] = useState(initial.tagline ?? "")
-  const [idleRefreshSeconds, setIdleRefreshSeconds] = useState(initial.idleRefreshSeconds)
-  const [confirmationRefreshSeconds, setConfirmationRefreshSeconds] = useState(initial.confirmationRefreshSeconds)
-  const [registrationType, setRegistrationType] = useState(initial.registrationType)
-  const [choiceTitle, setChoiceTitle] = useState(initial.choiceTitle ?? "")
-  const [bookingCardTitle, setBookingCardTitle] = useState(initial.bookingCardTitle ?? "")
-  const [bookingCardSubtitle, setBookingCardSubtitle] = useState(initial.bookingCardSubtitle ?? "")
-  const [queueCardTitle, setQueueCardTitle] = useState(initial.queueCardTitle ?? "")
-  const [queueCardSubtitle, setQueueCardSubtitle] = useState(initial.queueCardSubtitle ?? "")
-  const [serviceScreenTitle, setServiceScreenTitle] = useState(initial.serviceScreenTitle ?? "")
-  const [dateScreenTitle, setDateScreenTitle] = useState(initial.dateScreenTitle ?? "")
-  const [isPending, startTransition] = useTransition()
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const form = useCardForm<KioskDraft>({
+    initial: toKioskDraft(initial),
+    persist: (full) => updateKioskSettings(toKioskPayload(full)),
+  })
+  const { draft, set } = form
+  const busy = form.savingCard !== null
+  const showsBooking = draft.registrationType !== "queue"
+  const showsQueue = draft.registrationType !== "booking"
 
-  function save() {
-    setMessage(null)
-    startTransition(async () => {
-      const result = await updateKioskSettings({
-        tagline: tagline.trim() || null,
-        idleRefreshSeconds,
-        confirmationRefreshSeconds,
-        registrationType,
-        choiceTitle: choiceTitle.trim() || null,
-        bookingCardTitle: bookingCardTitle.trim() || null,
-        bookingCardSubtitle: bookingCardSubtitle.trim() || null,
-        queueCardTitle: queueCardTitle.trim() || null,
-        queueCardSubtitle: queueCardSubtitle.trim() || null,
-        serviceScreenTitle: serviceScreenTitle.trim() || null,
-        dateScreenTitle: dateScreenTitle.trim() || null,
-      })
-      setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
-    })
+  function footer(cardId: string, keys: Array<keyof KioskDraft>) {
+    return (
+      <CardSaveRow
+        dirty={form.isDirty(keys)}
+        isPending={form.savingCard === cardId}
+        onSave={() => form.save(cardId, keys)}
+        onDiscard={() => form.discard(keys)}
+        message={form.messages[cardId] ?? null}
+      />
+    )
+  }
+
+  function textField(
+    key: keyof KioskDraft,
+    label: string,
+    placeholder: string,
+    maxLength: number,
+    hint?: string,
+  ) {
+    return (
+      <FieldRow label={label} hint={hint ?? `Defaults to "${placeholder}".`}>
+        <input
+          className={inputClass}
+          value={draft[key] as string}
+          onChange={(e) => set(key, e.target.value as KioskDraft[typeof key])}
+          placeholder={placeholder}
+          maxLength={maxLength}
+        />
+      </FieldRow>
+    )
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk behavior</p>
-      <p className="text-sm text-stone-500">Control what the kiosk displays and how it resets between customers.</p>
+    <div className="space-y-4">
+      <SettingsCard
+        title="Customer options"
+        description="What customers are allowed to do at the kiosk."
+        footer={footer("options", KIOSK_OPTIONS_KEYS)}
+      >
+        <div className="grid gap-2 sm:grid-cols-3">
+          {REGISTRATION_TYPE_OPTIONS.map((option) => {
+            const selected = draft.registrationType === option.value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={busy}
+                onClick={() => set("registrationType", option.value)}
+                aria-pressed={selected}
+                className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                  selected
+                    ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                    : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                }`}
+              >
+                <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                  {option.title}
+                </span>
+                <span className="text-xs text-stone-500">{option.description}</span>
+              </button>
+            )
+          })}
+        </div>
+      </SettingsCard>
 
-      <div className="mt-4 space-y-4">
-        <FieldRow label="Tagline" hint='Shown under your shop name on the welcome screen. Defaults to "Tap anywhere to check in".'>
-          <input
-            className={inputClass}
-            value={tagline}
-            onChange={(e) => setTagline(e.target.value)}
-            placeholder="Tap anywhere to check in"
-            maxLength={80}
-          />
-        </FieldRow>
+      <SettingsCard
+        title="Wording"
+        description="Every piece of text on the kiosk is yours to change, in the order customers see it. Leave a field empty to use the default shown in it."
+        footer={footer("wording", KIOSK_WORDING_KEYS)}
+      >
+        <SubSection title="1 · Welcome screen">
+          {textField(
+            "tagline",
+            "Tagline",
+            "Tap anywhere to check in",
+            80,
+            'Shown under your shop name. Defaults to "Tap anywhere to check in".',
+          )}
+        </SubSection>
 
-        <FieldRow
-          label="Idle refresh time (seconds)"
-          hint="The time it takes before the kiosk automatically refreshes when no one has used it."
+        {draft.registrationType === "both" && (
+          <SubSection
+            title="2 · Choice screen"
+            hint='Where customers pick booking or the walk-in queue. Rename these to fit your business, e.g. "Reserve a table" / "Get in line".'
+          >
+            {textField("choiceTitle", "Screen heading", DEFAULT_CHOICE_TITLE, 80)}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-4 rounded-xl border border-stone-200 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Booking card</p>
+                {textField("bookingCardTitle", "Title", DEFAULT_BOOKING_CARD_TITLE, 40)}
+                {textField("bookingCardSubtitle", "Subtitle", DEFAULT_BOOKING_CARD_SUBTITLE, 100)}
+              </div>
+              <div className="space-y-4 rounded-xl border border-stone-200 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Queue card</p>
+                {textField("queueCardTitle", "Title", DEFAULT_QUEUE_CARD_TITLE, 40)}
+                {textField("queueCardSubtitle", "Subtitle", DEFAULT_QUEUE_CARD_SUBTITLE, 100)}
+              </div>
+            </div>
+          </SubSection>
+        )}
+
+        <SubSection title="Service screen" hint="Shown on every path when the customer picks a service.">
+          {textField("serviceScreenTitle", "Screen heading", DEFAULT_SERVICE_SCREEN_TITLE, 80)}
+        </SubSection>
+
+        {showsBooking && (
+          <SubSection title="Booking screens" hint="Only on the booking path.">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {textField("dateScreenTitle", "Date screen heading", DEFAULT_DATE_SCREEN_TITLE, 80)}
+              {textField(
+                "timeScreenTitle",
+                "Time screen heading",
+                DEFAULT_TIME_SCREEN_TITLE,
+                40,
+                `The kiosk adds the date automatically (e.g. "${DEFAULT_TIME_SCREEN_TITLE} — Today"), so just enter the part before it. Defaults to "${DEFAULT_TIME_SCREEN_TITLE}".`,
+              )}
+            </div>
+          </SubSection>
+        )}
+
+        <SubSection title="Details screen" hint="Right before the customer submits.">
+          {textField("detailsScreenTitle", "Name & phone screen heading", DEFAULT_DETAILS_SCREEN_TITLE, 80)}
+        </SubSection>
+
+        <SubSection title="Final ticket" hint="Small label above the ticket number on the last screen.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {showsBooking &&
+              textField("ticketBookingEyebrow", "Ticket label — booking", DEFAULT_TICKET_BOOKING_EYEBROW, 30)}
+            {showsQueue && textField("ticketQueueEyebrow", "Ticket label — queue", DEFAULT_TICKET_QUEUE_EYEBROW, 30)}
+          </div>
+        </SubSection>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Timing"
+        description="How the kiosk resets between customers."
+        footer={footer("timing", KIOSK_TIMING_KEYS)}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FieldRow
+            label="Idle reset (seconds)"
+            hint="How long before the kiosk returns to the welcome screen when nobody is using it."
+          >
+            <input
+              type="number"
+              min={10}
+              max={600}
+              className={inputClass}
+              value={draft.idleRefreshSeconds}
+              onChange={(e) => set("idleRefreshSeconds", Number(e.target.value))}
+            />
+          </FieldRow>
+          <FieldRow
+            label="Confirmation screen (seconds)"
+            hint="How long the confirmation ticket stays up before returning to the welcome screen."
+          >
+            <input
+              type="number"
+              min={3}
+              max={120}
+              className={inputClass}
+              value={draft.confirmationRefreshSeconds}
+              onChange={(e) => set("confirmationRefreshSeconds", Number(e.target.value))}
+            />
+          </FieldRow>
+        </div>
+      </SettingsCard>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Display — the ambient TV screen for the waiting area. Its own tab
+// (separate from Kiosk) since it's a different physical device with a
+// different job: kiosk is customer-operated self-service, display is a
+// passive, unattended screen that just rotates through what's showing
+// right now. Wording/timing here writes to tenant_branding's display_*
+// columns via updateDisplaySettings — see migration_display_settings.sql
+// and DisplayScreen.tsx (which is what actually renders these).
+//
+// Branding (name, logo, colors) still isn't edited here, same reasoning
+// as the Kiosk tab — Private Label is the single source of truth for
+// that, this tab only configures Display-specific behavior.
+// ---------------------------------------------------------------------------
+const DEFAULT_DISPLAY_MENU_TITLE = "On the menu"
+const DEFAULT_DISPLAY_BOOKINGS_TITLE = "Upcoming bookings"
+const DEFAULT_DISPLAY_QUEUE_TITLE = "Live queue"
+const DEFAULT_DISPLAY_NOW_SERVING_LABEL = "Now serving"
+const DEFAULT_DISPLAY_WAITING_LABEL = "Waiting"
+const DEFAULT_DISPLAY_WAITING_EMPTY = "Nobody waiting right now."
+const DEFAULT_DISPLAY_SERVING_EMPTY = "No one is being served right now."
+const DEFAULT_DISPLAY_BOOKINGS_EMPTY = "No upcoming bookings."
+const DEFAULT_DISPLAY_WALKIN_BADGE = "Walk-in"
+const DEFAULT_DISPLAY_BOOKING_BADGE = "Booking"
+
+// DB column only accepts #RRGGBB, but the shared ColorField also allows #RGB.
+function toSixDigitHex(value: string): string | null {
+  if (!HEX_COLOR_PATTERN.test(value)) return null
+  const clean = value.slice(1)
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean
+  return `#${full.toUpperCase()}`
+}
+
+const DISPLAY_LAYOUT_OPTIONS: Array<{
+  value: AdminDisplaySettings["layout"]
+  title: string
+  description: string
+}> = [
+  {
+    value: "rotation",
+    title: "Rotating slides",
+    description: "One big screen at a time: menu, bookings, queue. Best for a TV people glance at from across the room.",
+  },
+  {
+    value: "board",
+    title: "Live board",
+    description: "Everything at once: Waiting, Now serving and Upcoming bookings as ticket columns, with your menu scrolling along the bottom.",
+  },
+]
+
+const DISPLAY_THEME_OPTIONS: Array<{
+  value: AdminDisplaySettings["theme"]
+  title: string
+  description: string
+  swatch: string
+}> = [
+  { value: "dark", title: "Dark", description: "Near-black with light text. Easy on the eyes in dim rooms.", swatch: "#15110D" },
+  { value: "light", title: "Light", description: "Off-white with dark text. Suits bright, airy spaces.", swatch: "#FAF8F5" },
+  { value: "custom", title: "Custom color", description: "Pick your own background. Text color adjusts automatically.", swatch: "" },
+]
+
+// Form-state shape for the Display page: empty strings instead of nulls so
+// inputs stay controlled. Converted to/from the server shapes below.
+type DisplayDraft = {
+  layout: AdminDisplaySettings["layout"]
+  theme: AdminDisplaySettings["theme"]
+  backgroundColor: string
+  tagline: string
+  showServices: boolean
+  showBookings: boolean
+  showQueue: boolean
+  showQueueTicketNumber: boolean
+  showQueueService: boolean
+  showQueuePhone: boolean
+  showQueueWaitEstimate: boolean
+  showQueueDuration: boolean
+  showQueueReference: boolean
+  welcomeSeconds: number
+  menuBookingsSeconds: number
+  queueSeconds: number
+  menuTitle: string
+  bookingsTitle: string
+  queueTitle: string
+  nowServingLabel: string
+  waitingLabel: string
+  waitingEmptyText: string
+  servingEmptyText: string
+  bookingsEmptyText: string
+  walkInBadgeLabel: string
+  bookingBadgeLabel: string
+}
+
+function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
+  return {
+    layout: s.layout,
+    theme: s.theme,
+    backgroundColor: s.backgroundColor ?? "#15110D",
+    tagline: s.tagline ?? "",
+    showServices: s.showServices,
+    showBookings: s.showBookings,
+    showQueue: s.showQueue,
+    showQueueTicketNumber: s.showQueueTicketNumber,
+    showQueueService: s.showQueueService,
+    showQueuePhone: s.showQueuePhone,
+    showQueueWaitEstimate: s.showQueueWaitEstimate,
+    showQueueDuration: s.showQueueDuration,
+    showQueueReference: s.showQueueReference,
+    welcomeSeconds: s.welcomeSeconds,
+    menuBookingsSeconds: s.menuBookingsSeconds,
+    queueSeconds: s.queueSeconds,
+    menuTitle: s.menuTitle ?? "",
+    bookingsTitle: s.bookingsTitle ?? "",
+    queueTitle: s.queueTitle ?? "",
+    nowServingLabel: s.nowServingLabel ?? "",
+    waitingLabel: s.waitingLabel ?? "",
+    waitingEmptyText: s.waitingEmptyText ?? "",
+    servingEmptyText: s.servingEmptyText ?? "",
+    bookingsEmptyText: s.bookingsEmptyText ?? "",
+    walkInBadgeLabel: s.walkInBadgeLabel ?? "",
+    bookingBadgeLabel: s.bookingBadgeLabel ?? "",
+  }
+}
+
+function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySettings>[0] {
+  return {
+    theme: d.theme,
+    layout: d.layout,
+    backgroundColor: toSixDigitHex(d.backgroundColor),
+    tagline: d.tagline.trim() || null,
+    showServices: d.showServices,
+    showBookings: d.showBookings,
+    showQueue: d.showQueue,
+    welcomeSeconds: d.welcomeSeconds,
+    menuBookingsSeconds: d.menuBookingsSeconds,
+    queueSeconds: d.queueSeconds,
+    menuTitle: d.menuTitle.trim() || null,
+    bookingsTitle: d.bookingsTitle.trim() || null,
+    queueTitle: d.queueTitle.trim() || null,
+    nowServingLabel: d.nowServingLabel.trim() || null,
+    waitingLabel: d.waitingLabel.trim() || null,
+    waitingEmptyText: d.waitingEmptyText.trim() || null,
+    servingEmptyText: d.servingEmptyText.trim() || null,
+    bookingsEmptyText: d.bookingsEmptyText.trim() || null,
+    walkInBadgeLabel: d.walkInBadgeLabel.trim() || null,
+    bookingBadgeLabel: d.bookingBadgeLabel.trim() || null,
+    showQueueTicketNumber: d.showQueueTicketNumber,
+    showQueueService: d.showQueueService,
+    showQueuePhone: d.showQueuePhone,
+    showQueueWaitEstimate: d.showQueueWaitEstimate,
+    showQueueDuration: d.showQueueDuration,
+    showQueueReference: d.showQueueReference,
+  }
+}
+
+// Which draft fields belong to which card. A card saves (and shows
+// "Unsaved changes" for) only its own keys.
+const DISPLAY_LOOK_KEYS: Array<keyof DisplayDraft> = ["layout", "theme", "backgroundColor", "tagline"]
+const DISPLAY_SCREEN_KEYS: Array<keyof DisplayDraft> = ["showServices", "showBookings", "showQueue"]
+const DISPLAY_QUEUE_KEYS: Array<keyof DisplayDraft> = [
+  "showQueueTicketNumber",
+  "showQueueService",
+  "showQueuePhone",
+  "showQueueWaitEstimate",
+  "showQueueDuration",
+  "showQueueReference",
+]
+const DISPLAY_TIMING_KEYS: Array<keyof DisplayDraft> = ["welcomeSeconds", "menuBookingsSeconds", "queueSeconds"]
+const DISPLAY_WORDING_KEYS: Array<keyof DisplayDraft> = [
+  "menuTitle",
+  "bookingsTitle",
+  "queueTitle",
+  "nowServingLabel",
+  "waitingLabel",
+  "waitingEmptyText",
+  "servingEmptyText",
+  "bookingsEmptyText",
+  "walkInBadgeLabel",
+  "bookingBadgeLabel",
+]
+
+function DisplayPanel({
+  tenantSlug,
+  initial,
+  canCustomizeBranding,
+}: {
+  tenantSlug: string
+  initial: AdminDisplaySettings
+  canCustomizeBranding: boolean
+}) {
+  const form = useCardForm<DisplayDraft>({
+    initial: toDisplayDraft(initial),
+    persist: (full) => updateDisplaySettings(toDisplayPayload(full)),
+  })
+  const { draft, set } = form
+  const busy = form.savingCard !== null
+  const isBoard = draft.layout === "board"
+
+  // ColorField keeps its own text while you type, so "Discard" has to nudge
+  // it to re-read the value.
+  const [colorResetKey, setColorResetKey] = useState(0)
+
+  function footer(cardId: string, keys: Array<keyof DisplayDraft>, onDiscard?: () => void) {
+    return (
+      <CardSaveRow
+        dirty={form.isDirty(keys)}
+        isPending={form.savingCard === cardId}
+        onSave={() => form.save(cardId, keys)}
+        onDiscard={() => {
+          form.discard(keys)
+          onDiscard?.()
+        }}
+        message={form.messages[cardId] ?? null}
+      />
+    )
+  }
+
+  function textField(
+    key: keyof DisplayDraft,
+    label: string,
+    placeholder: string,
+    maxLength: number,
+    hint?: string,
+  ) {
+    return (
+      <FieldRow label={label} hint={hint ?? `Defaults to "${placeholder}".`}>
+        <input
+          className={inputClass}
+          value={draft[key] as string}
+          onChange={(e) => set(key, e.target.value as DisplayDraft[typeof key])}
+          placeholder={placeholder}
+          maxLength={maxLength}
+        />
+      </FieldRow>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <DisplayUrlPanel tenantSlug={tenantSlug} />
+
+      <SettingsCard
+        title="Layout & look"
+        description="How the TV is arranged and what it looks like. These apply to both layouts."
+        footer={footer("look", DISPLAY_LOOK_KEYS, () => setColorResetKey((k) => k + 1))}
+      >
+        <SubSection
+          title="Layout"
+          hint="Rotating slides shows one big screen at a time. Live board shows everything at once."
         >
-          <input
-            type="number"
-            min={10}
-            max={600}
-            className={inputClass}
-            value={idleRefreshSeconds}
-            onChange={(e) => setIdleRefreshSeconds(Number(e.target.value))}
-          />
-        </FieldRow>
-
-        <FieldRow
-          label="Confirmation refresh time (seconds)"
-          hint="The time it takes before the kiosk redirects to the start page after displaying the confirmation page."
-        >
-          <input
-            type="number"
-            min={3}
-            max={120}
-            className={inputClass}
-            value={confirmationRefreshSeconds}
-            onChange={(e) => setConfirmationRefreshSeconds(Number(e.target.value))}
-          />
-        </FieldRow>
-
-        <div>
-          <span className="mb-1 block text-sm text-stone-600">Registration types allowed</span>
-          <p className="mb-2 text-xs text-stone-400">Choose what type of registration is publicly allowed.</p>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {REGISTRATION_TYPE_OPTIONS.map((option) => {
-              const selected = registrationType === option.value
+          <div className="grid gap-2 sm:grid-cols-2">
+            {DISPLAY_LAYOUT_OPTIONS.map((option) => {
+              const selected = draft.layout === option.value
               return (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => setRegistrationType(option.value)}
+                  disabled={busy}
+                  onClick={() => set("layout", option.value)}
                   aria-pressed={selected}
                   className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
                     selected
@@ -541,111 +1132,337 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
               )
             })}
           </div>
-        </div>
+        </SubSection>
 
-        <div className="border-t border-stone-200 pt-4">
+        <SubSection
+          title="Colour theme"
+          hint="Text colour is chosen for you so it stays readable on any background. Brand colours are nudged lighter or darker if they'd be hard to read."
+        >
+          <div className="grid gap-2 sm:grid-cols-3">
+            {DISPLAY_THEME_OPTIONS.map((option) => {
+              const selected = draft.theme === option.value
+              const locked = option.value === "custom" && !canCustomizeBranding
+              const swatch =
+                option.value === "custom"
+                  ? HEX_COLOR_PATTERN.test(draft.backgroundColor)
+                    ? draft.backgroundColor
+                    : "#15110D"
+                  : option.swatch
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={busy || locked}
+                  onClick={() => set("theme", option.value)}
+                  aria-pressed={selected}
+                  className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                    locked ? "cursor-not-allowed opacity-60 " : ""
+                  }${
+                    selected
+                      ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                      : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 shrink-0 rounded-full border border-stone-300" style={{ background: swatch }} />
+                    <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                      {option.title}
+                    </span>
+                  </span>
+                  <span className="text-xs text-stone-500">
+                    {locked ? "Custom background colours are a Business plan feature." : option.description}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {draft.theme === "custom" && canCustomizeBranding && (
+            <div className="max-w-xs">
+              <ColorField
+                key={colorResetKey}
+                label="Background colour"
+                value={draft.backgroundColor}
+                onChange={(hex) => set("backgroundColor", hex)}
+              />
+            </div>
+          )}
+        </SubSection>
+
+        <SubSection title="Tagline">
           <FieldRow
-            label="Service screen heading"
-            hint={`Shown on every kiosk path (booking, queue, or both) when picking a service. Defaults to "${DEFAULT_SERVICE_SCREEN_TITLE}".`}
+            label="Tagline under your name"
+            hint="Separate from the kiosk tagline, so “Tap anywhere to check in” never shows on the TV. Leave empty for none."
           >
             <input
               className={inputClass}
-              value={serviceScreenTitle}
-              onChange={(e) => setServiceScreenTitle(e.target.value)}
-              placeholder={DEFAULT_SERVICE_SCREEN_TITLE}
+              value={draft.tagline}
+              onChange={(e) => set("tagline", e.target.value)}
+              placeholder="e.g. Walk-ins welcome"
               maxLength={80}
             />
           </FieldRow>
-        </div>
+        </SubSection>
+      </SettingsCard>
 
-        {registrationType !== "queue" && (
-          <div>
-            <FieldRow
-              label="Date screen heading"
-              hint={`Shown on the booking path, right after picking a service. Defaults to "${DEFAULT_DATE_SCREEN_TITLE}".`}
-            >
+      <SettingsCard
+        title="Screens to show"
+        description={
+          isBoard
+            ? "Choose which sections appear on the board. A section with nothing to show is left out automatically."
+            : "Choose which screens are in the rotation. A screen with nothing to show is skipped automatically."
+        }
+        footer={footer("screens", DISPLAY_SCREEN_KEYS)}
+      >
+        <ToggleRow
+          title="Menu"
+          description="Your bookable services and prices."
+          checked={draft.showServices}
+          disabled={busy}
+          onChange={(v) => set("showServices", v)}
+        />
+        <ToggleRow
+          title="Upcoming bookings"
+          description="Confirmed appointments coming up next."
+          checked={draft.showBookings}
+          disabled={busy}
+          onChange={(v) => set("showBookings", v)}
+        />
+        <ToggleRow
+          title="Live queue"
+          description="Who's being served now and who's waiting."
+          checked={draft.showQueue}
+          disabled={busy}
+          onChange={(v) => set("showQueue", v)}
+        />
+      </SettingsCard>
+
+      <SettingsCard
+        title="Queue ticket details"
+        description="What shows next to each customer's name. A detail is skipped for any ticket that doesn't have it."
+        footer={footer("queue", DISPLAY_QUEUE_KEYS)}
+      >
+        <ToggleRow
+          title="Ticket number"
+          description='e.g. Q014. Fills the first column (headed "Ticket"). When off, that column shows plain positions: 1, 2, 3…'
+          checked={draft.showQueueTicketNumber}
+          disabled={busy}
+          onChange={(v) => set("showQueueTicketNumber", v)}
+        />
+        <ToggleRow
+          title="Service"
+          description="Turn this off if you don't use services, or don't want them shown here."
+          checked={draft.showQueueService}
+          disabled={busy}
+          onChange={(v) => set("showQueueService", v)}
+        />
+        <ToggleRow
+          title="Cellphone number"
+          description="Always shown masked (e.g. 071 *** **34). The raw number is never sent to the TV. Off by default because this screen is public."
+          checked={draft.showQueuePhone}
+          disabled={busy}
+          onChange={(v) => set("showQueuePhone", v)}
+        />
+        <ToggleRow
+          title="Estimated wait time"
+          description="How much longer each waiting customer is likely to wait."
+          checked={draft.showQueueWaitEstimate}
+          disabled={busy}
+          onChange={(v) => set("showQueueWaitEstimate", v)}
+        />
+        <ToggleRow
+          title="Time waited so far"
+          description="How long each customer has already been in the queue."
+          checked={draft.showQueueDuration}
+          disabled={busy}
+          onChange={(v) => set("showQueueDuration", v)}
+        />
+        <ToggleRow
+          title="Booking reference"
+          description="Only appears for tickets that came from a confirmed booking, not walk-ins."
+          checked={draft.showQueueReference}
+          disabled={busy}
+          onChange={(v) => set("showQueueReference", v)}
+        />
+      </SettingsCard>
+
+      {!isBoard && (
+        <SettingsCard
+          title="Timing"
+          description="How long each screen stays up. Only applies to the rotating-slides layout."
+          footer={footer("timing", DISPLAY_TIMING_KEYS)}
+        >
+          <FieldRow
+            label="Welcome slide (seconds)"
+            hint="How long your logo and name show when the screen first starts. It never repeats after that."
+          >
+            <input
+              type="number"
+              min={2}
+              max={30}
+              className={inputClass}
+              value={draft.welcomeSeconds}
+              onChange={(e) => set("welcomeSeconds", Number(e.target.value))}
+            />
+          </FieldRow>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FieldRow label="Menu & bookings (seconds)" hint="How long each of these screens shows before moving on.">
               <input
+                type="number"
+                min={3}
+                max={120}
                 className={inputClass}
-                value={dateScreenTitle}
-                onChange={(e) => setDateScreenTitle(e.target.value)}
-                placeholder={DEFAULT_DATE_SCREEN_TITLE}
-                maxLength={80}
+                value={draft.menuBookingsSeconds}
+                onChange={(e) => set("menuBookingsSeconds", Number(e.target.value))}
+              />
+            </FieldRow>
+            <FieldRow label="Live queue (seconds)" hint="Usually longer, since there's more to read.">
+              <input
+                type="number"
+                min={3}
+                max={300}
+                className={inputClass}
+                value={draft.queueSeconds}
+                onChange={(e) => set("queueSeconds", Number(e.target.value))}
               />
             </FieldRow>
           </div>
-        )}
+        </SettingsCard>
+      )}
 
-        {registrationType === "both" && (
-          <div className="border-t border-stone-200 pt-4">
-            <span className="mb-1 block text-sm font-medium text-stone-800">Choice screen wording</span>
-            <p className="mb-3 text-xs text-stone-400">
-              What customers see on the screen where they pick booking or the walk-in queue. Rename these to fit
-              your business — e.g. &quot;Reserve a table&quot; / &quot;Get in line&quot;.
-            </p>
-
-            <div className="space-y-4">
-              <FieldRow label="Screen heading" hint={`Defaults to "${DEFAULT_CHOICE_TITLE}".`}>
-                <input
-                  className={inputClass}
-                  value={choiceTitle}
-                  onChange={(e) => setChoiceTitle(e.target.value)}
-                  placeholder={DEFAULT_CHOICE_TITLE}
-                  maxLength={80}
-                />
-              </FieldRow>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-4 rounded-xl border border-stone-200 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Booking card</p>
-                  <FieldRow label="Title" hint={`Defaults to "${DEFAULT_BOOKING_CARD_TITLE}".`}>
-                    <input
-                      className={inputClass}
-                      value={bookingCardTitle}
-                      onChange={(e) => setBookingCardTitle(e.target.value)}
-                      placeholder={DEFAULT_BOOKING_CARD_TITLE}
-                      maxLength={40}
-                    />
-                  </FieldRow>
-                  <FieldRow label="Subtitle" hint={`Defaults to "${DEFAULT_BOOKING_CARD_SUBTITLE}".`}>
-                    <input
-                      className={inputClass}
-                      value={bookingCardSubtitle}
-                      onChange={(e) => setBookingCardSubtitle(e.target.value)}
-                      placeholder={DEFAULT_BOOKING_CARD_SUBTITLE}
-                      maxLength={100}
-                    />
-                  </FieldRow>
-                </div>
-
-                <div className="space-y-4 rounded-xl border border-stone-200 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Queue card</p>
-                  <FieldRow label="Title" hint={`Defaults to "${DEFAULT_QUEUE_CARD_TITLE}".`}>
-                    <input
-                      className={inputClass}
-                      value={queueCardTitle}
-                      onChange={(e) => setQueueCardTitle(e.target.value)}
-                      placeholder={DEFAULT_QUEUE_CARD_TITLE}
-                      maxLength={40}
-                    />
-                  </FieldRow>
-                  <FieldRow label="Subtitle" hint={`Defaults to "${DEFAULT_QUEUE_CARD_SUBTITLE}".`}>
-                    <input
-                      className={inputClass}
-                      value={queueCardSubtitle}
-                      onChange={(e) => setQueueCardSubtitle(e.target.value)}
-                      placeholder={DEFAULT_QUEUE_CARD_SUBTITLE}
-                      maxLength={100}
-                    />
-                  </FieldRow>
-                </div>
-              </div>
-            </div>
+      <SettingsCard
+        title="Wording"
+        description="Every piece of text on the TV is yours to change. Leave a field empty to use the default shown in it."
+        footer={footer("wording", DISPLAY_WORDING_KEYS)}
+      >
+        <SubSection title="Screen headings">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {textField("menuTitle", "Menu heading", DEFAULT_DISPLAY_MENU_TITLE, 60)}
+            {textField("bookingsTitle", "Bookings heading", DEFAULT_DISPLAY_BOOKINGS_TITLE, 60)}
+            {textField("queueTitle", "Queue heading", DEFAULT_DISPLAY_QUEUE_TITLE, 60)}
+            {textField("nowServingLabel", '"Now serving" label', DEFAULT_DISPLAY_NOW_SERVING_LABEL, 40)}
           </div>
-        )}
-      </div>
+        </SubSection>
 
-      <SaveRow isPending={isPending} onSave={save} message={message} />
+        {isBoard ? (
+          <SubSection title="Live board" hint="Column heading, empty-column messages and ticket badges.">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {textField("waitingLabel", '"Waiting" column heading', DEFAULT_DISPLAY_WAITING_LABEL, 40)}
+              <div className="hidden sm:block" />
+              {textField(
+                "waitingEmptyText",
+                "Waiting column — empty message",
+                DEFAULT_DISPLAY_WAITING_EMPTY,
+                100,
+                "Shown when nobody is waiting.",
+              )}
+              {textField(
+                "servingEmptyText",
+                "Now serving column — empty message",
+                DEFAULT_DISPLAY_SERVING_EMPTY,
+                100,
+                "Shown when nobody is being served.",
+              )}
+              {textField(
+                "bookingsEmptyText",
+                "Bookings column — empty message",
+                DEFAULT_DISPLAY_BOOKINGS_EMPTY,
+                100,
+                "Shown when there are no upcoming bookings.",
+              )}
+              <div className="hidden sm:block" />
+              {textField(
+                "walkInBadgeLabel",
+                "Walk-in ticket badge",
+                DEFAULT_DISPLAY_WALKIN_BADGE,
+                20,
+                "Small label on tickets from customers who walked in.",
+              )}
+              {textField(
+                "bookingBadgeLabel",
+                "Booking ticket badge",
+                DEFAULT_DISPLAY_BOOKING_BADGE,
+                20,
+                "Small label on tickets that came from a booking.",
+              )}
+            </div>
+          </SubSection>
+        ) : (
+          <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
+            More wording options (column heading, empty messages, ticket badges) appear here when you choose the Live
+            board layout.
+          </p>
+        )}
+      </SettingsCard>
     </div>
+  )
+}
+
+// ---- Display URL + QR code -------------------------------------------------
+
+function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [origin, setOrigin] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
+
+  const displayUrl = origin ? `${origin}/display/${tenantSlug}` : null
+
+  async function copyUrl() {
+    if (!displayUrl) return
+    try {
+      await navigator.clipboard.writeText(displayUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can be unavailable (e.g. insecure context) — the URL
+      // is already selectable in the input, so this just skips the toast.
+    }
+  }
+
+  return (
+    <SettingsCard
+      title="Screen address"
+      description="Open this link in the TV's browser and leave the tab open. No login needed."
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex-1 space-y-2">
+          <div className="flex gap-2">
+            <input className={inputClass} readOnly value={displayUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
+            <button type="button" className={secondaryButtonClass} onClick={copyUrl} disabled={!displayUrl}>
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          {displayUrl && (
+            <a
+              href={displayUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-sm font-medium text-[#7A2E3A] hover:underline"
+            >
+              Open the screen ↗
+            </a>
+          )}
+        </div>
+
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+          {displayUrl ? (
+            // Third-party QR generator — this URL isn't sensitive.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(displayUrl)}`}
+              alt="QR code linking to the display"
+              width={160}
+              height={160}
+            />
+          ) : (
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-stone-400">Loading…</div>
+          )}
+          <span className="text-xs text-stone-500">Scan to open on a phone or tablet</span>
+        </div>
+      </div>
+    </SettingsCard>
   )
 }
 
@@ -659,22 +1476,39 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
 // updateBranding()/uploadLogo()/removeLogo() actions as before — nothing
 // about the data layer changed, only where the controls live.
 // ---------------------------------------------------------------------------
-function PrivateLabelPanel({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+function PrivateLabelPanel({
+  plan,
+  canRemovePoweredBy,
+  canCustomizeBranding,
+  initial,
+  onBrandingChange,
+}: {
+  plan: AdminPlan
+  canRemovePoweredBy: boolean
+  canCustomizeBranding: boolean
+  initial: AdminBranding
+  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
+}) {
   return (
     <div className="space-y-3">
-      <div>
-        <p className="font-[family-name:var(--font-admin-serif)] text-xl text-stone-900">Private Label</p>
-        <p className="text-sm text-stone-500">
-          Control the brand customers see across your booking, queue, kiosk, and WhatsApp experience.
-        </p>
-      </div>
-
-      <BrandingFields plan={plan} initial={initial} />
+      <BrandingFields plan={plan} canRemovePoweredBy={canRemovePoweredBy} canCustomizeBranding={canCustomizeBranding} initial={initial} onBrandingChange={onBrandingChange} />
     </div>
   )
 }
 
-function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBranding }) {
+function BrandingFields({
+  plan,
+  canRemovePoweredBy,
+  canCustomizeBranding,
+  initial,
+  onBrandingChange,
+}: {
+  plan: AdminPlan
+  canRemovePoweredBy: boolean
+  canCustomizeBranding: boolean
+  initial: AdminBranding
+  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
+}) {
   const [form, setForm] = useState({
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
@@ -691,7 +1525,6 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
-  const isBusiness = plan === "business"
 
   function save() {
     setMessage(null)
@@ -699,6 +1532,7 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
       const result = await updateBranding(form)
       if (result.success) {
         setMessage({ ok: true, text: "Saved." })
+        onBrandingChange?.({ displayName: form.displayName })
       } else {
         setMessage({ ok: false, text: result.error })
         setForm((f) => ({ ...f, removePoweredBy: initial.removePoweredBy }))
@@ -707,7 +1541,7 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
   }
 
   function handleRemovePoweredByChange(next: boolean) {
-    if (next && !isBusiness) {
+    if (next && !canRemovePoweredBy) {
       setShowUpgradePrompt(true)
       return
     }
@@ -735,6 +1569,7 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
       const result = await uploadLogo(formData)
       if (result.success) {
         setLogoUrl(result.logoUrl)
+        onBrandingChange?.({ logoUrl: result.logoUrl })
       } else {
         setLogoError(result.error)
       }
@@ -746,8 +1581,12 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
     setLogoError(null)
     startLogoTransition(async () => {
       const result = await removeLogo()
-      if (result.success) setLogoUrl(null)
-      else setLogoError(result.error)
+      if (result.success) {
+        setLogoUrl(null)
+        onBrandingChange?.({ logoUrl: null })
+      } else {
+        setLogoError(result.error)
+      }
     })
   }
 
@@ -756,6 +1595,12 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Brand identity</p>
         <p className="text-sm text-stone-500">Set the name, logo, and colors customers see when interacting with your business.</p>
+        {!canCustomizeBranding && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Custom logo and brand colours are a Business plan feature. Your display name can be changed on any plan.
+            Upgrade from Plans &amp; Billing to unlock the rest.
+          </p>
+        )}
 
         <div className="mt-4 space-y-4">
           <FieldRow label="Display name">
@@ -781,7 +1626,7 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isLogoPending}
+                    disabled={isLogoPending || !canCustomizeBranding}
                     className={secondaryButtonClass}
                   >
                     {isLogoPending ? "Uploading…" : logoUrl ? "Change logo" : "Upload logo"}
@@ -810,7 +1655,10 @@ function BrandingFields({ plan, initial }: { plan: AdminPlan; initial: AdminBran
             {logoError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{logoError}</p>}
           </FieldRow>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div
+            className={`grid grid-cols-2 gap-3 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+            aria-disabled={!canCustomizeBranding}
+          >
             <ColorField
               label="Primary color"
               value={form.primaryColor ?? "#7A2E3A"}
@@ -943,7 +1791,7 @@ function BookingSettingsPanel({ initial }: { initial: AdminBookingSettings }) {
       </div>
 
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Booking rules</p>
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Timing &amp; cancellations</p>
         <p className="text-sm text-stone-500">Timing defaults for appointments at this location.</p>
 
         <div className="mt-4 space-y-3">
@@ -973,11 +1821,11 @@ function BookingSettingsPanel({ initial }: { initial: AdminBookingSettings }) {
           </FieldRow>
           <FieldRow
             label="How far ahead customers can book (days)"
-            hint="Customers can book up to and including this many days ahead, in your shop's timezone. Also still limited by your Opening Hours."
+            hint="Customers can book up to and including this many days ahead, in your shop's timezone. Also still limited by your Opening Hours. Set to 0 for same-day booking only — the kiosk and booking flow then skip the date picker entirely and go straight to today's available times."
           >
             <input
               type="number"
-              min={1}
+              min={0}
               className={inputClass}
               value={form.maxAdvanceDays}
               onChange={(e) => setForm({ ...form, maxAdvanceDays: Number(e.target.value) })}
@@ -1060,7 +1908,7 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
 
   return (
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Queue</p>
+      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Walk-in line</p>
       <p className="text-sm text-stone-500">How the walk-in line behaves for this location.</p>
 
       <div className="mt-4 space-y-4">
@@ -1113,6 +1961,50 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
             onChange={(next) => setForm({ ...form, allowWalkinKiosk: next })}
           />
         </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
+          <div>
+            <p className="text-sm font-medium text-stone-800">Require a service to join the queue</p>
+            <p className="text-sm text-stone-500">
+              Turn this off if walk-ins don&apos;t choose between services — they&apos;ll skip straight to giving
+              their name and number on the kiosk, WhatsApp, and admin.
+            </p>
+          </div>
+          <Toggle
+            checked={form.requireServiceSelection}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, requireServiceSelection: next })}
+          />
+        </div>
+
+        {!form.requireServiceSelection && (
+          <FieldRow label="Estimated minutes to serve a walk-in with no service">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={form.defaultServiceDurationMinutes}
+              onChange={(e) =>
+                setForm({ ...form, defaultServiceDurationMinutes: Number(e.target.value) })
+              }
+            />
+          </FieldRow>
+        )}
+
+        <FieldRow label="Queue ticket number format">
+          <input
+            type="text"
+            maxLength={4}
+            placeholder="e.g. Q"
+            className={inputClass}
+            value={form.ticketNumberPrefix}
+            onChange={(e) => setForm({ ...form, ticketNumberPrefix: e.target.value.toUpperCase() })}
+          />
+          <p className="text-sm text-stone-500 mt-1">
+            Shown on printed kiosk tickets and WhatsApp confirmations — e.g. &quot;Q&quot; gives tickets like Q001,
+            Q002. Use your own initials or a short word instead if you&apos;d rather not use Q (1–4 characters).
+          </p>
+        </FieldRow>
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />
@@ -1140,7 +2032,7 @@ function MessageSettingsPanel({ initial }: { initial: AdminMessageSettings }) {
     <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Messages</p>
+          <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Templates &amp; AI</p>
           <p className="text-sm text-stone-500">WhatsApp templates and default AI handling for conversations.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -1204,6 +2096,178 @@ function MessageSettingsPanel({ initial }: { initial: AdminMessageSettings }) {
 // ---------------------------------------------------------------------------
 // Shared bits
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Layout primitives -- every settings page is built from these so they all
+// look and behave the same: a page header, then cards. One card = one topic.
+// ---------------------------------------------------------------------------
+
+function SettingsPageHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <header className="border-b border-stone-200 pb-4">
+      <h2 className="font-[family-name:var(--font-admin-serif)] text-2xl tracking-tight text-stone-900">{title}</h2>
+      <p className="mt-1 text-sm text-stone-500">{description}</p>
+    </header>
+  )
+}
+
+function SettingsCard({
+  title,
+  description,
+  children,
+  footer,
+}: {
+  title: string
+  description?: string
+  children: React.ReactNode
+  footer?: React.ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
+      <header className="mb-4">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</h3>
+        {description && <p className="mt-0.5 text-sm text-stone-500">{description}</p>}
+      </header>
+      <div className="space-y-4">{children}</div>
+      {footer}
+    </section>
+  )
+}
+
+/** A labelled group inside a card. Deliberately heavier than a field label
+ *  so the eye can tell "section" from "row". */
+function SubSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-3 border-t border-stone-100 pt-4 first:border-t-0 first:pt-0">
+      <div>
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-500">{title}</h4>
+        {hint && <p className="mt-1 text-xs text-stone-400">{hint}</p>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function ToggleRow({
+  title,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  title: string
+  description: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 p-3">
+      <div>
+        <p className="text-sm font-medium text-stone-800">{title}</p>
+        <p className="text-xs text-stone-500">{description}</p>
+      </div>
+      <Toggle checked={checked} disabled={disabled} onChange={onChange} />
+    </div>
+  )
+}
+
+/** Save footer for a card that tracks its own unsaved changes. */
+function CardSaveRow({
+  dirty,
+  isPending,
+  onSave,
+  onDiscard,
+  message,
+}: {
+  dirty: boolean
+  isPending: boolean
+  onSave: () => void
+  onDiscard: () => void
+  message: { ok: boolean; text: string } | null
+}) {
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-stone-100 pt-4">
+      <button type="button" onClick={onSave} disabled={!dirty || isPending} className={primaryButtonClass}>
+        {isPending ? "Saving…" : "Save changes"}
+      </button>
+      {dirty && !isPending && (
+        <button type="button" onClick={onDiscard} className={secondaryButtonClass}>
+          Discard
+        </button>
+      )}
+      {message ? (
+        <span className={`text-sm ${message.ok ? "text-[#4B6B54]" : "text-red-700"}`}>{message.text}</span>
+      ) : dirty ? (
+        <span className="text-sm text-amber-700">Unsaved changes</span>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Draft/saved form state with per-card saving.
+ *
+ * The server actions take the WHOLE record, so a card can't just send its own
+ * fields. Instead each card saves `{ ...lastSaved, ...thisCard'sDraftFields }`:
+ * only that card's edits are written, and edits sitting unsaved in other cards
+ * are left alone (and keep showing their own "Unsaved changes").
+ */
+function useCardForm<T extends Record<string, unknown>>({
+  initial,
+  persist,
+}: {
+  initial: T
+  persist: (full: T) => Promise<{ success: true } | { success: false; error: string }>
+}) {
+  const [saved, setSaved] = useState<T>(initial)
+  const [draft, setDraft] = useState<T>(initial)
+  const [savingCard, setSavingCard] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Record<string, { ok: boolean; text: string } | null>>({})
+
+  function set<K extends keyof T>(key: K, value: T[K]) {
+    setDraft((d) => ({ ...d, [key]: value }))
+    setMessages({})
+  }
+
+  function isDirty(keys: Array<keyof T>) {
+    return keys.some((k) => draft[k] !== saved[k])
+  }
+
+  function discard(keys: Array<keyof T>) {
+    setDraft((d) => {
+      const next = { ...d }
+      for (const k of keys) next[k] = saved[k]
+      return next
+    })
+    setMessages({})
+  }
+
+  async function save(cardId: string, keys: Array<keyof T>) {
+    const merged = { ...saved }
+    for (const k of keys) merged[k] = draft[k]
+    setSavingCard(cardId)
+    setMessages((m) => ({ ...m, [cardId]: null }))
+    const result = await persist(merged)
+    setSavingCard(null)
+    if (result.success) {
+      setSaved(merged)
+      setMessages((m) => ({ ...m, [cardId]: { ok: true, text: "Saved." } }))
+    } else {
+      setMessages((m) => ({ ...m, [cardId]: { ok: false, text: result.error } }))
+    }
+  }
+
+  return { draft, set, isDirty, discard, save, savingCard, messages }
+}
+
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">
