@@ -181,6 +181,11 @@ export function SettingsManager({
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
+  // Queue settings are edited from two places (Kiosk > Services and Queue
+  // rules). Lifting them here keeps both in sync after a save, instead of
+  // each re-opening with the stale server-rendered copy.
+  const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
+
   const activePage = SETTINGS_PAGES.find((p) => p.id === subTab) ?? SETTINGS_PAGES[0]
 
   return (
@@ -251,6 +256,8 @@ export function SettingsManager({
           includedInPlan={kioskIncludedInPlan}
           tenantSlug={tenantSlug}
           initialKioskSettings={initialKioskSettings}
+          queueSettings={queueSettings}
+          onQueueSettingsSaved={setQueueSettings}
         />
       )}
       {subTab === "display" && (
@@ -270,7 +277,7 @@ export function SettingsManager({
         />
       )}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
-      {subTab === "queue" && <QueueSettingsPanel initial={initialQueueSettings} />}
+      {subTab === "queue" && <QueueSettingsPanel initial={queueSettings} onSaved={setQueueSettings} />}
       {subTab === "messages" && <MessageSettingsPanel initial={initialMessageSettings} />}
       </div>
     </div>
@@ -445,11 +452,15 @@ function KioskPanel({
   includedInPlan,
   tenantSlug,
   initialKioskSettings,
+  queueSettings,
+  onQueueSettingsSaved,
 }: {
   initialEnabled: boolean
   includedInPlan: boolean
   tenantSlug: string
   initialKioskSettings: AdminKioskSettings
+  queueSettings: AdminQueueSettings
+  onQueueSettingsSaved: (next: AdminQueueSettings) => void
 }) {
   const [enabled, setEnabled] = useState(initialEnabled)
   const [isTogglePending, startToggleTransition] = useTransition()
@@ -504,8 +515,142 @@ function KioskPanel({
 
       <KioskUrlPanel tenantSlug={tenantSlug} />
 
+      <KioskServicesPanel queueSettings={queueSettings} onSaved={onQueueSettingsSaved} />
+
       <KioskBehaviorPanel initial={initialKioskSettings} />
     </div>
+  )
+}
+
+// ---- Services: with or without --------------------------------------------
+//
+// Same underlying setting as "Require a service to join the queue" under
+// Queue rules (queue_settings.require_service_selection) -- surfaced here
+// because this is where an owner thinks about what customers see at the
+// kiosk. Both places read/write the same value via the shared state in
+// SettingsManager, so they can't disagree.
+
+const SERVICE_MODE_OPTIONS: Array<{ value: boolean; title: string; description: string }> = [
+  {
+    value: true,
+    title: "Customers pick a service",
+    description: "Each customer chooses what they're here for. Best when services take different amounts of time.",
+  },
+  {
+    value: false,
+    title: "No services — one line",
+    description:
+      "Customers skip the service screen and just give their name and number. Everyone joins one shared line.",
+  },
+]
+
+function KioskServicesPanel({
+  queueSettings,
+  onSaved,
+}: {
+  queueSettings: AdminQueueSettings
+  onSaved: (next: AdminQueueSettings) => void
+}) {
+  const [requireService, setRequireService] = useState(queueSettings.requireServiceSelection)
+  const [minutes, setMinutes] = useState(queueSettings.defaultServiceDurationMinutes)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const dirty =
+    requireService !== queueSettings.requireServiceSelection ||
+    minutes !== queueSettings.defaultServiceDurationMinutes
+
+  function save() {
+    if (!requireService && !(minutes >= 1)) {
+      setMessage({ ok: false, text: "Enter at least 1 minute." })
+      return
+    }
+    setMessage(null)
+    const next = {
+      ...queueSettings,
+      requireServiceSelection: requireService,
+      defaultServiceDurationMinutes: minutes,
+    }
+    startTransition(async () => {
+      const result = await updateQueueSettings(next)
+      if (result.success) {
+        onSaved(next)
+        setMessage({ ok: true, text: "Saved." })
+      } else {
+        setMessage({ ok: false, text: result.error })
+      }
+    })
+  }
+
+  function discard() {
+    setRequireService(queueSettings.requireServiceSelection)
+    setMinutes(queueSettings.defaultServiceDurationMinutes)
+    setMessage(null)
+  }
+
+  return (
+    <SettingsCard
+      title="Services"
+      description="Does your shop need customers to choose a service before they join?"
+      footer={
+        <CardSaveRow dirty={dirty} isPending={isPending} onSave={save} onDiscard={discard} message={message} />
+      }
+    >
+      <div className="grid gap-2 sm:grid-cols-2">
+        {SERVICE_MODE_OPTIONS.map((option) => {
+          const selected = requireService === option.value
+          return (
+            <button
+              key={String(option.value)}
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setRequireService(option.value)
+                setMessage(null)
+              }}
+              aria-pressed={selected}
+              className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                selected
+                  ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                  : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+              }`}
+            >
+              <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                {option.title}
+              </span>
+              <span className="text-xs text-stone-500">{option.description}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {!requireService && (
+        <div className="max-w-xs">
+          <FieldRow
+            label="Estimated minutes per customer"
+            hint="Used to work out wait times when there's no service to take the length from."
+          >
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={minutes}
+              onChange={(e) => {
+                setMinutes(Number(e.target.value))
+                setMessage(null)
+              }}
+            />
+          </FieldRow>
+        </div>
+      )}
+
+      <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
+        Bookings always need a service (available times depend on how long it takes), so pair &ldquo;No
+        services&rdquo; with <strong>Queue Only</strong> under Customer options below. This setting also applies to
+        WhatsApp and admin walk-ins. If you haven&apos;t added any services yet, the kiosk already skips the service
+        screen and shows only the walk-in queue.
+      </p>
+    </SettingsCard>
   )
 }
 
@@ -1893,7 +2038,13 @@ function BookingSettingsPanel({ initial }: { initial: AdminBookingSettings }) {
 // ---------------------------------------------------------------------------
 // Queue
 // ---------------------------------------------------------------------------
-function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
+function QueueSettingsPanel({
+  initial,
+  onSaved,
+}: {
+  initial: AdminQueueSettings
+  onSaved?: (next: AdminQueueSettings) => void
+}) {
   const [form, setForm] = useState(initial)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -1902,6 +2053,7 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
     setMessage(null)
     startTransition(async () => {
       const result = await updateQueueSettings(form)
+      if (result.success) onSaved?.(form)
       setMessage(result.success ? { ok: true, text: "Saved." } : { ok: false, text: result.error })
     })
   }
@@ -1967,7 +2119,7 @@ function QueueSettingsPanel({ initial }: { initial: AdminQueueSettings }) {
             <p className="text-sm font-medium text-stone-800">Require a service to join the queue</p>
             <p className="text-sm text-stone-500">
               Turn this off if walk-ins don&apos;t choose between services — they&apos;ll skip straight to giving
-              their name and number on the kiosk, WhatsApp, and admin.
+              their name and number on the kiosk, WhatsApp, and admin. You can also change this under Kiosk.
             </p>
           </div>
           <Toggle
