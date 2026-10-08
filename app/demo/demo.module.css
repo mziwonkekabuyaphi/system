@@ -83,6 +83,43 @@
   }
 }
 
+/* Solid top bar variant, used on pages without a hero panel (e.g. /demo/pricing):
+   brand pinned to the far left, buttons to the far right, bar in normal flow. */
+.siteNavBar {
+  position: static;
+  pointer-events: auto;
+  border-bottom: 1px solid var(--qless-line);
+  background: var(--qless-paper);
+}
+
+.siteNavInnerBar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 16px 24px;
+}
+
+.siteNavBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--qless-font-mono);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  color: var(--qless-ink);
+  text-decoration: none;
+}
+
+/* Keep dark-on-light button colours in the bar (beats the mobile rule above) */
+.siteNavBar .siteNavActions .btnSecondary {
+  color: var(--qless-ink);
+  border-color: var(--qless-line);
+}
+
+@media (max-width: 860px) {
+  .siteNavInnerBar { padding: 12px 16px; }
+}
+
 .btnSm {
   padding: 8px 16px;
   font-size: 14px;
