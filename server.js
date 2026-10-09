@@ -21,7 +21,7 @@ const express = require("express")
 const { ThermalPrinter, PrinterTypes } = require("node-thermal-printer")
 
 const PORT = 4000
-const ALLOWED_ORIGIN = const ALLOWED_ORIGIN = "https://system-eta-azure.vercel.app"
+const ALLOWED_ORIGIN = "https://system-eta-azure.vercel.app"
  // <-- set this to your real kiosk URL's origin
 const PRINTER_ADDRESS = "tcp://127.0.0.1:9100" // TM Virtual Port Driver's local endpoint
 
