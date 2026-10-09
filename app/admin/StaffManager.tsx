@@ -229,7 +229,10 @@ export function StaffManager({
     <div className="space-y-10">
       <StaffClockInUrlPanel tenantSlug={tenantSlug} />
 
-      {/* ================= Currently clocked in ================= */}
+      {/* ================= Currently clocked in =================
+          staff.manage only — matches page.tsx, which doesn't even fetch
+          active shifts for anyone else. */}
+      {permissions.staffManage && (
       <section>
         <h3 className="text-sm font-semibold text-[#1C1A17]">Currently clocked in</h3>
         {activeShifts.length === 0 ? (
@@ -258,6 +261,7 @@ export function StaffManager({
           </ul>
         )}
       </section>
+      )}
 
       {/* ================= Staff list ================= */}
       <section>

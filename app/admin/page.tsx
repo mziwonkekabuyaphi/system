@@ -158,7 +158,12 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
 // hourlyRate ONLY as a present-or-absent key gated on payroll.view (see
 // that field's doc comment in types.ts) — never sent as `null` to signal
 // "no permission", since a real rate can legitimately be null too.
-async function getAllStaff(supabase: ServerClient, tenantId: string, includeHourlyRate: boolean): Promise<AdminStaff[]> {
+async function getAllStaff(
+  supabase: ServerClient,
+  tenantId: string,
+  includeHourlyRate: boolean,
+  includeClockInPin: boolean,
+): Promise<AdminStaff[]> {
   const columns = includeHourlyRate
     ? "id, name, active, job_title, phone, email, clock_in_pin, profile_id, hourly_rate"
     : "id, name, active, job_title, phone, email, clock_in_pin, profile_id"
@@ -175,7 +180,9 @@ async function getAllStaff(supabase: ServerClient, tenantId: string, includeHour
       jobTitle: s.job_title,
       phone: s.phone,
       email: s.email,
-      clockInPin: s.clock_in_pin,
+      // A colleague's PIN lets you clock in as them at /clock/[slug], so
+      // only staff.manage callers (who can edit it) ever receive it.
+      clockInPin: includeClockInPin ? s.clock_in_pin : null,
       hasLogin: !!s.profile_id,
     }
     // Spreading conditionally, rather than always setting hourlyRate (even
@@ -588,6 +595,11 @@ async function getInboxData(
   return { conversations, stats }
 }
 
+const EMPTY_INBOX: { conversations: AdminConversationSummary[]; stats: AdminInboxStats } = {
+  conversations: [],
+  stats: { totalConversations: 0, aiActiveCount: 0, needsHumanCount: 0, volumeByDay: [], topCustomers: [] },
+}
+
 export default async function AdminPage() {
   // Redirects to /login if there's no session or no active tenant
   // membership — see layout.tsx, which already calls this once per
@@ -662,8 +674,12 @@ export default async function AdminPage() {
     getTodaysBookings(supabase, tenantId),
     getTodaysQueue(supabase, tenantId),
     permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
-    getAllStaff(supabase, tenantId, permissions.payrollView),
-    getInboxData(supabase, tenantId),
+    getAllStaff(supabase, tenantId, permissions.payrollView, permissions.staffManage),
+    // Inbox = customer phone numbers, message previews and volume
+    // analytics. Owner-only for now (settings.manage is the closest
+    // existing owner-only key); swap for a dedicated inbox.view key if
+    // you add one.
+    permissions.settingsManage ? getInboxData(supabase, tenantId) : Promise.resolve(EMPTY_INBOX),
     permissions.settingsManage ? getSettingsData(supabase, tenantId) : getTenantIdentity(supabase, tenantId),
   ])
 
@@ -673,7 +689,9 @@ export default async function AdminPage() {
   // the whole page if this table/join doesn't match what's really there.
   let activeShifts: AdminStaffShift[] = []
   try {
-    activeShifts = await getActiveShifts(supabase, tenantId)
+    // Who's clocked in right now is a staff.manage view (it sits next to
+    // the Force clock out button) — never fetched for anyone else.
+    if (permissions.staffManage) activeShifts = await getActiveShifts(supabase, tenantId)
   } catch (err) {
     console.error("[admin] getActiveShifts failed — falling back to empty list", err)
   }

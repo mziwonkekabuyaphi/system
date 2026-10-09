@@ -182,6 +182,11 @@ export function AdminView({
   const visibleTabs = TABS.filter((t) => {
     if (t.id === "services") return staffPermissions.servicesManage
     if (t.id === "settings") return staffPermissions.settingsManage
+    // Billing and Inbox are owner-only for now. settings.manage is the
+    // closest existing owner-only key; swap in dedicated keys
+    // (billing.view / inbox.view) if you add them.
+    if (t.id === "billing") return staffPermissions.settingsManage
+    if (t.id === "inbox") return staffPermissions.settingsManage
     return true
   })
 
@@ -322,7 +327,7 @@ export function AdminView({
         <main className="px-6 pb-24 pt-2">
           {tab === "today" && <TodayBookings initialBookings={initialBookings} />}
           {tab === "queue" && <QueueManager initialQueue={initialQueue} />}
-          {tab === "inbox" && (
+          {tab === "inbox" && staffPermissions.settingsManage && (
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}
           {tab === "services" && staffPermissions.servicesManage && (
@@ -336,7 +341,7 @@ export function AdminView({
               tenantSlug={tenantSlug}
             />
           )}
-          {tab === "billing" && <BillingPanel />}
+          {tab === "billing" && staffPermissions.settingsManage && <BillingPanel />}
           {/* initialTenantSettings/initialKioskSettings/initialDisplaySettings/
               initialBookingSettings/initialQueueSettings/initialMessageSettings/
               initialBusinessHours are guaranteed non-null exactly when
