@@ -392,6 +392,63 @@ async function assertPinAvailable(
   return null
 }
 
+// ---- Staff sign-in (auth user + profile + tenant membership) ----------------
+// A `staff` row is only a roster/clock-in record. To let someone sign in to
+// /admin they also need: an auth.users row (the handle_new_auth_user trigger
+// then creates their profiles row), and an active tenant_members row with the
+// "Tenant Staff" role. staff.profile_id links the two.
+
+const MIN_LOGIN_PASSWORD = 8
+
+async function provisionStaffLogin(
+  supabase: ServerClient,
+  tenantId: string,
+  person: { name: string; email: string; password: string },
+): Promise<{ ok: true; profileId: string } | { ok: false; error: string }> {
+  const email = person.email.trim().toLowerCase()
+  if (!email) return { ok: false, error: "An email is required to give someone a login." }
+  if (person.password.length < MIN_LOGIN_PASSWORD) {
+    return { ok: false, error: `Login password must be at least ${MIN_LOGIN_PASSWORD} characters.` }
+  }
+
+  const { data: role, error: roleError } = await supabase
+    .from("roles")
+    .select("id")
+    .eq("name", "Tenant Staff")
+    .maybeSingle()
+  if (roleError || !role) return { ok: false, error: "Couldn't find the Tenant Staff role." }
+
+  const { data: created, error: createError } = await supabase.auth.admin.createUser({
+    email,
+    password: person.password,
+    email_confirm: true, // owner vouches for the address; no confirmation email round-trip
+    user_metadata: { full_name: person.name.trim() },
+  })
+  if (createError || !created?.user) {
+    const msg = createError?.message ?? "Couldn't create the login."
+    if (/already (been )?registered|already exists/i.test(msg)) {
+      return { ok: false, error: "Someone already has an account with that email. Use a different email." }
+    }
+    return { ok: false, error: msg }
+  }
+
+  const profileId = created.user.id
+  const { error: memberError } = await supabase
+    .from("tenant_members")
+    .insert([{ tenant_id: tenantId, profile_id: profileId, role_id: role.id, status: "active" }])
+  if (memberError) {
+    await supabase.auth.admin.deleteUser(profileId) // roll back so we don't leave an orphan login
+    return { ok: false, error: memberError.message }
+  }
+
+  return { ok: true, profileId }
+}
+
+async function rollbackStaffLogin(supabase: ServerClient, profileId: string) {
+  // Cascades to profiles -> tenant_members; staff.profile_id is ON DELETE SET NULL.
+  await supabase.auth.admin.deleteUser(profileId)
+}
+
 export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient("staff.manage")
   if (!supabase) return { ok: false, error: error! }
@@ -417,9 +474,21 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
   const limitError = await staffLimitError(supabase, tenantId!)
   if (limitError) return { ok: false, error: limitError }
 
+  let profileId: string | null = null
+  if (input.loginPassword) {
+    const login = await provisionStaffLogin(supabase, tenantId!, {
+      name: input.name,
+      email: input.email,
+      password: input.loginPassword,
+    })
+    if (!login.ok) return { ok: false, error: login.error }
+    profileId = login.profileId
+  }
+
   const { error: insertError } = await supabase.from("staff").insert([
     {
       tenant_id: tenantId,
+      profile_id: profileId,
       name: input.name.trim(),
       job_title: input.jobTitle.trim() || null,
       hourly_rate: "hourlyRate" in input ? input.hourlyRate : null,
@@ -430,6 +499,7 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
     },
   ])
   if (insertError) {
+    if (profileId) await rollbackStaffLogin(supabase, profileId)
     if (insertError.message.includes("staff_tenant_clock_in_pin_unique")) {
       return { ok: false, error: "That PIN is already in use by another staff member." }
     }
@@ -473,9 +543,47 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
   }
   if (canTouchRate) patch.hourly_rate = input.hourlyRate
 
+  // Login access: grant (no profile yet), reset password, and keep the
+  // sign-in email in step with the staff email.
+  const { data: existing, error: existingError } = await supabase
+    .from("staff")
+    .select("profile_id")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (existingError) return { ok: false, error: existingError.message }
+  if (!existing) return { ok: false, error: "Staff member not found." }
+
+  if (existing.profile_id) {
+    const attrs: { password?: string; email?: string } = {}
+    if (input.loginPassword) {
+      if (input.loginPassword.length < MIN_LOGIN_PASSWORD) {
+        return { ok: false, error: `Login password must be at least ${MIN_LOGIN_PASSWORD} characters.` }
+      }
+      attrs.password = input.loginPassword
+    }
+    if (input.email.trim()) attrs.email = input.email.trim().toLowerCase()
+    if (Object.keys(attrs).length) {
+      const { error: authError } = await supabase.auth.admin.updateUserById(existing.profile_id, {
+        ...attrs,
+        email_confirm: true,
+      })
+      if (authError) return { ok: false, error: authError.message }
+    }
+  } else if (input.loginPassword) {
+    const login = await provisionStaffLogin(supabase, tenantId!, {
+      name: input.name,
+      email: input.email,
+      password: input.loginPassword,
+    })
+    if (!login.ok) return { ok: false, error: login.error }
+    patch.profile_id = login.profileId
+  }
+
   const { error: updateError } = await supabase.from("staff").update(patch).eq("id", id).eq("tenant_id", tenantId)
 
   if (updateError) {
+    if (patch.profile_id) await rollbackStaffLogin(supabase, patch.profile_id as string)
     if (updateError.message.includes("staff_tenant_clock_in_pin_unique")) {
       return { ok: false, error: "That PIN is already in use by another staff member." }
     }
@@ -499,12 +607,25 @@ export async function toggleStaffActive(id: string, active: boolean): Promise<Ac
     if (limitError) return { ok: false, error: limitError }
   }
 
-  const { error: updateError } = await supabase
+  const { data: row, error: updateError } = await supabase
     .from("staff")
     .update({ active })
     .eq("id", id)
     .eq("tenant_id", tenantId)
+    .select("profile_id")
+    .maybeSingle()
   if (updateError) return { ok: false, error: updateError.message }
+
+  // Deactivated staff must not be able to sign in either (and get access
+  // back when reactivated).
+  if (row?.profile_id) {
+    const { error: memberError } = await supabase
+      .from("tenant_members")
+      .update({ status: active ? "active" : "suspended" })
+      .eq("tenant_id", tenantId)
+      .eq("profile_id", row.profile_id)
+    if (memberError) return { ok: false, error: memberError.message }
+  }
 
   await logActivity(supabase, tenantId!, {
     category: "staff",

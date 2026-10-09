@@ -28,6 +28,9 @@ export interface AdminStaff {
    *  screen, same posture as showing any other tenant setting). Staff use
    *  this PIN to clock in/out at the public /clock/[slug] pad. */
   clockInPin: string | null
+  /** True when this staff member has a sign-in (staff.profile_id is set).
+   *  Not sensitive: it only drives the "can sign in" hint in the UI. */
+  hasLogin: boolean
   /** Present ONLY when the caller has payroll.view — app/admin/page.tsx's
    *  getAllStaff() adds this key conditionally rather than always
    *  including it as null, so the key's mere presence is meaningful.
@@ -54,6 +57,10 @@ export interface AdminStaffInput {
   phone: string
   email: string
   clockInPin: string
+  /** Optional. Non-empty = create a sign-in for this person (needs `email`)
+   *  with this as their password, or reset it if they already have one.
+   *  Empty/omitted = leave login access untouched. Min 8 characters. */
+  loginPassword?: string
   hourlyRate?: number | null
 }
 

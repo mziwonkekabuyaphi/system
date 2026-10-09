@@ -17,6 +17,7 @@ type StaffFormState = {
   phone: string
   email: string
   clockInPin: string
+  loginPassword: string
   hourlyRate: number | null
 }
 
@@ -27,6 +28,7 @@ const EMPTY_FORM: StaffFormState = {
   phone: "",
   email: "",
   clockInPin: "",
+  loginPassword: "",
 }
 
 function formFromStaff(member: AdminStaff): StaffFormState {
@@ -41,6 +43,7 @@ function formFromStaff(member: AdminStaff): StaffFormState {
     phone: member.phone ?? "",
     email: member.email ?? "",
     clockInPin: member.clockInPin ?? "",
+    loginPassword: "",
   }
 }
 
@@ -188,8 +191,8 @@ export function StaffManager({
     // would just get rejected server-side anyway, but there's no reason
     // to even try.
     const payload: AdminStaffInput = permissions.payrollManage
-      ? { name: form.name, jobTitle: form.jobTitle, phone: form.phone, email: form.email, clockInPin: form.clockInPin, hourlyRate: form.hourlyRate }
-      : { name: form.name, jobTitle: form.jobTitle, phone: form.phone, email: form.email, clockInPin: form.clockInPin }
+      ? { name: form.name, jobTitle: form.jobTitle, phone: form.phone, email: form.email, clockInPin: form.clockInPin, loginPassword: form.loginPassword, hourlyRate: form.hourlyRate }
+      : { name: form.name, jobTitle: form.jobTitle, phone: form.phone, email: form.email, clockInPin: form.clockInPin, loginPassword: form.loginPassword }
 
     startSave(async () => {
       const result = isEditing ? await updateStaff(editingId!, payload) : await addStaff(payload)
@@ -268,6 +271,7 @@ export function StaffManager({
                 <div>
                   <p className={`text-[1.05rem] ${member.active ? "text-[#1C1A17]" : "text-[#8A8375]"}`}>
                     {member.name}
+                    {member.hasLogin && <span className="ml-2 text-xs text-[#8A8375]">· can sign in</span>}
                   </p>
                   <p className="text-sm text-[#8A8375]">
                     {[
@@ -385,6 +389,23 @@ export function StaffManager({
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               placeholder="thabo@example.com"
+              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-sm text-[#8A8375]">
+              {editingId && staff.find((m) => m.id === editingId)?.hasLogin
+                ? "New login password (leave blank to keep current)"
+                : "Login password (optional: lets them sign in with the email above)"}
+            </label>
+            <input
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              value={form.loginPassword}
+              onChange={(e) => setForm((f) => ({ ...f, loginPassword: e.target.value }))}
+              placeholder="At least 8 characters"
               className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
             />
           </div>

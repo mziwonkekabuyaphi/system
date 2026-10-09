@@ -160,8 +160,8 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
 // "no permission", since a real rate can legitimately be null too.
 async function getAllStaff(supabase: ServerClient, tenantId: string, includeHourlyRate: boolean): Promise<AdminStaff[]> {
   const columns = includeHourlyRate
-    ? "id, name, active, job_title, phone, email, clock_in_pin, hourly_rate"
-    : "id, name, active, job_title, phone, email, clock_in_pin"
+    ? "id, name, active, job_title, phone, email, clock_in_pin, profile_id, hourly_rate"
+    : "id, name, active, job_title, phone, email, clock_in_pin, profile_id"
 
   const { data, error } = await supabase.from("staff").select(columns).eq("tenant_id", tenantId).order("name", { ascending: true })
 
@@ -176,6 +176,7 @@ async function getAllStaff(supabase: ServerClient, tenantId: string, includeHour
       phone: s.phone,
       email: s.email,
       clockInPin: s.clock_in_pin,
+      hasLogin: !!s.profile_id,
     }
     // Spreading conditionally, rather than always setting hourlyRate (even
     // to null), is what keeps the key itself absent for a non-payroll.view
