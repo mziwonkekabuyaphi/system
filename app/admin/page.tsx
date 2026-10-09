@@ -51,6 +51,8 @@ import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 
 import { AdminView } from "./AdminView"
+import { loadDisplayContext, loadQueueEntries } from "./admin-data"
+import { BOOKING_WINDOW_DAYS_AHEAD, BOOKING_WINDOW_DAYS_BACK, addDaysKey, dateKeyInTz, startOfDayUtc } from "./tz"
 import type {
   AdminBooking,
   AdminBookingSettings,
@@ -62,7 +64,6 @@ import type {
   AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
-  AdminQueueEntry,
   AdminQueueSettings,
   AdminService,
   AdminStaff,
@@ -73,34 +74,41 @@ import type {
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
-function todayUtcRange(): { start: string; end: string } {
-  const dateISO = new Date().toISOString().slice(0, 10)
-  return {
-    start: new Date(`${dateISO}T00:00:00.000Z`).toISOString(),
-    end: new Date(`${dateISO}T23:59:59.999Z`).toISOString(),
-  }
-}
-
-async function getTodaysBookings(supabase: ServerClient, tenantId: string): Promise<AdminBooking[]> {
-  const { start, end } = todayUtcRange()
+// Appointments window: the shop's own calendar days (tenant_settings.timezone,
+// NOT UTC days) from BOOKING_WINDOW_DAYS_BACK ago to BOOKING_WINDOW_DAYS_AHEAD
+// ahead. TodayBookings.tsx does day/week navigation, search and filtering
+// client-side inside this window; the date picker is clamped to it. Tenant
+// isolation is still enforced here, server-side, by .eq("tenant_id", ...).
+async function getBookingsWindow(
+  supabase: ServerClient,
+  tenantId: string,
+  timezone: string,
+): Promise<AdminBooking[]> {
+  const todayKey = dateKeyInTz(new Date(), timezone)
+  const start = startOfDayUtc(addDaysKey(todayKey, -BOOKING_WINDOW_DAYS_BACK), timezone).toISOString()
+  // exclusive upper bound: the start of the day after the last loaded day
+  const end = startOfDayUtc(addDaysKey(todayKey, BOOKING_WINDOW_DAYS_AHEAD + 1), timezone).toISOString()
 
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      `id, start_time, end_time, status, booking_reference,
+      `id, service_id, staff_id, start_time, end_time, status, booking_reference,
        services ( name ),
        staff ( name ),
        tenant_customers ( full_name, phone )`,
     )
     .eq("tenant_id", tenantId)
     .gte("start_time", start)
-    .lte("start_time", end)
+    .lt("start_time", end)
     .order("start_time", { ascending: true })
+    .limit(2000)
 
-  if (error) throw new Error(`Failed to load today's bookings: ${error.message}`)
+  if (error) throw new Error(`Failed to load bookings: ${error.message}`)
 
   return (data ?? []).map((b: any) => ({
     id: b.id,
+    serviceId: b.service_id,
+    staffId: b.staff_id,
     startTime: b.start_time,
     endTime: b.end_time,
     status: b.status,
@@ -109,30 +117,6 @@ async function getTodaysBookings(supabase: ServerClient, tenantId: string): Prom
     staffName: b.staff?.name ?? "Unassigned",
     customerName: b.tenant_customers?.full_name ?? null,
     customerPhone: b.tenant_customers?.phone ?? "",
-  }))
-}
-
-async function getTodaysQueue(supabase: ServerClient, tenantId: string): Promise<AdminQueueEntry[]> {
-  const { data, error } = await supabase
-    .from("queue_entries")
-    .select(
-      `id, status, joined_at,
-       services ( name ),
-       tenant_customers ( full_name, phone )`,
-    )
-    .eq("tenant_id", tenantId)
-    .in("status", ["waiting", "called"])
-    .order("joined_at", { ascending: true })
-
-  if (error) throw new Error(`Failed to load today's queue: ${error.message}`)
-
-  return (data ?? []).map((q: any) => ({
-    id: q.id,
-    status: q.status,
-    joinedAt: q.joined_at,
-    serviceName: q.services?.name ?? "Unknown service",
-    customerName: q.tenant_customers?.full_name ?? null,
-    customerPhone: q.tenant_customers?.phone ?? "",
   }))
 }
 
@@ -670,9 +654,15 @@ export default async function AdminPage() {
   // request — not just "doesn't receive the data" but "the data is never
   // fetched" — getTenantIdentity() is the only thing a non-
   // settings.manage caller pays for.
+  // Timezone + ticket prefix first (cheap, non-sensitive, never throws): the
+  // bookings window and the "done today" queue boundary are both defined in
+  // the shop's own timezone, not UTC.
+  const displayContext = await loadDisplayContext(supabase, tenantId)
+  const { timezone } = displayContext
+
   const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
-    getTodaysBookings(supabase, tenantId),
-    getTodaysQueue(supabase, tenantId),
+    getBookingsWindow(supabase, tenantId, timezone),
+    loadQueueEntries(supabase, tenantId, displayContext),
     permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
     getAllStaff(supabase, tenantId, permissions.payrollView, permissions.staffManage),
     // Inbox = customer phone numbers, message previews and volume
@@ -700,6 +690,7 @@ export default async function AdminPage() {
     <AdminView
       initialBookings={bookings}
       initialQueue={queue}
+      timezone={timezone}
       initialServices={services}
       initialStaff={staff}
       initialActiveShifts={activeShifts}

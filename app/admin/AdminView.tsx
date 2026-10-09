@@ -131,6 +131,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
 export function AdminView({
   initialBookings,
   initialQueue,
+  timezone,
   initialServices,
   initialStaff,
   initialActiveShifts,
@@ -151,6 +152,7 @@ export function AdminView({
 }: {
   initialBookings: AdminBooking[]
   initialQueue: AdminQueueEntry[]
+  timezone: string
   initialServices: AdminService[]
   initialStaff: AdminStaff[]
   initialActiveShifts: AdminStaffShift[]
@@ -325,8 +327,8 @@ export function AdminView({
         </header>
 
         <main className="px-6 pb-24 pt-2">
-          {tab === "today" && <TodayBookings initialBookings={initialBookings} />}
-          {tab === "queue" && <QueueManager initialQueue={initialQueue} />}
+          {tab === "today" && <TodayBookings initialBookings={initialBookings} timezone={timezone} />}
+          {tab === "queue" && <QueueManager initialQueue={initialQueue} timezone={timezone} />}
           {tab === "inbox" && staffPermissions.settingsManage && (
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}

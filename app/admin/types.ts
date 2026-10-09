@@ -89,11 +89,43 @@ export interface AdminStaffShift {
   loginTime: string
 }
 
+/** queue_entries row as shown in the admin. page.tsx/admin-data.ts load
+ *  waiting + called entries plus entries finished today ("done"); cancelled
+ *  entries are never sent (removeFromQueue deletes the row). */
 export interface AdminQueueEntry {
   id: string
-  status: "waiting" | "called"
+  status: "waiting" | "called" | "done" | "cancelled"
   /** ISO timestamp */
   joinedAt: string
+  /** ISO timestamp, set when status moved to 'called'. */
+  calledAt: string | null
+  /** ISO timestamp, set when status moved to 'done'. */
+  completedAt: string | null
+  /** queue_entries.source CHECK: 'walk_in' | 'booking'. */
+  source: "walk_in" | "booking"
+  /** Raw integer (nullable). Null for entries promoted from a booking by the
+   *  promote_bookings_to_queue() cron job (see "KNOWN GAP" in
+   *  lib/services/queue.ts's joinQueue doc comment). */
+  ticketNumber: number | null
+  /** Formatted server-side with formatQueueTicketNumber() + the tenant's
+   *  prefix, e.g. "Q007". Null when ticketNumber is null. */
+  ticketLabel: string | null
+  /** 1-based place in line from getQueueSimulation() — the ONE source of
+   *  queue order. It honours booking_settings.queue_priority_mode, so under
+   *  'priority' it can differ from joined_at order. Called entries are
+   *  numbered ahead of waiting ones. Null for done entries, or if the
+   *  simulation was unavailable (callers then fall back to joined_at). */
+  position: number | null
+  /** Simulated minutes until this entry's turn (a heuristic — see
+   *  queue.ts). Null when unavailable or not waiting. */
+  etaMinutes: number | null
+  /** 'hybrid' mode only: a promoted booking whose simulated start is later
+   *  than its appointment time. */
+  runningLate: boolean
+  /** Set when the entry was promoted from a booking. */
+  bookingId: string | null
+  /** null when the entry was created without a service. */
+  serviceId: string | null
   serviceName: string
   customerName: string | null
   customerPhone: string
@@ -101,6 +133,9 @@ export interface AdminQueueEntry {
 
 export interface AdminBooking {
   id: string
+  /** null is possible in the DB (bookings.service_id is nullable). */
+  serviceId: string | null
+  staffId: string
   /** ISO timestamp */
   startTime: string
   /** ISO timestamp */

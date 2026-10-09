@@ -36,10 +36,20 @@ import { staffLimitError } from "@/lib/services/plans"
 import { calculatePeriodDeductions, inclusiveDayCount } from "@/lib/payroll/paye"
 import {
   completeBooking as completeBookingRecord,
+  createBooking,
+  buildDateOptions,
+  getAvailableSlots,
   BOOKING_NOT_FOUND,
   BOOKING_NOT_COMPLETABLE,
+  BOOKING_SLOT_NO_LONGER_AVAILABLE,
+  BOOKING_OUTSIDE_ALLOWED_WINDOW,
 } from "@/lib/services/booking"
-import type { AdminActivityCategory, AdminStaffInput } from "./types"
+import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
+import { updateCustomer } from "@/lib/services/tenant-customer"
+import { getBookableServices } from "@/lib/services/shared/services-catalog"
+import { PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { loadDisplayContext, loadQueueEntries } from "./admin-data"
+import type { AdminActivityCategory, AdminQueueEntry, AdminStaffInput } from "./types"
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
@@ -206,6 +216,135 @@ export async function completeBooking(bookingId: string): Promise<ActionResult> 
   return { ok: true }
 }
 
+
+// ----------------------------------------------------------------------------
+// Create an appointment from the admin (staff booking on a customer's behalf).
+// Thin wrappers over lib/services/booking.ts — the SAME createBooking() the
+// WhatsApp flow and the kiosk call — so every booking rule applies unchanged:
+// business hours, min_notice_minutes, max_advance_days, staff availability
+// (staff is auto-assigned, there's no "pick a staff member" in that service)
+// and the plan visit cap. Membership-only, matching cancelBooking() and
+// completeBooking() above; swap in getTenantScopedClient("bookings.manage")
+// if you want to gate it tighter (the key exists but is unused today).
+// ----------------------------------------------------------------------------
+
+export interface AdminBookableService {
+  id: string
+  name: string
+  durationMinutes: number
+}
+
+/** Services a customer could book (active ones) — fetched here, not taken
+ *  from page.tsx's initialServices, which is [] for callers without
+ *  services.manage. */
+export async function getAdminBookableServices(): Promise<
+  { ok: true; services: AdminBookableService[] } | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+  try {
+    const services = await getBookableServices(tenantId!)
+    return { ok: true, services: services.map((s) => ({ id: s.id, name: s.name, durationMinutes: s.durationMinutes })) }
+  } catch (err) {
+    console.error("[admin] getAdminBookableServices failed", { tenantId, err })
+    return { ok: false, error: "Couldn't load services." }
+  }
+}
+
+/** The dates the booking flow itself would offer (today + up to 6 days,
+ *  capped by booking_settings.max_advance_days), in the shop's timezone. */
+export async function getAdminBookingDates(): Promise<
+  { ok: true; dates: Array<{ date: string; label: string }> } | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+  try {
+    return { ok: true, dates: await buildDateOptions(tenantId!) }
+  } catch (err) {
+    console.error("[admin] getAdminBookingDates failed", { tenantId, err })
+    return { ok: false, error: "Couldn't load available dates." }
+  }
+}
+
+export async function getAdminBookingSlots(
+  serviceId: string,
+  dateISO: string,
+): Promise<{ ok: true; slots: Array<{ start: string; label: string }> } | { ok: false; error: string }> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+  try {
+    const service = (await getBookableServices(tenantId!)).find((s) => s.id === serviceId)
+    if (!service) return { ok: false, error: "That service isn't available." }
+    return { ok: true, slots: await getAvailableSlots(tenantId!, dateISO, service.durationMinutes) }
+  } catch (err) {
+    console.error("[admin] getAdminBookingSlots failed", { tenantId, err })
+    return { ok: false, error: "Couldn't load available times." }
+  }
+}
+
+function looksLikePhone(value: string): boolean {
+  const digits = value.replace(/\D/g, "")
+  return digits.length >= 9 && digits.length <= 15
+}
+
+export async function createAdminBooking(input: {
+  serviceId: string
+  dateISO: string
+  slotStart: string
+  phone: string
+  name?: string
+}): Promise<{ ok: true; bookingReference: string; startTime: string } | { ok: false; error: string }> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  const phone = input.phone.trim()
+  if (!looksLikePhone(phone)) return { ok: false, error: "Enter the customer's phone number." }
+
+  try {
+    const service = (await getBookableServices(tenantId!)).find((s) => s.id === input.serviceId)
+    if (!service) return { ok: false, error: "That service isn't available." }
+
+    // Only accept a start time the availability logic itself offers right
+    // now — the client can't submit an arbitrary timestamp.
+    const slots = await getAvailableSlots(tenantId!, input.dateISO, service.durationMinutes)
+    const slot = slots.find((s) => s.start === input.slotStart)
+    if (!slot) return { ok: false, error: "That time is no longer available — please pick another." }
+
+    const result = await createBooking(tenantId!, { service, dateISO: input.dateISO, slot, phone })
+
+    const name = input.name?.trim()
+    if (name && name.length >= 2) {
+      try {
+        await updateCustomer(tenantId!, phone, { name })
+      } catch (err) {
+        // Booking already exists; losing the name is not worth failing it.
+        console.error("[admin] createAdminBooking: saving customer name failed", { tenantId, err })
+      }
+    }
+
+    await logActivity(supabase, tenantId!, { category: "bookings", action: "Created a booking" })
+    revalidatePath("/admin")
+    return { ok: true, bookingReference: result.bookingReference, startTime: result.startTime }
+  } catch (err) {
+    if (err instanceof Error) {
+      if (err.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
+        return { ok: false, error: "That time was just taken — please pick another." }
+      }
+      if (err.message === BOOKING_OUTSIDE_ALLOWED_WINDOW) {
+        return {
+          ok: false,
+          error: "That time is outside your booking rules (business hours, minimum notice or how far ahead bookings are allowed).",
+        }
+      }
+      if (err.message === PLAN_VISIT_LIMIT_REACHED) {
+        return { ok: false, error: "This shop has reached its visit limit for the current plan." }
+      }
+    }
+    console.error("[admin] createAdminBooking failed", { tenantId, err })
+    return { ok: false, error: "Couldn't create the appointment." }
+  }
+}
+
 // ============================================================================
 // Services
 // ============================================================================
@@ -299,17 +438,34 @@ export async function toggleServiceActive(id: string, active: boolean): Promise<
 // Queue
 // ============================================================================
 
+// Status transitions are guarded in the UPDATE's own WHERE clause (same
+// pattern cancelBooking() uses with .eq("status", "confirmed")): the write
+// only lands if the row is still in the expected state, so two staff members
+// clicking "Call" on the same customer at once can't both succeed — the
+// loser matches zero rows and gets a clear message. The database has no
+// transition constraint of its own (queue_entries_status_check only limits
+// the allowed values), so this is the guard.
+//
+// The status-change triggers on queue_entries (notify + billing) still fire
+// exactly as before: nothing here writes anywhere new.
+
+const QUEUE_ENTRY_CHANGED =
+  "This queue entry was already changed by someone else — the list has been refreshed."
+
 export async function callQueueEntry(id: string): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
-  const { error: updateError } = await supabase
+  const { data: updated, error: updateError } = await supabase
     .from("queue_entries")
     .update({ status: "called", called_at: new Date().toISOString() })
     .eq("id", id)
     .eq("tenant_id", tenantId)
+    .eq("status", "waiting") // only a waiting customer can be called
+    .select("id")
 
   if (updateError) return { ok: false, error: updateError.message }
+  if (!updated || updated.length === 0) return { ok: false, error: QUEUE_ENTRY_CHANGED }
 
   await logActivity(supabase, tenantId!, { category: "queue", action: "Called a queue entry" })
 
@@ -321,13 +477,16 @@ export async function markQueueEntryDone(id: string): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
-  const { error: updateError } = await supabase
+  const { data: updated, error: updateError } = await supabase
     .from("queue_entries")
     .update({ status: "done", completed_at: new Date().toISOString() })
     .eq("id", id)
     .eq("tenant_id", tenantId)
+    .eq("status", "called") // only a called customer can be marked done
+    .select("id")
 
   if (updateError) return { ok: false, error: updateError.message }
+  if (!updated || updated.length === 0) return { ok: false, error: QUEUE_ENTRY_CHANGED }
 
   await logActivity(supabase, tenantId!, { category: "queue", action: "Marked a queue entry done" })
 
@@ -339,18 +498,152 @@ export async function removeFromQueue(id: string): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
-  const { error: deleteError } = await supabase
+  // Still a hard delete, exactly as before — but only for entries that are
+  // still in the live queue. Previously any id in this tenant could be
+  // deleted, including a 'done' row (visit history).
+  const { data: deleted, error: deleteError } = await supabase
     .from("queue_entries")
     .delete()
     .eq("id", id)
     .eq("tenant_id", tenantId)
+    .in("status", ["waiting", "called"])
+    .select("id")
 
   if (deleteError) return { ok: false, error: deleteError.message }
+  if (!deleted || deleted.length === 0) return { ok: false, error: QUEUE_ENTRY_CHANGED }
 
   await logActivity(supabase, tenantId!, { category: "queue", action: "Removed a queue entry" })
 
   revalidatePath("/admin")
   return { ok: true }
+}
+
+
+// ----------------------------------------------------------------------------
+// Add a walk-in from the admin. Wraps lib/services/queue.ts's joinQueue() —
+// the same function WhatsApp and the kiosk use — so ticket numbering
+// (next_queue_ticket_number), the plan visit cap and the business-hours
+// trigger all behave identically. joinQueue() documents that its CALLERS
+// enforce require_service_selection, so that's checked here. It does not
+// enforce queue_settings.max_queue_size either; this action does, counting
+// waiting entries.
+// ----------------------------------------------------------------------------
+
+export async function getWalkInOptions(): Promise<
+  | { ok: true; services: AdminBookableService[]; requireServiceSelection: boolean }
+  | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+  try {
+    const [services, settings] = await Promise.all([
+      getBookableServices(tenantId!),
+      supabase.from("queue_settings").select("require_service_selection").eq("tenant_id", tenantId).maybeSingle(),
+    ])
+    if (settings.error) return { ok: false, error: settings.error.message }
+    return {
+      ok: true,
+      services: services.map((s) => ({ id: s.id, name: s.name, durationMinutes: s.durationMinutes })),
+      requireServiceSelection: settings.data?.require_service_selection ?? true,
+    }
+  } catch (err) {
+    console.error("[admin] getWalkInOptions failed", { tenantId, err })
+    return { ok: false, error: "Couldn't load walk-in options." }
+  }
+}
+
+export async function addWalkIn(input: {
+  serviceId: string | null
+  phone: string
+  name?: string
+}): Promise<
+  | { ok: true; ticketLabel: string; position: number; etaMinutes: number }
+  | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  const phone = input.phone.trim()
+  if (!looksLikePhone(phone)) return { ok: false, error: "Enter the customer's phone number." }
+
+  try {
+    const { data: settings, error: settingsError } = await supabase
+      .from("queue_settings")
+      .select("require_service_selection, max_queue_size")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (settingsError) return { ok: false, error: settingsError.message }
+
+    const requireService = settings?.require_service_selection ?? true
+    if (requireService && !input.serviceId) return { ok: false, error: "Choose a service." }
+
+    let service = null
+    if (input.serviceId) {
+      service = (await getBookableServices(tenantId!)).find((s) => s.id === input.serviceId) ?? null
+      if (!service) return { ok: false, error: "That service isn't available." }
+    }
+
+    const maxSize: number | null = settings?.max_queue_size ?? null
+    if (maxSize !== null) {
+      const { count, error: countError } = await supabase
+        .from("queue_entries")
+        .select("id", { count: "exact", head: true })
+        .eq("tenant_id", tenantId)
+        .eq("status", "waiting")
+      if (countError) return { ok: false, error: countError.message }
+      if ((count ?? 0) >= maxSize) {
+        return { ok: false, error: `The queue is full (${maxSize} waiting).` }
+      }
+    }
+
+    const joined = await joinQueue(tenantId!, { service, phone })
+
+    const name = input.name?.trim()
+    if (name && name.length >= 2) {
+      try {
+        await updateCustomer(tenantId!, phone, { name })
+      } catch (err) {
+        console.error("[admin] addWalkIn: saving customer name failed", { tenantId, err })
+      }
+    }
+
+    await logActivity(supabase, tenantId!, { category: "queue", action: "Added a walk-in to the queue" })
+    revalidatePath("/admin")
+    return {
+      ok: true,
+      ticketLabel: formatQueueTicketNumber(joined.ticketNumber, joined.ticketPrefix),
+      position: joined.position,
+      etaMinutes: joined.etaMinutes,
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message === PLAN_VISIT_LIMIT_REACHED) {
+      return { ok: false, error: "This shop has reached its visit limit for the current plan." }
+    }
+    // The business-hours trigger (enforce_walkin_business_hours) raises a
+    // Postgres error when the shop is closed; its text is passed through so
+    // staff see the real reason rather than a generic failure.
+    console.error("[admin] addWalkIn failed", { tenantId, err })
+    return { ok: false, error: err instanceof Error && err.message ? err.message : "Couldn't add the walk-in." }
+  }
+}
+
+/** Read-only snapshot of this tenant's live queue, for the Queue screen's
+ *  periodic refresh. Uses the same loader as page.tsx's first render, and
+ *  deliberately does NOT call revalidatePath — it must not re-run the whole
+ *  admin page (inbox, settings, …) every few seconds. */
+export async function refreshQueue(): Promise<
+  { ok: true; entries: AdminQueueEntry[] } | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient()
+  if (!supabase) return { ok: false, error: error! }
+
+  try {
+    const ctx = await loadDisplayContext(supabase, tenantId!)
+    return { ok: true, entries: await loadQueueEntries(supabase, tenantId!, ctx) }
+  } catch (err) {
+    console.error("[admin] refreshQueue failed", { tenantId, error: err })
+    return { ok: false, error: "Couldn't refresh the queue." }
+  }
 }
 
 // ============================================================================
