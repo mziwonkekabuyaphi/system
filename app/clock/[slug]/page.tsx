@@ -1,41 +1,36 @@
 // app/clock/[slug]/page.tsx
 /**
  * Public, unauthenticated staff clock-in pad for one tenant, at
- * /clock/[their-slug] — meant to sit open on a shared tablet at the shop,
- * the same way /kiosk/[slug] does for customers.
+ * /clock/[their-slug] — meant to sit open on a shared tablet at the shop.
  *
  * Resolves the tenant by (slug, status = 'active') with the service-role
- * client, same trust model as /kiosk/[slug]/page.tsx: this route is
- * trusted server code resolving a public slug, not an RLS-gated user
- * request, so it deliberately doesn't use an anon-scoped client.
+ * client, same trust model as /kiosk/[slug]/page.tsx.
  *
- * Branding here is display-only (name/logo/accent color so the tablet
- * looks like it belongs to the shop) — the actual PIN lookup and shift
+ * Branding + look are display-only here (name/logo/colors/wording so the
+ * tablet looks like it belongs to the shop). The actual PIN lookup and shift
  * read/write happens in ./actions.ts, re-resolving the tenant itself.
+ *
+ * Custom logo, brand color and the "custom" background theme need the
+ * 'branding' module, same rule as /display and /kiosk. Stored values are
+ * ignored (not deleted) without it, so they return on upgrade. Display name,
+ * dark/light theme and all wording are free on every plan.
  */
 
 import { notFound } from "next/navigation"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import { ClockApp } from "@/components/clock/ClockApp"
+import { parseClockSettings, resolveClockLook } from "./clockSettings"
 
-// Branding can change any time a shop owner edits it, and the pad should
-// never show a stale name/color to whoever's standing at the tablet.
+// Branding can change any time a shop owner edits it.
 export const dynamic = "force-dynamic"
-
-const DEFAULT_PRIMARY_COLOR = "#2B6F5C"
 
 interface TenantRow {
   id: string
   name: string
   slug: string
   status: string
-}
-
-interface TenantBrandingRow {
-  display_name: string | null
-  logo_url: string | null
-  primary_color: string | null
 }
 
 async function loadClockTenant(slug: string) {
@@ -52,17 +47,32 @@ async function loadClockTenant(slug: string) {
   if (tenantError) throw new Error(`Failed to resolve tenant for slug "${slug}": ${tenantError.message}`)
   if (!tenant) return null
 
-  const { data: branding } = await supabase
-    .from("tenant_branding")
-    .select("display_name, logo_url, primary_color")
-    .eq("tenant_id", tenant.id)
-    .maybeSingle<TenantBrandingRow>()
+  const [{ data: branding }, brandingEntitled] = await Promise.all([
+    supabase
+      .from("tenant_branding")
+      .select(
+        "display_name, logo_url, primary_color, " +
+          "clock_theme, clock_background_color, clock_tagline, clock_title, clock_prompt, " +
+          "clock_clocked_in_label, clock_clocked_out_label, clock_invalid_pin_text",
+      )
+      .eq("tenant_id", tenant.id)
+      .maybeSingle(),
+    tenantHasModule(supabase, tenant.id, MODULE_KEYS.branding).catch(() => false),
+  ])
+
+  const raw = parseClockSettings(branding as Record<string, unknown> | null)
+  const settings = brandingEntitled
+    ? raw
+    : { ...raw, theme: raw.theme === "custom" ? ("dark" as const) : raw.theme, backgroundColor: null }
+
+  const primaryColor = brandingEntitled ? ((branding as any)?.primary_color ?? null) : null
+  const look = resolveClockLook(settings, primaryColor)
 
   return {
     slug: tenant.slug,
-    displayName: branding?.display_name || tenant.name,
-    logoUrl: branding?.logo_url ?? null,
-    primaryColor: branding?.primary_color || DEFAULT_PRIMARY_COLOR,
+    displayName: (branding as any)?.display_name || tenant.name,
+    logoUrl: brandingEntitled ? ((branding as any)?.logo_url ?? null) : null,
+    look,
   }
 }
 
@@ -76,7 +86,9 @@ export default async function ClockPage({ params }: { params: Promise<{ slug: st
       slug={data.slug}
       displayName={data.displayName}
       logoUrl={data.logoUrl}
-      primaryColor={data.primaryColor}
+      themeVars={data.look.vars}
+      bgSolid={data.look.bgSolid}
+      copy={data.look.copy}
     />
   )
 }
@@ -85,5 +97,5 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const data = await loadClockTenant(slug)
   if (!data) return { title: "Clock in" }
-  return { title: `${data.displayName} — Clock in` }
+  return { title: `${data.displayName} — ${data.look.copy.title}` }
 }
