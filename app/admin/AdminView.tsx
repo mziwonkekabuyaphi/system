@@ -5,6 +5,7 @@ import type { SVGProps } from "react"
 
 import { LogoutButton } from "@/components/admin/LogoutButton"
 import { BillingPanel } from "@/components/admin/BillingPanel"
+import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
 import { CustomersManager } from "./CustomersManager"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
@@ -32,7 +33,16 @@ import type {
   AdminTenantSettings,
 } from "./types"
 
-type Tab = "today" | "queue" | "customers" | "inbox" | "services" | "staff" | "billing" | "settings"
+type Tab =
+  | "today"
+  | "queue"
+  | "customers"
+  | "inbox"
+  | "services"
+  | "staff"
+  | "analytics"
+  | "billing"
+  | "settings"
 
 const SIDEBAR_COLLAPSED = 72 // px
 const SIDEBAR_EXPANDED = 240 // px
@@ -122,6 +132,14 @@ function CreditCardIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function ChartIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+    </svg>
+  )
+}
+
 function ChevronIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -137,6 +155,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "services", label: "Services", icon: TagIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
+  { id: "analytics", label: "Analytics", icon: ChartIcon },
   { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
   { id: "settings", label: "Settings", icon: GearIcon },
 ]
@@ -197,6 +216,10 @@ export function AdminView({
   const visibleTabs = TABS.filter((t) => {
     if (t.id === "services") return staffPermissions.servicesManage
     if (t.id === "settings") return staffPermissions.settingsManage
+    // Analytics has its own permission key (analytics.view). The server
+    // action in app/admin/analytics/actions.ts re-checks it, so this only
+    // controls whether the tab is shown.
+    if (t.id === "analytics") return staffPermissions.analyticsView
     // Billing and Inbox are owner-only for now. settings.manage is the
     // closest existing owner-only key; swap in dedicated keys
     // (billing.view / inbox.view) if you add them.
@@ -359,6 +382,7 @@ export function AdminView({
               tenantSlug={tenantSlug}
             />
           )}
+          {tab === "analytics" && staffPermissions.analyticsView && <AnalyticsDashboard />}
           {tab === "billing" && staffPermissions.settingsManage && <BillingPanel />}
           {/* initialTenantSettings/initialKioskSettings/initialDisplaySettings/
               initialBookingSettings/initialQueueSettings/initialMessageSettings/

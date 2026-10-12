@@ -624,6 +624,7 @@ export default async function AdminPage() {
     "payroll.manage",
     "settings.manage",
     "services.manage",
+    "analytics.view",
   ]
 
   let permissions: AdminStaffPermissions
@@ -636,6 +637,7 @@ export default async function AdminPage() {
       payrollManage: granted.has("payroll.manage"),
       settingsManage: granted.has("settings.manage"),
       servicesManage: granted.has("services.manage"),
+      analyticsView: granted.has("analytics.view"),
     }
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
@@ -646,6 +648,7 @@ export default async function AdminPage() {
       payrollManage: false,
       settingsManage: false,
       servicesManage: false,
+      analyticsView: false,
     }
   }
 
