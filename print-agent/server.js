@@ -49,15 +49,20 @@ function buildTicketBuffer(ticket, shopName) {
 
   printer.alignCenter()
   printer.setTypeFontB()
+  printer.setTextSize(1, 1)
   printer.bold(true)
   printer.println(shopName)
   printer.bold(false)
+  printer.setTextSize(0, 0)
   printer.drawLine()
 
   printer.newLine()
   printer.setTextSize(1, 1)
   printer.println(ticket.kind === "queue" ? "YOUR QUEUE NUMBER" : "YOUR BOOKING")
-  // Extra blank lines so the number doesn't touch the heading above it
+  // Blank lines (printed at normal size) so the number doesn't touch the heading
+  printer.setTextSize(0, 0)
+  printer.newLine()
+  printer.newLine()
   printer.newLine()
   printer.newLine()
   printer.setTextSize(3, 3)
