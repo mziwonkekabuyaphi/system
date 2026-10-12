@@ -3,29 +3,39 @@ import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 
 /**
- * Intent router — the "brain" layer of the Rands WhatsApp Concierge.
+ * Intent router — the "brain" layer of the QLess WhatsApp assistant for
+ * salons and barbershops (multi-tenant appointment booking + walk-in queue).
  *
- * Phase 2 (hybrid AI routing): this module now uses Claude to classify an
- * inbound WhatsApp message into a high-level intent. Classification ONLY —
- * Claude is not asked to draft replies, call tools, or hold memory here. Its
+ * Hybrid AI routing: this module uses an AI model to classify an inbound
+ * WhatsApp message into a high-level intent. Classification ONLY — the
+ * model is not asked to draft replies, call tools, or hold memory here. Its
  * single job is to improve message → intent accuracy.
  *
- * The result drives downstream services (wallet / tickets / events / support)
- * in later phases. This layer is intentionally lightweight: exactly one model
- * call, with a safe deterministic fallback if anything goes wrong.
+ * The result drives downstream services (booking / queue / support). This
+ * layer is intentionally lightweight: exactly one model call, with a safe
+ * deterministic fallback if anything goes wrong.
+ *
+ * INTENT MODEL (QLess): there are only three intents. "booking" covers
+ * BOTH scheduling an appointment AND joining today's walk-in queue — queue
+ * is deliberately not its own intent, because queue.ts is only ever entered
+ * through booking.ts's "Queue or Book" entry choice (see queue.ts's file
+ * header: "there's no standalone queue intent"). Everything that needs a
+ * human (complaints, cancellations, reschedules, shop questions) is
+ * "support"; greetings and chit-chat are "unknown".
  *
  * Architecture:
  *   webhook (thin layer)
  *     ↓
- *   reply.ts                        ← loads conversation context & state
+ *   reply.ts                        ← resolves tenant, loads context & state
  *     ↓
  *   intent-router (brain layer)     ← this file
  *     ↓
  *   action-router
  *     ↓
- *   services (wallet / tickets / events)
+ *   services (booking / queue)
  *
- * This file performs NO database or memory lookups of its own. `reply.ts`
+ * This file performs NO database or memory lookups of its own, and knows
+ * nothing about which tenant (shop) the message belongs to. `reply.ts`
  * already loads conversation context and state before calling
  * {@link routeIntent}; if that context is useful for classification, it is
  * read directly from the supplied parameter — never fetched here.
@@ -35,20 +45,20 @@ import { z } from "zod"
  *   2. CONTEXT CONTINUATION - Ambiguous replies inherit intent from the
  *      already-loaded conversation context (no I/O — read-only)
  *   3. INTENT FAST-PATH - Clear intent signals that don't need AI. Skipped
- *      entirely for continuation-style messages ("2", "card", "yes") so a
- *      confident fast-path rule never overrides context that just wasn't
+ *      entirely for continuation-style messages ("2", "yes", "tomorrow") so
+ *      a confident fast-path rule never overrides context that just wasn't
  *      resolvable in step 2 (e.g. no context was supplied at all).
- *   4. CLAUDE CLASSIFICATION - Catch-all for complex/non-obvious messages.
- *      Claude's raw confidence is never trusted blindly: low-confidence
- *      results are reconciled against conversation context, and Claude
+ *   4. AI CLASSIFICATION - Catch-all for complex/non-obvious messages.
+ *      The model's raw confidence is never trusted blindly: low-confidence
+ *      results are reconciled against conversation context, and model
  *      failures (throws/timeouts) fall back to context before falling
  *      back to a generic "unknown" result.
  *
  * Decision-stability rules layered on top of the above (see inline
  * comments at each usage site for the exact thresholds):
  *   - Strong context override: an ambiguous/continuation message combined
- *     with a weak Claude result defers to conversation context outright.
- *   - Confidence gating: any Claude result below the trust threshold is
+ *     with a weak AI result defers to conversation context outright.
+ *   - Confidence gating: any AI result below the trust threshold is
  *     reconciled against context (or downgraded) rather than propagated.
  *   - Low-confidence floor: any final result below 0.5 confidence is
  *     normalized to a single canonical "unknown" fallback shape, so
@@ -56,22 +66,13 @@ import { z } from "zod"
  */
 
 
-/** The intent categories the concierge understands. */
+/** The intent categories the assistant understands. */
 const INTENTS = [
-  "wallet",   // Passport balance/top-up/activity — an ACTION on the wallet
-  "passport", // Passport OVERVIEW — "Passport" / "My Passport" on its own,
-              // with no action word attached. See checkIntentFastPath and
-              // the Claude system prompt below for how this is kept
-              // distinct from "wallet".
-  "ticket",
-  "event",
-  "order",
-  "vvip",
-  "booking",
-  "shisha",
-  "support",
-  "checkin",
-  "unknown",
+  "booking", // Book an appointment OR join today's walk-in queue. Both
+             // start here: booking.ts asks "Queue or Book?" and hands off
+             // to queue.ts itself, so there is no separate "queue" intent.
+  "support", // Needs a human: complaints, cancel/reschedule, shop questions
+  "unknown", // Greetings, chit-chat, or not enough information
 ] as const
 
 export type Intent = (typeof INTENTS)[number]
@@ -97,7 +98,7 @@ export interface IntentRouterContext {
   lastIntent?: string | null
 }
 
-/** Deterministic fallback used whenever Claude can't be consulted. */
+/** Deterministic fallback used whenever the AI model can't be consulted. */
 const FALLBACK: RoutedIntent = {
   intent: "unknown",
   confidence: 0,
@@ -107,19 +108,19 @@ const FALLBACK: RoutedIntent = {
 const TIMEOUT_SENTINEL = Symbol("intent-classification-timeout")
 
 // ── Confidence & Stability Thresholds ────────────────────────────────
-// These govern how much we trust a raw Claude result versus falling back
+// These govern how much we trust a raw AI result versus falling back
 // to conversation context or a generic "unknown". Centralized here so the
 // numbers are easy to find and tune without hunting through the pipeline.
 
 /**
- * Below this, a Claude result combined with ambiguous/continuation text
- * ("2", "card", "yes") is considered weaker evidence than conversation
+ * Below this, an AI result combined with ambiguous/continuation text
+ * ("2", "yes", "tomorrow") is considered weaker evidence than conversation
  * context, and context wins outright.
  */
 const CONTEXT_OVERRIDE_CONFIDENCE_THRESHOLD = 0.7
 
 /**
- * Below this, a raw Claude result is not trusted on its own regardless of
+ * Below this, a raw AI result is not trusted on its own regardless of
  * message shape — it's reconciled against context if any exists, or
  * downgraded to a low-confidence "unknown" if not.
  */
@@ -164,10 +165,10 @@ function checkGreetingOrThanks(text: string): RoutedIntent | null {
 }
 
 // ── Step 2: Context Continuation ─────────────────────────────────────
-// Short, ambiguous replies ("2", "card", "yes") can't be classified in
+// Short, ambiguous replies ("2", "yes", "tomorrow") can't be classified in
 // isolation — they only make sense in the context of the conversation.
-// This runs BEFORE the intent fast-path so "card" during ticket purchase
-// stays as "ticket", not "wallet".
+// This runs BEFORE the intent fast-path so "yes" during a booking
+// confirmation stays as "booking", not "support".
 //
 // Unlike the old memory-lookup step, this performs NO I/O: the context is
 // already loaded by reply.ts and handed in via the `context` parameter.
@@ -175,25 +176,26 @@ function checkGreetingOrThanks(text: string): RoutedIntent | null {
 const CONTINUATION_KEYWORDS = new Set([
   "yes", "y", "no", "n", "yeah", "yep", "nope",
   "ok", "okay", "sure",
-  "card", "wallet", "cash", "passport",
   "same", "that one", "this one",
   "continue", "next", "tomorrow", "today",
   "1", "2", "3", "4", "5",
 ])
+// NOTE: "book" / "queue" are deliberately NOT continuation keywords. They are
+// clear fast-path signals (see BOOKING_PHRASES below), and anything in this
+// set skips the fast-path entirely.
 
 function isContinuationText(rawText: string): boolean {
   const normalized = rawText.trim().toLowerCase()
   if (!normalized) return false
   if (CONTINUATION_KEYWORDS.has(normalized)) return true
   if (/^\d{1,3}$/.test(normalized)) return true
-  if (/^r\s?\d+(\.\d{1,2})?$/i.test(normalized)) return true
   return false
 }
 
 /**
  * True when `value` is one of the concierge's known intents. Centralizes
  * the validity check so every context-based override (context
- * continuation, strong context override, Claude-failure hardening) agrees
+ * continuation, strong context override, AI-failure hardening) agrees
  * on what counts as a usable `context.lastIntent`.
  */
 function isValidIntent(value: string | null | undefined): value is Intent {
@@ -227,67 +229,48 @@ function resolveFromContext(text: string, context?: IntentRouterContext): Routed
 // ── Step 3: Intent Fast-Path ──────────────────────────────────────────
 // Clear intent signals that don't need AI OR context to interpret.
 // These run AFTER context resolution so ambiguous replies get context first.
-// Example: "card" during ticket purchase → context says "ticket"
-//           "card" as standalone → fast-path says "wallet"
+// Example: "yes" during booking confirmation → context says "booking"
+//           "yes" as standalone → fast-path says "support"
 
 const AFFIRMATIVE = new Set(["yes", "y", "yeah", "yep"])
 const NEGATIVE = new Set(["no", "n", "nope"])
 const MENU_SELECTION = new Set(["1", "2", "3", "4", "5", "next", "continue"])
-// "wallet"/"card"/"cash" are payment-method words — a customer answering a
-// payment-method prompt with one of these means "use this to pay," not
-// "show me anything." "passport" USED to live in this same set (see git
-// blame), but that made a bare "Passport" always resolve to the wallet
-// balance screen — which is wrong now that "Passport" on its own means the
-// aggregated overview (PASSPORT_OVERVIEW_PHRASES below), not a payment
-// method. "wallet" stays here since a customer typing exactly "wallet"
-// (not "passport") is presumed to still want the balance/top-up screen,
-// preserving prior behavior for that word.
-const PAYMENT_METHODS = new Set(["card", "wallet", "cash"])
 
-// Bare "Passport" / "My Passport" / "Show my Passport" — i.e. the customer
-// asked to SEE something, with no action word (balance/top up/activity)
-// attached. Deliberately a short, exact-phrase allowlist rather than a
-// substring match: "passport balance", "top up my passport" etc. must NOT
-// match here, since those name a specific wallet action and belong to the
-// existing "wallet" intent instead (see the Claude system prompt's
-// "wallet" examples below, which are unchanged). Also deliberately
-// disjoint from action-router.ts's PAYMENT_METHOD_REPLY_KEYWORDS check —
-// that check guards mid-flow payment-method prompts (tickets/orders/vvip
-// asking "how would you like to pay?") independently of what intent this
-// function resolves "passport" to, so it keeps working unchanged either way.
-const PASSPORT_OVERVIEW_PHRASES = new Set([
-  "passport",
-  "my passport",
-  "show my passport",
-  "show passport",
-  "view passport",
-  "view my passport",
-  // Exact text of a known UI-generated button that means "open Passport"
-  // but whose tap can't be routed deterministically by interactiveId —
-  // plain WhatsApp buttons reuse ids like "btn_1" across many unrelated
-  // screens (confirm/edit/etc.), unlike list rows, so the only reliable
-  // thing to match on is the literal button text itself. This is
-  // registration.ts's post-signup button specifically — services-list.ts's
-  // row_1 has the same label but is routed by row id in action-router.ts
-  // regardless of its text, so it doesn't depend on this entry. If
-  // registration.ts's button text changes, this must change with it.
-  "🪪 my rands passport",
+// Short, exact-phrase allowlist for messages that unambiguously mean "I want
+// an appointment" or "I want to join the walk-in queue". Both map to the
+// "booking" intent — booking.ts then asks the customer which one they want
+// (see its handleEntryChoice), so we never need to guess queue-vs-book here.
+// Exact match rather than substring on purpose: "book" inside a longer
+// sentence ("can I book for my son and his friend tomorrow at 3") is better
+// left to the AI classifier, which also sees surrounding words like
+// "cancel" that would flip the meaning.
+const BOOKING_PHRASES = new Set([
+  "book",
+  "booking",
+  "book now",
+  "book appointment",
+  "book an appointment",
+  "make a booking",
+  "make an appointment",
+  "appointment",
+  "appointments",
+  "reserve",
+  "reservation",
+  "queue",
+  "join queue",
+  "join the queue",
+  "join the line",
+  "walk in",
+  "walk-in",
+  "walkin",
 ])
 
 function checkIntentFastPath(text: string): RoutedIntent | null {
   const normalized = text.trim().toLowerCase()
 
-  // Passport overview → passport (checked before payment methods; the two
-  // sets are disjoint so order doesn't matter for correctness, but this
-  // reads top-to-bottom as "what is this message asking to see" before
-  // "what is this message answering with").
-  if (PASSPORT_OVERVIEW_PHRASES.has(normalized)) {
-    return { intent: "passport", confidence: 0.95, reasoning: "Fast-path: passport overview" }
-  }
-
-  // Payment methods → wallet (clear intent)
-  if (PAYMENT_METHODS.has(normalized)) {
-    return { intent: "wallet", confidence: 0.95, reasoning: "Fast-path: payment method" }
+  // Appointment / walk-in queue → booking (clear intent)
+  if (BOOKING_PHRASES.has(normalized)) {
+    return { intent: "booking", confidence: 0.95, reasoning: "Fast-path: booking or queue request" }
   }
 
   // Affirmative/Negative → support (ambiguous without context, but if we got here
@@ -304,10 +287,10 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
   return null
 }
 
-// ── Step 4: Claude Classification ────────────────────────────────────
+// ── Step 4: AI Classification ────────────────────────────────────
 // Catch-all for complex messages that didn't match any deterministic rule.
 
-/** Structured output we expect back from Claude. */
+/** Structured output we expect back from the AI classifier. */
 const intentSchema = z.object({
   intent: z.enum(INTENTS),
   confidence: z.number().min(0).max(1),
@@ -315,7 +298,7 @@ const intentSchema = z.object({
 })
 
 const SYSTEM_PROMPT = `
-You are the Intent Classification Engine for the Rands AI Concierge.
+You are the Intent Classification Engine for QLess, a WhatsApp assistant used by salons and barbershops.
 
 ROLE
 Your only responsibility is to classify an incoming WhatsApp message into ONE business intent.
@@ -331,224 +314,71 @@ You do NOT perform business actions.
 Your output is consumed by backend services which will execute the correct workflow.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ABOUT RANDS
+ABOUT QLESS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Rands is a hospitality, nightlife and entertainment platform.
+QLess lets customers of a salon or barbershop use WhatsApp to:
 
-Customers interact with Rands through WhatsApp to:
+• Book an appointment (choose a service, a date, and a time slot)
+• Join today's walk-in queue instead of booking a time
+• Talk to the shop when they need a person
 
-• Check Passport balance
-• Top up Passport
-• Browse events
-• Buy event tickets
-• Check VVIP table availability
-• Book VVIP tables
-• Order drinks
-• Order food
-• Order shisha
-• Track existing orders
-• Contact support
+Each shop has its own services, staff and opening hours. You do not know
+which shop a message is for, and you do not need to.
 
-The AI must understand Rands terminology.
+Typical services customers mention: haircut, fade, taper, line-up, trim,
+beard trim, shave, braids, cornrows, locs, wash, blow-dry, colour, highlights,
+relaxer, treatment, manicure, pedicure, nails, kids cut.
 
-"Passport" is the customer-facing name for the wallet.
-
-Whenever a customer says:
-
-Wallet
-Balance
-Money
-Funds
-Credit
-Top up
-Deposit
-Recharge
-Load money
-
-these all refer to the Wallet business domain (intent: wallet).
-
-IMPORTANT — "Passport" on its own is DIFFERENT from the words above:
-when a customer says just "Passport" / "My Passport" / "Show my Passport",
-with no balance/top-up/activity word attached, they are asking to see
-their whole Rands account at a glance (balance + tickets + VVIP, in one
-overview) — that is intent: passport, not intent: wallet. The moment an
-action word is attached ("passport balance", "top up my passport",
-"passport activity"), it goes back to being intent: wallet, since the
-customer has told you exactly which wallet action they want.
+Local phrasing is common. "Howzit" is a greeting. "Is there space" and
+"can I come now" are asking for a slot or a place in the queue.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE INTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-wallet
-Customer wants a specific Passport/wallet ACTION.
-
-Examples:
-
-check passport
-
-passport balance
-
-wallet
-
-deposit money
-
-top up
-
-payment
-
-refund
-
-transaction history
-
-fund account
-
-available balance
-
-passport
-Customer wants their whole Passport OVERVIEW — bare "Passport" with no
-action word attached. Do not use this for anything that names balance,
-top up, or activity; those stay "wallet" above.
-
-Examples:
-
-passport
-
-my passport
-
-show my passport
-
-what's in my passport
-
-view my passport
-
-ticket
-Customer wants tickets.
-
-Examples:
-
-buy ticket
-
-my ticket
-
-ticket
-
-scan ticket
-
-ticket transfer
-
-ticket refund
-
-event pass
-
-event
-Customer wants event information.
-
-Examples:
-
-what events are available
-
-upcoming events
-
-lineup
-
-venue
-
-date
-
-festival
-
-club tonight
-
-weekend events
-
-order
-Customer wants to buy products.
-
-Examples:
-
-buy drinks
-
-food
-
-bottle
-
-champagne
-
-cocktails
-
-whiskey
-
-order status
-
-cancel order
-
-menu
-
-vvip
-Customer wants premium tables.
-
-Examples:
-
-VIP
-
-VVIP
-
-table
-
-book table
-
-reserve table
-
-package
-
-birthday package
-
-table availability
-
 booking
-General reservations.
+Customer wants an appointment OR wants to join the walk-in queue. Both are
+"booking": the booking service itself asks the customer whether they want to
+queue or book a time, so never try to split them.
 
 Examples:
 
 book
 
-reservation
+book an appointment
 
-reserve
+I need a haircut
 
-appointment
+can I get a fade tomorrow
 
-booking
+any space today
 
-shisha
-Anything hookah related.
+can I come now
 
-Examples:
+join the queue
 
-hookah
+walk-in
 
-hubbly
+how long is the wait
 
-shisha
+how many people are in front of me
 
-coal
+what services do you offer
 
-flavour
+appointment for Saturday
 
-double apple
-
-mint
+reserve a slot
 
 support
-Human assistance.
+Customer needs a human, or wants something the booking and queue flows
+cannot do on their own.
 
 Examples:
 
-talk to agent
+talk to someone
 
-manager
+speak to the manager
 
 complaint
 
@@ -560,6 +390,22 @@ help
 
 customer service
 
+cancel my appointment
+
+reschedule my booking
+
+change my booking time
+
+I'm running late
+
+what time do you open
+
+where are you located
+
+do you take card
+
+the booking message I got was wrong
+
 unknown
 Greeting, casual conversation, or insufficient information.
 
@@ -568,6 +414,8 @@ Examples:
 hello
 
 hi
+
+howzit
 
 good morning
 
@@ -608,40 +456,32 @@ Use BOTH the payload type and the accompanying text.
 Examples:
 
 [image message]
-Bank payment receipt
-→ wallet
+Haircut I want
+→ booking
 
 [image message]
-QR ticket
-→ ticket
+Hairstyle inspiration photo, no other text
+→ booking
 
 [image message]
-Club flyer
-→ event
-
-[image message]
-Bottle menu
-→ order
+This isn't working
+→ support
 
 [button reply]
-Passport
-→ wallet
+Book Appointment
+→ booking
 
 [button reply]
-Events
-→ event
+Join Queue
+→ booking
 
 [button reply]
-Order Drinks
-→ order
-
-[button reply]
-VVIP
-→ vvip
+Talk to Support
+→ support
 
 [location message]
-Nightclub location
-→ event
+Shop location or directions
+→ support
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CLASSIFICATION RULES
@@ -653,22 +493,23 @@ Never return multiple intents.
 
 Never invent missing information.
 
-If uncertain, prefer the most specific business domain.
+If a message mentions cancelling, rescheduling, changing, or complaining
+about a booking, it is "support" even though it contains booking words.
+The customer already has an appointment; they are not asking for a new one.
+
+If uncertain between booking and support, prefer booking when the customer
+is clearly asking for a service, a slot, or a place in the queue.
 
 Examples:
 
-"buy tickets and top up"
+"book a haircut and tell me the price"
 
 Primary customer objective:
-ticket
+booking
 
-"can I order champagne"
+"cancel my 3pm"
 
-order
-
-"book VIP"
-
-vvip
+support
 
 "I need help"
 
@@ -715,31 +556,33 @@ Never explain policies.
 
 Never generate conversation.
 
-You are a deterministic business intent classifier for the Rands platform. - "[image message]": often a screenshot or photo. A payment receipt, bank
-  app screenshot, or QR/proof-of-payment image usually means "wallet". A
-  photo of a ticket, barcode, or booking confirmation usually means "ticket".
-  A flyer, poster, or lineup photo usually means "event". If the caption
-  describes a problem (e.g. "this isn't working", "error"), prefer "support".
-  With no caption, treat it as ambiguous and lean toward "support" only if
-  there's no better signal — otherwise "unknown".
+You are a deterministic business intent classifier for the QLess platform.
+
+Handling non-text payloads:
+
+- "[image message]": often a photo or screenshot. A hairstyle reference photo
+  or a picture of the style the customer wants usually means "booking". A
+  screenshot of an error, or a caption describing a problem (e.g. "this isn't
+  working", "error"), means "support". With no caption and no other signal,
+  treat it as ambiguous: lean "support" only if there's no better signal,
+  otherwise "unknown".
 - "[video message]" / "[document message]" / "[audio message]": apply the
   same reasoning as images — infer from any caption or accompanying text.
   Audio messages with no transcribable text are commonly people explaining
-  an issue or asking a question verbally; with no caption these usually lean
-  "support" (a human wanting to talk through something) unless other context
-  points elsewhere.
+  something verbally or asking a question; with no caption these usually
+  lean "support" (a human wanting to talk through something) unless other
+  context points elsewhere.
 - "[button reply]": the user tapped a button from a previous menu. The
   button label is usually a strong, near-literal signal of intent — trust
-  it directly (e.g. "🪪 Passport" or "Check Balance" → wallet, "My Tickets"
-  → ticket, "Browse Events" → event, "Talk to Support" → support).
-- "[location message]": the user shared a GPS location/place. This is
-  almost always about finding or confirming a venue, so it should usually
-  map to "event" — unless the shared place/name text clearly references
-  account or payment issues, in which case prefer "support".
+  it directly (e.g. "Book Appointment" or "Join Queue" → booking, "Talk to
+  Support" → support).
+- "[location message]": the user shared a GPS location/place. Customers
+  usually do this to ask where the shop is or to share where they are, which
+  needs a person to answer, so it should usually map to "support" — unless
+  the shared place/name text clearly relates to booking a service.
 - "<type>: no user text available" (any other type with nothing else to go
   on): there is no real signal beyond the message type. Default to
-  "unknown" with low confidence, unless the type itself is informative
-  (e.g. a payment-related type), in which case use your best judgement.
+  "unknown" with low confidence.
 
 When in doubt between two intents, prefer the one with more concrete,
 specific evidence in the text over a generic catch-all. Only use "unknown"
@@ -752,21 +595,21 @@ Return:
 `;
 
 /**
- * Builds the text we hand to Claude, in priority order:
+ * Builds the text we hand to the AI classifier, in priority order:
  *   1. message.text       (plain text messages)
  *   2. message.caption    (image/video/document captions)
  *   3. message.buttonText (button / interactive replies)
  *   4. message.location   (shared GPS location — name/address if present)
  *   5. `[${type} message] no user text available` (last resort — still
- *      tells Claude what kind of message this was instead of sending
+ *      tells the classifier what kind of message this was instead of sending
  *      nothing or an empty string)
  *
  * Returns null only when there's truly nothing to go on (no text, no
  * caption, no button text, no location, and no type), in which case the
- * caller skips the Claude call entirely and uses the deterministic fallback.
+ * caller skips the AI call entirely and uses the deterministic fallback.
  *
  * Non-text message types are prefixed (e.g. "[image message] ...") so
- * Claude has the payload shape as context, which improves classification
+ * the classifier has the payload shape as context, which improves classification
  * accuracy for media/button/location messages over sending the caption
  * (or nothing) alone. The prefix format is consistent across every branch
  * — including the final fallback — so the system prompt can pattern-match
@@ -812,24 +655,24 @@ function buildClassificationText(message: {
 }
 
 /**
- * Reconciles a raw Claude classification against conversation context so
+ * Reconciles a raw AI classification against conversation context so
  * a single weak or hallucinated result never propagates on its own.
  *
  * Applies, in order:
  *   1. Strong context override — ambiguous/continuation text plus a
- *      Claude result below {@link CONTEXT_OVERRIDE_CONFIDENCE_THRESHOLD}
+ *      the AI result below {@link CONTEXT_OVERRIDE_CONFIDENCE_THRESHOLD}
  *      defers to context outright, since a one-word reply is exactly the
- *      case Claude is least equipped to classify correctly on its own.
+ *      case the AI classifier is least equipped to classify correctly on its own.
  *   2. Confidence gating — any result below
  *      {@link CONFIDENCE_GATE_THRESHOLD} is reconciled against context
  *      (if any) or downgraded, regardless of message shape.
- *   3. Otherwise, the Claude result is trusted as-is.
+ *   3. Otherwise, the AI result is trusted as-is.
  *
  * This function does not apply the final low-confidence floor — callers
  * are expected to pass every result through {@link applyLowConfidenceFloor}
  * before returning it.
  */
-function reconcileClaudeResult(
+function reconcileAiResult(
   object: { intent: Intent; confidence: number; reasoning: string },
   context: IntentRouterContext | undefined,
   isContinuation: boolean,
@@ -849,7 +692,7 @@ function reconcileClaudeResult(
       return {
         intent: contextIntent,
         confidence: 0.65,
-        reasoning: "Low-confidence Claude result; preferring conversation context",
+        reasoning: "Low-confidence AI result; preferring conversation context",
       }
     }
     return {
@@ -867,12 +710,12 @@ function reconcileClaudeResult(
 }
 
 /**
- * Builds a safe result when Claude cannot be consulted at all (it threw
+ * Builds a safe result when the AI model cannot be consulted at all (it threw
  * or timed out). Prefers conversation context over a blind generic
  * fallback, since a known prior intent is still meaningfully better
  * evidence than nothing.
  */
-function buildClaudeFailureResult(context: IntentRouterContext | undefined, reason: string): RoutedIntent {
+function buildAiFailureResult(context: IntentRouterContext | undefined, reason: string): RoutedIntent {
   const contextIntent = isValidIntent(context?.lastIntent) ? (context!.lastIntent as Intent) : null
 
   if (contextIntent) {
@@ -907,7 +750,7 @@ function applyLowConfidenceFloor(result: RoutedIntent): RoutedIntent {
  *   2. Context Continuation (uses the supplied, already-loaded conversation
  *      context — no fetching, no I/O)
  *   3. Intent Fast-Path (clear signals without AI)
- *   4. Claude Classification (complex/non-obvious messages)
+ *   4. AI Classification (complex/non-obvious messages)
  *
  * This function has exactly one responsibility: given a message and an
  * optional, already-loaded context, return a {@link RoutedIntent}. It
@@ -949,10 +792,10 @@ export async function routeIntent(
   }
 
   // ── STEP 2: CONTEXT CONTINUATION ─────────────────────────────────────
-  // Ambiguous replies ("2", "card", "yes") inherit intent from the
+  // Ambiguous replies ("2", "yes", "tomorrow") inherit intent from the
   // already-loaded conversation context. This runs BEFORE the intent
-  // fast-path so "card" during ticket purchase stays as "ticket", not
-  // "wallet". No I/O — reads only from the supplied `context` parameter.
+  // fast-path so "yes" during a booking confirmation stays as "booking",
+  // not "support". No I/O — reads only from the supplied `context` parameter.
   const contextResult = resolveFromContext(text, context)
   if (contextResult) {
     console.log("[IntentRouter]", contextResult.reasoning)
@@ -960,17 +803,17 @@ export async function routeIntent(
   }
 
   // Computed once and reused by both the fast-path guard below and the
-  // Claude reconciliation step, so both agree on what counts as ambiguous.
+  // the AI reconciliation step, so both agree on what counts as ambiguous.
   const isContinuation = isContinuationText(text)
 
   // ── STEP 3: INTENT FAST-PATH ────────────────────────────────────────
   // Clear intent signals that don't need AI. Only reaches here if context
   // couldn't resolve the message — either none was supplied, or it wasn't
-  // valid. Skipped entirely for continuation-style text ("2", "card",
-  // "yes") so a confident fast-path rule never overrides what should
-  // instead be handled as an unresolved continuation by Claude below —
-  // e.g. a bare "card" reply with no known prior intent should be
-  // reconciled with care, not stamped "wallet" on pattern-match alone.
+  // valid. Skipped entirely for continuation-style text ("2", "yes",
+  // "tomorrow") so a confident fast-path rule never overrides what should
+  // instead be handled as an unresolved continuation by the AI classifier below —
+  // e.g. a bare "yes" reply with no known prior intent should be
+  // reconciled with care, not stamped on pattern-match alone.
   if (!isContinuation) {
     const fastPathResult = checkIntentFastPath(text)
     if (fastPathResult) {
@@ -979,12 +822,12 @@ export async function routeIntent(
     }
   }
 
-  // ── STEP 4: CLAUDE CLASSIFICATION ───────────────────────────────────
+  // ── STEP 4: AI CLASSIFICATION ───────────────────────────────────
   // Catch-all for complex, non-obvious messages.
   const CLASSIFICATION_TIMEOUT_MS = 3000
 
   try {
-    console.log("[IntentRouter] Claude fallback used for:", text)
+    console.log("[IntentRouter] AI fallback used for:", text)
 
     let timeoutId: ReturnType<typeof setTimeout>
 
@@ -1004,16 +847,16 @@ export async function routeIntent(
     clearTimeout(timeoutId!)
 
     if (result === TIMEOUT_SENTINEL) {
-      const timeoutResult = buildClaudeFailureResult(context, "Claude classification timed out")
+      const timeoutResult = buildAiFailureResult(context, "AI classification timed out")
       console.log("[IntentRouter]", timeoutResult.reasoning)
       return applyLowConfidenceFloor(timeoutResult)
     }
 
     const { object } = result
 
-    const reconciled = reconcileClaudeResult(object, context, isContinuation)
+    const reconciled = reconcileAiResult(object, context, isContinuation)
     console.log(
-      "[IntentRouter] Claude classification succeeded:",
+      "[IntentRouter] AI classification succeeded:",
       object.intent,
       "→ reconciled:",
       reconciled.intent,
@@ -1022,8 +865,8 @@ export async function routeIntent(
 
     return applyLowConfidenceFloor(reconciled)
   } catch (error) {
-    console.log("[IntentRouter] Claude failed:", error)
-    const failureResult = buildClaudeFailureResult(context, "Claude classification failed")
+    console.log("[IntentRouter] AI classification failed:", error)
+    const failureResult = buildAiFailureResult(context, "AI classification failed")
     console.log("[IntentRouter]", failureResult.reasoning)
     return applyLowConfidenceFloor(failureResult)
   }
