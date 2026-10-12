@@ -434,6 +434,60 @@ export async function toggleServiceActive(id: string, active: boolean): Promise<
   return { ok: true }
 }
 
+export async function deleteService(id: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("services.manage")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { data: service, error: fetchError } = await supabase
+    .from("services")
+    .select("id, name")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (fetchError) return { ok: false, error: fetchError.message }
+  if (!service) return { ok: false, error: "Service not found." }
+
+  const inUseMessage = `"${service.name}" has bookings or queue history, so it can't be deleted without losing that history. Deactivate it instead: customers won't see it, but your records stay intact.`
+
+  // Refuse to delete a service that past bookings / queue entries point to.
+  // Checked explicitly (rather than relying only on the foreign key) so a
+  // cascading FK can never silently wipe booking history or billing records.
+  const [bookingsUsing, queueUsing] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("service_id", id),
+    supabase
+      .from("queue_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("service_id", id),
+  ])
+  if (bookingsUsing.error) return { ok: false, error: bookingsUsing.error.message }
+  if (queueUsing.error) return { ok: false, error: queueUsing.error.message }
+  if ((bookingsUsing.count ?? 0) > 0 || (queueUsing.count ?? 0) > 0) {
+    return { ok: false, error: inUseMessage }
+  }
+
+  const { error: deleteError } = await supabase
+    .from("services")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+
+  if (deleteError) {
+    // 23503 = foreign_key_violation (some other table still references it)
+    if (deleteError.code === "23503") return { ok: false, error: inUseMessage }
+    return { ok: false, error: deleteError.message }
+  }
+
+  await logActivity(supabase, tenantId!, { category: "services", action: `Deleted service "${service.name}"` })
+
+  revalidatePath("/admin")
+  return { ok: true }
+}
+
 // ============================================================================
 // Queue
 // ============================================================================

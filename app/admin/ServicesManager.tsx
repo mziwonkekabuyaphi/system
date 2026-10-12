@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useTransition, type FormEvent } from "react"
-import { addService, updateService, toggleServiceActive } from "./actions"
+import { addService, updateService, toggleServiceActive, deleteService } from "./actions"
 import type { AdminService } from "./types"
 
 function ServiceRow({ service }: { service: AdminService }) {
@@ -12,6 +12,7 @@ function ServiceRow({ service }: { service: AdminService }) {
   const [duration, setDuration] = useState(String(service.durationMinutes))
   const [isSaving, startSave] = useTransition()
   const [isToggling, startToggle] = useTransition()
+  const [isDeleting, startDelete] = useTransition()
 
   function save() {
     startSave(async () => {
@@ -29,6 +30,17 @@ function ServiceRow({ service }: { service: AdminService }) {
     startToggle(async () => {
       const result = await toggleServiceActive(service.id, !service.active)
       if (!result.ok) window.alert(`Couldn't update: ${result.error}`)
+    })
+  }
+
+  function remove() {
+    const confirmed = window.confirm(
+      `Delete "${service.name}"? This can't be undone.\n\nIf you only want to hide it from customers, use Deactivate instead.`,
+    )
+    if (!confirmed) return
+    startDelete(async () => {
+      const result = await deleteService(service.id)
+      if (!result.ok) window.alert(`Couldn't delete: ${result.error}`)
     })
   }
 
@@ -78,6 +90,9 @@ function ServiceRow({ service }: { service: AdminService }) {
         </button>
         <button onClick={toggleActive} disabled={isToggling} className="text-[#8A8375] disabled:opacity-50">
           {service.active ? "Deactivate" : "Activate"}
+        </button>
+        <button onClick={remove} disabled={isDeleting} className="text-[#7A2E2E] disabled:opacity-50">
+          {isDeleting ? "Deleting…" : "Delete"}
         </button>
       </div>
     </li>
