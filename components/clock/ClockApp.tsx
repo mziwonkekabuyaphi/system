@@ -9,14 +9,17 @@
  * actions.ts, which re-resolves tenantId from `slug` on every call — this
  * component never holds or sends a tenantId itself.
  *
- * No idle timer needed the way the customer kiosk has one: this screen
- * has nothing to reset except its own PIN buffer, which it already clears
- * after every submit (success or error) and on the confirmation
- * auto-return below.
+ * LOOK + WORDING: the server (app/clock/[slug]/page.tsx) resolves the
+ * tenant's theme into CSS variables (`themeVars`, see clockSettings.ts) and
+ * their wording overrides into `copy`. Nothing here hardcodes a color or a
+ * piece of copy that a tenant can change. Text color is never admin-picked;
+ * it's derived from the background by contrast, same as /display.
  */
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import type { CSSProperties } from "react"
 import { submitClockPin, type ClockAction } from "@/app/clock/[slug]/actions"
+import type { ClockCopy } from "@/app/clock/[slug]/clockSettings"
 
 const MAX_PIN_LENGTH = 6
 const CONFIRMATION_DISPLAY_MS = 3500
@@ -25,7 +28,9 @@ interface ClockAppProps {
   slug: string
   displayName: string
   logoUrl: string | null
-  primaryColor: string
+  themeVars: CSSProperties
+  bgSolid: string
+  copy: ClockCopy
 }
 
 interface Confirmation {
@@ -47,13 +52,15 @@ function formatHours(hours: number): string {
   return `${h} hr ${m} min`
 }
 
-export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppProps) {
+export function ClockApp({ slug, displayName, logoUrl, themeVars, bgSolid, copy }: ClockAppProps) {
   const [pin, setPin] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const cssVars = { "--accent": primaryColor } as React.CSSProperties
+  // Don't leave the auto-return timer running if the tab unmounts.
+  useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current) }, [])
 
   function pressDigit(digit: string) {
     if (busy || confirmation) return
@@ -83,19 +90,21 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
     setPin("")
 
     if (!result.ok) {
-      setError(result.error)
+      // Wrong PIN uses the tenant's own wording; other errors keep the
+      // server's message (those are about setup/outages, not branding).
+      setError(result.code === "invalid_pin" ? copy.invalidPin : result.error)
       return
     }
 
     setConfirmation(result.data)
-    setTimeout(() => setConfirmation(null), CONFIRMATION_DISPLAY_MS)
+    resetTimer.current = setTimeout(() => setConfirmation(null), CONFIRMATION_DISPLAY_MS)
   }
 
   return (
-    <div className="clock" style={cssVars}>
+    <div className="clock" style={themeVars}>
       {confirmation ? (
         <div className="confirm">
-          <p className="confirmAction">{confirmation.action === "in" ? "Clocked in" : "Clocked out"}</p>
+          <p className="confirmAction">{confirmation.action === "in" ? copy.clockedIn : copy.clockedOut}</p>
           <h1 className="confirmName">{confirmation.staffName}</h1>
           <p className="confirmTime">at {formatTime(confirmation.time)}</p>
           {confirmation.action === "out" && confirmation.hoursWorked != null && (
@@ -109,7 +118,9 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
             <img src={logoUrl} alt="" className="logo" />
           )}
           <h1 className="shopName">{displayName}</h1>
-          <p className="prompt">Enter your PIN to clock in or out</p>
+          {copy.tagline && <p className="tagline">{copy.tagline}</p>}
+          <p className="heading">{copy.title}</p>
+          <p className="prompt">{copy.prompt}</p>
 
           <div className="dots" aria-hidden="true">
             {Array.from({ length: MAX_PIN_LENGTH }).map((_, i) => (
@@ -117,7 +128,7 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
             ))}
           </div>
 
-          {error && <p className="error">{error}</p>}
+          {error && <p className="error" role="alert">{error}</p>}
           {busy && <p className="status">Checking…</p>}
 
           <div className="keys">
@@ -132,17 +143,12 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
             <button type="button" className="key" onClick={() => pressDigit("0")} disabled={busy}>
               0
             </button>
-            <button type="button" className="key keyMuted" onClick={backspace} disabled={busy}>
+            <button type="button" className="key keyMuted" onClick={backspace} disabled={busy} aria-label="Delete last digit">
               ⌫
             </button>
           </div>
 
-          <button
-            type="button"
-            className="enter"
-            onClick={submit}
-            disabled={pin.length < 4 || busy}
-          >
+          <button type="button" className="enter" onClick={submit} disabled={pin.length < 4 || busy}>
             Enter
           </button>
         </div>
@@ -154,7 +160,7 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
           margin: 0;
           padding: 0;
           height: 100%;
-          background: #17140f;
+          background: ${bgSolid};
           -webkit-tap-highlight-color: transparent;
           overscroll-behavior: none;
         }
@@ -164,8 +170,8 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
         .clock {
           min-height: 100vh;
           width: 100%;
-          background: #17140f;
-          color: #f4f1ea;
+          background: var(--clock-bg);
+          color: var(--clock-fg);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -196,9 +202,24 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
           margin: 0;
         }
 
+        .tagline {
+          font-size: 15px;
+          color: var(--clock-fg-70);
+          margin: 0;
+        }
+
+        .heading {
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--clock-accent);
+          margin: 14px 0 0;
+        }
+
         .prompt {
           font-size: 15px;
-          color: #b8b0a0;
+          color: var(--clock-fg-70);
           margin: 0 0 16px;
         }
 
@@ -212,17 +233,17 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          border: 2px solid #4a443a;
+          border: 2px solid var(--clock-fg-28);
           background: transparent;
         }
 
         .dot.filled {
-          background: var(--accent);
-          border-color: var(--accent);
+          background: var(--clock-accent);
+          border-color: var(--clock-accent);
         }
 
         .error {
-          color: #e3968a;
+          color: var(--clock-error);
           font-size: 14px;
           font-weight: 600;
           margin: 0 0 8px;
@@ -230,7 +251,7 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
         }
 
         .status {
-          color: #b8b0a0;
+          color: var(--clock-fg-70);
           font-size: 14px;
           margin: 0 0 8px;
         }
@@ -246,16 +267,16 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
         .key {
           min-height: 76px;
           border-radius: 16px;
-          border: 1px solid #322d24;
-          background: #221e17;
-          color: #f4f1ea;
+          border: 1px solid var(--clock-line);
+          background: var(--clock-surface);
+          color: var(--clock-fg);
           font-size: 26px;
           font-weight: 600;
           cursor: pointer;
         }
 
         .key:active {
-          background: #2c271e;
+          background: var(--clock-surface-active);
         }
 
         .key:disabled {
@@ -265,7 +286,7 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
         .keyMuted {
           font-size: 15px;
           font-weight: 600;
-          color: #b8b0a0;
+          color: var(--clock-fg-70);
         }
 
         .enter {
@@ -274,8 +295,8 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
           min-height: 68px;
           border: none;
           border-radius: 16px;
-          background: var(--accent);
-          color: #fff;
+          background: var(--clock-accent);
+          color: var(--clock-on-accent);
           font-size: 20px;
           font-weight: 700;
           cursor: pointer;
@@ -293,7 +314,7 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
         .confirmAction {
           font-size: 18px;
           font-weight: 700;
-          color: var(--accent);
+          color: var(--clock-accent);
           margin: 0 0 8px;
           text-transform: uppercase;
           letter-spacing: 0.04em;
@@ -307,13 +328,13 @@ export function ClockApp({ slug, displayName, logoUrl, primaryColor }: ClockAppP
 
         .confirmTime {
           font-size: 17px;
-          color: #b8b0a0;
+          color: var(--clock-fg-70);
           margin: 0;
         }
 
         .confirmHours {
           font-size: 17px;
-          color: #b8b0a0;
+          color: var(--clock-fg-70);
           margin: 8px 0 0;
         }
       `}</style>
