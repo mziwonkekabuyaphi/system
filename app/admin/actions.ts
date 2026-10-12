@@ -1056,6 +1056,17 @@ export async function deleteStaff(id: string): Promise<ActionResult> {
     return { ok: false, error: inUseMessage }
   }
 
+  // The activity log keeps pointing at a staff member (NO ACTION foreign key),
+  // which would block the delete. Detach those rows instead of deleting them:
+  // the log entries stay (their text already names the person), they just no
+  // longer link to a staff record that is about to disappear.
+  const { error: detachError } = await supabase
+    .from("staff_activity_logs")
+    .update({ staff_id: null })
+    .eq("tenant_id", tenantId)
+    .eq("staff_id", id)
+  if (detachError) return { ok: false, error: detachError.message }
+
   const { error: deleteError } = await supabase.from("staff").delete().eq("id", id).eq("tenant_id", tenantId)
   if (deleteError) {
     // 23503 = foreign_key_violation (some other table still references them)
@@ -1419,5 +1430,89 @@ export async function getPayrollActivityLog(limit = 50) {
       actorName: r.actor?.full_name ?? null,
       createdAt: r.created_at,
     })),
+  }
+}
+
+// ============================================================================
+// Customers — read-only directory of THIS shop's own customers
+// (tenant_customers), with how many bookings / queue visits each has.
+// Owner-only (settings.manage), same as the Inbox: it lists customer phone
+// numbers and emails. Loaded when the Customers tab is opened rather than
+// with the whole admin page, so it doesn't slow down every page load.
+// ============================================================================
+
+export interface AdminCustomer {
+  id: string
+  name: string | null
+  phone: string
+  email: string | null
+  /** Bookings that weren't cancelled. */
+  bookingCount: number
+  /** Walk-in queue visits (cancelled ones aren't counted). */
+  queueCount: number
+  /** Start time of their most recent non-cancelled booking (ISO), if any. */
+  latestBookingAt: string | null
+}
+
+export async function loadCustomers(): Promise<
+  { ok: true; customers: AdminCustomer[] } | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("settings.manage")
+  if (!supabase) return { ok: false, error: error! }
+
+  try {
+    // Supabase returns at most 1000 rows per request, so read in pages.
+    const PAGE = 1000
+    const MAX_ROWS = 50_000
+    const fetchAll = async (table: string, columns: string, onlyWithCustomer: boolean): Promise<any[]> => {
+      const rows: any[] = []
+      for (let from = 0; from < MAX_ROWS; from += PAGE) {
+        let query = (supabase as any).from(table).select(columns).eq("tenant_id", tenantId)
+        if (onlyWithCustomer) query = query.not("customer_id", "is", null)
+        const { data, error: pageError } = await query.order("id", { ascending: true }).range(from, from + PAGE - 1)
+        if (pageError) throw new Error(`${table}: ${pageError.message}`)
+        rows.push(...(data ?? []))
+        if (!data || data.length < PAGE) break
+      }
+      return rows
+    }
+
+    const [customerRows, bookingRows, queueRows] = await Promise.all([
+      fetchAll("tenant_customers", "id, full_name, phone, email", false),
+      fetchAll("bookings", "id, customer_id, start_time, status", true),
+      fetchAll("queue_entries", "id, customer_id, status, source", true),
+    ])
+
+    const bookingCounts = new Map<string, number>()
+    const latestBooking = new Map<string, string>()
+    for (const b of bookingRows) {
+      if (b.status === "cancelled") continue
+      bookingCounts.set(b.customer_id, (bookingCounts.get(b.customer_id) ?? 0) + 1)
+      const current = latestBooking.get(b.customer_id)
+      if (!current || b.start_time > current) latestBooking.set(b.customer_id, b.start_time)
+    }
+    const queueCounts = new Map<string, number>()
+    for (const q of queueRows) {
+      // Queue entries promoted from a booking (source = 'booking') are already
+      // counted as that booking, so only genuine walk-ins count here.
+      if (q.status === "cancelled" || q.source !== "walk_in") continue
+      queueCounts.set(q.customer_id, (queueCounts.get(q.customer_id) ?? 0) + 1)
+    }
+
+    return {
+      ok: true,
+      customers: customerRows.map((c: any) => ({
+        id: c.id,
+        name: c.full_name ?? null,
+        phone: c.phone ?? "",
+        email: c.email ?? null,
+        bookingCount: bookingCounts.get(c.id) ?? 0,
+        queueCount: queueCounts.get(c.id) ?? 0,
+        latestBookingAt: latestBooking.get(c.id) ?? null,
+      })),
+    }
+  } catch (err) {
+    console.error("[admin] loadCustomers failed", { tenantId, err })
+    return { ok: false, error: "Couldn't load your customers." }
   }
 }

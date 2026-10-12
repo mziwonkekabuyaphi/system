@@ -5,6 +5,7 @@ import type { SVGProps } from "react"
 
 import { LogoutButton } from "@/components/admin/LogoutButton"
 import { BillingPanel } from "@/components/admin/BillingPanel"
+import { CustomersManager } from "./CustomersManager"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
@@ -31,7 +32,7 @@ import type {
   AdminTenantSettings,
 } from "./types"
 
-type Tab = "today" | "queue" | "inbox" | "services" | "staff" | "billing" | "settings"
+type Tab = "today" | "queue" | "customers" | "inbox" | "services" | "staff" | "billing" | "settings"
 
 const SIDEBAR_COLLAPSED = 72 // px
 const SIDEBAR_EXPANDED = 240 // px
@@ -89,6 +90,17 @@ function UsersIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function ContactsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="4.5" width="18" height="15" rx="2.2" />
+      <circle cx="9" cy="10.5" r="2.2" />
+      <path d="M5.5 16.2c.6-1.6 1.9-2.5 3.5-2.5s2.9.9 3.5 2.5" />
+      <path d="M15 9.5h3M15 12.5h3" />
+    </svg>
+  )
+}
+
 function GearIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" {...props}>
@@ -121,6 +133,7 @@ function ChevronIcon(props: SVGProps<SVGSVGElement>) {
 const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement>) => JSX.Element }> = [
   { id: "today", label: "Appointments", icon: CalendarIcon },
   { id: "queue", label: "Queue", icon: TicketIcon },
+  { id: "customers", label: "Customers", icon: ContactsIcon },
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "services", label: "Services", icon: TagIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
@@ -189,6 +202,8 @@ export function AdminView({
     // (billing.view / inbox.view) if you add them.
     if (t.id === "billing") return staffPermissions.settingsManage
     if (t.id === "inbox") return staffPermissions.settingsManage
+    // Customers lists phone numbers and emails, so it's owner-only too.
+    if (t.id === "customers") return staffPermissions.settingsManage
     return true
   })
 
@@ -329,6 +344,7 @@ export function AdminView({
         <main className="px-6 pb-24 pt-2">
           {tab === "today" && <TodayBookings initialBookings={initialBookings} timezone={timezone} />}
           {tab === "queue" && <QueueManager initialQueue={initialQueue} timezone={timezone} />}
+          {tab === "customers" && staffPermissions.settingsManage && <CustomersManager timezone={timezone} />}
           {tab === "inbox" && staffPermissions.settingsManage && (
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
           )}
