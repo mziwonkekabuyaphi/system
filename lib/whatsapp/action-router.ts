@@ -32,6 +32,12 @@
  *      ("booking_"/"queue_"), so the "is this a genuinely new intent"
  *      check below is far simpler than the original's.
  *
+ * SMART GREETING (new): buildEntryReply() now opens with a random,
+ * time-aware phrase from lib/whatsapp/greeting.ts instead of a fixed
+ * "Hey <name>!". The time of day uses the SHOP's timezone, "Welcome
+ * back" style phrases are skipped for customers with no saved name, and
+ * "Welcome to <shop>," uses tenants.name so it stays white-label safe.
+ *
  * Dependency direction (unchanged): WhatsApp → Intent Router → Action
  * Router → Services → Supabase.
  */
@@ -45,6 +51,10 @@ import { queueService } from "@/lib/services/queue"
 
 import { stateService, type ConversationState } from "@/lib/services/state"
 import { getCustomer, type TenantCustomer } from "@/lib/services/tenant-customer"
+
+import { getSmartGreeting } from "@/lib/whatsapp/greeting"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 
 /**
  * Contract each service must implement to participate in stateful
@@ -145,9 +155,32 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   }
 
   const firstName = firstNameFromCustomer(customer)
+  const isReturning = Boolean(customer?.name)
+
+  // Shop-local time of day + the shop's own name (white-label safe).
+  // Both are best-effort: if either lookup fails the greeting still works.
+  let timeZone: string | undefined
+  let shopName: string | null = null
+  try {
+    const supabase = getSupabaseServerClient()
+    if (supabase) {
+      const [tz, tenantRow, settingsRow] = await Promise.all([
+        getTenantTimezone(supabase, tenantId),
+        supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
+        supabase.from("tenant_settings").select("brand_name").eq("tenant_id", tenantId).maybeSingle(),
+      ])
+      timeZone = tz
+      // Private-label brand name wins; fall back to the tenant's own name.
+      shopName = settingsRow.data?.brand_name?.trim() || tenantRow.data?.name || null
+    }
+  } catch (error) {
+    console.error("[action-router] greeting context lookup failed:", error)
+  }
+
+  const greeting = getSmartGreeting({ timeZone, isReturning, shopName })
   return {
     ...entry,
-    reply: `Hey ${firstName}! 👋\n\n${entry.reply}`,
+    reply: `${greeting} ${firstName}! 👋\n\n${entry.reply}`,
   }
 }
 
