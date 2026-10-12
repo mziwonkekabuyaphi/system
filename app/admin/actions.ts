@@ -1516,3 +1516,72 @@ export async function loadCustomers(): Promise<
     return { ok: false, error: "Couldn't load your customers." }
   }
 }
+
+export async function deleteCustomer(id: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("settings.manage")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { data: customer, error: fetchError } = await supabase
+    .from("tenant_customers")
+    .select("id, full_name, phone")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (fetchError) return { ok: false, error: fetchError.message }
+  if (!customer) return { ok: false, error: "Customer not found." }
+
+  const label = customer.full_name?.trim() || customer.phone || "This customer"
+
+  // Don't delete someone who is about to be served: an upcoming booking or a
+  // place in today's queue. Those should be cancelled / removed first, so a
+  // customer never silently vanishes from the day's schedule.
+  const nowIso = new Date().toISOString()
+  const [upcomingBookings, activeQueue] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("customer_id", id)
+      .eq("status", "confirmed")
+      .gt("end_time", nowIso),
+    supabase
+      .from("queue_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("customer_id", id)
+      .in("status", ["waiting", "called"]),
+  ])
+  if (upcomingBookings.error) return { ok: false, error: upcomingBookings.error.message }
+  if (activeQueue.error) return { ok: false, error: activeQueue.error.message }
+  if ((upcomingBookings.count ?? 0) > 0 || (activeQueue.count ?? 0) > 0) {
+    return {
+      ok: false,
+      error: `${label} has an upcoming booking or is in the queue right now. Cancel the booking or remove them from the queue first, then delete them.`,
+    }
+  }
+
+  // The billing ledger (billable_visits) must keep its rows so past invoices
+  // and visit counts stay correct. It blocks deleting the customer, so detach
+  // those rows from the customer first (customer_id becomes empty).
+  const { error: detachError } = await supabase
+    .from("billable_visits")
+    .update({ customer_id: null })
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", id)
+  if (detachError) return { ok: false, error: detachError.message }
+
+  // Deleting the customer also deletes their bookings and queue entries
+  // (cascade). Their WhatsApp conversations are kept, just unlinked.
+  const { error: deleteError } = await supabase
+    .from("tenant_customers")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+  if (deleteError) return { ok: false, error: deleteError.message }
+
+  // Deliberately generic: don't write the customer's details into the log.
+  await logActivity(supabase, tenantId!, { category: "bookings", action: "Deleted a customer" })
+
+  revalidatePath("/admin")
+  return { ok: true }
+}

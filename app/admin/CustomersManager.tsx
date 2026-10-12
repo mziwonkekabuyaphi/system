@@ -1,8 +1,9 @@
 // app/admin/CustomersManager.tsx
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { loadCustomers, type AdminCustomer } from "./actions"
+import { useEffect, useMemo, useState, useTransition } from "react"
+import { deleteCustomer, loadCustomers, type AdminCustomer } from "./actions"
+import { ConfirmDialog, NoticeModal, type Notice } from "./AdminModals"
 
 type SortKey = "name" | "bookings" | "latest"
 
@@ -25,6 +26,9 @@ export function CustomersManager({ timezone }: { timezone: string }) {
   const [sort, setSort] = useState<SortKey>("name")
   const [visible, setVisible] = useState(PAGE_SIZE)
   const [reloadKey, setReloadKey] = useState(0)
+  const [deleteTarget, setDeleteTarget] = useState<AdminCustomer | null>(null)
+  const [isDeleting, startDelete] = useTransition()
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -66,6 +70,20 @@ export function CustomersManager({ timezone }: { timezone: string }) {
     }
     return sorted
   }, [customers, query, sort])
+
+  function confirmDelete() {
+    if (!deleteTarget) return
+    const target = deleteTarget
+    startDelete(async () => {
+      const result = await deleteCustomer(target.id)
+      setDeleteTarget(null)
+      if (result.ok) {
+        setCustomers((prev) => (prev ? prev.filter((c) => c.id !== target.id) : prev))
+      } else {
+        setNotice({ title: "Couldn't delete", message: result.error })
+      }
+    })
+  }
 
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString("en-ZA", {
@@ -173,6 +191,9 @@ export function CustomersManager({ timezone }: { timezone: string }) {
                 {c.latestBookingAt && (
                   <p className="mt-0.5 text-xs text-[#8A8375]">Latest: {formatDate(c.latestBookingAt)}</p>
                 )}
+                <button onClick={() => setDeleteTarget(c)} className="mt-1 text-xs text-[#7A2E2E]">
+                  Delete
+                </button>
               </div>
             </li>
           ))}
@@ -187,6 +208,24 @@ export function CustomersManager({ timezone }: { timezone: string }) {
           Show more ({filtered.length - visible} left)
         </button>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete this customer?"
+        message={
+          <>
+            <span className="font-medium text-[#1C1A17]">{deleteTarget ? displayName(deleteTarget) : ""}</span> and
+            their booking and queue history will be deleted for good. Your billing records are kept. This can&apos;t be
+            undone.
+          </>
+        }
+        confirmLabel="Delete customer"
+        busyLabel="Deleting…"
+        isBusy={isDeleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      <NoticeModal notice={notice} onClose={() => setNotice(null)} />
     </div>
   )
 }
