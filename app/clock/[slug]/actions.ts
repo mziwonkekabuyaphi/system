@@ -25,7 +25,7 @@ export type ClockAction = "in" | "out"
 
 export type ClockResult =
   | { ok: true; data: { staffName: string; action: ClockAction; time: string; hoursWorked?: number } }
-  | { ok: false; error: string }
+  | { ok: false; error: string; code?: "invalid_pin" }
 
 export async function submitClockPin(slug: string, pin: string): Promise<ClockResult> {
   if (!/^\d{4,6}$/.test(pin)) {
@@ -53,7 +53,7 @@ export async function submitClockPin(slug: string, pin: string): Promise<ClockRe
       .eq("active", true)
       .maybeSingle()
     if (staffError) throw new Error(staffError.message)
-    if (!member) return { ok: false, error: "PIN not recognized. Please try again." }
+    if (!member) return { ok: false, error: "PIN not recognized. Please try again.", code: "invalid_pin" }
 
     const { data: openShift, error: openShiftError } = await supabase
       .from("staff_shifts")
