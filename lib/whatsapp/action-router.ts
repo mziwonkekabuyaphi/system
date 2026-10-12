@@ -167,11 +167,12 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
       const [tz, tenantRow, settingsRow] = await Promise.all([
         getTenantTimezone(supabase, tenantId),
         supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
-        supabase.from("tenant_settings").select("brand_name").eq("tenant_id", tenantId).maybeSingle(),
+        supabase.from("tenant_branding").select("display_name").eq("tenant_id", tenantId).maybeSingle(),
       ])
       timeZone = tz
-      // Private-label brand name wins; fall back to the tenant's own name.
-      shopName = settingsRow.data?.brand_name?.trim() || tenantRow.data?.name || null
+      // The Display name owners already set under Settings > Branding wins;
+      // fall back to the tenant's own name.
+      shopName = settingsRow.data?.display_name?.trim() || tenantRow.data?.name || null
     }
   } catch (error) {
     console.error("[action-router] greeting context lookup failed:", error)
