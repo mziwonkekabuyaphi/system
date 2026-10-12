@@ -103,7 +103,7 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
-import type { AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
+import type { AdminClockSettings, AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
 
 type ActionResult = { success: true } | { success: false; error: string }
 type LogoActionResult = { success: true; logoUrl: string } | { success: false; error: string }
@@ -163,6 +163,14 @@ const MAX_DISPLAY_LABEL_LENGTH = 40
 const MAX_DISPLAY_TAGLINE_LENGTH = 80
 const MAX_DISPLAY_EMPTY_TEXT_LENGTH = 100
 const MAX_DISPLAY_BADGE_LENGTH = 20
+
+// Staff clock-in pad wording bounds (tenant_branding.clock_* columns, see
+// migration_clock_settings.sql). Kept short: the pad is a phone/tablet layout.
+const MAX_CLOCK_TITLE_LENGTH = 60
+const MAX_CLOCK_PROMPT_LENGTH = 80
+const MAX_CLOCK_LABEL_LENGTH = 40
+const MAX_CLOCK_TAGLINE_LENGTH = 80
+const MAX_CLOCK_INVALID_PIN_LENGTH = 100
 
 async function tenantContext() {
   const { tenantId, roleKey } = await requireTenantMember()
@@ -834,6 +842,90 @@ export async function updateDisplaySettings(input: {
         display_queue_show_wait_estimate: input.showQueueWaitEstimate,
         display_queue_show_duration: input.showQueueDuration,
         display_queue_show_reference: input.showQueueReference,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("tenant_id", tenantId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clock-in settings — tenant_branding's clock_* columns (the public staff
+// PIN pad at /clock/[slug], components/clock/ClockApp.tsx). Same rules as
+// the display theme: dark/light are free, a "custom" background needs the
+// 'branding' module, and wording is free-text with length caps (empty -> null
+// so the pad falls back to its default copy).
+// ---------------------------------------------------------------------------
+export async function updateClockSettings(input: AdminClockSettings): Promise<ActionResult> {
+  try {
+    if (!["dark", "light", "custom"].includes(input.theme)) {
+      return { success: false, error: "Invalid theme." }
+    }
+    if (input.backgroundColor !== null && !/^#[0-9A-Fa-f]{6}$/.test(input.backgroundColor)) {
+      return { success: false, error: "Background colour must be a hex value like #15110D." }
+    }
+
+    const fields: Array<{ label: string; value: string | null; max: number }> = [
+      { label: "Tagline", value: input.tagline, max: MAX_CLOCK_TAGLINE_LENGTH },
+      { label: "Heading", value: input.title, max: MAX_CLOCK_TITLE_LENGTH },
+      { label: "PIN prompt", value: input.prompt, max: MAX_CLOCK_PROMPT_LENGTH },
+      { label: "Clock-in confirmation", value: input.clockedInLabel, max: MAX_CLOCK_LABEL_LENGTH },
+      { label: "Clock-out confirmation", value: input.clockedOutLabel, max: MAX_CLOCK_LABEL_LENGTH },
+      { label: "Wrong PIN message", value: input.invalidPinText, max: MAX_CLOCK_INVALID_PIN_LENGTH },
+    ]
+    for (const f of fields) {
+      if (f.value && f.value.trim().length > f.max) {
+        return { success: false, error: `${f.label} must be ${f.max} characters or fewer.` }
+      }
+    }
+
+    const { supabase, tenantId } = await tenantContext()
+
+    let canCustomizeBranding = false
+    try {
+      canCustomizeBranding = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding)
+    } catch {
+      return { success: false, error: "Could not verify plan" }
+    }
+
+    // Without the module, "custom" is only accepted as an unchanged re-save,
+    // and clock_background_color is never written (same as updateDisplaySettings).
+    if (!canCustomizeBranding && input.theme === "custom") {
+      const { data: current } = await supabase
+        .from("tenant_branding")
+        .select("clock_theme, clock_background_color")
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+
+      const unchanged =
+        current?.clock_theme === "custom" &&
+        (current.clock_background_color ?? "").toLowerCase() === (input.backgroundColor ?? "").toLowerCase()
+
+      if (!unchanged) {
+        return {
+          success: false,
+          error: "A custom clock-in background colour isn't included in your current plan. Upgrade to use it.",
+        }
+      }
+    }
+
+    const { error } = await supabase
+      .from("tenant_branding")
+      .update({
+        clock_theme: input.theme,
+        ...(canCustomizeBranding ? { clock_background_color: input.backgroundColor } : {}),
+        clock_tagline: input.tagline?.trim() || null,
+        clock_title: input.title?.trim() || null,
+        clock_prompt: input.prompt?.trim() || null,
+        clock_clocked_in_label: input.clockedInLabel?.trim() || null,
+        clock_clocked_out_label: input.clockedOutLabel?.trim() || null,
+        clock_invalid_pin_text: input.invalidPinText?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

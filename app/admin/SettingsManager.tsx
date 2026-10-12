@@ -7,6 +7,7 @@ import type {
   AdminBookingSettings,
   AdminBranding,
   AdminBusinessHours,
+  AdminClockSettings,
   AdminDisplaySettings,
   AdminKioskSettings,
   AdminMessageSettings,
@@ -15,13 +16,14 @@ import type {
   AdminTenantSettings,
 } from "./types"
 import { PrivateLabelPanel } from "./settings/BrandingPanels"
+import { ClockPanel } from "./settings/ClockPanels"
 import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
 import { BookingSettingsPanel, MessageSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
 import { SettingsPageHeader } from "./settings/ui"
 
-type SubTab = "general" | "kiosk" | "display" | "private-label" | "booking" | "queue" | "messages"
+type SubTab = "general" | "kiosk" | "display" | "clock" | "private-label" | "booking" | "queue" | "messages"
 
 // Settings are grouped by what the owner is thinking about, not by which
 // part of the system they happen to touch. Labels avoid clashing with the
@@ -61,6 +63,12 @@ const SETTINGS_NAV: Array<{
         label: "TV display",
         title: "TV display",
         description: "The screen in your waiting area showing the queue, bookings and menu.",
+      },
+      {
+        id: "clock",
+        label: "Staff clock-in",
+        title: "Staff clock-in",
+        description: "The PIN pad your team uses to clock in and out: colours and wording.",
       },
     ],
   },
@@ -108,6 +116,7 @@ export function SettingsManager({
   canCustomizeBranding,
   initialKioskSettings,
   initialDisplaySettings,
+  initialClockSettings,
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
@@ -136,6 +145,7 @@ export function SettingsManager({
   canCustomizeBranding?: boolean
   initialKioskSettings: AdminKioskSettings
   initialDisplaySettings: AdminDisplaySettings
+  initialClockSettings: AdminClockSettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialMessageSettings: AdminMessageSettings
@@ -226,6 +236,12 @@ export function SettingsManager({
         <DisplayPanel
           tenantSlug={tenantSlug}
           initial={initialDisplaySettings}
+          canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
+        />
+      )}
+      {subTab === "clock" && (
+        <ClockPanel
+          initial={initialClockSettings}
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
         />
       )}

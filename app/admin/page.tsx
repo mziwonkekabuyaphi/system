@@ -58,6 +58,7 @@ import type {
   AdminBookingSettings,
   AdminBranding,
   AdminBusinessHours,
+  AdminClockSettings,
   AdminConversationSummary,
   AdminDisplaySettings,
   AdminInboxStats,
@@ -225,6 +226,7 @@ async function getSettingsData(
   kioskEnabled: boolean
   kioskSettings: AdminKioskSettings
   displaySettings: AdminDisplaySettings
+  clockSettings: AdminClockSettings
   bookingSettings: AdminBookingSettings
   queueSettings: AdminQueueSettings
   messageSettings: AdminMessageSettings
@@ -253,7 +255,8 @@ async function getSettingsData(
           "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
           "display_theme, display_layout, display_background_color, display_tagline, " +
-          "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label",
+          "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
+          "clock_theme, clock_background_color, clock_tagline, clock_title, clock_prompt, clock_clocked_in_label, clock_clocked_out_label, clock_invalid_pin_text",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -383,6 +386,19 @@ async function getSettingsData(
       walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
       bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
     },
+    clockSettings: {
+      theme:
+        brandingResult.data.clock_theme === "light" || brandingResult.data.clock_theme === "custom"
+          ? brandingResult.data.clock_theme
+          : "dark",
+      backgroundColor: brandingResult.data.clock_background_color ?? null,
+      tagline: brandingResult.data.clock_tagline ?? null,
+      title: brandingResult.data.clock_title ?? null,
+      prompt: brandingResult.data.clock_prompt ?? null,
+      clockedInLabel: brandingResult.data.clock_clocked_in_label ?? null,
+      clockedOutLabel: brandingResult.data.clock_clocked_out_label ?? null,
+      invalidPinText: brandingResult.data.clock_invalid_pin_text ?? null,
+    },
     bookingSettings: {
       unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
       queueLeadTimeMinutes: bookingSettingsResult.data.queue_lead_time_minutes,
@@ -442,6 +458,7 @@ async function getTenantIdentity(
   kioskEnabled: boolean
   kioskSettings: AdminKioskSettings | null
   displaySettings: AdminDisplaySettings | null
+  clockSettings: AdminClockSettings | null
   bookingSettings: AdminBookingSettings | null
   queueSettings: AdminQueueSettings | null
   messageSettings: AdminMessageSettings | null
@@ -469,6 +486,7 @@ async function getTenantIdentity(
     kioskEnabled: false,
     kioskSettings: null,
     displaySettings: null,
+    clockSettings: null,
     bookingSettings: null,
     queueSettings: null,
     messageSettings: null,
@@ -707,6 +725,7 @@ export default async function AdminPage() {
       initialKioskEnabled={settingsData.kioskEnabled}
       initialKioskSettings={settingsData.kioskSettings}
       initialDisplaySettings={settingsData.displaySettings}
+      initialClockSettings={settingsData.clockSettings}
       initialBookingSettings={settingsData.bookingSettings}
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}

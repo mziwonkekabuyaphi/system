@@ -366,6 +366,29 @@ export interface AdminDisplaySettings {
   showQueueReference: boolean
 }
 
+/** tenant_branding's clock-in columns (clock_*), one row per tenant. Backs the
+ *  public staff PIN pad at /clock/[slug] (components/clock/ClockApp.tsx),
+ *  saved via updateClockSettings(). Same clear-to-default posture as the
+ *  Display wording: null/empty falls back to the default copy, resolved in
+ *  app/clock/[slug]/clockSettings.ts. */
+export interface AdminClockSettings {
+  theme: "dark" | "light" | "custom"
+  /** Hex (#RRGGBB). Only meaningful when theme === "custom". */
+  backgroundColor: string | null
+  /** Shown under the business name. Null/empty means none. */
+  tagline: string | null
+  /** Heading above the PIN prompt. Defaults to "Clock in". */
+  title: string | null
+  /** Defaults to "Enter your PIN to clock in or out". */
+  prompt: string | null
+  /** Defaults to "Clocked in". */
+  clockedInLabel: string | null
+  /** Defaults to "Clocked out". */
+  clockedOutLabel: string | null
+  /** Defaults to "PIN not recognized. Please try again.". */
+  invalidPinText: string | null
+}
+
 // ============================================================================
 // SETTINGS (Booking / Queue / Messages tab)
 // ============================================================================
