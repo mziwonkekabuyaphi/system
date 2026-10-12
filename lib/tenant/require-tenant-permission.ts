@@ -47,6 +47,8 @@ export type PermissionKey =
   | "settings.manage"
   | "queue.view"
   | "queue.manage"
+  | "analytics.view"
+  | "billing.view"
 
 export type PermissionCheckResult =
   | { ok: true; member: CurrentTenantMember }
