@@ -2,7 +2,8 @@
 "use client"
 
 import { useEffect, useState, useTransition, type FormEvent } from "react"
-import { addStaff, forceClockOutShift, toggleStaffActive, updateStaff } from "./actions"
+import { addStaff, deleteStaff, forceClockOutShift, toggleStaffActive, updateStaff } from "./actions"
+import { ConfirmDialog, NoticeModal, type Notice } from "./AdminModals"
 import type { AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
 
 // Local form shape always carries hourlyRate as a field (simplest for a
@@ -165,6 +166,10 @@ export function StaffManager({
   const [clockingOutId, setClockingOutId] = useState<string | null>(null)
   const [isClockingOut, startClockOut] = useTransition()
 
+  const [deleteTarget, setDeleteTarget] = useState<AdminStaff | null>(null)
+  const [isDeleting, startDelete] = useTransition()
+  const [notice, setNotice] = useState<Notice | null>(null)
+
   const isEditing = editingId !== null
 
   function startEdit(member: AdminStaff) {
@@ -210,7 +215,7 @@ export function StaffManager({
     setTogglingId(member.id)
     startToggle(async () => {
       const result = await toggleStaffActive(member.id, !member.active)
-      if (!result.ok) window.alert(`Couldn't update: ${result.error}`)
+      if (!result.ok) setNotice({ title: "Couldn't update", message: result.error })
       setTogglingId(null)
     })
   }
@@ -220,8 +225,22 @@ export function StaffManager({
     setClockingOutId(shift.id)
     startClockOut(async () => {
       const result = await forceClockOutShift(shift.id)
-      if (!result.ok) window.alert(`Couldn't clock out: ${result.error}`)
+      if (!result.ok) setNotice({ title: "Couldn't clock out", message: result.error })
       setClockingOutId(null)
+    })
+  }
+
+  function confirmDelete() {
+    if (!permissions.staffManage || !deleteTarget) return
+    const target = deleteTarget
+    startDelete(async () => {
+      const result = await deleteStaff(target.id)
+      setDeleteTarget(null)
+      if (result.ok) {
+        if (editingId === target.id) cancelEdit()
+      } else {
+        setNotice({ title: "Couldn't delete", message: result.error })
+      }
     })
   }
 
@@ -302,6 +321,9 @@ export function StaffManager({
                       className="text-sm text-[#8A8375] disabled:opacity-50"
                     >
                       {member.active ? "Deactivate" : "Activate"}
+                    </button>
+                    <button onClick={() => setDeleteTarget(member)} className="text-sm text-[#7A2E2E]">
+                      Delete
                     </button>
                   </div>
                 )}
@@ -428,6 +450,24 @@ export function StaffManager({
         </form>
       </section>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete this staff member?"
+        message={
+          <>
+            <span className="font-medium text-[#1C1A17]">{deleteTarget?.name}</span> will be removed for good, and
+            their sign-in (if they have one) will be removed too. This can&apos;t be undone. If you only want to stop
+            them working, use Deactivate instead.
+          </>
+        }
+        confirmLabel="Delete staff"
+        busyLabel="Deleting…"
+        isBusy={isDeleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+      <NoticeModal notice={notice} onClose={() => setNotice(null)} />
     </div>
   )
 }

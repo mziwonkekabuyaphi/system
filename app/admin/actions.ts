@@ -984,6 +984,115 @@ export async function toggleStaffActive(id: string, active: boolean): Promise<Ac
   return { ok: true }
 }
 
+export async function deleteStaff(id: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("staff.manage")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { userId } = await requireTenantMember()
+
+  const { data: member, error: fetchError } = await supabase
+    .from("staff")
+    .select("id, name, profile_id")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (fetchError) return { ok: false, error: fetchError.message }
+  if (!member) return { ok: false, error: "Staff member not found." }
+
+  // Never let someone delete the record they are signed in with — it would
+  // remove their own access to the admin.
+  if (member.profile_id && member.profile_id === userId) {
+    return { ok: false, error: "You can't delete the staff record you're signed in with." }
+  }
+
+  // If this person has a login, only remove it when it is an ordinary
+  // "Tenant Staff" login — never an owner's.
+  if (member.profile_id) {
+    const [membershipResult, roleResult] = await Promise.all([
+      supabase
+        .from("tenant_members")
+        .select("role_id")
+        .eq("tenant_id", tenantId)
+        .eq("profile_id", member.profile_id)
+        .maybeSingle(),
+      supabase.from("roles").select("id").eq("name", "Tenant Staff").maybeSingle(),
+    ])
+    if (membershipResult.error) return { ok: false, error: membershipResult.error.message }
+    if (roleResult.error) return { ok: false, error: roleResult.error.message }
+    if (membershipResult.data && roleResult.data && membershipResult.data.role_id !== roleResult.data.id) {
+      return {
+        ok: false,
+        error: `${member.name} has an owner/admin login, so they can't be deleted here. Deactivate them instead.`,
+      }
+    }
+  }
+
+  const inUseMessage = `${member.name} has bookings, shifts or payroll records, so they can't be deleted without losing that history. Deactivate them instead: they won't be able to clock in or sign in, but your records stay intact.`
+
+  // Refuse to delete someone that bookings / shifts / payroll point to.
+  // Checked explicitly (rather than relying only on the foreign keys) so a
+  // cascading FK can never silently wipe bookings, hours worked or payslips.
+  const [bookingsUsing, shiftsUsing, payrollUsing] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("staff_id", id),
+    supabase
+      .from("staff_shifts")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("staff_id", id),
+    supabase
+      .from("staff_payroll")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("staff_id", id),
+  ])
+  if (bookingsUsing.error) return { ok: false, error: bookingsUsing.error.message }
+  if (shiftsUsing.error) return { ok: false, error: shiftsUsing.error.message }
+  if (payrollUsing.error) return { ok: false, error: payrollUsing.error.message }
+  if ((bookingsUsing.count ?? 0) > 0 || (shiftsUsing.count ?? 0) > 0 || (payrollUsing.count ?? 0) > 0) {
+    return { ok: false, error: inUseMessage }
+  }
+
+  const { error: deleteError } = await supabase.from("staff").delete().eq("id", id).eq("tenant_id", tenantId)
+  if (deleteError) {
+    // 23503 = foreign_key_violation (some other table still references them)
+    if (deleteError.code === "23503") return { ok: false, error: inUseMessage }
+    return { ok: false, error: deleteError.message }
+  }
+
+  // Remove their sign-in access too. The login account itself is only
+  // deleted if they don't belong to any other shop.
+  if (member.profile_id) {
+    const { error: revokeError } = await supabase
+      .from("tenant_members")
+      .delete()
+      .eq("tenant_id", tenantId)
+      .eq("profile_id", member.profile_id)
+    if (revokeError) {
+      return {
+        ok: false,
+        error: `${member.name} was deleted, but their sign-in couldn't be fully removed: ${revokeError.message}`,
+      }
+    }
+
+    const { count: remainingMemberships } = await supabase
+      .from("tenant_members")
+      .select("profile_id", { count: "exact", head: true })
+      .eq("profile_id", member.profile_id)
+    if ((remainingMemberships ?? 0) === 0) {
+      await rollbackStaffLogin(supabase, member.profile_id)
+    }
+  }
+
+  await logActivity(supabase, tenantId!, { category: "staff", action: `Deleted staff member "${member.name}"` })
+
+  revalidatePath("/admin")
+  return { ok: true }
+}
+
 // ----------------------------------------------------------------------------
 // Shifts — the actual clock-in/clock-out writes happen at the public
 // /clock/[slug] PIN pad (app/clock/[slug]/actions.ts), which re-resolves
