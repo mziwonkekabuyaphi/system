@@ -57,6 +57,9 @@ function buildTicketBuffer(ticket, shopName) {
   printer.newLine()
   printer.setTextSize(1, 1)
   printer.println(ticket.kind === "queue" ? "YOUR QUEUE NUMBER" : "YOUR BOOKING")
+  // Extra blank lines so the number doesn't touch the heading above it
+  printer.newLine()
+  printer.newLine()
   printer.setTextSize(3, 3)
   printer.bold(true)
   printer.println(ticket.ticketNumber)
@@ -66,6 +69,12 @@ function buildTicketBuffer(ticket, shopName) {
 
   printer.alignLeft()
   printer.drawLine()
+  printer.newLine()
+
+  // Bigger details text (Font A + double size). Change (1, 1) to (0, 1)
+  // if you want taller-only text that fits more characters per line.
+  printer.setTypeFontA()
+  printer.setTextSize(1, 1)
   if (ticket.serviceName) printer.println(`Service: ${ticket.serviceName}`)
   if (ticket.customerName) printer.println(`Name: ${ticket.customerName}`)
 
@@ -77,6 +86,9 @@ function buildTicketBuffer(ticket, shopName) {
     printer.println(`Estimated wait: ~${ticket.etaMinutes} min`)
   }
 
+  // Back to normal size so the divider line doesn't wrap
+  printer.setTextSize(0, 0)
+  printer.newLine()
   printer.drawLine()
   printer.alignCenter()
   printer.println(
