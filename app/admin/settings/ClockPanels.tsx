@@ -1,7 +1,7 @@
 // app/admin/settings/ClockPanels.tsx
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { updateClockSettings } from "../settings-actions"
 import type { AdminClockSettings } from "../types"
@@ -13,6 +13,7 @@ import {
   SettingsCard,
   SubSection,
   inputClass,
+  secondaryButtonClass,
   useCardForm,
 } from "./ui"
 
@@ -87,10 +88,81 @@ function toPayload(d: ClockDraft): AdminClockSettings {
 const LOOK_KEYS: Array<keyof ClockDraft> = ["theme", "backgroundColor", "tagline"]
 const WORDING_KEYS: Array<keyof ClockDraft> = ["title", "prompt", "clockedInLabel", "clockedOutLabel", "invalidPinText"]
 
+// ---- Clock-in URL + QR code (same pattern as the Kiosk and Display tabs) ----
+
+function ClockUrlPanel({ tenantSlug }: { tenantSlug: string }) {
+  const [origin, setOrigin] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
+
+  const clockUrl = origin ? `${origin}/clock/${tenantSlug}` : null
+
+  async function copyUrl() {
+    if (!clockUrl) return
+    try {
+      await navigator.clipboard.writeText(clockUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can be unavailable (e.g. insecure context) — the URL
+      // is already selectable in the input, so this just skips the toast.
+    }
+  }
+
+  return (
+    <SettingsCard
+      title="Clock-in address"
+      description="Open this link on the shared tablet at your shop. Staff enter their PIN to clock in or out. No login needed."
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex-1 space-y-2">
+          <div className="flex gap-2">
+            <input className={inputClass} readOnly value={clockUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
+            <button type="button" className={secondaryButtonClass} onClick={copyUrl} disabled={!clockUrl}>
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          {clockUrl && (
+            <a
+              href={clockUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-sm font-medium text-[#7A2E3A] hover:underline"
+            >
+              Open the clock-in pad ↗
+            </a>
+          )}
+        </div>
+
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+          {clockUrl ? (
+            // Third-party QR generator — this URL isn't sensitive (PIN-gated on the page itself).
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(clockUrl)}`}
+              alt="QR code linking to the staff clock-in page"
+              width={160}
+              height={160}
+            />
+          ) : (
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-stone-400">Loading…</div>
+          )}
+          <span className="text-xs text-stone-500">Scan to open on a phone or tablet</span>
+        </div>
+      </div>
+    </SettingsCard>
+  )
+}
+
 export function ClockPanel({
+  tenantSlug,
   initial,
   canCustomizeBranding,
 }: {
+  tenantSlug: string
   initial: AdminClockSettings
   canCustomizeBranding: boolean
 }) {
@@ -133,6 +205,8 @@ export function ClockPanel({
 
   return (
     <div className="space-y-4">
+      <ClockUrlPanel tenantSlug={tenantSlug} />
+
       <SettingsCard
         title="Look"
         description="What the clock-in pad looks like on your shared tablet."
