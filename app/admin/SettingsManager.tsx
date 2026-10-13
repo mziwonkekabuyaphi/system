@@ -33,24 +33,25 @@ const SETTINGS_NAV: Array<{
   items: Array<{ id: SubTab; label: string; title: string; description: string }>
 }> = [
   {
-    group: "Business",
+    group: "Business Info",
     items: [
       {
         id: "general",
-        label: "Business info",
-        title: "Business info",
+        label: "Shop details",
+        title: "Shop details",
         description: "Your contact details, timezone and opening hours.",
       },
       {
         id: "private-label",
         label: "Branding",
         title: "Branding (private label)",
-        description: "Your name, logo and colours. Shown on the kiosk, the TV display and customer messages.",
+        description:
+          "Your name, logo and colours. Shown on the kiosk, the public display, the staff clock-in and customer messages.",
       },
     ],
   },
   {
-    group: "Customer screens",
+    group: "Customer Journey",
     items: [
       {
         id: "kiosk",
@@ -60,15 +61,15 @@ const SETTINGS_NAV: Array<{
       },
       {
         id: "display",
-        label: "TV display",
-        title: "TV display",
+        label: "Public display",
+        title: "Public display",
         description: "The screen in your waiting area showing the queue, bookings and menu.",
       },
       {
-        id: "clock",
-        label: "Staff clock-in",
-        title: "Staff clock-in",
-        description: "The PIN pad your team uses to clock in and out: colours and wording.",
+        id: "messages",
+        label: "WhatsApp messages",
+        title: "WhatsApp messages",
+        description: "The messages customers receive for bookings and queue updates.",
       },
     ],
   },
@@ -87,16 +88,11 @@ const SETTINGS_NAV: Array<{
         title: "Queue rules",
         description: "How the walk-in queue behaves: calling, limits, ticket numbers and wait estimates.",
       },
-    ],
-  },
-  {
-    group: "Messaging",
-    items: [
       {
-        id: "messages",
-        label: "WhatsApp messages",
-        title: "WhatsApp messages",
-        description: "The messages customers receive for bookings and queue updates.",
+        id: "clock",
+        label: "Staff clock-in",
+        title: "Staff clock-in",
+        description: "The PIN pad your team uses to clock in and out: link, colours and wording.",
       },
     ],
   },
@@ -241,6 +237,7 @@ export function SettingsManager({
       )}
       {subTab === "clock" && (
         <ClockPanel
+          tenantSlug={tenantSlug}
           initial={initialClockSettings}
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
         />
