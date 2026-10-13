@@ -147,6 +147,7 @@ import {
   nameCollectionRetryMessage,
   nameCollectionThanksMessage,
   planLimitReachedMessage,
+  bookingAlreadyHasUpcomingMessage,
 } from "@/lib/services/messages/booking"
 
 // ============================================================================
@@ -889,11 +890,8 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       return { reply: planLimitReachedMessage(), buttons: [], nextState: null }
     }
     if (error instanceof Error && error.message === BOOKING_ALREADY_HAS_UPCOMING) {
-      // TODO: move into lib/services/messages/booking.ts as
-      // bookingAlreadyHasUpcomingMessage(), same as the other copy.
       return {
-        reply:
-          "You already have an upcoming booking with us. To make a new one, please cancel the existing booking first, or choose *Check Status* to see it.",
+        reply: bookingAlreadyHasUpcomingMessage(),
         buttons: CANCEL_BUTTON,
         nextState: null,
       }
