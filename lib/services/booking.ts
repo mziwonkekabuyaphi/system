@@ -109,6 +109,7 @@ import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/te
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 
 import {
   getBookingSettings,
@@ -844,13 +845,19 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       phone: message.from,
     })
 
+    // The web link goes on the confirmation only when we are NOT about to ask
+    // for the customer's name (that prompt must stay the last thing they see;
+    // the link is added to the "thanks" message instead, see handleNameCollection).
+    const webNote = result.customer.name ? await getTenantWebLinkNote(tenantId) : ""
+
     return {
-      reply: bookingConfirmedMessage({
-        customerName: result.customer.name,
-        serviceName: selectedService.name,
-        slotLabel: selectedSlot.label,
-        bookingReference: result.bookingReference,
-      }),
+      reply:
+        bookingConfirmedMessage({
+          customerName: result.customer.name,
+          serviceName: selectedService.name,
+          slotLabel: selectedSlot.label,
+          bookingReference: result.bookingReference,
+        }) + webNote,
       buttons: result.customer.name ? CANCEL_BUTTON : [],
       nextState: result.customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
     }
@@ -891,7 +898,7 @@ async function handleNameCollection(tenantId: string, message: IncomingMessage):
   }
 
   return {
-    reply: nameCollectionThanksMessage(name),
+    reply: nameCollectionThanksMessage(name) + (await getTenantWebLinkNote(tenantId)),
     buttons: CANCEL_BUTTON,
     nextState: null,
   }

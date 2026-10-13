@@ -82,6 +82,7 @@ import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 
 import {
   servicesListMessage,
@@ -652,7 +653,7 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
     const { position, etaMinutes } = await joinQueue(tenantId, { service: selectedService, phone: message.from })
 
     return {
-      reply: joinedQueueMessage(selectedService, position, etaMinutes),
+      reply: joinedQueueMessage(selectedService, position, etaMinutes) + (await getTenantWebLinkNote(tenantId)),
       buttons: [],
       nextState: null,
     }
