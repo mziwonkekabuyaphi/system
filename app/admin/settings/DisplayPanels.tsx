@@ -491,7 +491,7 @@ export function DisplayPanel({
       )}
 
       <SettingsCard
-        title="Wording"
+        title="Local terms"
         description="Every piece of text on the TV is yours to change. Leave a field empty to use the default shown in it."
         footer={footer("wording", DISPLAY_WORDING_KEYS)}
       >
@@ -549,7 +549,7 @@ export function DisplayPanel({
           </SubSection>
         ) : (
           <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
-            More wording options (column heading, empty messages, ticket badges) appear here when you choose the Live
+            More local terms (column heading, empty messages, ticket badges) appear here when you choose the Live
             board layout.
           </p>
         )}

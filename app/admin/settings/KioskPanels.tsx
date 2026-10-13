@@ -491,7 +491,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
       </SettingsCard>
 
       <SettingsCard
-        title="Wording"
+        title="Local terms"
         description="Every piece of text on the kiosk is yours to change, in the order customers see it. Leave a field empty to use the default shown in it."
         footer={footer("wording", KIOSK_WORDING_KEYS)}
       >

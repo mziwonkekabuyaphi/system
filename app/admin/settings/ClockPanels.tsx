@@ -280,7 +280,7 @@ export function ClockPanel({
       </SettingsCard>
 
       <SettingsCard
-        title="Wording"
+        title="Local terms"
         description="Rename what staff see on the pad. Leave a field empty to use the default."
         footer={footer("wording", WORDING_KEYS)}
       >
