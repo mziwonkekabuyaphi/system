@@ -41,7 +41,7 @@ export const GREETING_PHRASES: GreetingPhrase[] = [
   { text: "Hello,", time: "any" },
   { text: "Hi there,", time: "any" },
   { text: "Hey,", time: "any" },
-  { text: "Welcome,", time: "any" },
+  { text: "Nice to see you,", time: "any" },
   { text: "Welcome back,", time: "any", returningOnly: true },
 
   // Time-based
