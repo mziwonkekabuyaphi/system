@@ -84,6 +84,15 @@
  * existing bookings.manage permission, same as any other write there),
  * the same relationship createBooking() already has with the kiosk's
  * Server Action.
+ *
+ * MENU + TYPED ENTRY (new): the WhatsApp main menu (lib/whatsapp/utils/
+ * services-list.ts) replaces the old "Queue or Book?" button prompt for most
+ * customers. "Book Now" calls presentServices() directly (now exported, also
+ * available as bookingService.startBookingFlow). handleBooking() still works
+ * for typed messages: a clear "queue"/"walk-in" message goes straight to the
+ * queue flow, a clear "book"/"appointment" message goes straight to the
+ * services list, and anything ambiguous ("I need a haircut") still gets the
+ * Queue-or-Book buttons.
  */
 
 import crypto from "node:crypto"
@@ -595,7 +604,23 @@ export async function completeBooking(tenantId: string, bookingId: string): Prom
 // ENTRY POINT — fresh "booking" intent
 // ============================================================================
 
+// Typed-message hints. Word-boundary matches on the lowercased text, so
+// "booking"/"book"/"appointment" and "queue"/"walk-in"/"walk in" are
+// recognised but "bookmark" or "queueing up the next song" are not.
+const QUEUE_REQUEST_PATTERN = /\b(queue|walk[\s-]?in|walkin)\b/
+const BOOK_REQUEST_PATTERN = /\b(book|booking|appointment|reserve|reservation)\b/
+
 async function handleBooking(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
+  // Only ONE of the two clearly mentioned -> the customer already told us
+  // what they want, so skip the "Queue or Book?" question. Both mentioned,
+  // or neither (e.g. "I need a haircut"), is genuinely ambiguous -> ask.
+  const text = normalizedReplyText(message)
+  const wantsQueue = QUEUE_REQUEST_PATTERN.test(text)
+  const wantsBooking = BOOK_REQUEST_PATTERN.test(text)
+
+  if (wantsQueue && !wantsBooking) return queueService.startQueueFlow(tenantId)
+  if (wantsBooking && !wantsQueue) return presentServices(tenantId)
+
   return {
     reply: entryChoicePromptMessage(),
     buttons: ENTRY_CHOICE_BUTTONS,
@@ -620,7 +645,12 @@ async function handleEntryChoice(tenantId: string, message: IncomingMessage): Pr
   }
 }
 
-async function presentServices(tenantId: string): Promise<ActionResult> {
+/**
+ * Shows this shop's services and starts the booking flow (the numbered "reply
+ * with a number" list). Exported so the "Book Now" menu row can go straight
+ * here instead of through the Queue-or-Book question.
+ */
+export async function presentServices(tenantId: string): Promise<ActionResult> {
   let services: BookingServiceOffer[]
   try {
     services = await getBookableServices(tenantId)
@@ -892,5 +922,7 @@ async function handleState(tenantId: string, state: ConversationState, message: 
 
 export const bookingService = {
   handleBooking,
+  /** Straight to the services list — used by the "Book Now" menu row. */
+  startBookingFlow: presentServices,
   handleState,
 }

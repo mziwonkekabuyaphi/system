@@ -90,6 +90,11 @@ import {
   joinedQueueMessage,
   queueErrorMessage,
 } from "@/lib/services/messages/queue"
+import {
+  queueShopClosedMessage,
+  queueAlreadyInQueueMessage,
+  queueHasUpcomingBookingMessage,
+} from "@/lib/services/messages/queue-join-errors"
 
 // ============================================================================
 // CONSTANTS
@@ -161,7 +166,33 @@ function getQueueData(state: ConversationState): QueueStateData {
 // ENTRY POINT — called by booking.ts's handleEntryChoice
 // ============================================================================
 
+/**
+ * True only when the database positively says the shop is closed right now
+ * (is_tenant_open_now(), the same function the walk-in trigger uses). Any
+ * error is treated as "not closed" — this check exists purely so a customer
+ * hears "we're closed" BEFORE picking a service; the trigger on queue_entries
+ * is still the real gate and joinQueue() handles its error below.
+ */
+async function isShopClosedNow(tenantId: string): Promise<boolean> {
+  try {
+    const supabase = getClientOrThrow()
+    const { data, error } = await supabase.rpc("is_tenant_open_now", { p_tenant_id: tenantId })
+    if (error) {
+      console.error("[queue] is_tenant_open_now failed, not blocking", { tenantId, error })
+      return false
+    }
+    return data === false
+  } catch (error) {
+    console.error("[queue] Open-hours check failed, not blocking", { tenantId, error })
+    return false
+  }
+}
+
 async function startQueueFlow(tenantId: string): Promise<ActionResult> {
+  if (await isShopClosedNow(tenantId)) {
+    return { reply: queueShopClosedMessage(), buttons: [], nextState: null }
+  }
+
   let services: CatalogService[]
   try {
     services = await getBookableServices(tenantId)
@@ -636,6 +667,19 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
         buttons: [],
         nextState: null,
       }
+    }
+    // The database refuses a walk-in join in three expected situations
+    // (triggers enforce_walkin_business_hours / block_duplicate_queue_entry).
+    // Each gets its own friendly reply instead of the generic error.
+    const dbMessage = error instanceof Error ? error.message : ""
+    if (dbMessage.includes("currently closed")) {
+      return { reply: queueShopClosedMessage(), buttons: [], nextState: null }
+    }
+    if (dbMessage.includes("already in the queue")) {
+      return { reply: queueAlreadyInQueueMessage(), buttons: [], nextState: null }
+    }
+    if (dbMessage.includes("already have an upcoming booking")) {
+      return { reply: queueHasUpcomingBookingMessage(), buttons: [], nextState: null }
     }
     console.error("[queue] Error joining queue", { tenantId, error })
     return { reply: queueErrorMessage(), buttons: [], nextState: null }
