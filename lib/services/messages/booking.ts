@@ -22,6 +22,12 @@
  * "something went wrong" framing. Only ever reachable on Free: Growth
  * and Business bill overage instead of blocking, so a customer never
  * sees this message for a tenant on a paid plan.
+ *
+ * ADDED: bookingAlreadyHasUpcomingMessage(), for booking.ts's
+ * BOOKING_ALREADY_HAS_UPCOMING case — the database trigger allows one
+ * upcoming booking per customer, so a second attempt is refused. An
+ * expected business rule, not an error, hence its own copy rather than
+ * bookingErrorMessage()'s generic "something went wrong".
  */
 
 import type { CatalogService } from "@/lib/services/shared/services-catalog"
@@ -118,6 +124,10 @@ export function bookingWindowClosedMessage(): string {
 
 export function planLimitReachedMessage(): string {
   return "Sorry, this shop has reached its booking limit for this month. Please try again next month, or contact them directly."
+}
+
+export function bookingAlreadyHasUpcomingMessage(): string {
+  return "You already have an upcoming booking with us. To make a new one, please cancel the existing booking first, or choose *Check Status* to see it."
 }
 
 export function bookingCancelledMessage(): string {
