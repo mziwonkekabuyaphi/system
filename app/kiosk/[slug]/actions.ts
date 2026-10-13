@@ -37,7 +37,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
-import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, type BookingSlot } from "@/lib/services/booking"
+import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, BOOKING_ALREADY_HAS_UPCOMING, type BookingSlot } from "@/lib/services/booking"
 import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
 import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
@@ -222,6 +222,13 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
       return { ok: false, error: "That time was just taken. Please pick another." }
     }
+    // Expected business-rule refusal (DB trigger): not logged as an error.
+    if (error instanceof Error && error.message === BOOKING_ALREADY_HAS_UPCOMING) {
+      return {
+        ok: false,
+        error: "This number already has an upcoming booking. Please speak to staff if you need to change it.",
+      }
+    }
     // Mirrors booking.ts's own PLAN_VISIT_LIMIT_REACHED message
     // (handleServiceSelection's catch block) — a plan-capped tenant gets
     // the same wording whether the booking came from WhatsApp or the
@@ -329,6 +336,19 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
         ok: false,
         error: "Sorry, this shop has reached its queue limit for this month. Please check in with staff.",
       }
+    }
+    // The database refuses a walk-in join in three expected situations
+    // (same triggers queue.ts handles for WhatsApp). Friendly message each,
+    // and no error log — these are normal outcomes, not failures.
+    const dbMessage = error instanceof Error ? error.message : ""
+    if (dbMessage.includes("currently closed")) {
+      return { ok: false, error: "Sorry, we're closed right now. Please check our opening hours." }
+    }
+    if (dbMessage.includes("already in the queue")) {
+      return { ok: false, error: "This number is already in the queue. Please check your ticket or ask staff." }
+    }
+    if (dbMessage.includes("already have an upcoming booking")) {
+      return { ok: false, error: "This number already has an upcoming booking. Please check in with staff." }
     }
     console.error("[kiosk] submitKioskQueueJoin failed", { slug, error })
     return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
