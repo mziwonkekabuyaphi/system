@@ -176,6 +176,13 @@ export const BOOKING_SLOT_NO_LONGER_AVAILABLE = "BOOKING_SLOT_NO_LONGER_AVAILABL
  *  "never trust a client-provided time" posture as slot staleness. */
 export const BOOKING_OUTSIDE_ALLOWED_WINDOW = "BOOKING_OUTSIDE_ALLOWED_WINDOW"
 
+/** Thrown by createBooking() when the database trigger refuses a second
+ *  upcoming booking for the same customer. An expected business-rule
+ *  refusal, not a bug — callers should show a friendly message and must
+ *  not log it as an error. Exported so the kiosk action can match on it
+ *  without string-comparing the raw database text. */
+export const BOOKING_ALREADY_HAS_UPCOMING = "BOOKING_ALREADY_HAS_UPCOMING"
+
 /** Thrown by completeBooking() when no booking with that id exists for
  *  this tenant — re-checked server-side rather than trusted from
  *  whatever id an admin action was passed, same "never trust the
@@ -505,6 +512,8 @@ export interface CreateBookingResult {
  * slot was taken between when it was offered and now — callers should
  * catch both and show a "pick another time" style message rather than a
  * generic error, since both are expected races/edge cases, not bugs.
+ * Also throws BOOKING_ALREADY_HAS_UPCOMING when the customer already has an
+ * upcoming booking (enforced by a database trigger).
  */
 export async function createBooking(tenantId: string, params: CreateBookingParams): Promise<CreateBookingResult> {
   const { service, dateISO, slot, phone } = params
@@ -540,7 +549,15 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     },
   ])
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    // The bookings trigger raises this text when the customer already has an
+    // upcoming booking. Translate it into a stable code so every caller can
+    // handle it without matching on database wording.
+    if (error.message.includes("already have an upcoming booking")) {
+      throw new Error(BOOKING_ALREADY_HAS_UPCOMING)
+    }
+    throw new Error(error.message)
+  }
 
   return {
     customer,
@@ -870,6 +887,16 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     }
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
       return { reply: planLimitReachedMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_ALREADY_HAS_UPCOMING) {
+      // TODO: move into lib/services/messages/booking.ts as
+      // bookingAlreadyHasUpcomingMessage(), same as the other copy.
+      return {
+        reply:
+          "You already have an upcoming booking with us. To make a new one, please cancel the existing booking first, or choose *Check Status* to see it.",
+        buttons: CANCEL_BUTTON,
+        nextState: null,
+      }
     }
     console.error("[booking] Error creating booking", { tenantId, error })
     return { reply: bookingErrorMessage(), buttons: [], nextState: null }
