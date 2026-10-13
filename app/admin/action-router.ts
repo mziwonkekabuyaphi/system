@@ -40,7 +40,8 @@
  *
  * White-label: the shop's name comes from tenant_branding.display_name,
  * falling back to tenants.name. The shop's web link is built from
- * tenants.slug (see utils/tenant-web-link.ts). No brand is hardcoded.
+ * tenants.slug and only shown when their web page is switched on
+ * (see utils/tenant-web-link.ts). No brand is hardcoded.
  */
 
 import type { RoutedIntent, Intent } from "@/lib/whatsapp/intent-router"
@@ -57,7 +58,7 @@ import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 
 import { getSmartGreeting } from "@/lib/whatsapp/greeting"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
-import { buildTenantWebLink } from "@/lib/whatsapp/utils/tenant-web-link"
+import { getTenantWebLink } from "@/lib/whatsapp/utils/tenant-web-link"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 
@@ -187,17 +188,18 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   try {
     const supabase = getSupabaseServerClient()
     if (supabase) {
-      const [tz, tenantRow, brandingRow] = await Promise.all([
+      const [tz, tenantRow, brandingRow, link] = await Promise.all([
         getTenantTimezone(supabase, tenantId),
-        supabase.from("tenants").select("name, slug").eq("id", tenantId).maybeSingle(),
+        supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
         supabase.from("tenant_branding").select("display_name").eq("tenant_id", tenantId).maybeSingle(),
+        getTenantWebLink(tenantId),
       ])
       timeZone = tz
       // The Display name owners set under Settings > Branding wins; fall back
       // to the tenant's own name.
       shopName = brandingRow.data?.display_name?.trim() || tenantRow.data?.name || null
-      // Each tenant's own link, built from its slug.
-      webLink = buildTenantWebLink(tenantRow.data?.slug)
+      // Each tenant's own link (null when their web page is not available).
+      webLink = link
     }
   } catch (error) {
     console.error("[action-router] greeting context lookup failed:", error)
