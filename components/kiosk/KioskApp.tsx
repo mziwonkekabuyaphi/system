@@ -55,6 +55,15 @@
  *     tokens accordingly, so every tenant's card stays legible regardless
  *     of which color they set.
  *
+ * WEB MODE (new): the same component also powers the customer-facing link
+ * the WhatsApp bot sends (/web/[slug]). It detects that from the URL (no
+ * extra props, so app/kiosk/[slug]/page.tsx is untouched). On /web/ the
+ * customer is on their OWN phone, so: the idle reset and the ticket
+ * auto-return are switched off (nobody else is about to use their screen,
+ * and it must not wipe a half-finished booking), no ticket printing is
+ * attempted, and the default "Tap anywhere to check in" tagline is swapped
+ * for a phone-friendly line. /kiosk/[slug] behaves exactly as before.
+ *
  * FOOTER: `branding.removePoweredBy` is the same flag the admin Private
  * Label / Kiosk panels write via updateBranding() in
  * app/admin/settings-actions.ts, gated there on `tenants.plan ===
@@ -68,6 +77,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname } from "next/navigation"
 
 import type { KioskBranding } from "@/app/kiosk/[slug]/page"
 import type { CatalogService } from "@/lib/services/shared/services-catalog"
@@ -273,6 +283,11 @@ function PoweredByFooter() {
 // ----------------------------------------------------------------------------
 
 export function KioskApp({ slug, branding, initialServices, requireServiceSelection }: KioskAppProps) {
+  // Web mode = opened from the WhatsApp link (/web/[slug]) on the customer's
+  // own phone, as opposed to the shop's walk-in tablet (/kiosk/[slug]).
+  const pathname = usePathname()
+  const isWeb = pathname?.startsWith("/web/") ?? false
+
   const [step, setStep] = useState<Step>("welcome")
   const [path, setPath] = useState<Path | null>(null)
 
@@ -319,15 +334,19 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   // printer can't delay the customer seeing their on-screen ticket.
   const attemptPrint = useCallback(
     async (t: Ticket) => {
+      // A customer's own phone has no ticket printer.
+      if (isWeb) return
       setPrintStatus("printing")
       const ok = await printKioskTicket(t, branding.displayName)
       setPrintStatus(ok ? "success" : "failed")
     },
-    [branding.displayName],
+    [branding.displayName, isWeb],
   )
 
-  useIdleReset(resetAll, step !== "welcome", branding.idleRefreshSeconds * 1000)
-  useConfirmationAutoReset(step === "ticket", branding.confirmationRefreshSeconds * 1000, resetAll)
+  // Both timers exist to protect the NEXT walk-in on a shared tablet, so
+  // they only run on the kiosk, never on a customer's own phone.
+  useIdleReset(resetAll, step !== "welcome" && !isWeb, branding.idleRefreshSeconds * 1000)
+  useConfirmationAutoReset(step === "ticket" && !isWeb, branding.confirmationRefreshSeconds * 1000, resetAll)
 
   // ---- navigation ----------------------------------------------------
 
@@ -508,7 +527,17 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
         </button>
       )}
 
-      {step === "welcome" && <WelcomeScreen branding={branding} onTap={goToChoice} />}
+      {step === "welcome" && (
+        <WelcomeScreen
+          branding={branding}
+          tagline={
+            isWeb && branding.tagline.trim().toLowerCase().startsWith("tap anywhere")
+              ? "Tap to book or join the queue"
+              : branding.tagline
+          }
+          onTap={goToChoice}
+        />
+      )}
 
       {step === "choice" && <ChoiceScreen branding={branding} onChoose={choosePath} />}
 
@@ -616,7 +645,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
 // Welcome — the entire screen is the tap target
 // ----------------------------------------------------------------------------
 
-function WelcomeScreen({ branding, onTap }: { branding: KioskBranding; onTap: () => void }) {
+function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; tagline: string; onTap: () => void }) {
   return (
     <button className="welcome" onClick={onTap} type="button" aria-label="Tap to begin">
       {branding.logoUrl && (
@@ -624,7 +653,7 @@ function WelcomeScreen({ branding, onTap }: { branding: KioskBranding; onTap: ()
         <img src={branding.logoUrl} alt="" className="logo" />
       )}
       <h1>{branding.displayName}</h1>
-      <p className="tap">{branding.tagline}</p>
+      <p className="tap">{tagline}</p>
 
       <style jsx>{`
         .welcome {
