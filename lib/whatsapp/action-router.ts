@@ -9,7 +9,7 @@
  * can't map to a real intent — gets TWO WhatsApp messages, the same pattern
  * the old Rands bot used:
  *   1. a short smart greeting + their first name + a line welcoming them to
- *      the shop (the main `reply`), then
+ *      the shop + the shop's own web link (the main `reply`), then
  *   2. the four-row interactive menu (Book Now / Join Queue / Check Status /
  *      Cancel Now), attached as `followUp`.
  * lib/whatsapp/send-action-result.ts is what actually delivers the follow-up.
@@ -39,7 +39,9 @@
  * Router → Services → Supabase.
  *
  * White-label: the shop's name comes from tenant_branding.display_name,
- * falling back to tenants.name. No brand is hardcoded.
+ * falling back to tenants.name. The shop's web link is built from
+ * tenants.slug and only shown when their web page is switched on
+ * (see utils/tenant-web-link.ts). No brand is hardcoded.
  */
 
 import type { RoutedIntent, Intent } from "@/lib/whatsapp/intent-router"
@@ -56,6 +58,7 @@ import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 
 import { getSmartGreeting } from "@/lib/whatsapp/greeting"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
+import { getTenantWebLink } from "@/lib/whatsapp/utils/tenant-web-link"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 
@@ -151,8 +154,9 @@ function firstNameFromCustomer(customer: Customer | null): string {
  * (greet = true), and for an explicit reset like "menu" (greet = false,
  * which skips the greeting and just says "no problem" before the menu).
  *
- * Personalisation is best-effort: if the customer, timezone or shop-name
- * lookup fails, the greeting still goes out with sensible fallbacks.
+ * Personalisation is best-effort: if the customer, timezone, shop-name or
+ * web-link lookup fails, the greeting still goes out with sensible fallbacks
+ * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
   const menu = buildServicesListMessage("Tap below to choose what you'd like to do 👇")
@@ -176,21 +180,26 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   const firstName = firstNameFromCustomer(customer)
   const isReturning = Boolean(customer?.name)
 
-  // Shop-local time of day + the shop's own name (white-label safe).
+  // Shop-local time of day, the shop's own name and its web link
+  // (all white-label safe: nothing hardcoded).
   let timeZone: string | undefined
   let shopName: string | null = null
+  let webLink: string | null = null
   try {
     const supabase = getSupabaseServerClient()
     if (supabase) {
-      const [tz, tenantRow, brandingRow] = await Promise.all([
+      const [tz, tenantRow, brandingRow, link] = await Promise.all([
         getTenantTimezone(supabase, tenantId),
         supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
         supabase.from("tenant_branding").select("display_name").eq("tenant_id", tenantId).maybeSingle(),
+        getTenantWebLink(tenantId),
       ])
       timeZone = tz
       // The Display name owners set under Settings > Branding wins; fall back
       // to the tenant's own name.
       shopName = brandingRow.data?.display_name?.trim() || tenantRow.data?.name || null
+      // Each tenant's own link (null when their web page is not available).
+      webLink = link
     }
   } catch (error) {
     console.error("[action-router] greeting context lookup failed:", error)
@@ -200,9 +209,10 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   const welcomeLine = shopName
     ? `Welcome to *${shopName}*. I can help you book an appointment or join the walk-in queue.`
     : "Welcome! I can help you book an appointment or join the walk-in queue."
+  const webLine = webLink ? `\n\nPrefer to do it online? You can also use ${webLink}` : ""
 
   return {
-    reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}`,
+    reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}${webLine}`,
     buttons: [],
     nextState: null,
     followUp: [menu],
