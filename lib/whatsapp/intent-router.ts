@@ -15,13 +15,20 @@ import { z } from "zod"
  * layer is intentionally lightweight: exactly one model call, with a safe
  * deterministic fallback if anything goes wrong.
  *
- * INTENT MODEL (QLess): there are only three intents. "booking" covers
- * BOTH scheduling an appointment AND joining today's walk-in queue — queue
- * is deliberately not its own intent, because queue.ts is only ever entered
- * through booking.ts's "Queue or Book" entry choice (see queue.ts's file
- * header: "there's no standalone queue intent"). Everything that needs a
- * human (complaints, cancellations, reschedules, shop questions) is
- * "support"; greetings and chit-chat are "unknown".
+ * INTENT MODEL (QLess): five intents.
+ *   - "booking": scheduling an appointment OR joining today's walk-in queue.
+ *     Queue is deliberately not its own intent — booking.ts's handleBooking
+ *     decides: a clearly typed "queue" goes straight to the queue flow, a
+ *     clearly typed "book" straight to the booking flow, anything ambiguous
+ *     gets the Queue-or-Book question.
+ *   - "status": "check my booking", "where am I in the queue" -> status.ts.
+ *   - "cancel": "cancel my appointment", "leave the queue" -> cancel.ts.
+ *   - "support": everything that needs a human — complaints, rescheduling,
+ *     running late, shop questions.
+ *   - "unknown": greetings and chit-chat (shows the welcome + menu).
+ * The four-row WhatsApp menu (Book Now / Join Queue / Check Status / Cancel
+ * Now) does NOT go through this file at all — action-router.ts routes menu
+ * taps by row id.
  *
  * Architecture:
  *   webhook (thin layer)
@@ -71,7 +78,9 @@ const INTENTS = [
   "booking", // Book an appointment OR join today's walk-in queue. Both
              // start here: booking.ts asks "Queue or Book?" and hands off
              // to queue.ts itself, so there is no separate "queue" intent.
-  "support", // Needs a human: complaints, cancel/reschedule, shop questions
+  "status",  // Check their own booking and/or place in the queue
+  "cancel",  // Cancel their booking or leave the queue
+  "support", // Needs a human: complaints, reschedule, running late, shop questions
   "unknown", // Greetings, chit-chat, or not enough information
 ] as const
 
@@ -265,8 +274,96 @@ const BOOKING_PHRASES = new Set([
   "walkin",
 ])
 
+/**
+ * Lowercases and strips punctuation/emoji so "Cancel!", "❌ Cancel Now" and
+ * "[button reply] Check Status" all compare as plain words. A leading
+ * "[button reply]" / "[interactive reply]" tag (added by
+ * buildClassificationText) is removed first — before this, a tapped button
+ * could never match a fast-path phrase because of that prefix.
+ * Hyphens and apostrophes are kept ("walk-in", "what's").
+ */
+function normalizeForFastPath(text: string): string {
+  return text
+    .replace(/^\[(?:button|interactive) reply\]\s*/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s'-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+// Words that mean "change or complain about my booking" — a human's job.
+// Their presence blocks the cancel/status fast paths so "reschedule my
+// booking" or "I'm running late" still reach support via the AI step.
+const MANAGE_BLOCKERS = /\b(reschedul\w*|change|move|postpone|late|wrong|complain\w*|problem|issue|refund)\b/
+
+const CANCEL_TARGETS = /\b(booking|bookings|appointment|appointments|queue|line|spot|place|slot|reservation|turn)\b/
+
+const STATUS_EXACT = new Set([
+  "status",
+  "check status",
+  "my status",
+  "check my status",
+  "booking status",
+  "queue status",
+  "my booking",
+  "my bookings",
+  "check booking",
+  "check my booking",
+  "my appointment",
+  "my appointments",
+  "check my appointment",
+  "my position",
+  "my turn",
+  "my place in the queue",
+  "where am i",
+  "where am i in the queue",
+  "where am i in line",
+])
+
+const STATUS_PATTERNS: RegExp[] = [
+  /\b(where|what)\b.*\b(am i|is my|s my)\b.*\b(queue|line|position|turn|place)\b/,
+  /\bhow many (people|customers|clients)\b.*\b(in front of me|ahead of me|before me)\b/,
+  /\bhow long\b.*\bmy\b.*\b(wait|turn)\b/,
+  /\b(check|view|see|show|confirm)\b.*\b(my|the)\b.*\b(booking|bookings|appointment|appointments|queue|position|status|ticket)\b/,
+  /\bwhen is my\b.*\b(booking|appointment|turn)\b/,
+  /\bam i (still )?(in|on)\b.*\b(queue|line|list)\b/,
+]
+
+/**
+ * Typed Check Status / Cancel Now requests. Conservative on purpose: only
+ * short messages (<= 8 words) that clearly say what they mean. Longer or
+ * subtler wording ("cancel my 3pm") is left to the AI step, whose prompt
+ * knows about these two intents.
+ */
+function checkCancelOrStatusFastPath(normalized: string): RoutedIntent | null {
+  if (!normalized) return null
+  const wordCount = normalized.split(" ").length
+  if (wordCount > 8) return null
+  if (MANAGE_BLOCKERS.test(normalized)) return null
+
+  // Cancel: "cancel", "cancel now", "cancel my booking", "leave the queue"
+  if (/\bcancel\b/.test(normalized) && (wordCount <= 3 || CANCEL_TARGETS.test(normalized))) {
+    return { intent: "cancel", confidence: 0.95, reasoning: "Fast-path: cancel request" }
+  }
+  if (/\b(leave|exit|quit)\b.*\b(queue|line)\b/.test(normalized) || /\b(remove me from|drop out of)\b.*\b(queue|line)\b/.test(normalized)) {
+    return { intent: "cancel", confidence: 0.95, reasoning: "Fast-path: leave the queue" }
+  }
+
+  // Status: "check my booking", "where am I in the queue"
+  if (STATUS_EXACT.has(normalized) || STATUS_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return { intent: "status", confidence: 0.95, reasoning: "Fast-path: status request" }
+  }
+
+  return null
+}
+
 function checkIntentFastPath(text: string): RoutedIntent | null {
-  const normalized = text.trim().toLowerCase()
+  const normalized = normalizeForFastPath(text)
+
+  // Cancel / status first: "cancel my appointment" contains a booking word,
+  // and must NOT be read as a request for a new booking.
+  const manageResult = checkCancelOrStatusFastPath(normalized)
+  if (manageResult) return manageResult
 
   // Appointment / walk-in queue → booking (clear intent)
   if (BOOKING_PHRASES.has(normalized)) {
@@ -321,6 +418,8 @@ QLess lets customers of a salon or barbershop use WhatsApp to:
 
 • Book an appointment (choose a service, a date, and a time slot)
 • Join today's walk-in queue instead of booking a time
+• Check their own booking or their place in the queue
+• Cancel their booking or leave the queue
 • Talk to the shop when they need a person
 
 Each shop has its own services, staff and opening hours. You do not know
@@ -362,17 +461,62 @@ walk-in
 
 how long is the wait
 
-how many people are in front of me
-
 what services do you offer
 
 appointment for Saturday
 
 reserve a slot
 
+status
+Customer wants to CHECK something they already have: their upcoming
+appointment, or their own place in the walk-in queue.
+
+Examples:
+
+check my booking
+
+my appointment
+
+when is my appointment
+
+where am I in the queue
+
+what's my position
+
+how many people are in front of me
+
+how long is my wait
+
+am I still in the queue
+
+status
+
+cancel
+Customer wants to CANCEL an appointment they already have, or LEAVE the
+walk-in queue. (Rescheduling or changing a booking is NOT cancel — that is
+support.)
+
+Examples:
+
+cancel
+
+cancel my booking
+
+cancel my appointment
+
+cancel my 3pm
+
+I can't make it, please cancel
+
+leave the queue
+
+remove me from the queue
+
+I don't want to wait anymore, cancel my spot
+
 support
-Customer needs a human, or wants something the booking and queue flows
-cannot do on their own.
+Customer needs a human, or wants something the booking, queue, status and
+cancel flows cannot do on their own.
 
 Examples:
 
@@ -389,8 +533,6 @@ issue
 help
 
 customer service
-
-cancel my appointment
 
 reschedule my booking
 
@@ -479,6 +621,14 @@ Join Queue
 Talk to Support
 → support
 
+[button reply]
+Check Status
+→ status
+
+[button reply]
+Cancel Now
+→ cancel
+
 [location message]
 Shop location or directions
 → support
@@ -493,9 +643,11 @@ Never return multiple intents.
 
 Never invent missing information.
 
-If a message mentions cancelling, rescheduling, changing, or complaining
-about a booking, it is "support" even though it contains booking words.
-The customer already has an appointment; they are not asking for a new one.
+If a message is about an appointment or queue spot the customer ALREADY has,
+it is never "booking" (they are not asking for a new one):
+- cancelling it or leaving the queue → "cancel"
+- checking it, or asking where they are in the queue → "status"
+- rescheduling, changing, running late, or complaining about it → "support"
 
 If uncertain between booking and support, prefer booking when the customer
 is clearly asking for a service, a slot, or a place in the queue.
@@ -508,6 +660,10 @@ Primary customer objective:
 booking
 
 "cancel my 3pm"
+
+cancel
+
+"can I move my 3pm to 4pm"
 
 support
 
@@ -574,8 +730,8 @@ Handling non-text payloads:
   context points elsewhere.
 - "[button reply]": the user tapped a button from a previous menu. The
   button label is usually a strong, near-literal signal of intent — trust
-  it directly (e.g. "Book Appointment" or "Join Queue" → booking, "Talk to
-  Support" → support).
+  it directly (e.g. "Book Appointment" or "Join Queue" → booking, "Check
+  Status" → status, "Cancel Now" → cancel, "Talk to Support" → support).
 - "[location message]": the user shared a GPS location/place. Customers
   usually do this to ask where the shop is or to share where they are, which
   needs a person to answer, so it should usually map to "support" — unless

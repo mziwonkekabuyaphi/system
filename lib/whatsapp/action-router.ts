@@ -1,45 +1,45 @@
 // lib/whatsapp/action-router.ts
 /**
- * QLess Action Router — booking/queue only, tenant-scoped.
- * -----------------------------------------------------------
- * Stripped down from Rands Cape Town's original ten-service concierge
- * router (wallet, passport, events, tickets, orders, vvip, shisha,
- * support, registration, booking) to the two services QLess actually
- * ships: bookingService and queueService. That decision — QLess is
- * booking/queue only, Rands' nightclub concierge features are NOT part
- * of this product — was explicit, not inferred; see the conversation
- * this file's rewrite came out of if that scope ever needs revisiting.
+ * QLess Action Router — booking / queue / status / cancel, tenant-scoped.
+ * -----------------------------------------------------------------------
+ * Still a PURE DISPATCHER: it decides WHICH service handles a message and
+ * hands off. No business logic lives here.
  *
- * Still a PURE DISPATCHER — no business logic here, same rule as the
- * original. What changed structurally:
- *   1. Every function now takes `tenantId` as its first argument and
- *      threads it to state/customer/service calls (this file previously
- *      had NO tenant awareness at all — see the multi-tenant summary
- *      this rewrite came out of).
- *   2. queueService is now registered in `stateHandlers`. It wasn't
- *      before — queue.ts exports a conforming `handleState`, but nothing
- *      ever called it, so a customer mid-queue-selection whose reply
- *      didn't match anything else would fall through to
- *      UNKNOWN_STATE_REPLY instead of reaching queueService. Adding it
- *      here fixes that; it was never a multi-tenancy issue on its own.
- *   3. All Rands-only logic is gone: the services-menu row maps
- *      (SERVICE_ROW_INTENTS/PASSPORT_ROW_INTENTS/PASSPORT_ROW_DIRECT_
- *      HANDLERS), venue-hours gating (ON_PREMISE_ONLY_INTENTS), and every
- *      flow-specific "is this reply answering THIS prompt, not switching
- *      intents" guard (payment-method/ticket-menu/shisha/vvip prompts).
- *      None of it has an equivalent in booking/queue — there's exactly
- *      one real intent ("booking") and two state prefixes
- *      ("booking_"/"queue_"), so the "is this a genuinely new intent"
- *      check below is far simpler than the original's.
+ * FIRST CONTACT (new): a customer who says "hi" — or sends anything we
+ * can't map to a real intent — gets TWO WhatsApp messages, the same pattern
+ * the old Rands bot used:
+ *   1. a short smart greeting + their first name + a line welcoming them to
+ *      the shop (the main `reply`), then
+ *   2. the four-row interactive menu (Book Now / Join Queue / Check Status /
+ *      Cancel Now), attached as `followUp`.
+ * lib/whatsapp/send-action-result.ts is what actually delivers the follow-up.
+ * An explicit "menu" / "start over" (or a bare "cancel" while a booking is
+ * half-done) also shows the menu, with a shorter lead-in instead of the greeting.
  *
- * SMART GREETING (new): buildEntryReply() now opens with a random,
- * time-aware phrase from lib/whatsapp/greeting.ts instead of a fixed
- * "Hey <name>!". The time of day uses the SHOP's timezone, "Welcome
- * back" style phrases are skipped for customers with no saved name, and
- * "Welcome to <shop>," uses tenants.name so it stays white-label safe.
+ * ROUTING ORDER inside routeAction (order matters — it fixes the "cancel"
+ * trap):
+ *   1. MENU ROW TAP (by row id) — a deliberate, unambiguous choice. Wins over
+ *      conversation state, global interrupts and AI classification, and
+ *      doubles as an implicit cancel of whatever the customer was doing
+ *      (state is cleared first). Never reaches the AI.
+ *   2. If the customer is mid-conversation:
+ *        a. a typed cancel REQUEST ("cancel my booking", "leave the queue" —
+ *           the "cancel" intent) opens the Cancel Now flow instead of just
+ *           resetting. Not applied inside the cancel flow itself.
+ *        b. global interrupt words ("menu", "start over", "stop", and "cancel")
+ *           reset to the menu. INSIDE the cancel flow only the reset words
+ *           apply — otherwise the "Yes, cancel it" button would match
+ *           "cancel" and throw the customer out of the flow.
+ *        c. a genuinely new intent (e.g. "check my booking" mid-booking)
+ *           switches flows; button taps and plain answers ("2", "yes") never do.
+ *        d. otherwise the service that owns the current state handles it.
+ *   3. No state: route by intent; anything unrecognised -> greeting + menu.
  *
  * Dependency direction (unchanged): WhatsApp → Intent Router → Action
  * Router → Services → Supabase.
+ *
+ * White-label: the shop's name comes from tenant_branding.display_name,
+ * falling back to tenants.name. No brand is hardcoded.
  */
 
 import type { RoutedIntent, Intent } from "@/lib/whatsapp/intent-router"
@@ -48,19 +48,21 @@ import type { ActionResult } from "@/lib/types/action"
 
 import { bookingService } from "@/lib/services/booking"
 import { queueService } from "@/lib/services/queue"
+import { statusService } from "@/lib/services/status"
+import { cancelService } from "@/lib/services/cancel"
 
 import { stateService, type ConversationState } from "@/lib/services/state"
-import { getCustomer, type TenantCustomer } from "@/lib/services/tenant-customer"
+import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 
 import { getSmartGreeting } from "@/lib/whatsapp/greeting"
+import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 
 /**
  * Contract each service must implement to participate in stateful
- * conversations. Same shape as before, with `tenantId` added — a service
- * inspects `state.state` and either returns an ActionResult (it owns this
- * state) or null (defer to the next service in `stateHandlers`).
+ * conversations: inspect `state.state` and either return an ActionResult
+ * (it owns this state) or null (defer to the next service).
  */
 export interface StatefulService {
   handleState(
@@ -75,82 +77,99 @@ export interface IntentService {
   handle(tenantId: string, intent: RoutedIntent, message: IncomingMessage): ActionResult | Promise<ActionResult>
 }
 
-// queueService is listed AFTER bookingService: a customer only ever
-// enters a queue_* state via booking.ts's handleEntryChoice, so booking
-// gets first refusal on every state name, same "try each service in
-// order" contract as before.
-const stateHandlers: StatefulService[] = [bookingService, queueService]
+type Handler = IntentService["handle"]
 
-const intentHandlers: Record<string, IntentService["handle"]> = {
+// bookingService first: a customer only ever enters a queue_* state via
+// booking.ts's handleEntryChoice (or the "Join Queue" row, which sets a
+// queue_* state itself), so booking gets first refusal on every state name.
+// cancelService owns exactly the "cancel_*" states.
+const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService]
+
+const intentHandlers: Record<string, Handler> = {
   booking: bookingService.handleBooking.bind(bookingService),
+  status: statusService.handleStatus,
+  cancel: cancelService.handleCancel,
 }
 
-// `unhandled: true` marks this as a genuine "we don't know what to do"
-// reply — handover.ts's shouldEscalate() uses this flag, not raw intent
-// confidence alone, before treating low confidence as a reason to
-// escalate to a human.
+/**
+ * Menu row id -> handler. A tap on the menu is never ambiguous (we built the
+ * menu), so it is routed deterministically here instead of through AI intent
+ * classification. Row ids come from MENU_ROW_IDS in services-list.ts.
+ */
+const MENU_ROW_HANDLERS: Record<string, Handler> = {
+  [MENU_ROW_IDS.book]: (tenantId) => bookingService.startBookingFlow(tenantId),
+  [MENU_ROW_IDS.queue]: (tenantId) => queueService.startQueueFlow(tenantId),
+  [MENU_ROW_IDS.status]: statusService.handleStatus,
+  [MENU_ROW_IDS.cancel]: cancelService.handleCancel,
+}
+
+// `unhandled: true` marks a genuine "we don't know what to do" reply —
+// handover.ts's shouldEscalate() uses this flag, not raw intent confidence.
 const UNKNOWN_STATE_REPLY: ActionResult = {
   reply: "I couldn't continue your previous request, so let's start again. How can I help you today?",
   buttons: [],
   nextState: null,
   unhandled: true,
+  followUp: [buildServicesListMessage("Tap below to choose what you'd like to do 👇")],
 }
 
-/**
- * Words/phrases that always break out of an in-progress flow, regardless
- * of which service owns the current state. Matched with `.includes()`
- * against the raw trimmed/lowercased text — unchanged from the original.
- */
-const GLOBAL_INTERRUPT_KEYWORDS = ["cancel", "menu", "main menu", "start over", "restart", "stop"]
+/** Words that reset the conversation to the menu from anywhere. */
+const RESET_KEYWORDS = ["menu", "main menu", "start over", "restart", "stop"]
 
 /**
- * Maps a state name to the intent that owns it. With only one real
- * intent left ("booking"), this only needs to recognize the two prefixes
- * booking.ts and queue.ts actually use — both belong to the same
- * customer-facing flow, so both resolve to "booking".
+ * Outside the cancel flow a bare "cancel" (or the word "cancel" in a button)
+ * also resets — that is what it always did. Inside the cancel flow it must
+ * NOT, because "Yes, cancel it" contains the word.
+ */
+const GLOBAL_INTERRUPT_KEYWORDS = [...RESET_KEYWORDS, "cancel"]
+
+const CANCEL_STATE_PREFIX = "cancel_"
+
+/** Short answers like "2" or "yes" are answering a prompt, never switching topic. */
+const PLAIN_ANSWER_PATTERN = /^(\d{1,2}|y|n|yes|no|yeah|yep|nope|ok|okay|sure)[.!]*$/
+
+/**
+ * Maps a state name to the intent that owns it (by naming convention).
+ * Used only to answer "is this message a genuinely DIFFERENT intent from the
+ * flow the customer is already in?". null = unknown -> don't switch.
  */
 function resolveOwningIntent(stateName: string): Intent | null {
-  if (stateName.startsWith("booking_")) return "booking" as Intent
-  if (stateName.startsWith("queue_")) return "booking" as Intent
+  if (stateName.startsWith("booking_")) return "booking"
+  if (stateName.startsWith("queue_")) return "booking"
+  if (stateName.startsWith(CANCEL_STATE_PREFIX)) return "cancel"
   return null
 }
 
-/**
- * First name for greeting purposes. tenant_customers.full_name is one
- * field (not profiles' separate name/surname), so this is just "take the
- * first word" — falls back to "there" for a brand-new or nameless
- * customer, same as the original's intent.
- */
-function firstNameFromCustomer(customer: TenantCustomer | null): string {
+/** First name for the greeting, or "there" for a nameless/unknown customer. */
+function firstNameFromCustomer(customer: Customer | null): string {
   if (!customer?.name) return "there"
   return customer.name.trim().split(/\s+/)[0] || "there"
 }
 
 /**
- * Fires on a fresh conversation, an explicit cancel, or any message the
- * intent classifier can't map to "booking" — which, since booking is the
- * only thing this bot does, all collapse into the same good answer:
- * greet them (personalized if we know their name) and hand straight to
- * bookingService's own entry-choice prompt ("book a time" vs "join the
- * queue"), rather than maintaining a separate services-menu reply the
- * way the ten-service Rands router needed to.
+ * Greeting + menu. Used for a fresh conversation, an unrecognised message
+ * (greet = true), and for an explicit reset like "menu" (greet = false,
+ * which skips the greeting and just says "no problem" before the menu).
+ *
+ * Personalisation is best-effort: if the customer, timezone or shop-name
+ * lookup fails, the greeting still goes out with sensible fallbacks.
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const entry = await bookingService.handleBooking(
-    tenantId,
-    { intent: "booking", confidence: 1 } as RoutedIntent,
-    message,
-  )
+  const menu = buildServicesListMessage("Tap below to choose what you'd like to do 👇")
 
-  if (!greet) return entry
+  if (!greet) {
+    return {
+      reply: "No problem — let's start fresh. What would you like to do?",
+      buttons: [],
+      nextState: null,
+      followUp: [menu],
+    }
+  }
 
-  let customer: TenantCustomer | null = null
+  let customer: Customer | null = null
   try {
     customer = await getCustomer(tenantId, message.from)
   } catch (error) {
-    // Best-effort personalization only — getCustomer throwing (a genuine
-    // DB error, not "not found," which returns null) must never break
-    // the greeting itself.
     console.error("[action-router] getCustomer lookup failed for greeting:", error)
   }
 
@@ -158,37 +177,42 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   const isReturning = Boolean(customer?.name)
 
   // Shop-local time of day + the shop's own name (white-label safe).
-  // Both are best-effort: if either lookup fails the greeting still works.
   let timeZone: string | undefined
   let shopName: string | null = null
   try {
     const supabase = getSupabaseServerClient()
     if (supabase) {
-      const [tz, tenantRow, settingsRow] = await Promise.all([
+      const [tz, tenantRow, brandingRow] = await Promise.all([
         getTenantTimezone(supabase, tenantId),
         supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
         supabase.from("tenant_branding").select("display_name").eq("tenant_id", tenantId).maybeSingle(),
       ])
       timeZone = tz
-      // The Display name owners already set under Settings > Branding wins;
-      // fall back to the tenant's own name.
-      shopName = settingsRow.data?.display_name?.trim() || tenantRow.data?.name || null
+      // The Display name owners set under Settings > Branding wins; fall back
+      // to the tenant's own name.
+      shopName = brandingRow.data?.display_name?.trim() || tenantRow.data?.name || null
     }
   } catch (error) {
     console.error("[action-router] greeting context lookup failed:", error)
   }
 
-  const greeting = getSmartGreeting({ timeZone, isReturning, shopName })
+  const greeting = getSmartGreeting({ timeZone, isReturning })
+  const welcomeLine = shopName
+    ? `Welcome to *${shopName}*. I can help you book an appointment or join the walk-in queue.`
+    : "Welcome! I can help you book an appointment or join the walk-in queue."
+
   return {
-    ...entry,
-    reply: `${greeting} ${firstName}! 👋\n\n${entry.reply}`,
+    reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}`,
+    buttons: [],
+    nextState: null,
+    followUp: [menu],
   }
 }
 
 /**
  * Asks each registered service, in order, whether it owns the given
- * conversation state. First non-null response wins. If nobody claims it,
- * the state is stale/corrupt — clear it and restart politely.
+ * conversation state. First non-null response wins. If nobody claims it the
+ * state is stale/corrupt — clear it and restart politely.
  */
 async function delegateState(
   tenantId: string,
@@ -210,23 +234,41 @@ export async function routeAction(
   state: ConversationState | null,
   message: IncomingMessage,
 ): Promise<ActionResult> {
-  // ── GLOBAL INTERRUPTS (checked before state routing) ───────────────
+  // ── 1. MENU ROW TAP (checked before everything else) ───────────────
+  const rowHandler = message.interactiveId ? MENU_ROW_HANDLERS[message.interactiveId] : undefined
+  if (rowHandler) {
+    // Always clear first: tapping the menu is an implicit cancel of whatever
+    // the customer was doing. (reply.ts saves the new nextState afterwards.)
+    await stateService.clearState(tenantId, message.from)
+    return rowHandler(tenantId, intent, message)
+  }
+
+  // ── 2. MID-CONVERSATION ────────────────────────────────────────────
   if (state) {
     const text = (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
-    const isExplicitCancel = GLOBAL_INTERRUPT_KEYWORDS.some((keyword) => text.includes(keyword))
+    const isButtonReply = Boolean(message.interactiveId)
+    const inCancelFlow = state.state.startsWith(CANCEL_STATE_PREFIX)
 
-    if (isExplicitCancel) {
+    // 2a. A typed cancel REQUEST opens Cancel Now (instead of just resetting).
+    if (!inCancelFlow && !isButtonReply && intent?.intent === "cancel") {
+      await stateService.clearState(tenantId, message.from)
+      return intentHandlers.cancel(tenantId, intent, message)
+    }
+
+    // 2b. Reset words. Inside the cancel flow, "cancel" is NOT one of them.
+    const resetWords = inCancelFlow ? RESET_KEYWORDS : GLOBAL_INTERRUPT_KEYWORDS
+    if (resetWords.some((keyword) => text.includes(keyword))) {
       await stateService.clearState(tenantId, message.from)
       return buildEntryReply(tenantId, message, false)
     }
 
-    // A button tap is always answering whatever prompt the active flow
-    // just showed — never let raw classification override that.
-    const isButtonReply = Boolean(message.interactiveId)
-
+    // 2c. A button tap is always answering the prompt the active flow just
+    // showed — never let raw classification override that. Plain answers
+    // ("2", "yes") likewise never switch topic.
     const owningIntent = resolveOwningIntent(state.state)
     const isGenuinelyNewIntent =
       !isButtonReply &&
+      !PLAIN_ANSWER_PATTERN.test(text) &&
       !!intent?.intent &&
       !!intentHandlers[intent.intent] &&
       owningIntent !== null &&
@@ -237,10 +279,11 @@ export async function routeAction(
       return intentHandlers[intent.intent](tenantId, intent, message)
     }
 
+    // 2d. The service that owns this state handles it.
     return delegateState(tenantId, state, message)
   }
 
-  // ── INTENT ROUTING ────────────────────────────────────────────────
+  // ── 3. INTENT ROUTING (no conversation in progress) ────────────────
   const handler = intent?.intent ? intentHandlers[intent.intent] : undefined
   if (!handler) return buildEntryReply(tenantId, message, true)
 

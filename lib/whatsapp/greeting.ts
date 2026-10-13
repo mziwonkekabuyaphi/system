@@ -3,7 +3,11 @@
  * Shared "smart greeting" phrase pool + time-aware picker for Zozoqueue.
  *
  * Same pool as the original project's greeting.ts. Only differences:
- *   1. "Welcome to Rands," -> "Welcome to Zozoqueue," (brand name).
+ *   1. WHITE-LABEL: the brand-name phrase ("Welcome to Zozoqueue,") is gone.
+ *      QLess is multi-tenant, so no brand is hardcoded here. The shop's own
+ *      name is added by action-router.ts's buildEntryReply() on a separate
+ *      "Welcome to <shop>" line (tenant_branding.display_name, falling back
+ *      to tenants.name).
  *   2. getSmartGreeting() takes an optional IANA `timeZone` so the time of
  *      day is the shop's local time, not the server's (Vercel runs in UTC,
  *      which would be 2 hours behind South Africa).
@@ -48,7 +52,6 @@ export const GREETING_PHRASES: GreetingPhrase[] = [
   // Concierge style
   { text: "It's great to see you,", time: "any" },
   { text: "Happy to have you back,", time: "any", returningOnly: true },
-  { text: "Welcome to Zozoqueue,", time: "any" },
   { text: "Thanks for reaching out,", time: "any" },
 ]
 
