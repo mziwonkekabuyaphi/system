@@ -50,12 +50,15 @@ export function LoginForm() {
           data: { user },
         } = await supabase.auth.getUser();
         if (user) {
+          const { data: isAdmin } = await supabase.rpc("is_platform_admin");
           const { data: salesperson } = await supabase
             .from("salespeople")
             .select("id, status")
             .eq("profile_id", user.id)
             .maybeSingle();
-          if (salesperson && salesperson.status !== "terminated") {
+          if (isAdmin) {
+            destination = "/platform";
+          } else if (salesperson && salesperson.status !== "terminated") {
             destination = "/sales";
           }
         }
