@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createSessionClient } from "@/lib/supabase/session-server";
+import { isSalesperson } from "@/lib/tenant/current-tenant-member";
 import { OnboardingForm } from "./OnboardingForm";
 
 export const metadata = { title: "Set up your business · QLess" };
@@ -12,6 +13,12 @@ export default async function OnboardingPage() {
 
   if (!user) {
     redirect("/login");
+  }
+
+  // Commission salespeople are not shops: they have nothing to create or
+  // join here, so send them to their own dashboard.
+  if (await isSalesperson()) {
+    redirect("/sales");
   }
 
   return (
