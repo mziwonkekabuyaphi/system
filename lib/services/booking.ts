@@ -162,7 +162,12 @@ const BOOKING_STATE_CONFIRM = "booking_confirm"
 const BOOKING_STATE_AWAITING_NAME = "booking_awaiting_name"
 
 const SLOT_INTERVAL_MINUTES = 30 // granularity of offered start times
-const DAYS_AHEAD_OFFERED = 6 // "today" + up to 6 more days, capped further by max_advance_days
+/** Fallback only, used if a tenant has no booking_settings row (or the
+ *  column is unreadable). The real value is booking_settings.max_dates_offered
+ *  (admin: Settings > Booking > "Dates shown to customers"). Default 7 =
+ *  "today" + 6 more days, which is what every tenant got before it was
+ *  configurable. */
+const DEFAULT_DATES_OFFERED = 7
 
 /** Thrown by createBooking() when nobody's free anymore by confirm time.
  *  Exported so callers outside this file (the kiosk action) can match on
@@ -694,26 +699,53 @@ export async function presentServices(tenantId: string): Promise<ActionResult> {
 // ============================================================================
 
 /**
+ * Reads booking_settings.max_dates_offered for this tenant. Kept as its own
+ * small query (rather than a field on getBookingSettings, which lives in
+ * tenant-scheduling.ts) so this change is self-contained; fold it into
+ * getBookingSettings if you prefer one round trip. Never throws: a missing
+ * row or error falls back to DEFAULT_DATES_OFFERED so the date screen can't
+ * break over a presentation setting.
+ */
+async function getDatesOffered(supabase: SupabaseClient, tenantId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("booking_settings")
+    .select("max_dates_offered")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (error) {
+    console.error("[booking] Failed to load max_dates_offered", { tenantId, error: error.message })
+    return DEFAULT_DATES_OFFERED
+  }
+  const value = Number(data?.max_dates_offered)
+  return Number.isInteger(value) && value >= 1 ? value : DEFAULT_DATES_OFFERED
+}
+
+/**
  * Exported: the kiosk's date-selection screen calls this directly so
  * "today, tomorrow, next N days" is computed identically for both
  * channels — no separate date-formatting logic to keep in sync.
  *
- * Tenant-aware (new): "today" is the tenant's own local calendar date
- * (tenant_settings.timezone), not the server's/UTC's. The number of
- * days offered is capped at booking_settings.max_advance_days — a shop
- * with a 3-day advance window won't show 6 days of dates that would
- * just get rejected server-side if picked.
+ * Tenant-aware: "today" is the tenant's own local calendar date
+ * (tenant_settings.timezone), not the server's/UTC's. How many dates are
+ * listed is per-tenant: booking_settings.max_dates_offered (admin-editable),
+ * further capped by max_advance_days so a shop with a 3-day advance window
+ * never lists dates that would just get rejected server-side if picked.
  */
 export async function buildDateOptions(tenantId: string): Promise<Array<{ date: string; label: string }>> {
   const supabase = getClientOrThrow()
 
-  const [timezone, bookingSettings] = await Promise.all([
+  const [timezone, bookingSettings, datesOffered] = await Promise.all([
     getTenantTimezone(supabase, tenantId),
     getBookingSettings(supabase, tenantId),
+    getDatesOffered(supabase, tenantId),
   ])
 
   const today = todayInTimezone(timezone)
-  const daysToOffer = Math.min(DAYS_AHEAD_OFFERED, Math.max(0, bookingSettings.maxAdvanceDays))
+  // Two independent limits, the stricter wins: max_advance_days is the rule
+  // (what can be booked at all); max_dates_offered is presentation (how many
+  // date buttons are listed, today included). Offering index i = today + i,
+  // so the last offered index is min(datesOffered - 1, maxAdvanceDays).
+  const daysToOffer = Math.min(Math.max(1, datesOffered) - 1, Math.max(0, bookingSettings.maxAdvanceDays))
 
   const options: Array<{ date: string; label: string }> = []
   for (let i = 0; i <= daysToOffer; i++) {
