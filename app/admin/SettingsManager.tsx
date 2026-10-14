@@ -21,6 +21,7 @@ import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
 import { BookingSettingsPanel, MessageSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
+import { WhatsAppTemplatesPanel } from "./settings/WhatsAppTemplatesPanel"
 import { SettingsPageHeader } from "./settings/ui"
 
 type SubTab = "general" | "kiosk" | "display" | "clock" | "private-label" | "booking" | "queue" | "messages"
@@ -253,7 +254,12 @@ export function SettingsManager({
       )}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
       {subTab === "queue" && <QueueSettingsPanel initial={queueSettings} onSaved={setQueueSettings} />}
-      {subTab === "messages" && <MessageSettingsPanel initial={initialMessageSettings} />}
+      {subTab === "messages" && (
+        <div className="space-y-4">
+          <MessageSettingsPanel initial={initialMessageSettings} />
+          <WhatsAppTemplatesPanel />
+        </div>
+      )}
       </div>
     </div>
   )
