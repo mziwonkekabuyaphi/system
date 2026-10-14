@@ -305,7 +305,7 @@ async function loadSimEntries(
 ): Promise<SimEntry[]> {
   const { data, error } = await supabase
     .from("queue_entries")
-    .select("id, status, joined_at, called_at, booking_id, services ( duration_minutes )")
+    .select("id, status, joined_at, called_at, booking_id, services!queue_entries_service_id_fkey ( duration_minutes )")
     .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
 
