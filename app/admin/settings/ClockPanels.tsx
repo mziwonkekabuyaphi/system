@@ -16,6 +16,7 @@ import {
   secondaryButtonClass,
   useCardForm,
 } from "./ui"
+import { ModuleToggleCard } from "./ModuleToggleCard"
 
 // ---------------------------------------------------------------------------
 // Staff clock-in — look and wording for the PIN pad at /clock/[slug].
@@ -205,6 +206,13 @@ export function ClockPanel({
 
   return (
     <div className="space-y-4">
+      <ModuleToggleCard
+        which="clock"
+        title="Staff clock-in module"
+        description="Enable the staff clock-in pad for this location."
+        offNotice="Clock-in is off — staff won't be able to clock in or out at the address below. Everything else on this tab still saves, so you can set it up before switching it on."
+      />
+
       <ClockUrlPanel tenantSlug={tenantSlug} />
 
       <SettingsCard

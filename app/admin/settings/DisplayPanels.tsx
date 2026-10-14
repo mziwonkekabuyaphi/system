@@ -20,6 +20,7 @@ import {
   secondaryButtonClass,
   useCardForm,
 } from "./ui"
+import { ModuleToggleCard } from "./ModuleToggleCard"
 
 // ---------------------------------------------------------------------------
 // Display — the ambient TV screen for the waiting area. Its own tab
@@ -258,6 +259,13 @@ export function DisplayPanel({
 
   return (
     <div className="space-y-4">
+      <ModuleToggleCard
+        which="display"
+        title="Public display module"
+        description="Enable the waiting-area display screen for this location."
+        offNotice="The display is off — the screen at the address below won't show anything. Everything else on this tab still saves, so you can set it up before switching it on."
+      />
+
       <DisplayUrlPanel tenantSlug={tenantSlug} />
 
       <SettingsCard

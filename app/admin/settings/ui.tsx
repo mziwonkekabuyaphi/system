@@ -281,27 +281,47 @@ export function Toggle({
   checked,
   disabled,
   onChange,
+  label,
+  showState = true,
 }: {
   checked: boolean
   disabled?: boolean
   onChange: (next: boolean) => void
+  label?: string
+  showState?: boolean
 }) {
+  // VISIBILITY FIX: the OFF state used to be a pale grey with no border, which
+  // vanished on a white card. OFF is now a solid mid-grey track with a darker
+  // border, a white thumb with a ring + shadow, and a small "Off"/"On" word,
+  // so it can always be seen -- including while disabled.
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset ring-black/10 transition-colors disabled:cursor-not-allowed ${
-        checked ? (disabled ? "bg-[#7A2E3A]/60" : "bg-[#7A2E3A]") : disabled ? "bg-stone-200" : "bg-stone-300"
+      className={`inline-flex shrink-0 items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7A2E3A] focus-visible:ring-offset-2 ${
+        disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"
       }`}
     >
       <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-          checked ? "translate-x-6" : "translate-x-1"
+        className={`relative inline-block h-6 w-11 rounded-full border-2 transition-colors ${
+          checked ? "border-[#7A2E3A] bg-[#7A2E3A]" : "border-stone-400 bg-stone-300"
         }`}
-      />
+      >
+        <span
+          className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-black/20 transition-all ${
+            checked ? "left-[1.375rem]" : "left-0.5"
+          }`}
+        />
+      </span>
+      {showState && (
+        <span className={`w-6 text-xs font-semibold ${checked ? "text-[#7A2E3A]" : "text-stone-500"}`}>
+          {checked ? "On" : "Off"}
+        </span>
+      )}
     </button>
   )
 }
