@@ -1,7 +1,7 @@
 // lib/whatsapp/utils/services-list.ts
 /**
- * The QLess main menu — an interactive WhatsApp LIST with four rows:
- * Book Now, Join Queue, Check Status, Cancel Now.
+ * The QLess main menu — an interactive WhatsApp LIST with five rows:
+ * Book Now, Join Queue, Check Status, Cancel Now, My Profile.
  *
  * Same idea as the old Rands "services list": the menu is sent as a
  * `followUp` message after a short greeting, and every row has a fixed id.
@@ -32,6 +32,7 @@ export const MENU_ROW_IDS = {
   queue: "menu_queue",
   status: "menu_status",
   cancel: "menu_cancel",
+  profile: "menu_profile",
 } as const
 
 export type MenuRowId = (typeof MENU_ROW_IDS)[keyof typeof MENU_ROW_IDS]
@@ -72,6 +73,11 @@ export function buildServicesListMessage(bodyText: string): FollowUpMessage {
               id: MENU_ROW_IDS.cancel,
               title: "❌ Cancel Now",
               description: "Cancel your booking or leave the queue",
+            },
+            {
+              id: MENU_ROW_IDS.profile,
+              title: "👤 My Profile",
+              description: "Your booking, queue spot and visit history",
             },
           ],
         },
