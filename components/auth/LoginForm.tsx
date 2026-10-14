@@ -36,8 +36,35 @@ export function LoginForm() {
       return;
     }
 
-    const next = searchParams.get("next") || "/admin";
-    router.push(next);
+    // An explicit ?next= always wins (e.g. a bounced deep link). Otherwise a
+    // salesperson goes to /sales and everyone else to /admin. Same rule as
+    // requireSalesperson() in lib/sales/auth.ts: a salespeople row for this
+    // user whose status is not "terminated". Best-effort: any failure here
+    // just falls back to /admin, so sign-in is never blocked by this lookup.
+    const explicitNext = searchParams.get("next");
+    let destination = explicitNext || "/admin";
+
+    if (!explicitNext) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          const { data: salesperson } = await supabase
+            .from("salespeople")
+            .select("id, status")
+            .eq("profile_id", user.id)
+            .maybeSingle();
+          if (salesperson && salesperson.status !== "terminated") {
+            destination = "/sales";
+          }
+        }
+      } catch {
+        // keep the /admin default
+      }
+    }
+
+    router.push(destination);
     router.refresh();
   }
 
