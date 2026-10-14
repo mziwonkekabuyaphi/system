@@ -82,6 +82,15 @@ function TrashIcon() {
   )
 }
 
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+    </svg>
+  )
+}
+
 function AlertIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -92,7 +101,9 @@ function AlertIcon() {
   )
 }
 
-/** "Are you sure?" pop-up with a red confirm button (used for deletes). */
+/** "Are you sure?" pop-up. Defaults to the red "danger" look (trash icon,
+ *  red confirm button) used for deletes; pass tone="neutral" for a
+ *  non-destructive confirmation such as marking payslips paid. */
 export function ConfirmDialog({
   open,
   title,
@@ -102,6 +113,7 @@ export function ConfirmDialog({
   isBusy,
   onConfirm,
   onCancel,
+  tone = "danger",
 }: {
   open: boolean
   title: string
@@ -111,11 +123,17 @@ export function ConfirmDialog({
   isBusy: boolean
   onConfirm: () => void
   onCancel: () => void
+  tone?: "danger" | "neutral"
 }) {
+  const danger = tone === "danger"
   return (
     <Modal open={open} onClose={onCancel} locked={isBusy}>
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F3E3E0] text-[#7A2E2E]">
-        <TrashIcon />
+      <div
+        className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full ${
+          danger ? "bg-[#F3E3E0] text-[#7A2E2E]" : "bg-[#EDE8DA] text-[#1C1A17]"
+        }`}
+      >
+        {danger ? <TrashIcon /> : <CheckIcon />}
       </div>
       <h2 className="mt-4 text-xl text-[#1C1A17]">{title}</h2>
       <p className="mt-2 text-[0.95rem] leading-relaxed text-[#8A8375]">{message}</p>
@@ -131,7 +149,9 @@ export function ConfirmDialog({
         <button
           onClick={onConfirm}
           disabled={isBusy}
-          className="flex-1 rounded-lg bg-[#7A2E2E] px-4 py-2.5 text-sm text-[#FAF6EE] transition-colors hover:bg-[#662525] disabled:opacity-60"
+          className={`flex-1 rounded-lg px-4 py-2.5 text-sm text-[#FAF6EE] transition-colors disabled:opacity-60 ${
+            danger ? "bg-[#7A2E2E] hover:bg-[#662525]" : "bg-[#1C1A17] hover:bg-[#33302A]"
+          }`}
         >
           {isBusy ? busyLabel : confirmLabel}
         </button>

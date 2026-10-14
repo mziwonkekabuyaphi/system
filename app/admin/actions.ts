@@ -48,8 +48,20 @@ import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
 import { PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import {
+  BANK_ACCOUNT_TYPES,
+  normalizeBankAccountNumber,
+  normalizeBranchCode,
+  normalizeIdNumber,
+  normalizeIsoDate,
+  normalizeShortText,
+  normalizeTaxNumber,
+  type NormalizeResult,
+} from "@/lib/payroll/staff-details"
 import { loadDisplayContext, loadQueueEntries } from "./admin-data"
+import { addDaysKey, safeTimezone, startOfDayUtc } from "./tz"
 import type { AdminActivityCategory, AdminQueueEntry, AdminStaffInput } from "./types"
+import type { AdminPayrollOpenShift } from "./payroll-types"
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
@@ -720,6 +732,86 @@ function validateStaffInput(input: AdminStaffInput): string | null {
   return null
 }
 
+// Normalised, validated versions of the optional HR / payroll fields on
+// AdminStaffInput. Server Action arguments are untrusted JSON, so every value
+// is type-checked here rather than trusting the TypeScript signature.
+//   staffPatch    -> columns on `staff` (employee_number, start_date): staff.manage
+//   detailsPatch  -> columns on `staff_payroll_details`: payroll.manage, which the
+//                    caller has ALREADY been checked for before this runs.
+// A key is only present in a patch when the input asked to change it
+// (undefined = leave unchanged, null/"" = clear).
+type StaffExtras =
+  | { ok: false; error: string }
+  | { ok: true; staffPatch: Record<string, string | null>; detailsPatch: Record<string, string | null> }
+
+function prepareStaffExtras(input: AdminStaffInput): StaffExtras {
+  const staffPatch: Record<string, string | null> = {}
+  const detailsPatch: Record<string, string | null> = {}
+
+  // undefined -> skip; null -> ""; string -> as is; anything else -> invalid.
+  const text = (v: unknown): string | undefined | "INVALID" =>
+    v === undefined ? undefined : v === null ? "" : typeof v === "string" ? v : "INVALID"
+
+  const apply = (
+    target: Record<string, string | null>,
+    column: string,
+    raw: unknown,
+    run: (value: string) => NormalizeResult,
+  ): string | null => {
+    const v = text(raw)
+    if (v === undefined) return null
+    if (v === "INVALID") return "Invalid input."
+    const result = run(v)
+    if (!result.ok) return result.error
+    target[column] = result.value
+    return null
+  }
+
+  const errors = [
+    apply(staffPatch, "employee_number", input.employeeNumber, (v) => normalizeShortText(v, "Employee number", 30)),
+    apply(staffPatch, "start_date", input.startDate, (v) => normalizeIsoDate(v, "Start date")),
+  ]
+
+  const d = input.payrollDetails
+  if (d !== undefined) {
+    if (d === null || typeof d !== "object") return { ok: false, error: "Invalid input." }
+    errors.push(
+      apply(detailsPatch, "id_number", d.idNumber, normalizeIdNumber),
+      apply(detailsPatch, "tax_number", d.taxNumber, normalizeTaxNumber),
+      apply(detailsPatch, "bank_name", d.bankName, (v) => normalizeShortText(v, "Bank name", 60)),
+      apply(detailsPatch, "bank_account_number", d.bankAccountNumber, normalizeBankAccountNumber),
+      apply(detailsPatch, "bank_branch_code", d.bankBranchCode, normalizeBranchCode),
+      apply(detailsPatch, "bank_account_type", d.bankAccountType, (v) =>
+        v === "" || (BANK_ACCOUNT_TYPES as string[]).includes(v)
+          ? { ok: true, value: v || null }
+          : { ok: false, error: "Choose a valid account type." },
+      ),
+    )
+  }
+
+  const firstError = errors.find((e) => e !== null)
+  if (firstError) return { ok: false, error: firstError }
+  return { ok: true, staffPatch, detailsPatch }
+}
+
+/** Upserts only the columns present in `patch`; existing columns not in the
+ *  patch keep their value (ON CONFLICT updates only the supplied columns).
+ *  staff_id/tenant_id are stamped here from the already-scoped caller, and the
+ *  composite FK (staff_id, tenant_id) -> staff(id, tenant_id) means a staff id
+ *  belonging to another tenant is rejected by the database as well. */
+async function saveStaffPayrollDetails(
+  supabase: ServerClient,
+  tenantId: string,
+  staffId: string,
+  patch: Record<string, string | null>,
+): Promise<string | null> {
+  if (Object.keys(patch).length === 0) return null
+  const { error } = await supabase
+    .from("staff_payroll_details")
+    .upsert([{ staff_id: staffId, tenant_id: tenantId, ...patch }], { onConflict: "staff_id" })
+  return error ? error.message : null
+}
+
 // Pre-check for a friendly error message — the DB's partial unique index
 // on (tenant_id, clock_in_pin) is the real guard (see the
 // add_staff_hr_profile_and_shifts migration); this just avoids a raw
@@ -800,16 +892,20 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient("staff.manage")
   if (!supabase) return { ok: false, error: error! }
 
-  // hourlyRate is compensation data: setting it — even to null — always
-  // needs payroll.manage, independent of the staff.manage check above.
-  // Checked against the same signed-in session, not re-derived.
-  if ("hourlyRate" in input) {
+  // hourlyRate and payrollDetails (ID/tax/bank) are compensation data:
+  // setting either — even to null — always needs payroll.manage, independent
+  // of the staff.manage check above. Checked against the same signed-in
+  // session, not re-derived.
+  if ("hourlyRate" in input || "payrollDetails" in input) {
     const payrollCheck = await requireTenantPermission("payroll.manage")
     if (!payrollCheck.ok) return { ok: false, error: payrollCheck.error }
   }
 
   const validationError = validateStaffInput(input)
   if (validationError) return { ok: false, error: validationError }
+
+  const extras = prepareStaffExtras(input)
+  if (!extras.ok) return { ok: false, error: extras.error }
 
   if (input.clockInPin) {
     const pinError = await assertPinAvailable(supabase, tenantId!, input.clockInPin)
@@ -832,28 +928,52 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
     profileId = login.profileId
   }
 
-  const { error: insertError } = await supabase.from("staff").insert([
-    {
-      tenant_id: tenantId,
-      profile_id: profileId,
-      name: input.name.trim(),
-      job_title: input.jobTitle.trim() || null,
-      hourly_rate: "hourlyRate" in input ? input.hourlyRate : null,
-      phone: input.phone.trim() || null,
-      email: input.email.trim() || null,
-      clock_in_pin: input.clockInPin || null,
-      active: true,
-    },
-  ])
-  if (insertError) {
+  const { data: inserted, error: insertError } = await supabase
+    .from("staff")
+    .insert([
+      {
+        tenant_id: tenantId,
+        profile_id: profileId,
+        name: input.name.trim(),
+        job_title: input.jobTitle.trim() || null,
+        hourly_rate: "hourlyRate" in input ? input.hourlyRate : null,
+        phone: input.phone.trim() || null,
+        email: input.email.trim() || null,
+        clock_in_pin: input.clockInPin || null,
+        employee_number: extras.staffPatch.employee_number ?? null,
+        start_date: extras.staffPatch.start_date ?? null,
+        active: true,
+      },
+    ])
+    .select("id")
+    .single()
+  if (insertError || !inserted) {
     if (profileId) await rollbackStaffLogin(supabase, profileId)
-    if (insertError.message.includes("staff_tenant_clock_in_pin_unique")) {
+    if (insertError?.message.includes("staff_tenant_clock_in_pin_unique")) {
       return { ok: false, error: "That PIN is already in use by another staff member." }
     }
-    return { ok: false, error: insertError.message }
+    return { ok: false, error: insertError?.message ?? "Couldn't add the staff member." }
   }
 
-  await logActivity(supabase, tenantId!, { category: "staff", action: `Added staff member "${input.name.trim()}"` })
+  // Sensitive fields go to their own payroll.manage-gated table. If that
+  // write fails, undo the staff row (and login) so the admin can simply
+  // resubmit instead of ending up with a half-created duplicate.
+  const detailsError = await saveStaffPayrollDetails(supabase, tenantId!, inserted.id, extras.detailsPatch)
+  if (detailsError) {
+    await supabase.from("staff").delete().eq("id", inserted.id).eq("tenant_id", tenantId)
+    if (profileId) await rollbackStaffLogin(supabase, profileId)
+    return { ok: false, error: `Couldn't save payroll details: ${detailsError}` }
+  }
+
+  await logActivity(supabase, tenantId!, { category: "staff", action: `Added staff member "${input.name.trim()}"`, staffId: inserted.id })
+  // Never put the ID, tax or bank numbers in the log: only that they changed.
+  if (Object.keys(extras.detailsPatch).length) {
+    await logActivity(supabase, tenantId!, {
+      category: "payroll",
+      action: `Set payroll details for staff member "${input.name.trim()}"`,
+      staffId: inserted.id,
+    })
+  }
 
   revalidatePath("/admin")
   return { ok: true }
@@ -868,13 +988,16 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
   // than writing it as null/unchanged, so a staff.manage-only caller
   // can't accidentally (or via a crafted request) wipe an existing rate.
   const canTouchRate = "hourlyRate" in input
-  if (canTouchRate) {
+  if (canTouchRate || "payrollDetails" in input) {
     const payrollCheck = await requireTenantPermission("payroll.manage")
     if (!payrollCheck.ok) return { ok: false, error: payrollCheck.error }
   }
 
   const validationError = validateStaffInput(input)
   if (validationError) return { ok: false, error: validationError }
+
+  const extras = prepareStaffExtras(input)
+  if (!extras.ok) return { ok: false, error: extras.error }
 
   if (input.clockInPin) {
     const pinError = await assertPinAvailable(supabase, tenantId!, input.clockInPin, id)
@@ -889,6 +1012,8 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
     clock_in_pin: input.clockInPin || null,
   }
   if (canTouchRate) patch.hourly_rate = input.hourlyRate
+  // Only the HR fields the input actually carried; omitted keys stay as they are.
+  Object.assign(patch, extras.staffPatch)
 
   // Login access: grant (no profile yet), reset password, and keep the
   // sign-in email in step with the staff email.
@@ -937,7 +1062,20 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
     return { ok: false, error: updateError.message }
   }
 
+  const detailsError = await saveStaffPayrollDetails(supabase, tenantId!, id, extras.detailsPatch)
+  if (detailsError) {
+    return { ok: false, error: `Staff details were saved, but payroll details couldn't be: ${detailsError}` }
+  }
+
   await logActivity(supabase, tenantId!, { category: "staff", action: `Updated staff member "${input.name.trim()}"`, staffId: id })
+  // Never put the ID, tax or bank numbers in the log: only that they changed.
+  if (Object.keys(extras.detailsPatch).length) {
+    await logActivity(supabase, tenantId!, {
+      category: "payroll",
+      action: `Updated payroll details for staff member "${input.name.trim()}"`,
+      staffId: id,
+    })
+  }
 
   revalidatePath("/admin")
   return { ok: true }
@@ -1162,6 +1300,36 @@ export async function forceClockOutShift(shiftId: string): Promise<ActionResult>
 // staff.hourly_rate — see getTenantScopedClient() above.
 // ============================================================================
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** [start of periodStart, start of the day AFTER periodEnd) as UTC instants,
+ *  on the shop's own calendar (tenant_settings.timezone), not UTC. A shift is
+ *  counted in the period its clock-in falls in, as seen on the shop's wall
+ *  clock. (Previously this used UTC midnights, which for a UTC+2 shop pushed
+ *  a 00:00-02:00 clock-in into the previous day's period.) */
+async function periodBoundsUtc(
+  supabase: ServerClient,
+  tenantId: string,
+  periodStart: string,
+  periodEnd: string,
+): Promise<{ ok: true; startIso: string; endExclusiveIso: string } | { ok: false; error: string }> {
+  if (!ISO_DATE.test(periodStart) || !ISO_DATE.test(periodEnd)) {
+    return { ok: false, error: "Select both a start and end date." }
+  }
+  const { data, error } = await supabase
+    .from("tenant_settings")
+    .select("timezone")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  const tz = safeTimezone(data?.timezone)
+  return {
+    ok: true,
+    startIso: startOfDayUtc(periodStart, tz).toISOString(),
+    endExclusiveIso: startOfDayUtc(addDaysKey(periodEnd, 1), tz).toISOString(),
+  }
+}
+
 function payslipStaffRow(row: { id: string; name: string; job_title: string | null; hourly_rate: number | null }) {
   return { id: row.id, name: row.name, jobTitle: row.job_title, hourlyRate: row.hourly_rate }
 }
@@ -1211,6 +1379,35 @@ export async function getPayrollForPeriod(periodStart: string, periodEnd: string
   }
 }
 
+/** Shifts still open (clocked in, not out) whose clock-in is inside the
+ *  period. calculatePayroll() only counts 'completed' shifts, so these hours
+ *  are left out of the pay until someone clocks out (or Force clock out). The
+ *  Payroll tab shows this as a warning before you calculate or pay. */
+export async function getPayrollPeriodWarnings(periodStart: string, periodEnd: string) {
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view")
+  if (!supabase) return { ok: false as const, error: error! }
+
+  const bounds = await periodBoundsUtc(supabase, tenantId!, periodStart, periodEnd)
+  if (!bounds.ok) return { ok: false as const, error: bounds.error }
+
+  const { data, error: fetchError } = await supabase
+    .from("staff_shifts")
+    .select("login_time, staff ( name )")
+    .eq("tenant_id", tenantId)
+    .eq("status", "active")
+    .gte("login_time", bounds.startIso)
+    .lt("login_time", bounds.endExclusiveIso)
+    .order("login_time", { ascending: true })
+
+  if (fetchError) return { ok: false as const, error: fetchError.message }
+
+  const openShifts: AdminPayrollOpenShift[] = (data ?? []).map((r: any) => ({
+    staffName: r.staff?.name ?? "Unknown staff",
+    loginTime: r.login_time,
+  }))
+  return { ok: true as const, openShifts }
+}
+
 /** Recalculates payroll for every active staff member with completed
  *  shifts in [periodStart, periodEnd] (both inclusive), using each
  *  member's *current* hourly_rate — a rate change doesn't retroactively
@@ -1227,9 +1424,10 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
   if (!periodStart || !periodEnd) return { ok: false, error: "Select both a start and end date." }
   if (periodEnd < periodStart) return { ok: false, error: "End date must be on or after the start date." }
 
+  const bounds = await periodBoundsUtc(supabase, tenantId!, periodStart, periodEnd)
+  if (!bounds.ok) return { ok: false, error: bounds.error }
+
   const periodDays = inclusiveDayCount(periodStart, periodEnd)
-  const periodStartUTC = `${periodStart}T00:00:00.000Z`
-  const periodEndUTC = `${periodEnd}T23:59:59.999Z`
 
   const { data: staffRows, error: staffError } = await supabase
     .from("staff")
@@ -1244,10 +1442,24 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
     .select("staff_id, hours_worked")
     .eq("tenant_id", tenantId)
     .eq("status", "completed")
-    .gte("login_time", periodStartUTC)
-    .lte("login_time", periodEndUTC)
+    .gte("login_time", bounds.startIso)
+    .lt("login_time", bounds.endExclusiveIso)
 
   if (shiftError) return { ok: false, error: shiftError.message }
+
+  // Staff already marked paid for this exact period keep their paid row. They
+  // must not also get a fresh 'pending' row: the delete below only removes
+  // 'pending' rows, so without this a recalculation after paying one person
+  // would double-count them.
+  const { data: paidRows, error: paidError } = await supabase
+    .from("staff_payroll")
+    .select("staff_id")
+    .eq("tenant_id", tenantId)
+    .eq("period_start", periodStart)
+    .eq("period_end", periodEnd)
+    .eq("payment_status", "paid")
+  if (paidError) return { ok: false, error: paidError.message }
+  const alreadyPaid = new Set((paidRows ?? []).map((r) => r.staff_id as string))
 
   const hoursByStaff = new Map<string, number>()
   for (const shift of shiftRows ?? []) {
@@ -1257,6 +1469,7 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
   const rowsToInsert = staffRows
     .map((staff) => payslipStaffRow(staff))
     .filter((staff) => (hoursByStaff.get(staff.id) ?? 0) > 0)
+    .filter((staff) => !alreadyPaid.has(staff.id))
     .map((staff) => {
       const hours = hoursByStaff.get(staff.id)!
       const rate = staff.hourlyRate ?? 0
@@ -1280,7 +1493,13 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
     })
 
   if (!rowsToInsert.length) {
-    return { ok: false, error: "No completed shifts found in that period." }
+    const hadHours = staffRows.some((s) => (hoursByStaff.get(s.id) ?? 0) > 0)
+    return {
+      ok: false,
+      error: hadHours
+        ? "Everyone with completed shifts in that period has already been paid."
+        : "No completed shifts found in that period.",
+    }
   }
 
   const { error: deleteError } = await supabase

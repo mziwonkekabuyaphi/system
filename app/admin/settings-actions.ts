@@ -102,8 +102,10 @@ import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
+import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
 import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import type { AdminClockSettings, AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
+import type { AdminEmployerDetails } from "./payroll-types"
 
 type ActionResult = { success: true } | { success: false; error: string }
 type LogoActionResult = { success: true; logoUrl: string } | { success: false; error: string }
@@ -212,6 +214,111 @@ export async function updateGeneralInfo(input: {
       .eq("tenant_id", tenantId)
 
     if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Employer details — tenant_employer_details (printed on payslips)
+//
+// Gated on the settings.manage PERMISSION (checked against the signed-in
+// user's own session, like every payroll action in actions.ts) rather than
+// the tenant_owner role check tenantContext() uses above, so it matches the
+// RLS policy on the table. Address / phone / email on the payslip come from
+// tenant_settings (Shop details), not from here.
+// ---------------------------------------------------------------------------
+const MAX_EMPLOYER_FIELD_LENGTH = 120
+
+async function employerContext() {
+  const check = await requireTenantPermission("settings.manage")
+  if (!check.ok) throw new Error(check.error)
+  const supabase = getSupabaseServerClient()
+  if (!supabase) throw new Error("Admin isn't configured")
+  return { supabase, tenantId: check.member.tenantId }
+}
+
+export async function getEmployerDetails(): Promise<
+  { success: true; details: AdminEmployerDetails } | { success: false; error: string }
+> {
+  try {
+    const { supabase, tenantId } = await employerContext()
+    const { data, error } = await supabase
+      .from("tenant_employer_details")
+      .select("legal_name, trading_name, registration_number, paye_reference, uif_reference, sdl_reference")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (error) return { success: false, error: error.message }
+    return {
+      success: true,
+      details: {
+        legalName: data?.legal_name ?? null,
+        tradingName: data?.trading_name ?? null,
+        registrationNumber: data?.registration_number ?? null,
+        payeReference: data?.paye_reference ?? null,
+        uifReference: data?.uif_reference ?? null,
+        sdlReference: data?.sdl_reference ?? null,
+      },
+    }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+export async function updateEmployerDetails(input: AdminEmployerDetails): Promise<ActionResult> {
+  try {
+    const { supabase, tenantId } = await employerContext()
+
+    const fields: Array<[keyof AdminEmployerDetails, string]> = [
+      ["legalName", "Legal name"],
+      ["tradingName", "Trading name"],
+      ["registrationNumber", "Registration number"],
+      ["payeReference", "PAYE reference"],
+      ["uifReference", "UIF reference"],
+      ["sdlReference", "SDL reference"],
+    ]
+    const clean: Record<string, string | null> = {}
+    for (const [key, label] of fields) {
+      const raw = input?.[key]
+      if (raw !== null && raw !== undefined && typeof raw !== "string") return { success: false, error: "Invalid input." }
+      const v = (raw ?? "").trim()
+      if (v.length > MAX_EMPLOYER_FIELD_LENGTH) {
+        return { success: false, error: `${label} must be ${MAX_EMPLOYER_FIELD_LENGTH} characters or fewer.` }
+      }
+      clean[key] = v || null
+    }
+
+    const { error } = await supabase.from("tenant_employer_details").upsert(
+      [
+        {
+          tenant_id: tenantId,
+          legal_name: clean.legalName,
+          trading_name: clean.tradingName,
+          registration_number: clean.registrationNumber,
+          paye_reference: clean.payeReference,
+          uif_reference: clean.uifReference,
+          sdl_reference: clean.sdlReference,
+        },
+      ],
+      { onConflict: "tenant_id" },
+    )
+    if (error) return { success: false, error: error.message }
+
+    // Same audit trail as the payroll actions; says only that it changed,
+    // never the reference numbers themselves.
+    const { userId } = await requireTenantMember()
+    await supabase.from("staff_activity_logs").insert([
+      {
+        tenant_id: tenantId,
+        staff_id: null,
+        actor_profile_id: userId,
+        category: "payroll",
+        action: "Updated employer details",
+      },
+    ])
 
     revalidatePath("/admin")
     return { success: true }

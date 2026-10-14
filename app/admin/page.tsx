@@ -49,6 +49,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
+import { last4 } from "@/lib/payroll/staff-details"
 
 import { AdminView } from "./AdminView"
 import { loadDisplayContext, loadQueueEntries } from "./admin-data"
@@ -140,24 +141,41 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
 }
 
 // AdminStaff requires jobTitle/phone/email/clockInPin always, and
-// hourlyRate ONLY as a present-or-absent key gated on payroll.view (see
-// that field's doc comment in types.ts) — never sent as `null` to signal
-// "no permission", since a real rate can legitimately be null too.
+// hourlyRate + payrollDetails ONLY as present-or-absent keys gated on
+// payroll.view (see those fields' doc comments in types.ts) — never sent as
+// `null` to signal "no permission", since a real value can legitimately be
+// null too. employeeNumber/startDate are ordinary staff.view fields.
+//
+// payrollDetails comes from staff_payroll_details (a separate table, because
+// RLS is row-level and a column on `staff` would be readable by every
+// staff.view user). The query is only issued when includeHourlyRate
+// (payroll.view) is true, and ID / bank account numbers are cut down to their
+// last 4 characters HERE, so the full values never reach the browser.
 async function getAllStaff(
   supabase: ServerClient,
   tenantId: string,
   includeHourlyRate: boolean,
   includeClockInPin: boolean,
 ): Promise<AdminStaff[]> {
-  const columns = includeHourlyRate
-    ? "id, name, active, job_title, phone, email, clock_in_pin, profile_id, hourly_rate"
-    : "id, name, active, job_title, phone, email, clock_in_pin, profile_id"
+  const baseColumns = "id, name, active, job_title, phone, email, clock_in_pin, profile_id, employee_number, start_date"
+  const columns = includeHourlyRate ? `${baseColumns}, hourly_rate` : baseColumns
 
-  const { data, error } = await supabase.from("staff").select(columns).eq("tenant_id", tenantId).order("name", { ascending: true })
+  const [staffResult, detailsResult] = await Promise.all([
+    supabase.from("staff").select(columns).eq("tenant_id", tenantId).order("name", { ascending: true }),
+    includeHourlyRate
+      ? supabase
+          .from("staff_payroll_details")
+          .select("staff_id, id_number, tax_number, bank_name, bank_account_number, bank_branch_code, bank_account_type")
+          .eq("tenant_id", tenantId)
+      : Promise.resolve({ data: null, error: null }),
+  ])
 
-  if (error) throw new Error(`Failed to load staff: ${error.message}`)
+  if (staffResult.error) throw new Error(`Failed to load staff: ${staffResult.error.message}`)
+  if (detailsResult.error) throw new Error(`Failed to load staff payroll details: ${detailsResult.error.message}`)
 
-  return (data ?? []).map((s: any) => {
+  const detailsByStaff = new Map<string, any>((detailsResult.data ?? []).map((d: any) => [d.staff_id, d]))
+
+  return (staffResult.data ?? []).map((s: any) => {
     const base = {
       id: s.id,
       name: s.name,
@@ -169,12 +187,28 @@ async function getAllStaff(
       // only staff.manage callers (who can edit it) ever receive it.
       clockInPin: includeClockInPin ? s.clock_in_pin : null,
       hasLogin: !!s.profile_id,
+      employeeNumber: s.employee_number ?? null,
+      startDate: s.start_date ?? null,
     }
     // Spreading conditionally, rather than always setting hourlyRate (even
     // to null), is what keeps the key itself absent for a non-payroll.view
     // caller — StaffManager.tsx checks `"hourlyRate" in member`, not
-    // `!= null`, specifically because of this.
-    return includeHourlyRate ? { ...base, hourlyRate: s.hourly_rate } : base
+    // `!= null`, specifically because of this. payrollDetails follows the
+    // same rule.
+    if (!includeHourlyRate) return base
+    const d = detailsByStaff.get(s.id)
+    return {
+      ...base,
+      hourlyRate: s.hourly_rate,
+      payrollDetails: {
+        idNumberLast4: last4(d?.id_number),
+        taxNumber: d?.tax_number ?? null,
+        bankName: d?.bank_name ?? null,
+        bankAccountLast4: last4(d?.bank_account_number),
+        bankBranchCode: d?.bank_branch_code ?? null,
+        bankAccountType: d?.bank_account_type ?? null,
+      },
+    }
   })
 }
 

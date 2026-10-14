@@ -18,6 +18,7 @@ import type {
 import { PrivateLabelPanel } from "./settings/BrandingPanels"
 import { ClockPanel } from "./settings/ClockPanels"
 import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
+import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
 import { BookingSettingsPanel, MessageSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
@@ -216,6 +217,7 @@ export function SettingsManager({
       {subTab === "general" && (
         <div className="space-y-3">
           <BusinessInfoPanel initial={initialSettings} />
+          <EmployerDetailsPanel />
           <OpeningHoursPanel initial={initialBusinessHours} />
         </div>
       )}

@@ -5,6 +5,11 @@ import { useEffect, useState, useTransition, type FormEvent } from "react"
 import { addStaff, deleteStaff, forceClockOutShift, toggleStaffActive, updateStaff } from "./actions"
 import { ConfirmDialog, NoticeModal, type Notice } from "./AdminModals"
 import type { AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
+import type {
+  AdminBankAccountType,
+  AdminStaffPayrollDetails,
+  AdminStaffPayrollDetailsInput,
+} from "./payroll-types"
 
 // Local form shape always carries hourlyRate as a field (simplest for a
 // controlled <input>), but it's only ever rendered, or sent to the
@@ -20,6 +25,19 @@ type StaffFormState = {
   clockInPin: string
   loginPassword: string
   hourlyRate: number | null
+  // Non-sensitive HR fields: shown to every staff.manage user.
+  employeeNumber: string
+  startDate: string
+  // Payroll-only fields: rendered, and sent, only when permissions.payrollManage
+  // is true (same rule as hourlyRate). idNumber and bankAccountNumber are NEVER
+  // prefilled: the server only ever sends their last 4 characters, so blank
+  // means "leave the stored value unchanged" and typing replaces it.
+  idNumber: string
+  taxNumber: string
+  bankName: string
+  bankAccountNumber: string
+  bankBranchCode: string
+  bankAccountType: AdminBankAccountType | ""
 }
 
 const EMPTY_FORM: StaffFormState = {
@@ -30,6 +48,14 @@ const EMPTY_FORM: StaffFormState = {
   email: "",
   clockInPin: "",
   loginPassword: "",
+  employeeNumber: "",
+  startDate: "",
+  idNumber: "",
+  taxNumber: "",
+  bankName: "",
+  bankAccountNumber: "",
+  bankBranchCode: "",
+  bankAccountType: "",
 }
 
 function formFromStaff(member: AdminStaff): StaffFormState {
@@ -45,7 +71,42 @@ function formFromStaff(member: AdminStaff): StaffFormState {
     email: member.email ?? "",
     clockInPin: member.clockInPin ?? "",
     loginPassword: "",
+    employeeNumber: member.employeeNumber ?? "",
+    startDate: member.startDate ?? "",
+    // "payrollDetails" in member is false (key absent) for a payroll.view-less
+    // caller — see AdminStaff's doc comment — and idNumber/bankAccountNumber
+    // are never prefilled (only their last 4 are ever sent to the browser).
+    idNumber: "",
+    taxNumber: member.payrollDetails?.taxNumber ?? "",
+    bankName: member.payrollDetails?.bankName ?? "",
+    bankAccountNumber: "",
+    bankBranchCode: member.payrollDetails?.bankBranchCode ?? "",
+    bankAccountType: member.payrollDetails?.bankAccountType ?? "",
   }
+}
+
+/** Only the payroll fields that actually changed, so an unrelated edit doesn't
+ *  rewrite (or log a change to) someone's bank details. undefined = untouched,
+ *  null = cleared. Returns null when nothing changed, in which case the caller
+ *  omits the `payrollDetails` key entirely. */
+function changedPayrollDetails(
+  form: StaffFormState,
+  original: AdminStaffPayrollDetails | undefined,
+): AdminStaffPayrollDetailsInput | null {
+  const out: AdminStaffPayrollDetailsInput = {}
+  const diff = (next: string, prev: string | null | undefined) => (next.trim() !== (prev ?? "") ? next.trim() || null : undefined)
+
+  const taxNumber = diff(form.taxNumber, original?.taxNumber)
+  const bankName = diff(form.bankName, original?.bankName)
+  const bankBranchCode = diff(form.bankBranchCode, original?.bankBranchCode)
+  if (taxNumber !== undefined) out.taxNumber = taxNumber
+  if (bankName !== undefined) out.bankName = bankName
+  if (bankBranchCode !== undefined) out.bankBranchCode = bankBranchCode
+  if (form.bankAccountType !== (original?.bankAccountType ?? "")) out.bankAccountType = form.bankAccountType || null
+  if (form.idNumber.trim()) out.idNumber = form.idNumber.trim()
+  if (form.bankAccountNumber.trim()) out.bankAccountNumber = form.bankAccountNumber.trim()
+
+  return Object.keys(out).length ? out : null
 }
 
 // "2h 14m" — deliberately coarse (minutes, not seconds) since this is a
@@ -195,9 +256,24 @@ export function StaffManager({
     // AdminStaffInput's doc comment. Sending it without the permission
     // would just get rejected server-side anyway, but there's no reason
     // to even try.
-    const payload: AdminStaffInput = permissions.payrollManage
-      ? { name: form.name, jobTitle: form.jobTitle, phone: form.phone, email: form.email, clockInPin: form.clockInPin, loginPassword: form.loginPassword, hourlyRate: form.hourlyRate }
-      : { name: form.name, jobTitle: form.jobTitle, phone: form.phone, email: form.email, clockInPin: form.clockInPin, loginPassword: form.loginPassword }
+    const payload: AdminStaffInput = {
+      name: form.name,
+      jobTitle: form.jobTitle,
+      phone: form.phone,
+      email: form.email,
+      clockInPin: form.clockInPin,
+      loginPassword: form.loginPassword,
+      employeeNumber: form.employeeNumber,
+      startDate: form.startDate,
+    }
+    if (permissions.payrollManage) {
+      payload.hourlyRate = form.hourlyRate
+      // Same omit-the-key rule as hourlyRate: only when the caller has
+      // payroll.manage AND something actually changed.
+      const original = editingId ? staff.find((m) => m.id === editingId)?.payrollDetails : undefined
+      const details = changedPayrollDetails(form, original)
+      if (details) payload.payrollDetails = details
+    }
 
     startSave(async () => {
       const result = isEditing ? await updateStaff(editingId!, payload) : await addStaff(payload)
@@ -299,6 +375,7 @@ export function StaffManager({
                   <p className="text-sm text-[#8A8375]">
                     {[
                       member.jobTitle,
+                      member.employeeNumber ? `Emp. no. ${member.employeeNumber}` : null,
                       // "hourlyRate" in member: the key is only present at
                       // all when this render's payrollView was true (see
                       // AdminStaff's doc comment) — a staff.view-only
@@ -309,6 +386,19 @@ export function StaffManager({
                       .filter(Boolean)
                       .join(" · ") || "No job title or rate set"}
                   </p>
+                  {/* Masked on purpose: only the last 4 characters of the ID and
+                      bank account ever reach the browser. The key is absent
+                      unless the caller has payroll.view. */}
+                  {"payrollDetails" in member && (member.payrollDetails?.idNumberLast4 || member.payrollDetails?.bankAccountLast4) && (
+                    <p className="text-xs text-[#8A8375]">
+                      {[
+                        member.payrollDetails?.idNumberLast4 ? `ID ****${member.payrollDetails.idNumberLast4}` : null,
+                        member.payrollDetails?.bankAccountLast4 ? `Account ****${member.payrollDetails.bankAccountLast4}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                 </div>
                 {permissions.staffManage && (
                   <div className="flex shrink-0 items-center gap-4">
@@ -369,6 +459,27 @@ export function StaffManager({
             />
           </div>
 
+          <div>
+            <label className="block text-sm text-[#8A8375]">Employee number</label>
+            <input
+              value={form.employeeNumber}
+              onChange={(e) => setForm((f) => ({ ...f, employeeNumber: e.target.value }))}
+              placeholder="001"
+              maxLength={30}
+              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-[#8A8375]">Start date</label>
+            <input
+              type="date"
+              value={form.startDate}
+              onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            />
+          </div>
+
           {permissions.payrollManage && (
           <div>
             <label className="block text-sm text-[#8A8375]">Hourly rate (ZAR)</label>
@@ -418,6 +529,95 @@ export function StaffManager({
               className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
             />
           </div>
+
+          {/* Sensitive payroll details: payroll.manage only, and the
+              server re-checks it. Nothing here renders for anyone else. */}
+          {permissions.payrollManage && (
+            <fieldset className="sm:col-span-2 grid grid-cols-1 gap-4 rounded-lg border border-[#E6E1D4] p-4 sm:grid-cols-2">
+              <legend className="px-1 text-sm font-semibold text-[#1C1A17]">Payroll details</legend>
+
+              <div>
+                <label className="block text-sm text-[#8A8375]">ID or passport number</label>
+                <input
+                  value={form.idNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, idNumber: e.target.value }))}
+                  placeholder={
+                    editingId && staff.find((m) => m.id === editingId)?.payrollDetails?.idNumberLast4
+                      ? `Saved: ****${staff.find((m) => m.id === editingId)?.payrollDetails?.idNumberLast4} (type to replace)`
+                      : "13-digit ID or passport"
+                  }
+                  autoComplete="off"
+                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#8A8375]">SARS income tax number</label>
+                <input
+                  value={form.taxNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, taxNumber: e.target.value.replace(/[^\d\s]/g, "") }))}
+                  placeholder="10 digits"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#8A8375]">Bank</label>
+                <input
+                  value={form.bankName}
+                  onChange={(e) => setForm((f) => ({ ...f, bankName: e.target.value }))}
+                  placeholder="e.g. Capitec"
+                  maxLength={60}
+                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#8A8375]">Account type</label>
+                <select
+                  value={form.bankAccountType}
+                  onChange={(e) => setForm((f) => ({ ...f, bankAccountType: e.target.value as AdminBankAccountType | "" }))}
+                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                >
+                  <option value="">Not set</option>
+                  <option value="cheque">Cheque / current</option>
+                  <option value="savings">Savings</option>
+                  <option value="transmission">Transmission</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#8A8375]">Account number</label>
+                <input
+                  value={form.bankAccountNumber}
+                  onChange={(e) => setForm((f) => ({ ...f, bankAccountNumber: e.target.value.replace(/[^\d\s-]/g, "") }))}
+                  placeholder={
+                    editingId && staff.find((m) => m.id === editingId)?.payrollDetails?.bankAccountLast4
+                      ? `Saved: ****${staff.find((m) => m.id === editingId)?.payrollDetails?.bankAccountLast4} (type to replace)`
+                      : "Digits only"
+                  }
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[#8A8375]">Branch code</label>
+                <input
+                  value={form.bankBranchCode}
+                  onChange={(e) => setForm((f) => ({ ...f, bankBranchCode: e.target.value.replace(/[^\d\s]/g, "") }))}
+                  placeholder="6 digits"
+                  inputMode="numeric"
+                  maxLength={7}
+                  autoComplete="off"
+                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                />
+              </div>
+            </fieldset>
+          )}
 
           <div className="sm:col-span-2">
             <label className="block text-sm text-[#8A8375]">
