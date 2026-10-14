@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation"
 const LINKS: Array<[string, string]> = [
   ["/platform", "Overview"],
   ["/platform/tenants", "Shops"],
+  ["/platform/upgrades", "Upgrade requests"],
   ["/platform/sales", "Sales & commissions"],
 ]
 
