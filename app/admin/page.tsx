@@ -95,7 +95,7 @@ async function getBookingsWindow(
     .from("bookings")
     .select(
       `id, service_id, staff_id, start_time, end_time, status, booking_reference,
-       services ( name ),
+       services!bookings_service_id_fkey ( name ),
        staff ( name ),
        tenant_customers ( full_name, phone )`,
     )

@@ -54,7 +54,7 @@ export async function loadQueueEntries(
     .from("queue_entries")
     .select(
       `id, status, joined_at, called_at, completed_at, source, ticket_number, booking_id, service_id,
-       services ( name ),
+       services!queue_entries_service_id_fkey ( name ),
        tenant_customers ( full_name, phone )`,
     )
     .eq("tenant_id", tenantId)
