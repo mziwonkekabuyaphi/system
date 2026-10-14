@@ -15,7 +15,7 @@ import { z } from "zod"
  * layer is intentionally lightweight: exactly one model call, with a safe
  * deterministic fallback if anything goes wrong.
  *
- * INTENT MODEL (QLess): five intents.
+ * INTENT MODEL (QLess): six intents.
  *   - "booking": scheduling an appointment OR joining today's walk-in queue.
  *     Queue is deliberately not its own intent — booking.ts's handleBooking
  *     decides: a clearly typed "queue" goes straight to the queue flow, a
@@ -23,11 +23,13 @@ import { z } from "zod"
  *     gets the Queue-or-Book question.
  *   - "status": "check my booking", "where am I in the queue" -> status.ts.
  *   - "cancel": "cancel my appointment", "leave the queue" -> cancel.ts.
+ *   - "profile": "my profile", "my visits" -> profile.ts (stateless overview
+ *     of their booking, queue spot and visit history).
  *   - "support": everything that needs a human — complaints, rescheduling,
  *     running late, shop questions.
  *   - "unknown": greetings and chit-chat (shows the welcome + menu).
- * The four-row WhatsApp menu (Book Now / Join Queue / Check Status / Cancel
- * Now) does NOT go through this file at all — action-router.ts routes menu
+ * The five-row WhatsApp menu (Book Now / Join Queue / Check Status / Cancel
+ * Now / My Profile) does NOT go through this file at all — action-router.ts routes menu
  * taps by row id.
  *
  * Architecture:
@@ -80,6 +82,7 @@ const INTENTS = [
              // to queue.ts itself, so there is no separate "queue" intent.
   "status",  // Check their own booking and/or place in the queue
   "cancel",  // Cancel their booking or leave the queue
+  "profile", // Their own overview: upcoming booking, queue spot, visit history
   "support", // Needs a human: complaints, reschedule, running late, shop questions
   "unknown", // Greetings, chit-chat, or not enough information
 ] as const
@@ -274,6 +277,24 @@ const BOOKING_PHRASES = new Set([
   "walkin",
 ])
 
+// Exact-phrase allowlist for "show me my profile". Compared AFTER
+// normalizeForFastPath, so "👤 My Profile" (the menu label) and
+// "[button reply] My Profile" both arrive here as plain "my profile".
+const PROFILE_PHRASES = new Set([
+  "profile",
+  "my profile",
+  "view profile",
+  "view my profile",
+  "show profile",
+  "show my profile",
+  "my account",
+  "account",
+  "my details",
+  "my visits",
+  "my visit history",
+  "visit history",
+])
+
 /**
  * Lowercases and strips punctuation/emoji so "Cancel!", "❌ Cancel Now" and
  * "[button reply] Check Status" all compare as plain words. A leading
@@ -364,6 +385,11 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
   // and must NOT be read as a request for a new booking.
   const manageResult = checkCancelOrStatusFastPath(normalized)
   if (manageResult) return manageResult
+
+  // Profile overview (clear intent)
+  if (PROFILE_PHRASES.has(normalized)) {
+    return { intent: "profile", confidence: 0.95, reasoning: "Fast-path: profile request" }
+  }
 
   // Appointment / walk-in queue → booking (clear intent)
   if (BOOKING_PHRASES.has(normalized)) {
@@ -514,6 +540,25 @@ remove me from the queue
 
 I don't want to wait anymore, cancel my spot
 
+profile
+Customer wants an OVERVIEW of themselves at this shop: their profile, account
+details, or visit history, all in one place. (Checking one specific upcoming
+appointment or their place in the queue is "status", not "profile".)
+
+Examples:
+
+my profile
+
+show my profile
+
+my account
+
+my details
+
+my visit history
+
+how many times have I been here
+
 support
 Customer needs a human, or wants something the booking, queue, status and
 cancel flows cannot do on their own.
@@ -628,6 +673,10 @@ Check Status
 [button reply]
 Cancel Now
 → cancel
+
+[button reply]
+My Profile
+→ profile
 
 [location message]
 Shop location or directions

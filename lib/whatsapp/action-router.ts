@@ -1,6 +1,6 @@
 // lib/whatsapp/action-router.ts
 /**
- * QLess Action Router — booking / queue / status / cancel, tenant-scoped.
+ * QLess Action Router — booking / queue / status / cancel / profile, tenant-scoped.
  * -----------------------------------------------------------------------
  * Still a PURE DISPATCHER: it decides WHICH service handles a message and
  * hands off. No business logic lives here.
@@ -10,8 +10,8 @@
  * the old Rands bot used:
  *   1. a short smart greeting + their first name + a line welcoming them to
  *      the shop + the shop's own web link (the main `reply`), then
- *   2. the four-row interactive menu (Book Now / Join Queue / Check Status /
- *      Cancel Now), attached as `followUp`.
+ *   2. the five-row interactive menu (Book Now / Join Queue / Check Status /
+ *      Cancel Now / My Profile), attached as `followUp`.
  * lib/whatsapp/send-action-result.ts is what actually delivers the follow-up.
  * An explicit "menu" / "start over" (or a bare "cancel" while a booking is
  * half-done) also shows the menu, with a shorter lead-in instead of the greeting.
@@ -52,6 +52,7 @@ import { bookingService } from "@/lib/services/booking"
 import { queueService } from "@/lib/services/queue"
 import { statusService } from "@/lib/services/status"
 import { cancelService } from "@/lib/services/cancel"
+import { profileService } from "@/lib/services/profile"
 
 import { stateService, type ConversationState } from "@/lib/services/state"
 import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
@@ -92,6 +93,8 @@ const intentHandlers: Record<string, Handler> = {
   booking: bookingService.handleBooking.bind(bookingService),
   status: statusService.handleStatus,
   cancel: cancelService.handleCancel,
+  // Stateless: one live read in, one message out (no state to own).
+  profile: profileService.handleProfile,
 }
 
 /**
@@ -104,6 +107,7 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
   [MENU_ROW_IDS.queue]: (tenantId) => queueService.startQueueFlow(tenantId),
   [MENU_ROW_IDS.status]: statusService.handleStatus,
   [MENU_ROW_IDS.cancel]: cancelService.handleCancel,
+  [MENU_ROW_IDS.profile]: profileService.handleProfile,
 }
 
 // `unhandled: true` marks a genuine "we don't know what to do" reply —
