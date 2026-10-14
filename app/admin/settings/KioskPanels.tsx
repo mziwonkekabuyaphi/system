@@ -282,6 +282,16 @@ function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               {copied ? "Copied!" : "Copy"}
             </button>
           </div>
+          {kioskUrl && (
+            <a
+              href={kioskUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-sm font-medium text-[#7A2E3A] hover:underline"
+            >
+              Open the kiosk ↗
+            </a>
+          )}
           <p className="text-xs text-stone-400">Print this on a table stand, or open it directly on the kiosk tablet.</p>
         </div>
 
