@@ -20,6 +20,12 @@
 //   - signed in, but no active tenant -> /onboarding (create or join a business)
 // Collapsing these into one redirect used to send freshly-confirmed
 // signups back to /login, where they had nothing useful to do.
+//
+// SALESPEOPLE: a commission salesperson is a signed-in user with a
+// salespeople row and (usually) no tenant_members row. They are not a
+// "freshly-confirmed signup", so they must not land on /onboarding when
+// they open /admin: requireTenantMember() sends them to /sales instead.
+// A user who is BOTH a salesperson and a shop member keeps /admin.
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
@@ -82,6 +88,30 @@ export const getCurrentTenantMember = cache(
 );
 
 /**
+ * True when the signed-in user has a salespeople row that is not
+ * terminated. Same rule as requireSalesperson() in lib/sales/auth.ts.
+ * Cached per request. Never throws: any error counts as "not a salesperson"
+ * so the normal /onboarding behaviour is the fallback.
+ */
+export const isSalesperson = cache(async (): Promise<boolean> => {
+  const user = await getSessionUser();
+  if (!user) return false;
+
+  try {
+    const supabase = await createSessionClient();
+    const { data, error } = await supabase
+      .from("salespeople")
+      .select("id, status")
+      .eq("profile_id", user.id)
+      .maybeSingle();
+
+    return !error && !!data && data.status !== "terminated";
+  } catch {
+    return false;
+  }
+});
+
+/**
  * Use in layout.tsx / page.tsx / Server Actions that must not run without
  * a signed-in tenant member.
  *
@@ -89,6 +119,8 @@ export const getCurrentTenantMember = cache(
  * - Signed in, but no active tenant membership -> redirect to /onboarding,
  *   since this is exactly the state a freshly-confirmed signup is in
  *   before they've created or joined a business.
+ * - Signed in, no tenant membership, but an active salespeople row ->
+ *   redirect to /sales (their dashboard), not /onboarding.
  */
 export async function requireTenantMember(): Promise<CurrentTenantMember> {
   const user = await getSessionUser();
@@ -98,6 +130,9 @@ export async function requireTenantMember(): Promise<CurrentTenantMember> {
 
   const member = await getCurrentTenantMember();
   if (!member) {
+    if (await isSalesperson()) {
+      redirect("/sales");
+    }
     redirect("/onboarding");
   }
 
