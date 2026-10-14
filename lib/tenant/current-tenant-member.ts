@@ -30,6 +30,7 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSessionClient } from "@/lib/supabase/session-server";
+import { getPlatformAdminId } from "@/lib/sales/auth";
 
 export type CurrentTenantMember = {
   userId: string;
@@ -130,6 +131,9 @@ export async function requireTenantMember(): Promise<CurrentTenantMember> {
 
   const member = await getCurrentTenantMember();
   if (!member) {
+    if (await getPlatformAdminId()) {
+      redirect("/platform");
+    }
     if (await isSalesperson()) {
       redirect("/sales");
     }
