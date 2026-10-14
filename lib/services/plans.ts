@@ -202,6 +202,7 @@ export const MODULE_KEYS = {
   liveDashboard: "live_dashboard",
   staffClockIn: "staff_clock_in",
   kiosk: "kiosk",
+  display: "display",
   businessHours: "business_hours",
   payroll: "payroll",
   branding: "branding",
@@ -269,6 +270,32 @@ export async function isTenantModuleEnabled(
  *  admin settings screen can never disagree about what "enabled" means. */
 export async function isKioskEnabled(supabase: SupabaseClient, tenantId: string): Promise<boolean> {
   return isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.kiosk, { defaultOn: true })
+}
+
+/** Simple owner on/off switch for features that are NOT plan-gated (Public
+ *  display, Staff clock-in). No tenant_modules row = never touched = ON, so
+ *  existing shops keep working. Only an explicit enabled=false turns it off.
+ *  Fails closed on any error. */
+export async function isTenantSwitchedOn(
+  supabase: SupabaseClient,
+  tenantId: string,
+  moduleKey: ModuleKey,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("tenant_modules")
+      .select("enabled, modules!inner(key)")
+      .eq("tenant_id", tenantId)
+      .eq("modules.key", moduleKey)
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) return true
+    return data.enabled === true
+  } catch (err) {
+    console.error("[plans] isTenantSwitchedOn failed, treating as off", { tenantId, moduleKey, error: err })
+    return false
+  }
 }
 
 /** Thrown by assertTenantHasModule so callers can catch it by name, the
