@@ -221,6 +221,7 @@ async function getSettingsData(
 ): Promise<{
   plan: AdminPlan
   slug: string
+  name: string
   settings: AdminTenantSettings
   branding: AdminBranding
   kioskEnabled: boolean
@@ -242,7 +243,7 @@ async function getSettingsData(
     messageSettingsResult,
     businessHoursResult,
   ] = await Promise.all([
-    supabase.from("tenants").select("plan, slug").eq("id", tenantId).single(),
+    supabase.from("tenants").select("plan, slug, name").eq("id", tenantId).single(),
     supabase
       .from("tenant_settings")
       .select("timezone, currency, contact_email, contact_phone, address")
@@ -316,6 +317,7 @@ async function getSettingsData(
   return {
     plan: tenantResult.data.plan as AdminPlan,
     slug: tenantResult.data.slug as string,
+    name: tenantResult.data.name as string,
     settings: {
       timezone: settingsResult.data.timezone,
       currency: settingsResult.data.currency,
@@ -453,6 +455,7 @@ async function getTenantIdentity(
 ): Promise<{
   plan: AdminPlan
   slug: string
+  name: string
   settings: AdminTenantSettings | null
   branding: AdminBranding
   kioskEnabled: boolean
@@ -465,7 +468,7 @@ async function getTenantIdentity(
   businessHours: AdminBusinessHours | null
 }> {
   const [tenantResult, brandingResult] = await Promise.all([
-    supabase.from("tenants").select("plan, slug").eq("id", tenantId).single(),
+    supabase.from("tenants").select("plan, slug, name").eq("id", tenantId).single(),
     supabase.from("tenant_branding").select("display_name, logo_url").eq("tenant_id", tenantId).single(),
   ])
 
@@ -475,6 +478,7 @@ async function getTenantIdentity(
   return {
     plan: tenantResult.data.plan as AdminPlan,
     slug: tenantResult.data.slug as string,
+    name: tenantResult.data.name as string,
     settings: null,
     branding: {
       displayName: brandingResult.data.display_name,
@@ -720,6 +724,7 @@ export default async function AdminPage() {
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
       tenantSlug={settingsData.slug}
+      tenantName={settingsData.name}
       initialTenantSettings={settingsData.settings}
       initialBranding={settingsData.branding}
       initialKioskEnabled={settingsData.kioskEnabled}

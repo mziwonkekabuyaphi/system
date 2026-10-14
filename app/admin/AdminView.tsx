@@ -173,6 +173,7 @@ export function AdminView({
   initialInboxStats,
   initialPlan,
   tenantSlug,
+  tenantName,
   initialTenantSettings,
   initialBranding,
   initialKioskEnabled,
@@ -195,6 +196,8 @@ export function AdminView({
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
   tenantSlug: string
+  /** tenants.name — shown in the header/sidebar until a display name is set in Private Label. */
+  tenantName: string
   initialTenantSettings: AdminTenantSettings | null
   initialBranding: AdminBranding
   initialKioskEnabled: boolean
@@ -247,7 +250,8 @@ export function AdminView({
     setBranding((prev) => ({ ...prev, ...patch }))
   }
 
-  const brandName = branding.displayName?.trim() || "Shop admin"
+  // Display name from Private Label wins; otherwise the shop's own name.
+  const brandName = branding.displayName?.trim() || tenantName?.trim() || "Shop admin"
   const brandInitial = brandName.charAt(0).toUpperCase() || "S"
 
   return (
