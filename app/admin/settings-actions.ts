@@ -276,6 +276,86 @@ export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Public display + Staff clock-in on/off switches — tenant_modules
+// (module keys: 'display' and 'staff_clock_in'). Unlike the kiosk these are
+// NOT plan-gated: it is purely the owner's own on/off switch, and no row
+// means "never touched" = ON so existing shops are unaffected.
+// ---------------------------------------------------------------------------
+const SWITCHABLE_MODULES = { display: "display", clock: "staff_clock_in" } as const
+type SwitchableModule = keyof typeof SWITCHABLE_MODULES
+
+function isSwitchable(which: string): which is SwitchableModule {
+  return Object.prototype.hasOwnProperty.call(SWITCHABLE_MODULES, which)
+}
+
+export async function getModuleSwitch(
+  which: SwitchableModule,
+): Promise<{ success: true; enabled: boolean } | { success: false; error: string }> {
+  try {
+    if (!isSwitchable(which)) return { success: false, error: "Unknown module" }
+    const { supabase, tenantId } = await tenantContext()
+
+    const { data: moduleRow } = await supabase
+      .from("modules")
+      .select("id")
+      .eq("key", SWITCHABLE_MODULES[which])
+      .maybeSingle()
+    // Module not registered yet -> nobody has ever switched it, so it is on.
+    if (!moduleRow) return { success: true, enabled: true }
+
+    const { data: row, error } = await supabase
+      .from("tenant_modules")
+      .select("enabled")
+      .eq("tenant_id", tenantId)
+      .eq("module_id", moduleRow.id)
+      .maybeSingle()
+
+    if (error) return { success: false, error: error.message }
+    return { success: true, enabled: row ? row.enabled === true : true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+export async function setModuleSwitch(which: SwitchableModule, enabled: boolean): Promise<ActionResult> {
+  try {
+    if (!isSwitchable(which)) return { success: false, error: "Unknown module" }
+    const { supabase, tenantId } = await tenantContext()
+
+    const { data: moduleRow, error: moduleLookupError } = await supabase
+      .from("modules")
+      .select("id")
+      .eq("key", SWITCHABLE_MODULES[which])
+      .maybeSingle()
+
+    if (moduleLookupError || !moduleRow) {
+      return {
+        success: false,
+        error: "This switch isn't set up in the database yet. Run the SQL file that came with this update first.",
+      }
+    }
+
+    const { error } = await supabase.from("tenant_modules").upsert(
+      {
+        tenant_id: tenantId,
+        module_id: moduleRow.id,
+        enabled,
+        enabled_at: enabled ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "tenant_id,module_id" },
+    )
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Branding + Private Label — tenant_branding
 // ---------------------------------------------------------------------------
 export async function updateBranding(input: {
