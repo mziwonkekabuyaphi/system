@@ -126,6 +126,19 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
             />
           </FieldRow>
           <FieldRow
+            label="Dates shown to customers"
+            hint="How many date buttons the kiosk and WhatsApp list, starting from today (1-14). Separate from the setting above: that one is the booking rule, this one is just how many days are listed. The smaller of the two applies, so listing 7 dates with a 3-day advance limit still shows only 4. Set to 1 to offer today only."
+          >
+            <input
+              type="number"
+              min={1}
+              max={14}
+              className={inputClass}
+              value={form.maxDatesOffered}
+              onChange={(e) => setForm({ ...form, maxDatesOffered: Number(e.target.value) })}
+            />
+          </FieldRow>
+          <FieldRow
             label="Free cancellation window (minutes before start)"
             hint="Once a booking is inside this window, it can no longer be cancelled from the Today tab."
           >
