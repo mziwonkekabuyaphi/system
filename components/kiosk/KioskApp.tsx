@@ -90,6 +90,7 @@ import {
   type KioskBookingTicket,
   type KioskQueueTicket,
 } from "@/app/kiosk/[slug]/actions"
+import { isWhatsAppAvailable, recordWhatsAppOptIn } from "@/app/kiosk/[slug]/consent-actions"
 import { printKioskTicket } from "@/lib/kiosk/printTicket"
 
 // Parses "#rgb" or "#rrggbb" into 0-255 channels. Returns null for
@@ -308,6 +309,9 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
 
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
+  // "Send me WhatsApp updates": only offered when the shop has WhatsApp connected, never pre-ticked.
+  const [whatsappAvailable, setWhatsappAvailable] = useState(false)
+  const [whatsappOptIn, setWhatsappOptIn] = useState(false)
 
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -324,6 +328,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     setSelectedSlot(null)
     setName("")
     setPhone("")
+    setWhatsappOptIn(false)
     setTicket(null)
     setError(null)
     setBusy(false)
@@ -347,6 +352,20 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   // they only run on the kiosk, never on a customer's own phone.
   useIdleReset(resetAll, step !== "welcome" && !isWeb, branding.idleRefreshSeconds * 1000)
   useConfirmationAutoReset(step === "ticket" && !isWeb, branding.confirmationRefreshSeconds * 1000, resetAll)
+
+  // Customers on /web/ got here by messaging the shop on WhatsApp, so their chat is already open: no checkbox.
+  useEffect(() => {
+    if (isWeb) return
+    let cancelled = false
+    isWhatsAppAvailable(slug)
+      .then((ok) => {
+        if (!cancelled) setWhatsappAvailable(ok)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [slug, isWeb])
 
   // ---- navigation ----------------------------------------------------
 
@@ -456,6 +475,16 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     if (path === "queue" && requireServiceSelection && !selectedService) return
     setError(null)
     setBusy(true)
+
+    // Consent has to be on file BEFORE the queue insert: the insert fires the "joined" WhatsApp message
+    // straight away. A failure here must never block a check-in.
+    if (whatsappAvailable && whatsappOptIn) {
+      try {
+        await recordWhatsAppOptIn(slug, phone)
+      } catch {
+        /* ignore: they just won't get proactive WhatsApp updates */
+      }
+    }
 
     if (path === "booking") {
       if (!selectedDate || !selectedSlot || !selectedService) {
@@ -573,6 +602,9 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
           phone={phone}
           onNameChange={setName}
           onPhoneChange={setPhone}
+          showWhatsAppOptIn={whatsappAvailable && !isWeb}
+          whatsAppOptIn={whatsappOptIn}
+          onWhatsAppOptInChange={setWhatsappOptIn}
           onSubmit={submit}
           canSubmit={canSubmit}
           busy={busy}
@@ -1095,6 +1127,9 @@ function DetailsScreen({
   phone,
   onNameChange,
   onPhoneChange,
+  showWhatsAppOptIn,
+  whatsAppOptIn,
+  onWhatsAppOptInChange,
   onSubmit,
   canSubmit,
   busy,
@@ -1105,6 +1140,9 @@ function DetailsScreen({
   phone: string
   onNameChange: (v: string) => void
   onPhoneChange: (v: string) => void
+  showWhatsAppOptIn: boolean
+  whatsAppOptIn: boolean
+  onWhatsAppOptInChange: (v: boolean) => void
   onSubmit: () => void
   canSubmit: boolean
   busy: boolean
@@ -1134,6 +1172,20 @@ function DetailsScreen({
             type="tel"
           />
         </label>
+
+        {showWhatsAppOptIn && (
+          <label className="optin">
+            <input
+              type="checkbox"
+              checked={whatsAppOptIn}
+              onChange={(e) => onWhatsAppOptInChange(e.target.checked)}
+            />
+            <span>
+              Send me WhatsApp updates about my visit
+              <small>Only about this visit: when you&apos;re nearly up and when it&apos;s your turn.</small>
+            </span>
+          </label>
+        )}
 
         <button className="submit" onClick={onSubmit} type="button" disabled={!canSubmit || busy}>
           {busy ? "One moment…" : "Confirm"}
@@ -1172,6 +1224,36 @@ function DetailsScreen({
         input:focus {
           outline: none;
           border-color: var(--accent);
+        }
+        label.optin {
+          flex-direction: row;
+          align-items: center;
+          gap: 20px;
+          min-height: 96px;
+          padding: 0 8px;
+          cursor: pointer;
+        }
+        label.optin input {
+          min-height: 0;
+          width: 48px;
+          height: 48px;
+          padding: 0;
+          flex-shrink: 0;
+          accent-color: var(--accent);
+          cursor: pointer;
+        }
+        label.optin span {
+          font-size: 22px;
+          font-weight: 600;
+          color: var(--ink);
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        label.optin small {
+          font-size: 16px;
+          font-weight: 500;
+          color: var(--muted);
         }
         .submit {
           min-height: 96px;
