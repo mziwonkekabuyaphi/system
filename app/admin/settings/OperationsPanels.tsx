@@ -182,6 +182,19 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
             />
           </FieldRow>
           <FieldRow
+            label="Services per booking (1-5)"
+            hint="How many services a customer can pick for one booking. Set to 1 for a single service. Set to 2 or more and the kiosk lets them tick up to that many. WhatsApp keeps offering one until it is updated."
+          >
+            <input
+              type="number"
+              min={1}
+              max={5}
+              className={inputClass}
+              value={form.maxServicesPerBooking}
+              onChange={(e) => setForm({ ...form, maxServicesPerBooking: Number(e.target.value) })}
+            />
+          </FieldRow>
+          <FieldRow
             label="Free cancellation window (minutes before start)"
             hint="Once a booking is inside this window, it can no longer be cancelled from the Today tab."
           >
@@ -333,6 +346,24 @@ export function QueueSettingsPanel({
             onChange={(next) => setForm({ ...form, requireServiceSelection: next })}
           />
         </div>
+
+        {form.requireServiceSelection && (
+          <FieldRow label="Services per queue ticket (1-5)">
+            <input
+              type="number"
+              min={1}
+              max={5}
+              className={inputClass}
+              value={form.maxServicesPerQueueEntry}
+              onChange={(e) => setForm({ ...form, maxServicesPerQueueEntry: Number(e.target.value) })}
+            />
+            <p className="text-sm text-stone-500 mt-1">
+              How many services a walk-in can pick for one ticket. Set to 1 for a single service, or 2 or more to
+              let them tick several on the kiosk. This is separate from the booking setting. WhatsApp keeps
+              offering one until it is updated.
+            </p>
+          </FieldRow>
+        )}
 
         {!form.requireServiceSelection && (
           <FieldRow label="Estimated minutes to serve a walk-in with no service">
