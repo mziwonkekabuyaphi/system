@@ -92,6 +92,24 @@ function joinedName(value: { name: string } | { name: string }[] | null | undefi
   return row?.name ?? null
 }
 
+/**
+ * bookings / queue_entries reach `services` both directly (service_id) and via
+ * the booking_services / queue_entry_services join tables, so a bare
+ * `services ( name )` embed is ambiguous (PostgREST HTTP 300, PGRST201).
+ * Embeds below name the FK; this builds "A + B" from the ordered join rows,
+ * falling back to the direct service for older single-service rows.
+ */
+function serviceNameFrom(
+  links: { position: number | null; services: { name: string } | { name: string }[] | null }[] | null | undefined,
+  direct: { name: string } | { name: string }[] | null | undefined,
+): string | null {
+  const names = [...(links ?? [])]
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map((l) => joinedName(l.services))
+    .filter((n): n is string => Boolean(n))
+  return names.length > 0 ? names.join(" + ") : joinedName(direct)
+}
+
 function firstNameOf(customer: Customer | null): string | null {
   const name = customer?.name?.trim()
   if (!name) return null
@@ -119,7 +137,11 @@ async function readUpcomingBooking(
 ): Promise<UpcomingBooking | null> {
   const { data, error } = await supabase
     .from("bookings")
-    .select("booking_reference, start_time, services ( name )")
+    .select(
+      "booking_reference, start_time, " +
+        "services!bookings_service_id_fkey ( name ), " +
+        "booking_services ( position, services ( name ) )",
+    )
     .eq("tenant_id", tenantId)
     .eq("customer_id", customerId)
     .eq("status", "confirmed")
@@ -135,11 +157,12 @@ async function readUpcomingBooking(
     booking_reference: string
     start_time: string
     services: { name: string } | { name: string }[] | null
+    booking_services: { position: number | null; services: { name: string } | { name: string }[] | null }[] | null
   }
 
   return {
     reference: row.booking_reference,
-    serviceName: joinedName(row.services),
+    serviceName: serviceNameFrom(row.booking_services, row.services),
     startTime: row.start_time,
   }
 }
@@ -151,7 +174,11 @@ async function readActiveQueueEntry(
 ): Promise<ActiveQueueEntry | null> {
   const { data, error } = await supabase
     .from("queue_entries")
-    .select("id, status, ticket_number, services ( name )")
+    .select(
+      "id, status, ticket_number, " +
+        "services!queue_entries_service_id_fkey ( name ), " +
+        "queue_entry_services ( position, services ( name ) )",
+    )
     .eq("tenant_id", tenantId)
     .eq("customer_id", customerId)
     .in("status", ["waiting", "called"])
@@ -167,6 +194,7 @@ async function readActiveQueueEntry(
     status: "waiting" | "called"
     ticket_number: number | null
     services: { name: string } | { name: string }[] | null
+    queue_entry_services: { position: number | null; services: { name: string } | { name: string }[] | null }[] | null
   }
 
   // Ticket prefix is a tenant setting; fall back to "Q" like queue.ts does.
@@ -187,7 +215,7 @@ async function readActiveQueueEntry(
   return {
     status: row.status,
     ticketLabel,
-    serviceName: joinedName(row.services),
+    serviceName: serviceNameFrom(row.queue_entry_services, row.services),
     position: own?.position ?? null,
     etaMinutes: own?.etaMinutes ?? null,
     runningLate: own?.runningLate ?? false,
