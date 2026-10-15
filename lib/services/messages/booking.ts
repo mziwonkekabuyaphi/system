@@ -39,6 +39,17 @@ import type { BookingSlot } from "@/lib/services/booking"
 
 export const CANCEL_BUTTON = ["📅 Book again"]
 
+/**
+ * Shown with bookingAlreadyHasUpcomingMessage(). "Book again" would be a dead
+ * end there (the one-upcoming-booking rule would refuse it), so the only
+ * useful next step is cancelling the existing booking. The title matches the
+ * "❌ Cancel Now" menu row; intent-router.ts's cancel fast path normalises a
+ * tap on it ("[button reply] ❌ Cancel Now" -> "cancel now") to the cancel
+ * intent, which action-router.ts hands to cancelService.handleCancel.
+ * (Button titles are limited to 20 characters by WhatsApp.)
+ */
+export const CANCEL_NOW_BUTTON = ["❌ Cancel Now"]
+
 export const ENTRY_CHOICE_BOOK_BUTTON = "📅 Book a time"
 export const ENTRY_CHOICE_QUEUE_BUTTON = "🚶 Join the queue"
 export const ENTRY_CHOICE_BUTTONS = [ENTRY_CHOICE_BOOK_BUTTON, ENTRY_CHOICE_QUEUE_BUTTON]
