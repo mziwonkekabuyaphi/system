@@ -139,10 +139,10 @@ export function isWithinCancellationWindow(startIso: string, windowMinutes: numb
 export function parseYesNo(text: string): "yes" | "no" | null {
   const t = text.trim().toLowerCase().replace(/[.!]+$/, "")
   if (!t) return null
-  if (t === "y" || t === "yes" || t.startsWith("yes ") || t.startsWith("yes,") || ["yeah", "yep", "yup", "confirm", "ok", "okay", "sure"].includes(t)) {
+  if (t === "y" || t === "yes" || t.startsWith("yes ") || t.startsWith("yes,") || ["yeah", "yep", "yup", "confirm", "ok", "okay", "sure", "ewe", "yebo", "ja", "ja asseblief"].includes(t)) {
     return "yes"
   }
-  if (t === "n" || t === "no" || t.startsWith("no ") || t.startsWith("no,") || ["nope", "nah"].includes(t) || t.includes("keep")) {
+  if (t === "n" || t === "no" || t.startsWith("no ") || t.startsWith("no,") || ["nope", "nah", "hayi", "cha", "nee"].includes(t) || t.includes("keep")) {
     return "no"
   }
   return null
