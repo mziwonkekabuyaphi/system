@@ -183,10 +183,7 @@ async function menuPromptFor(tenantId: string): Promise<string> {
   } catch {
     return MENU_PROMPT
   }
-  return (
-    `${MENU_PROMPT}\n\n` +
-    `Or just type what you need in your own words and I'll take care of it.💬'
-  )
+  return `${MENU_PROMPT}\n\nOr just type what you need in your own words and I'll take care of it.`
 }
 
 /** The menu minus "Join Queue" (shown while the shop is closed). */
