@@ -820,15 +820,15 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
 // ============================================================================
 
 /**
- * The menu sent right after a successful join: only the two rows that make
- * sense now — Check Status and Cancel Now. (Booking and joining again are
- * left off: the customer is already in the queue.) Filtered from the shared
+ * The menu sent right after a successful join: only the three rows that make
+ * sense now — Check Status, My Profile and Cancel Now. (Booking and joining
+ * again are left off: the customer is already in the queue.) Filtered from the shared
  * menu by row id, so titles and ids stay defined in one place and a tap is
  * routed by action-router.ts exactly like any other menu tap.
  */
 function buildQueuedFollowUp() {
   const menu = buildServicesListMessage("Need anything else while you wait? 👇")
-  const keep: string[] = [MENU_ROW_IDS.status, MENU_ROW_IDS.cancel]
+  const keep: string[] = [MENU_ROW_IDS.status, MENU_ROW_IDS.profile, MENU_ROW_IDS.cancel]
   if (!menu.list) return menu
   return {
     ...menu,
