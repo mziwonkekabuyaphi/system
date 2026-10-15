@@ -556,6 +556,15 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
         </button>
       )}
 
+      {branding.logoUrl && step !== "welcome" && (
+        // Small logo + ring centred at the top of every screen after Welcome.
+        // On the ticket screen it only shows on tall displays, where it can't
+        // collide with the centred ticket stub.
+        <div className={step === "ticket" ? "headerLogo ticketOnly" : "headerLogo"}>
+          <BrandLogo url={branding.logoUrl} size={52} ringWidth={2} dotSize={8} />
+        </div>
+      )}
+
       {step === "welcome" && (
         <WelcomeScreen
           branding={branding}
@@ -668,6 +677,25 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
         .startOver:active {
           opacity: 0.6;
         }
+
+        .headerLogo {
+          position: absolute;
+          top: 30px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 5;
+          pointer-events: none;
+        }
+
+        .headerLogo.ticketOnly {
+          display: none;
+        }
+
+        @media (min-height: 900px) {
+          .headerLogo.ticketOnly {
+            display: block;
+          }
+        }
       `}</style>
     </div>
   )
@@ -677,21 +705,104 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
 // Welcome — the entire screen is the tap target
 // ----------------------------------------------------------------------------
 
+// Tenant logo in a rounded tile with a slowly rotating ring + orbiting dot.
+// The ring, dot and glow all use var(--accent), i.e. the tenant's primary
+// colour, so every tenant gets their own colour automatically. Sized by one
+// number (`size`, px) so the same component serves the big Welcome screen and
+// the small header logo. Uses <span>s, not <div>s: the Welcome screen is a
+// <button>. Custom logos only reach here on plans with the branding module
+// (page.tsx blanks logoUrl otherwise).
+function BrandLogo({ url, size, ringWidth, dotSize }: { url: string; size: number; ringWidth: number; dotSize: number }) {
+  return (
+    <span
+      className="logoWrap"
+      aria-hidden="true"
+      style={{ "--s": `${size}px`, "--bw": `${ringWidth}px`, "--dot": `${dotSize}px` } as React.CSSProperties}
+    >
+      <span className="logoTile">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="" className="logo" />
+      </span>
+      <span className="ring" />
+
+      <style jsx>{`
+        .logoWrap {
+          position: relative;
+          display: block;
+          flex: none;
+          width: var(--s);
+          height: var(--s);
+        }
+        .logoTile {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+          padding: calc(var(--s) * 0.107);
+          box-sizing: border-box;
+          background: #ffffff; /* keeps transparent / dark logos readable */
+          border-radius: calc(var(--s) * 0.238);
+          overflow: hidden;
+          box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12);
+          animation: logoPulse 2.4s ease-in-out infinite;
+        }
+        .logo {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+        }
+        .ring {
+          position: absolute;
+          inset: calc(var(--s) * -0.095);
+          border-radius: calc(var(--s) * 0.333);
+          border: var(--bw) solid rgba(23, 20, 18, 0.12);
+          border: var(--bw) solid color-mix(in srgb, var(--accent) 35%, transparent);
+          animation: ringRotate 3s linear infinite;
+        }
+        .ring::before {
+          content: "";
+          position: absolute;
+          top: calc(var(--bw) * -0.5 - var(--dot) * 0.5);
+          left: 50%;
+          width: var(--dot);
+          height: var(--dot);
+          margin-left: calc(var(--dot) * -0.5);
+          border-radius: 50%;
+          background: var(--accent);
+          box-shadow: 0 0 calc(var(--dot) * 1) var(--accent);
+        }
+        @keyframes ringRotate {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @keyframes logoPulse {
+          0%,
+          100% {
+            box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12), 0 0 calc(var(--s) * 0.17) color-mix(in srgb, var(--accent) 22%, transparent);
+          }
+          50% {
+            box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12), 0 0 calc(var(--s) * 0.33) color-mix(in srgb, var(--accent) 42%, transparent);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ring,
+          .logoTile {
+            animation: none;
+          }
+        }
+      `}</style>
+    </span>
+  )
+}
+
 function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; tagline: string; onTap: () => void }) {
   return (
     <button className="welcome" onClick={onTap} type="button" aria-label="Tap to begin">
       {branding.logoUrl && (
-        // Logo with a slowly rotating ring + orbiting dot. The ring, the dot and
-        // the glow all use var(--accent), i.e. the tenant's primary colour, so
-        // every tenant gets their own colour automatically. (Custom logos are
-        // only returned by page.tsx on plans with the branding module.)
-        // <span>s, not <div>s: this whole screen is a <button>.
-        <span className="logoWrap" aria-hidden="true">
-          <span className="logoTile">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={branding.logoUrl} alt="" className="logo" />
-          </span>
-          <span className="ring" />
+        <span className="logoSlot">
+          <BrandLogo url={branding.logoUrl} size={168} ringWidth={3} dotSize={12} />
         </span>
       )}
       <h1>{branding.displayName}</h1>
@@ -711,71 +822,9 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
           padding: 40px;
           text-align: center;
         }
-        .logoWrap {
-          position: relative;
+        .logoSlot {
           display: block;
-          width: 168px;
-          height: 168px;
           margin-bottom: 12px; /* the ring sits outside the tile, give it room */
-        }
-        .logoTile {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 100%;
-          height: 100%;
-          padding: 18px;
-          box-sizing: border-box;
-          background: #ffffff; /* keeps transparent / dark logos readable */
-          border-radius: 40px;
-          overflow: hidden;
-          box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12);
-          animation: logoPulse 2.4s ease-in-out infinite;
-        }
-        .logo {
-          max-width: 100%;
-          max-height: 100%;
-          object-fit: contain;
-        }
-        .ring {
-          position: absolute;
-          inset: -16px;
-          border-radius: 56px;
-          border: 3px solid rgba(23, 20, 18, 0.12);
-          border: 3px solid color-mix(in srgb, var(--accent) 35%, transparent);
-          animation: ringRotate 3s linear infinite;
-        }
-        .ring::before {
-          content: "";
-          position: absolute;
-          top: -7px;
-          left: 50%;
-          width: 12px;
-          height: 12px;
-          margin-left: -6px;
-          border-radius: 50%;
-          background: var(--accent);
-          box-shadow: 0 0 12px var(--accent);
-        }
-        @keyframes ringRotate {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-        @keyframes logoPulse {
-          0%,
-          100% {
-            box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12), 0 0 28px color-mix(in srgb, var(--accent) 22%, transparent);
-          }
-          50% {
-            box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12), 0 0 56px color-mix(in srgb, var(--accent) 42%, transparent);
-          }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .ring,
-          .logoTile {
-            animation: none;
-          }
         }
         h1 {
           font-size: 64px;
