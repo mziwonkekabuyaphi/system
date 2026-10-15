@@ -85,6 +85,49 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
       </div>
 
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">
+              Require a service to book
+            </p>
+            <p className="text-sm text-stone-500">
+              Turn this off if customers don&apos;t choose between services when they book — the kiosk and
+              WhatsApp then skip the service step and go straight to the date.
+            </p>
+          </div>
+          <Toggle
+            checked={form.requireServiceSelection ?? true}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, requireServiceSelection: next })}
+          />
+        </div>
+
+        {form.requireServiceSelection === false && (
+          <div className="mt-4">
+            <FieldRow
+              label="Appointment length with no service (minutes)"
+              hint="Without a service there is no duration to look up, so every appointment uses this length when building available times (5-480). Separate from the queue's walk-in estimate."
+            >
+              <input
+                type="number"
+                min={5}
+                max={480}
+                className={inputClass}
+                value={form.defaultDurationMinutes ?? 30}
+                onChange={(e) => setForm({ ...form, defaultDurationMinutes: Number(e.target.value) })}
+              />
+            </FieldRow>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-stone-400">
+          This is separate from &ldquo;Require a service to join the queue&rdquo; on the Queue tab. Bookings made
+          without a service show as &ldquo;No service&rdquo; in Today and Bookings.
+        </p>
+
+        <SaveRow isPending={isPending} onSave={save} message={message} />
+      </div>
+
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Timing &amp; cancellations</p>
         <p className="text-sm text-stone-500">Timing defaults for appointments at this location.</p>
 
