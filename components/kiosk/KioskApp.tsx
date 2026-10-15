@@ -74,6 +74,18 @@
  * fixed` with `pointer-events: none` rather than a normal flex child, so
  * it never steals a tap from the ≥96px targets underneath it and never
  * has to be threaded through every Screen's layout individually.
+ *
+ * MULTI-SERVICE (new): `maxServicesBooking` / `maxServicesQueue` come from
+ * booking_settings.max_services_per_booking and
+ * queue_settings.max_services_per_queue_entry (resolved in page.tsx, 1-5,
+ * one per path because a shop may allow combos on bookings but keep walk-ins
+ * to one service, or the reverse). At 1 the service screen behaves exactly as
+ * it always did: one tap picks the service and moves on. Above 1 it becomes a
+ * tick-several screen with a running total and a Continue button. The first
+ * service picked is the primary one; the rest travel as `extraServiceIds`.
+ * Booking times are looked up for the COMBINED duration, so the slot grid only
+ * offers times where everything fits. Both props are optional and default to
+ * 1, so /web/[slug] keeps its one-service flow until it passes them.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -203,6 +215,15 @@ interface KioskAppProps {
   // queue path drops straight from welcome/choice into DetailsScreen with
   // no service attached (queue_entries.service_id will be null).
   requireServiceSelection: boolean
+  // Most services a customer may tick on the booking path / the queue path.
+  // 1-5; anything else (or omitted) behaves as 1. The server re-checks the
+  // real limit on every submit, this only decides what the screen offers.
+  maxServicesBooking?: number
+  maxServicesQueue?: number
+}
+
+function clampMaxServices(value: number | undefined): number {
+  return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 5 ? (value as number) : 1
 }
 
 // ----------------------------------------------------------------------------
@@ -283,7 +304,14 @@ function PoweredByFooter() {
 // Main component
 // ----------------------------------------------------------------------------
 
-export function KioskApp({ slug, branding, initialServices, requireServiceSelection }: KioskAppProps) {
+export function KioskApp({
+  slug,
+  branding,
+  initialServices,
+  requireServiceSelection,
+  maxServicesBooking,
+  maxServicesQueue,
+}: KioskAppProps) {
   // Web mode = opened from the WhatsApp link (/web/[slug]) on the customer's
   // own phone, as opposed to the shop's walk-in tablet (/kiosk/[slug]).
   const pathname = usePathname()
@@ -299,7 +327,9 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   // [] here is a stopgap — the real fix is finding why that function's
   // return value isn't reliably an array.
   const [services] = useState<CatalogService[]>(Array.isArray(initialServices) ? initialServices : [])
-  const [selectedService, setSelectedService] = useState<CatalogService | null>(null)
+  // In the order picked: the first one is the primary service (what the
+  // booking/queue row's service_id stores), the rest are the extras.
+  const [selectedServices, setSelectedServices] = useState<CatalogService[]>([])
 
   const [dateOptions, setDateOptions] = useState<DateOption[]>([])
   const [selectedDate, setSelectedDate] = useState<DateOption | null>(null)
@@ -321,7 +351,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   const resetAll = useCallback(() => {
     setStep("welcome")
     setPath(null)
-    setSelectedService(null)
+    setSelectedServices([])
     setDateOptions([])
     setSelectedDate(null)
     setSlots([])
@@ -377,7 +407,7 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   const enterQueueFlow = () => {
     setPath("queue")
     if (!requireServiceSelection) {
-      setSelectedService(null)
+      setSelectedServices([])
       setStep("details")
       return
     }
@@ -411,8 +441,12 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     setStep("service")
   }
 
-  const chooseService = async (service: CatalogService) => {
-    setSelectedService(service)
+  // How many services this path lets the customer tick (1 = single tap).
+  const maxServices = clampMaxServices(path === "queue" ? maxServicesQueue : maxServicesBooking)
+
+  const chooseServices = async (chosen: CatalogService[]) => {
+    if (chosen.length === 0) return
+    setSelectedServices(chosen)
     setError(null)
 
     if (path === "queue") {
@@ -437,20 +471,27 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     // config that happens to leave only one day bookable, not just the
     // maxAdvanceDays = 0 case specifically.
     if (options.length === 1) {
-      await chooseDate(options[0], service)
+      await chooseDate(options[0], chosen)
       return
     }
 
     setStep("date")
   }
 
-  const chooseDate = async (option: DateOption, serviceOverride?: CatalogService) => {
-    const service = serviceOverride ?? selectedService
-    if (!service) return
+  const chooseDate = async (option: DateOption, servicesOverride?: CatalogService[]) => {
+    const chosen = servicesOverride ?? selectedServices
+    if (chosen.length === 0) return
     setSelectedDate(option)
     setError(null)
     setBusy(true)
-    const result = await fetchKioskTimeSlots(slug, service.id, option.date)
+    // Primary service id as before; the extras make the server look up times
+    // for the combined duration, so only slots where everything fits are shown.
+    const result = await fetchKioskTimeSlots(
+      slug,
+      chosen[0].id,
+      option.date,
+      chosen.slice(1).map((s) => s.id),
+    )
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
@@ -468,11 +509,11 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
   const submit = async () => {
     // Booking always needs a service (date/time availability is looked up
     // per-service). Queue only needs one when requireServiceSelection is
-    // on — when it's off, selectedService is null by construction
+    // on — when it's off, selectedServices is empty by construction
     // (enterQueueFlow never lets the customer reach ServiceScreen), so
     // this guard would otherwise silently block every queue submission.
-    if (path === "booking" && !selectedService) return
-    if (path === "queue" && requireServiceSelection && !selectedService) return
+    if (path === "booking" && selectedServices.length === 0) return
+    if (path === "queue" && requireServiceSelection && selectedServices.length === 0) return
     setError(null)
     setBusy(true)
 
@@ -487,12 +528,13 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     }
 
     if (path === "booking") {
-      if (!selectedDate || !selectedSlot || !selectedService) {
+      if (!selectedDate || !selectedSlot || selectedServices.length === 0) {
         setBusy(false)
         return
       }
       const result = await submitKioskBooking(slug, {
-        serviceId: selectedService.id,
+        serviceId: selectedServices[0].id,
+        extraServiceIds: selectedServices.slice(1).map((s) => s.id),
         dateISO: selectedDate.date,
         dateLabel: selectedDate.label,
         slot: selectedSlot,
@@ -511,7 +553,8 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
     }
 
     const result = await submitKioskQueueJoin(slug, {
-      serviceId: selectedService?.id ?? null,
+      serviceId: selectedServices[0]?.id ?? null,
+      extraServiceIds: selectedServices.slice(1).map((s) => s.id),
       name,
       phone,
     })
@@ -583,7 +626,8 @@ export function KioskApp({ slug, branding, initialServices, requireServiceSelect
         <ServiceScreen
           title={branding.serviceScreenTitle}
           services={services}
-          onSelect={chooseService}
+          maxSelectable={maxServices}
+          onConfirm={chooseServices}
           busy={busy}
           error={error}
         />
@@ -1019,16 +1063,22 @@ function ArrowIcon() {
 function ServiceScreen({
   title,
   services,
-  onSelect,
+  maxSelectable,
+  onConfirm,
   busy,
   error,
 }: {
   title: string
   services: CatalogService[]
-  onSelect: (service: CatalogService) => void
+  /** Most services the customer may tick on this path. 1 = tap one and go. */
+  maxSelectable: number
+  onConfirm: (chosen: CatalogService[]) => void
   busy: boolean
   error: string | null
 }) {
+  // In the order ticked, so the first one is the primary service.
+  const [picked, setPicked] = useState<CatalogService[]>([])
+
   if (services.length === 0) {
     return (
       <Screen title={title}>
@@ -1044,20 +1094,87 @@ function ServiceScreen({
     )
   }
 
+  // Nothing to combine with one service on offer, so a limit above the number
+  // of services behaves like the plain single-tap screen.
+  const limit = Math.min(Math.max(1, maxSelectable), services.length)
+  const multi = limit > 1
+
+  const isPicked = (service: CatalogService) => picked.some((p) => p.id === service.id)
+  const atLimit = picked.length >= limit
+
+  const toggle = (service: CatalogService) => {
+    setPicked((current) =>
+      current.some((p) => p.id === service.id)
+        ? current.filter((p) => p.id !== service.id)
+        : current.length >= limit
+          ? current
+          : [...current, service],
+    )
+  }
+
+  const totalMinutes = picked.reduce((sum, s) => sum + s.durationMinutes, 0)
+  const totalPrice = picked.reduce((sum, s) => sum + s.price, 0)
+
   return (
     <Screen title={title} error={error} busy={busy}>
+      {multi && <p className="hint">Choose up to {limit}. Tap again to remove one.</p>}
+
       <div className="grid">
-        {services.map((service) => (
-          <button key={service.id} className="tile" onClick={() => onSelect(service)} type="button" disabled={busy}>
-            <span className="name">{service.name}</span>
-            <span className="meta">
-              {service.durationMinutes} min · R{service.price.toFixed(0)}
-            </span>
-          </button>
-        ))}
+        {services.map((service) => {
+          const on = multi && isPicked(service)
+          return (
+            <button
+              key={service.id}
+              className={`tile${on ? " tileOn" : ""}`}
+              onClick={() => (multi ? toggle(service) : onConfirm([service]))}
+              type="button"
+              // A ticked tile stays tappable at the limit so it can be removed;
+              // only the unticked ones lock.
+              disabled={busy || (multi && atLimit && !on)}
+              aria-pressed={multi ? on : undefined}
+            >
+              <span className="name">
+                {on && (
+                  <span className="check" aria-hidden="true">
+                    ✓
+                  </span>
+                )}
+                {service.name}
+              </span>
+              <span className="meta">
+                {service.durationMinutes} min · R{service.price.toFixed(0)}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
+      {multi && (
+        <div className="bar">
+          <p className="total">
+            {picked.length === 0
+              ? "Nothing chosen yet"
+              : `${picked.length} chosen · ${totalMinutes} min · R${totalPrice.toFixed(0)}`}
+          </p>
+          <button
+            className="continue"
+            onClick={() => onConfirm(picked)}
+            type="button"
+            disabled={busy || picked.length === 0}
+          >
+            Continue
+          </button>
+        </div>
+      )}
+
       <style jsx>{`
+        .hint {
+          margin: -12px 0 0;
+          font-size: 19px;
+          font-weight: 600;
+          color: var(--muted);
+          text-align: center;
+        }
         .grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -1086,15 +1203,67 @@ function ServiceScreen({
         .tile:disabled {
           opacity: 0.5;
         }
+        .tileOn,
+        .tileOn:disabled {
+          border-color: var(--accent);
+          background: var(--paper);
+          opacity: 1;
+        }
         .name {
           font-size: 22px;
           font-weight: 700;
           color: var(--ink);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .check {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: var(--accent);
+          color: var(--accent-on);
+          font-size: 18px;
+          font-weight: 800;
         }
         .meta {
           font-size: 17px;
           font-weight: 500;
           color: var(--muted);
+        }
+        .bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          width: 100%;
+          max-width: 1000px;
+        }
+        .total {
+          margin: 0;
+          font-size: 22px;
+          font-weight: 700;
+          color: var(--ink);
+        }
+        .continue {
+          min-height: 96px;
+          min-width: 280px;
+          background: var(--accent);
+          color: var(--accent-on);
+          border: none;
+          border-radius: 16px;
+          font-size: 26px;
+          font-weight: 700;
+          font-family: inherit;
+          cursor: pointer;
+        }
+        .continue:disabled {
+          opacity: 0.4;
+          cursor: default;
         }
       `}</style>
     </Screen>
