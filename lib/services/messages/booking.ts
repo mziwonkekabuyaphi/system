@@ -59,11 +59,17 @@ export function entryChoiceInvalidMessage(): string {
 // SERVICE / DATE / TIME SELECTION
 // ============================================================================
 
-export function servicesListMessage(services: CatalogService[]): string {
+/** `maxServices` > 1 = the shop lets a customer pick several in one booking
+ *  (booking_settings.max_services_per_booking). Default 1 = unchanged copy. */
+export function servicesListMessage(services: CatalogService[], maxServices: number = 1): string {
   const lines = services.map(
     (s, i) => `${i + 1}. *${s.name}* — R${s.price} (${s.durationMinutes} min)`,
   )
-  return `Here's what we offer 💈\n\n${lines.join("\n")}\n\nReply with a number to pick a service.`
+  const ask =
+    maxServices > 1
+      ? `Reply with a number to pick a service, or up to ${maxServices} numbers together (e.g. *1,3*) to combine them.`
+      : "Reply with a number to pick a service."
+  return `Here's what we offer 💈\n\n${lines.join("\n")}\n\n${ask}`
 }
 
 export function dateOptionsMessage(dateOptions: Array<{ label: string }>): string {

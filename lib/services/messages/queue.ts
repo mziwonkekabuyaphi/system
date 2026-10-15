@@ -19,9 +19,15 @@
 
 import type { CatalogService } from "@/lib/services/shared/services-catalog"
 
-export function servicesListMessage(services: CatalogService[]): string {
+/** `maxServices` > 1 = the shop lets a customer pick several per queue ticket
+ *  (queue_settings.max_services_per_queue_entry). Default 1 = unchanged copy. */
+export function servicesListMessage(services: CatalogService[], maxServices: number = 1): string {
   const lines = services.map((s, i) => `${i + 1}. *${s.name}* — R${s.price} (${s.durationMinutes} min)`)
-  return `What are you here for? 🚶\n\n${lines.join("\n")}\n\nReply with a number to join the queue.`
+  const ask =
+    maxServices > 1
+      ? `Reply with a number to join the queue, or up to ${maxServices} numbers together (e.g. *1,3*) to combine them.`
+      : "Reply with a number to join the queue."
+  return `What are you here for? 🚶\n\n${lines.join("\n")}\n\n${ask}`
 }
 
 export function noServicesMessage(): string {
