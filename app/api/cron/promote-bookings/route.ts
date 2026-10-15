@@ -167,21 +167,55 @@ async function promoteEligibleBookings(): Promise<PromotionSummary> {
 
     if (toInsert.length === 0) continue
 
-    const { error: insertError } = await supabase.from("queue_entries").insert(
-      toInsert.map((b) => ({
-        tenant_id: b.tenant_id,
-        customer_id: b.customer_id,
-        service_id: b.service_id,
-        booking_id: b.id,
-        source: "booking",
-        status: "waiting",
-        joined_at: new Date().toISOString(),
-      })),
-    )
+    const { data: insertedRows, error: insertError } = await supabase
+      .from("queue_entries")
+      .insert(
+        toInsert.map((b) => ({
+          tenant_id: b.tenant_id,
+          customer_id: b.customer_id,
+          service_id: b.service_id,
+          booking_id: b.id,
+          source: "booking",
+          status: "waiting",
+          joined_at: new Date().toISOString(),
+        })),
+      )
+      .select("id, booking_id")
 
     if (insertError) {
       errors.push(`tenant ${tenant.tenant_id}: ${insertError.message}`)
       continue
+    }
+
+    // MULTI-SERVICE: carry the booking's full service list (booking_services,
+    // primary first) over to the new queue entries. service_id above stays the
+    // primary. A failure here is logged, not fatal: the customer is already in
+    // the queue and a retry would not re-run (the entry now exists).
+    try {
+      const entryByBooking = new Map<string, string>(
+        (insertedRows ?? []).map((r: { id: string; booking_id: string }) => [r.booking_id, r.id]),
+      )
+      const { data: linkRows, error: linkReadError } = await supabase
+        .from("booking_services")
+        .select("booking_id, service_id, position")
+        .eq("tenant_id", tenant.tenant_id)
+        .in("booking_id", [...entryByBooking.keys()])
+      if (linkReadError) throw new Error(linkReadError.message)
+
+      const copies = (linkRows ?? [])
+        .filter((l: { booking_id: string }) => entryByBooking.has(l.booking_id))
+        .map((l: { booking_id: string; service_id: string; position: number }) => ({
+          queue_entry_id: entryByBooking.get(l.booking_id)!,
+          service_id: l.service_id,
+          tenant_id: tenant.tenant_id,
+          position: l.position,
+        }))
+      if (copies.length > 0) {
+        const { error: copyError } = await supabase.from("queue_entry_services").insert(copies)
+        if (copyError) throw new Error(copyError.message)
+      }
+    } catch (err) {
+      errors.push(`tenant ${tenant.tenant_id}: copying booking services failed: ${(err as Error).message}`)
     }
 
     promoted += toInsert.length
