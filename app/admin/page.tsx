@@ -52,7 +52,7 @@ import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-t
 import { last4 } from "@/lib/payroll/staff-details"
 
 import { AdminView } from "./AdminView"
-import { loadDisplayContext, loadQueueEntries } from "./admin-data"
+import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
 import { BOOKING_WINDOW_DAYS_AHEAD, BOOKING_WINDOW_DAYS_BACK, addDaysKey, dateKeyInTz, startOfDayUtc } from "./tz"
 import type {
   AdminBooking,
@@ -96,6 +96,7 @@ async function getBookingsWindow(
     .select(
       `id, service_id, staff_id, start_time, end_time, status, booking_reference,
        services!bookings_service_id_fkey ( name ),
+       booking_services ( position, services ( name ) ),
        staff ( name ),
        tenant_customers ( full_name, phone )`,
     )
@@ -115,7 +116,7 @@ async function getBookingsWindow(
     endTime: b.end_time,
     status: b.status,
     bookingReference: b.booking_reference,
-    serviceName: b.services?.name ?? "Unknown service",
+    serviceName: joinServiceLabels(b.services?.name, b.booking_services) ?? "Unknown service",
     staffName: b.staff?.name ?? "Unassigned",
     customerName: b.tenant_customers?.full_name ?? null,
     customerPhone: b.tenant_customers?.phone ?? "",
@@ -307,14 +308,14 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode",
       )
       .eq("tenant_id", tenantId)
       .single(),
     supabase
       .from("queue_settings")
       .select(
-        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix",
+        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix, max_services_per_queue_entry",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -441,6 +442,11 @@ async function getSettingsData(
       minNoticeMinutes: bookingSettingsResult.data.min_notice_minutes,
       maxAdvanceDays: bookingSettingsResult.data.max_advance_days,
       cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
+      maxServicesPerBooking: bookingSettingsResult.data.max_services_per_booking ?? 1,
+      maxDatesOffered: bookingSettingsResult.data.max_dates_offered ?? 7,
+      queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)
+        ? (bookingSettingsResult.data.queue_priority_mode as AdminBookingSettings["queuePriorityMode"])
+        : "fifo",
     },
     queueSettings: {
       autoCallNext: queueSettingsResult.data.auto_call_next,
@@ -457,6 +463,7 @@ async function getSettingsData(
       requireServiceSelection: queueSettingsResult.data.require_service_selection,
       defaultServiceDurationMinutes: queueSettingsResult.data.default_service_duration_minutes,
       ticketNumberPrefix: queueSettingsResult.data.ticket_number_prefix,
+      maxServicesPerQueueEntry: queueSettingsResult.data.max_services_per_queue_entry ?? 1,
     },
     messageSettings: {
       aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,
