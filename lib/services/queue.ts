@@ -69,6 +69,17 @@
  * cap via lib/services/plans.ts's assertWithinVisitLimit(), same as
  * booking.ts's createBooking() — see joinQueue()'s doc comment below for
  * why this was missing here until now.
+ *
+ * MULTI-SERVICE (new): a walk-in can now pick several services, up to the
+ * tenant's queue_settings.max_services_per_queue_entry (1-5, default 1 = the
+ * old single-service behaviour). joinQueue() takes the primary `service` plus
+ * optional `extraServices`. queue_entries.service_id keeps the FIRST service
+ * so billing, WhatsApp, the admin list and the public display keep working
+ * unchanged; queue_entry_services holds the full list in order. The wait
+ * simulation uses the SUM of an entry's service durations (see
+ * loadSimEntries). The limit is enforced here, server-side, not just hidden
+ * in the kiosk UI. WhatsApp still offers one service per walk-in until its
+ * flow is updated.
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
@@ -102,6 +113,14 @@ import {
 // ============================================================================
 
 const QUEUE_STATE_SERVICE_SELECTION = "queue_service_selection"
+
+/** Thrown by joinQueue() when more services were sent than the tenant's
+ *  queue_settings.max_services_per_queue_entry allows. A stale or tampered
+ *  kiosk request, not a bug in normal use. */
+export const QUEUE_TOO_MANY_SERVICES = "QUEUE_TOO_MANY_SERVICES"
+
+/** Hard ceiling, mirrors the DB CHECK on max_services_per_queue_entry. */
+const ABSOLUTE_MAX_SERVICES_PER_QUEUE_ENTRY = 5
 
 // Mirrors queue_settings.default_service_duration_minutes's DB default.
 // Only ever used as a last-resort fallback (queue_settings row missing or
@@ -287,6 +306,83 @@ async function getDefaultServiceDurationMinutes(supabase: SupabaseClient, tenant
   return data?.default_service_duration_minutes ?? DEFAULT_SERVICE_DURATION_MINUTES
 }
 
+/**
+ * Reads queue_settings.max_services_per_queue_entry. Never throws: a missing
+ * row, an error or an out-of-range value all mean 1 (single service), the
+ * safe default, so a settings hiccup can never let extra services through.
+ */
+async function readMaxServicesPerQueueEntry(supabase: SupabaseClient, tenantId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("queue_settings")
+    .select("max_services_per_queue_entry")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    console.error("[queue] Failed to load max_services_per_queue_entry, using 1", { tenantId, error: error.message })
+    return 1
+  }
+
+  const value = Number(data?.max_services_per_queue_entry)
+  return Number.isInteger(value) && value >= 1 && value <= ABSOLUTE_MAX_SERVICES_PER_QUEUE_ENTRY ? value : 1
+}
+
+/** Exported for the kiosk's Server Actions, which re-check the limit before
+ *  looking anything up. */
+export async function getMaxServicesPerQueueEntry(tenantId: string): Promise<number> {
+  return readMaxServicesPerQueueEntry(getClientOrThrow(), tenantId)
+}
+
+/** Keeps the first occurrence of each service id, preserving order. The link
+ *  table has one row per (entry, service), so a repeat would fail anyway. */
+function dedupeServices(list: CatalogService[]): CatalogService[] {
+  const seen = new Set<string>()
+  return list.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)))
+}
+
+/**
+ * Total service minutes per parent row (queue entry or booking), summed over
+ * its link-table rows. A parent with no link rows is simply absent from the
+ * map, and the caller falls back to the single-service duration — so rows
+ * written before multi-service existed (or by a path that doesn't write link
+ * rows yet, e.g. the promote-bookings cron) still get a sensible number.
+ *
+ * Degrades instead of throwing: this only sharpens a wait estimate, so a
+ * failure here must not take the whole queue display down with it.
+ */
+async function sumServiceMinutesByParent(
+  supabase: SupabaseClient,
+  table: "queue_entry_services" | "booking_services",
+  parentColumn: "queue_entry_id" | "booking_id",
+  parentIds: string[],
+): Promise<Map<string, number>> {
+  const totals = new Map<string, number>()
+  if (parentIds.length === 0) return totals
+
+  const { data, error } = await supabase
+    .from(table)
+    .select(`${parentColumn}, services ( duration_minutes )`)
+    .in(parentColumn, parentIds)
+
+  if (error) {
+    console.error("[queue] Failed to load multi-service durations, using first service only", {
+      table,
+      error: error.message,
+    })
+    return totals
+  }
+
+  for (const row of (data ?? []) as unknown as Array<Record<string, unknown>>) {
+    const parentId = row[parentColumn] as string
+    const joined = row.services as { duration_minutes: number } | { duration_minutes: number }[] | null
+    const service = Array.isArray(joined) ? joined[0] : joined
+    if (!service) continue
+    totals.set(parentId, (totals.get(parentId) ?? 0) + service.duration_minutes)
+  }
+
+  return totals
+}
+
 async function getActiveStaffCount(supabase: SupabaseClient, tenantId: string): Promise<number> {
   const { count, error } = await supabase
     .from("staff")
@@ -327,11 +423,28 @@ async function loadSimEntries(
     )
   }
 
+  // Multi-service: an entry takes as long as ALL its services. Preference
+  // order: the entry's own service list, then (for a promoted booking) the
+  // booking's service list, then the single service_id join above, then the
+  // tenant default.
+  const [queueMinutesById, bookingMinutesById] = await Promise.all([
+    sumServiceMinutesByParent(
+      supabase,
+      "queue_entry_services",
+      "queue_entry_id",
+      rows.map((r) => r.id),
+    ),
+    sumServiceMinutesByParent(supabase, "booking_services", "booking_id", bookingIds),
+  ])
+
   return rows.map((row) => ({
     id: row.id,
     joinedAtMillis: new Date(row.joined_at).getTime(),
     calledAtMillis: row.called_at ? new Date(row.called_at).getTime() : null,
-    durationMinutes: durationFromRow(row, defaultDurationMinutes),
+    durationMinutes:
+      queueMinutesById.get(row.id) ??
+      (row.booking_id ? bookingMinutesById.get(row.booking_id) : undefined) ??
+      durationFromRow(row, defaultDurationMinutes),
     bookingStartMillis: row.booking_id ? bookingStartById.get(row.booking_id) ?? null : null,
   }))
 }
@@ -515,12 +628,20 @@ export interface JoinQueueParams {
    *  BEFORE calling this — joinQueue() itself doesn't re-check the flag,
    *  it just accepts whatever service (or lack of one) it's given. */
   service: CatalogService | null
+  /** Further services in the same visit (multi-service). Omit for the usual
+   *  single-service walk-in. Total count, primary included, must not exceed
+   *  queue_settings.max_services_per_queue_entry. If `service` is null these
+   *  are ignored: no service selection means no services at all. */
+  extraServices?: CatalogService[]
   /** Raw or normalized — ensureCustomer() normalizes internally. */
   phone: string
 }
 
 export interface JoinQueueResult {
   customer: Customer
+  /** The services actually saved on the entry, primary first. Empty when the
+   *  walk-in joined without a service. */
+  services: CatalogService[]
   position: number
   etaMinutes: number
   /** Permanent for this entry's lifetime — see formatQueueTicketNumber()
@@ -565,6 +686,16 @@ export interface JoinQueueResult {
  * gaplessness, and uniqueness is guaranteed by the counter table's atomic
  * UPSERT regardless.
  *
+ * MULTI-SERVICE: throws QUEUE_TOO_MANY_SERVICES if more services were sent
+ * than queue_settings.max_services_per_queue_entry allows (checked first,
+ * from the database, never from the client). queue_entry_services is written
+ * AFTER the entry because it needs the entry's id; if that second write
+ * fails the entry is deliberately NOT rolled back. The insert already fired
+ * the "joined" WhatsApp message (see notify_queue_entry), so removing the
+ * entry would leave a customer with a message about a place that no longer
+ * exists. They keep their place with the primary service only, the error is
+ * logged, and the result's `services` says what was really saved.
+ *
  * KNOWN GAP: this is currently the ONLY place that assigns a
  * ticket_number. A queue_entries row inserted by any other path — most
  * notably the promote_bookings_to_queue() pg_cron job that unify-with-
@@ -574,8 +705,15 @@ export interface JoinQueueResult {
  * leaving promoted bookings ticket-less.
  */
 export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
-  const { service, phone } = params
+  const { service, extraServices = [], phone } = params
   const supabase = getClientOrThrow()
+
+  // Primary first, repeats dropped; empty when the walk-in picked nothing.
+  const chosenServices = service ? dedupeServices([service, ...extraServices]) : []
+
+  if (chosenServices.length > (await readMaxServicesPerQueueEntry(supabase, tenantId))) {
+    throw new Error(QUEUE_TOO_MANY_SERVICES)
+  }
 
   // Plan enforcement runs first and cheapest — no point assigning a
   // ticket number or claiming anything for a join that's about to be
@@ -617,6 +755,28 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
 
   if (error) throw new Error(error.message)
 
+  // Full service list, in the order the customer picked them. Not rolled back
+  // on failure — see MULTI-SERVICE in this function's doc comment.
+  let savedServices = chosenServices
+  if (chosenServices.length > 0) {
+    const { error: linkError } = await supabase.from("queue_entry_services").insert(
+      chosenServices.map((s, index) => ({
+        queue_entry_id: inserted.id,
+        service_id: s.id,
+        tenant_id: tenantId,
+        position: index + 1,
+      })),
+    )
+    if (linkError) {
+      console.error("[queue] Failed to save the entry's services, keeping the primary only", {
+        tenantId,
+        queueEntryId: inserted.id,
+        error: linkError.message,
+      })
+      savedServices = chosenServices.slice(0, 1)
+    }
+  }
+
   const simulation = await getQueueSimulation(tenantId)
   const own = simulation.get(inserted.id)
 
@@ -627,8 +787,13 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
   // same constant durationFromRow would have used).
   return {
     customer,
+    services: savedServices,
     position: own?.position ?? 1,
-    etaMinutes: own?.etaMinutes ?? service?.durationMinutes ?? DEFAULT_SERVICE_DURATION_MINUTES,
+    etaMinutes:
+      own?.etaMinutes ??
+      (savedServices.length > 0
+        ? savedServices.reduce((sum, s) => sum + s.durationMinutes, 0)
+        : DEFAULT_SERVICE_DURATION_MINUTES),
     ticketNumber,
     ticketPrefix,
   }

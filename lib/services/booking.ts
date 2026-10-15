@@ -94,6 +94,17 @@
  * services list, and anything ambiguous ("I need a haircut") still gets the
  * Queue-or-Book buttons.
  *
+ * MULTI-SERVICE (new): a booking can now cover several services, up to the
+ * tenant's booking_settings.max_services_per_booking (1-5, default 1 = the
+ * old single-service behaviour). createBooking() takes the primary
+ * `service` plus optional `extraServices`; the booking is as long as all of
+ * them back to back (availability, staff claim and end_time all use the
+ * summed duration). bookings.service_id keeps the FIRST service so billing,
+ * WhatsApp, the admin list and the public display keep working unchanged,
+ * and booking_services holds the full list in order. The limit is enforced
+ * here, server-side, not just hidden in the kiosk UI. WhatsApp still offers
+ * one service per booking until its flow is updated.
+ *
  * ONE-MESSAGE BOOKING (new, AI): when a typed message carries real detail
  * ("haircut tomorrow 3pm", in English, isiXhosa, isiZulu, Afrikaans...),
  * trySmartBooking() asks lib/ai/booking-parser.ts to extract service / date /
@@ -201,6 +212,14 @@ export const BOOKING_OUTSIDE_ALLOWED_WINDOW = "BOOKING_OUTSIDE_ALLOWED_WINDOW"
  *  not log it as an error. Exported so the kiosk action can match on it
  *  without string-comparing the raw database text. */
 export const BOOKING_ALREADY_HAS_UPCOMING = "BOOKING_ALREADY_HAS_UPCOMING"
+
+/** Thrown by createBooking() when more services were sent than the tenant's
+ *  booking_settings.max_services_per_booking allows. A stale or tampered kiosk
+ *  request, not a bug in normal use. */
+export const BOOKING_TOO_MANY_SERVICES = "BOOKING_TOO_MANY_SERVICES"
+
+/** Hard ceiling, mirrors the DB CHECK on max_services_per_booking. */
+const ABSOLUTE_MAX_SERVICES_PER_BOOKING = 5
 
 /** Thrown by completeBooking() when no booking with that id exists for
  *  this tenant — re-checked server-side rather than trusted from
@@ -503,12 +522,49 @@ async function assertBookingIsAllowed(
 // created from a customer-facing flow.
 // ============================================================================
 
+/**
+ * Reads booking_settings.max_services_per_booking. Never throws: a missing
+ * row, an error or an out-of-range value all mean 1 (single service), the
+ * safe default, so a settings hiccup can never let extra services through.
+ */
+async function readMaxServicesPerBooking(supabase: SupabaseClient, tenantId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("booking_settings")
+    .select("max_services_per_booking")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (error) {
+    console.error("[booking] Failed to load max_services_per_booking, using 1", { tenantId, error: error.message })
+    return 1
+  }
+  const value = Number(data?.max_services_per_booking)
+  return Number.isInteger(value) && value >= 1 && value <= ABSOLUTE_MAX_SERVICES_PER_BOOKING ? value : 1
+}
+
+/** Exported for the kiosk's Server Actions, which re-check the limit before
+ *  looking anything up. */
+export async function getMaxServicesPerBooking(tenantId: string): Promise<number> {
+  return readMaxServicesPerBooking(getClientOrThrow(), tenantId)
+}
+
+/** Keeps the first occurrence of each service id, preserving order. The link
+ *  table has one row per (booking, service), so a repeat would fail anyway. */
+function dedupeServices(list: CatalogService[]): CatalogService[] {
+  const seen = new Set<string>()
+  return list.filter((s) => (seen.has(s.id) ? false : (seen.add(s.id), true)))
+}
+
 export interface CreateBookingParams {
   /** The full catalog entry, not just an id — both callers already have
    *  it in hand (WhatsApp from conversation state, kiosk from its own
    *  services fetch), and durationMinutes is needed for the claim check
-   *  regardless. */
+   *  regardless. This is the PRIMARY service: it is what bookings.service_id
+   *  stores. */
   service: CatalogService
+  /** Further services in the same visit (multi-service). Omit for the usual
+   *  single-service booking. Total count, primary included, must not exceed
+   *  booking_settings.max_services_per_booking. */
+  extraServices?: CatalogService[]
   dateISO: string
   slot: BookingSlot
   /** Raw or normalized — ensureCustomer() normalizes internally, so
@@ -518,6 +574,10 @@ export interface CreateBookingParams {
 
 export interface CreateBookingResult {
   customer: Customer
+  /** Every service on the booking, primary first. */
+  services: CatalogService[]
+  /** Sum of the services' durations; endTime - startTime. */
+  totalDurationMinutes: number
   bookingReference: string
   startTime: string
   endTime: string
@@ -532,41 +592,58 @@ export interface CreateBookingResult {
  * catch both and show a "pick another time" style message rather than a
  * generic error, since both are expected races/edge cases, not bugs.
  * Also throws BOOKING_ALREADY_HAS_UPCOMING when the customer already has an
- * upcoming booking (enforced by a database trigger).
+ * upcoming booking (enforced by a database trigger), and
+ * BOOKING_TOO_MANY_SERVICES when more services were sent than the tenant's
+ * max_services_per_booking allows.
  */
 export async function createBooking(tenantId: string, params: CreateBookingParams): Promise<CreateBookingResult> {
-  const { service, dateISO, slot, phone } = params
+  const { service, extraServices = [], dateISO, slot, phone } = params
   const supabase = getClientOrThrow()
+
+  // Primary first, repeats dropped. Everything below uses this list, so the
+  // length check, the summed duration and the link rows can't disagree.
+  const services = dedupeServices([service, ...extraServices])
+  const totalDurationMinutes = services.reduce((sum, s) => sum + s.durationMinutes, 0)
+
+  // Limit check first: it writes nothing and is a stricter rule than any
+  // below. Read from the database every time, never from the client.
+  if (services.length > (await readMaxServicesPerBooking(supabase, tenantId))) {
+    throw new Error(BOOKING_TOO_MANY_SERVICES)
+  }
 
   // Plan enforcement runs first and cheapest — no point checking business
   // hours or claiming a staff member for a booking that's about to be
   // rejected because the tenant is over their monthly visit cap anyway.
   await assertWithinVisitLimit(supabase, tenantId)
 
-  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, service.durationMinutes)
+  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, totalDurationMinutes)
 
-  const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, service.durationMinutes)
+  const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes)
 
   // Minimal (phone-only) tenant_customers row if this is a brand-new
   // customer — no name/email required to book, on either channel.
   const customer = await ensureCustomer(tenantId, phone)
 
   const startTime = new Date(slot.start)
-  const endTime = new Date(startTime.getTime() + service.durationMinutes * 60_000)
+  const endTime = new Date(startTime.getTime() + totalDurationMinutes * 60_000)
   const bookingReference = crypto.randomUUID().slice(0, 8).toUpperCase()
 
-  const { error } = await supabase.from("bookings").insert([
-    {
-      tenant_id: tenantId,
-      customer_id: customer.id,
-      service_id: service.id,
-      staff_id: staff.id,
-      start_time: startTime.toISOString(),
-      end_time: endTime.toISOString(),
-      status: "confirmed",
-      booking_reference: bookingReference,
-    },
-  ])
+  const { data: inserted, error } = await supabase
+    .from("bookings")
+    .insert([
+      {
+        tenant_id: tenantId,
+        customer_id: customer.id,
+        service_id: service.id,
+        staff_id: staff.id,
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        status: "confirmed",
+        booking_reference: bookingReference,
+      },
+    ])
+    .select("id")
+    .single()
 
   if (error) {
     // The bookings trigger raises this text when the customer already has an
@@ -578,8 +655,27 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     throw new Error(error.message)
   }
 
+  // Full service list, in the order the customer picked them. If this fails
+  // the booking is removed again so the customer is never left holding a slot
+  // whose length (end_time) covers services the record doesn't list.
+  const { error: linkError } = await supabase.from("booking_services").insert(
+    services.map((s, index) => ({
+      booking_id: inserted.id,
+      service_id: s.id,
+      tenant_id: tenantId,
+      position: index + 1,
+    })),
+  )
+
+  if (linkError) {
+    await supabase.from("bookings").delete().eq("id", inserted.id).eq("tenant_id", tenantId)
+    throw new Error(`Failed to save the booking's services: ${linkError.message}`)
+  }
+
   return {
     customer,
+    services,
+    totalDurationMinutes,
     bookingReference,
     startTime: startTime.toISOString(),
     endTime: endTime.toISOString(),
