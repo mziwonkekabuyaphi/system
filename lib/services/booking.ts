@@ -93,6 +93,17 @@
  * queue flow, a clear "book"/"appointment" message goes straight to the
  * services list, and anything ambiguous ("I need a haircut") still gets the
  * Queue-or-Book buttons.
+ *
+ * ONE-MESSAGE BOOKING (new, AI): when a typed message carries real detail
+ * ("haircut tomorrow 3pm", in English, isiXhosa, isiZulu, Afrikaans...),
+ * trySmartBooking() asks lib/ai/booking-parser.ts to extract service / date /
+ * time and then jumps the SAME state machine forward as far as the message
+ * allows: service only -> date screen; service + date -> time list; service +
+ * date + a free time -> the confirmation summary. The AI only extracts (against
+ * the shop's real services and bookable dates, re-validated); it never creates
+ * anything. The customer still replies "yes" at the confirm step, and
+ * createBooking() is still the only writer. Any AI failure or missing detail
+ * returns null and the ordinary flow below runs exactly as before.
  */
 
 import crypto from "node:crypto"
@@ -110,6 +121,8 @@ import { getBookableServices, type CatalogService } from "@/lib/services/shared/
 import { queueService } from "@/lib/services/queue"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
+import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
+import { isAiEnabledForTenant } from "@/lib/ai/settings"
 
 import {
   getBookingSettings,
@@ -634,7 +647,83 @@ export async function completeBooking(tenantId: string, bookingId: string): Prom
 const QUEUE_REQUEST_PATTERN = /\b(queue|walk[\s-]?in|walkin)\b/
 const BOOK_REQUEST_PATTERN = /\b(book|booking|appointment|reserve|reservation)\b/
 
+/**
+ * AI shortcut for a typed booking request that already contains detail.
+ * Returns null whenever it can't (or shouldn't) help, so the caller falls
+ * through to the normal flow. Never throws.
+ */
+async function trySmartBooking(tenantId: string, message: IncomingMessage): Promise<ActionResult | null> {
+  try {
+    const text = rawReplyText(message)
+    if (message.interactiveId || !hasBookingDetail(text)) return null
+    if (!(await isAiEnabledForTenant(tenantId))) return null
+
+    const [services, dateOptions] = await Promise.all([getBookableServices(tenantId), buildDateOptions(tenantId)])
+    if (services.length === 0 || dateOptions.length === 0) return null
+
+    const parsed = await extractBookingRequest(
+      text,
+      services.map((s) => ({ name: s.name, durationMinutes: s.durationMinutes })),
+      dateOptions,
+    )
+    if (!parsed) return null
+
+    // "can I come now" in any language -> straight to the walk-in queue.
+    if (parsed.wantsQueue) return queueService.startQueueFlow(tenantId)
+
+    // Without a recognised service there is nothing to pre-fill.
+    if (parsed.serviceIndex === null) return null
+    const service = services[parsed.serviceIndex]
+
+    const data: BookingStateData = { services, selectedService: service, dateOptions }
+
+    // Service only (a time without a date can't be trusted) -> date screen.
+    const chosen = parsed.date ? dateOptions.find((d) => d.date === parsed.date) : undefined
+    if (!chosen) {
+      return {
+        reply: dateOptionsMessage(dateOptions),
+        buttons: [],
+        nextState: { state: BOOKING_STATE_DATE_SELECTION, data: mergeBookingData(data, {}) },
+      }
+    }
+
+    const slots = await getAvailableSlots(tenantId, chosen.date, service.durationMinutes)
+    if (slots.length === 0) {
+      return {
+        reply: `${noSlotsMessage()}\n\n${dateOptionsMessage(dateOptions)}`,
+        buttons: [],
+        nextState: { state: BOOKING_STATE_DATE_SELECTION, data: mergeBookingData(data, {}) },
+      }
+    }
+
+    const withDate: BookingStateData = { ...data, selectedDate: chosen.date, pendingSlots: slots }
+
+    const slot = pickSlotByTime(slots, parsed.time)
+    if (slot) {
+      return {
+        reply: confirmationMessage(service, chosen.label, slot),
+        buttons: [],
+        nextState: { state: BOOKING_STATE_CONFIRM, data: mergeBookingData(withDate, { selectedSlot: slot }) },
+      }
+    }
+
+    const notFree = parsed.time ? `Sorry, ${parsed.time} isn't available on ${chosen.label}. Here's what is free:\n\n` : ""
+    return {
+      reply: notFree + slotsListMessage(service.name, chosen.label, slots),
+      buttons: [],
+      nextState: { state: BOOKING_STATE_TIME_SELECTION, data: mergeBookingData(withDate, {}) },
+    }
+  } catch (error) {
+    console.error("[booking] smart booking failed, using normal flow", { tenantId, error })
+    return null
+  }
+}
+
 async function handleBooking(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
+  // AI shortcut first: a message like "haircut tomorrow 3pm" skips ahead.
+  const smart = await trySmartBooking(tenantId, message)
+  if (smart) return smart
+
   // Only ONE of the two clearly mentioned -> the customer already told us
   // what they want, so skip the "Queue or Book?" question. Both mentioned,
   // or neither (e.g. "I need a haircut"), is genuinely ambiguous -> ask.
@@ -870,15 +959,19 @@ async function handleTimeSelection(tenantId: string, state: ConversationState, m
 // STEP 5: confirm → create the booking
 // ============================================================================
 
+/** Plain yes/no answers in the languages customers actually use here. */
+const YES_WORDS = new Set(["yes", "y", "ewe", "yebo", "ja", "ja asseblief", "yes please", "ewe nceda", "yebo ngiyabonga"])
+const NO_WORDS = new Set(["no", "n", "hayi", "cha", "nee", "no thanks", "hayi enkosi"])
+
 async function handleConfirm(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
-  const text = normalizedReplyText(message)
+  const text = normalizedReplyText(message).replace(/[.!]+$/, "")
   const data = getBookingData(state)
 
-  if (text === "no" || text.includes("cancel")) {
+  if (NO_WORDS.has(text) || text.includes("cancel")) {
     return { reply: bookingCancelledMessage(), buttons: CANCEL_BUTTON, nextState: null }
   }
 
-  if (text !== "yes" && !text.includes("confirm")) {
+  if (!YES_WORDS.has(text) && !text.includes("confirm")) {
     return { reply: confirmYesNoReminderMessage(), buttons: [], nextState: state }
   }
 
