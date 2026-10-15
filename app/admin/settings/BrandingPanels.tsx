@@ -7,10 +7,19 @@ import {
   updateBranding,
   uploadLogo,
 } from "../settings-actions"
+import { readableTextOn, sidebarStyleVars } from "../sidebar-theme"
 import type {
   AdminBranding,
   AdminPlan,
 } from "../types"
+
+type BrandingPatch = Partial<{
+  displayName: string | null
+  logoUrl: string | null
+  sidebarColor: string | null
+  sidebarTextColor: string | null
+  accentColor: string | null
+}>
 import {
   ColorField,
   FieldRow,
@@ -44,7 +53,7 @@ export function PrivateLabelPanel({
   canRemovePoweredBy: boolean
   canCustomizeBranding: boolean
   initial: AdminBranding
-  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
+  onBrandingChange?: (patch: BrandingPatch) => void
 }) {
   return (
     <div className="space-y-3">
@@ -64,13 +73,16 @@ function BrandingFields({
   canRemovePoweredBy: boolean
   canCustomizeBranding: boolean
   initial: AdminBranding
-  onBrandingChange?: (patch: Partial<{ displayName: string | null; logoUrl: string | null }>) => void
+  onBrandingChange?: (patch: BrandingPatch) => void
 }) {
   const [form, setForm] = useState({
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
     secondaryColor: initial.secondaryColor,
     removePoweredBy: initial.removePoweredBy,
+    sidebarColor: initial.sidebarColor ?? null,
+    sidebarTextColor: initial.sidebarTextColor ?? null,
+    accentColor: initial.accentColor ?? null,
   })
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -89,13 +101,35 @@ function BrandingFields({
       const result = await updateBranding(form)
       if (result.success) {
         setMessage({ ok: true, text: "Saved." })
-        onBrandingChange?.({ displayName: form.displayName })
+        onBrandingChange?.({
+          displayName: form.displayName,
+          sidebarColor: form.sidebarColor,
+          sidebarTextColor: form.sidebarTextColor,
+          accentColor: form.accentColor,
+        })
       } else {
         setMessage({ ok: false, text: result.error })
         setForm((f) => ({ ...f, removePoweredBy: initial.removePoweredBy }))
       }
     })
   }
+
+  // Seeds the dashboard colours from the kiosk brand colours (primary ->
+  // sidebar, secondary -> active item) with a readable text colour.
+  function brandSidebarColors() {
+    const bg = form.primaryColor ?? "#1F2937"
+    return { sidebarColor: bg, sidebarTextColor: readableTextOn(bg), accentColor: form.secondaryColor ?? "#D4A017" }
+  }
+
+  function toggleCustomSidebar(next: boolean) {
+    setForm({
+      ...form,
+      ...(next ? brandSidebarColors() : { sidebarColor: null, sidebarTextColor: null, accentColor: null }),
+    })
+  }
+
+  const customSidebar = form.sidebarColor != null
+  const previewVars = sidebarStyleVars(form)
 
   function handleRemovePoweredByChange(next: boolean) {
     if (next && !canRemovePoweredBy) {
@@ -227,6 +261,72 @@ function BrandingFields({
               onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
             />
           </div>
+        </div>
+
+        <div
+          className={`mt-4 space-y-3 border-t border-stone-200 pt-4 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+          aria-disabled={!canCustomizeBranding}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-stone-800">Custom dashboard colours</p>
+              <p className="text-sm text-stone-500">
+                Colour the sidebar of this admin dashboard. Off keeps the standard look.
+              </p>
+            </div>
+            <Toggle checked={customSidebar} disabled={isPending} onChange={toggleCustomSidebar} />
+          </div>
+
+          {customSidebar && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <ColorField
+                  label="Sidebar"
+                  value={form.sidebarColor ?? "#1F2937"}
+                  onChange={(hex) => setForm({ ...form, sidebarColor: hex })}
+                />
+                <ColorField
+                  label="Sidebar text"
+                  value={form.sidebarTextColor ?? readableTextOn(form.sidebarColor ?? "#1F2937")}
+                  onChange={(hex) => setForm({ ...form, sidebarTextColor: hex })}
+                />
+                <ColorField
+                  label="Active item"
+                  value={form.accentColor ?? "#D4A017"}
+                  onChange={(hex) => setForm({ ...form, accentColor: hex })}
+                />
+              </div>
+
+              {previewVars && (
+                <div
+                  style={{ ...previewVars, backgroundColor: "var(--sb-bg)", color: "var(--sb-text)" }}
+                  className="flex w-56 flex-col gap-1 rounded-xl p-3 text-sm"
+                  aria-label="Sidebar preview"
+                >
+                  <span
+                    style={{ backgroundColor: "var(--sb-accent)", color: "var(--sb-on-accent)" }}
+                    className="rounded-lg px-3 py-2"
+                  >
+                    Appointments
+                  </span>
+                  <span style={{ color: "var(--sb-text-muted)" }} className="px-3 py-2">
+                    Queue
+                  </span>
+                  <span style={{ color: "var(--sb-text-muted)" }} className="px-3 py-2">
+                    Settings
+                  </span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, ...brandSidebarColors() })}
+                className={secondaryButtonClass}
+              >
+                Use my brand colours
+              </button>
+            </>
+          )}
         </div>
 
         <SaveRow isPending={isPending} onSave={save} message={message} />
