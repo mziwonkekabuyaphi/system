@@ -201,6 +201,22 @@ function unwrapJoin<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null
 }
 
+/** "Fade + Beard": primary service first, then link-table rows by position,
+ *  duplicates dropped (works whether or not the link table repeats the primary). */
+function joinNames(
+  primary: string | null | undefined,
+  links: Array<{ position?: number | null; services?: unknown }> | null | undefined,
+): string | null {
+  const names: string[] = []
+  if (primary) names.push(primary)
+  const sorted = [...(links ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+  for (const l of sorted) {
+    const n = unwrapJoin<{ name: string | null }>(l.services as never)?.name
+    if (n && !names.includes(n)) names.push(n)
+  }
+  return names.length ? names.join(" + ") : null
+}
+
 /** "0711234567" -> "071 *** **67". Keeps 3 leading + 2 trailing digits only. */
 function maskPhone(raw: string | null | undefined): string | null {
   const digits = (raw ?? "").replace(/\D/g, "")
@@ -256,7 +272,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       supabase
         .from("bookings")
         .select(
-          "id, start_time, customer:tenant_customers(full_name), service:services(name), staff:staff(name)",
+          "id, start_time, customer:tenant_customers(full_name), service:services!bookings_service_id_fkey(name), " +
+            "booking_services(position, services(name)), staff:staff(name)",
         )
         .eq("tenant_id", tenantId)
         .eq("status", "confirmed")
@@ -268,7 +285,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         .from("queue_entries")
         .select(
           "id, status, joined_at, called_at, ticket_number, source, customer:tenant_customers(full_name, phone), " +
-            "service:services(name, duration_minutes), booking:bookings(booking_reference)",
+            "service:services!queue_entries_service_id_fkey(name, duration_minutes), " +
+            "queue_entry_services(position, services(name, duration_minutes)), booking:bookings(booking_reference)",
         )
         .eq("tenant_id", tenantId)
         .in("status", ["waiting", "called"])
@@ -365,7 +383,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         id: row.id as string,
         startTime: row.start_time as string,
         customerName: customer?.full_name ?? null,
-        serviceName: service?.name ?? null,
+        serviceName: joinNames(service?.name, row.booking_services as never),
         staffName: staff?.name ?? null,
       }
     })
@@ -374,6 +392,12 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
     // UI, so only "waiting" entries get a queue position number.
     const queueRows = queueResult.data ?? []
     const durationOf = (row: (typeof queueRows)[number]) => {
+      const links = (row.queue_entry_services ?? []) as unknown as Array<{ services?: unknown }>
+      const linkTotal = links.reduce(
+        (sum, l) => sum + (unwrapJoin<{ duration_minutes: number | null }>(l.services as never)?.duration_minutes ?? 0),
+        0,
+      )
+      if (linkTotal > 0) return linkTotal
       const svc = unwrapJoin<{ duration_minutes: number | null }>(row.service as never)
       return svc?.duration_minutes ?? defaultServiceMinutes
     }
@@ -408,7 +432,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         joinedAt: row.joined_at as string,
         calledAt: (row.called_at as string | null) ?? null,
         customerName: customer?.full_name ?? null,
-        serviceName: service?.name ?? null,
+        serviceName: joinNames(service?.name, row.queue_entry_services as never),
         position: status === "waiting" ? waitingPosition : 0,
         ticketNumber: rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null,
         source: (row.source as string | null) ?? null,
