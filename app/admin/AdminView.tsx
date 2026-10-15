@@ -164,7 +164,7 @@ function ChevronIcon(props: SVGProps<SVGSVGElement>) {
 
 const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement>) => JSX.Element }> = [
   { id: "today", label: "Appointments", icon: CalendarIcon },
-  { id: "queue", label: "Queue", icon: TicketIcon },
+  { id: "queue", label: "Live Queue", icon: TicketIcon },
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "customers", label: "Customers", icon: ContactsIcon },
   { id: "services", label: "Services", icon: TagIcon },
