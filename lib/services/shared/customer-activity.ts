@@ -65,6 +65,26 @@ function joinedName(value: unknown): string | null {
   return typeof name === "string" && name.trim() ? name : null
 }
 
+/**
+ * bookings and queue_entries each reach `services` two ways: the direct
+ * service_id FK (the first service) and the booking_services /
+ * queue_entry_services join tables (the full ordered list). A bare
+ * `services ( name )` embed is therefore ambiguous and PostgREST answers
+ * HTTP 300 (PGRST201), so every embed below names its FK explicitly.
+ *
+ * Display name: all picked services in the order the customer chose them,
+ * e.g. "Skin Fade + Hair Wash & Style". Falls back to the direct FK service
+ * for older rows that have no join-table rows.
+ */
+function serviceNameFrom(links: unknown, direct: unknown): string | null {
+  const rows = (Array.isArray(links) ? links : []) as { position?: number | null; services?: unknown }[]
+  const names = [...rows]
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map((r) => joinedName(r.services))
+    .filter((n): n is string => Boolean(n))
+  return names.length > 0 ? names.join(" + ") : joinedName(direct)
+}
+
 async function loadTicketPrefix(supabase: SupabaseClient, tenantId: string): Promise<string> {
   const { data, error } = await supabase
     .from("queue_settings")
@@ -88,7 +108,11 @@ export async function loadCustomerActivity(tenantId: string, customerId: string)
     loadTicketPrefix(supabase, tenantId),
     supabase
       .from("bookings")
-      .select("id, booking_reference, start_time, end_time, services ( name )")
+      .select(
+        "id, booking_reference, start_time, end_time, " +
+          "services!bookings_service_id_fkey ( name ), " +
+          "booking_services ( position, services ( name ) )",
+      )
       .eq("tenant_id", tenantId)
       .eq("customer_id", customerId)
       .eq("status", "confirmed")
@@ -96,7 +120,11 @@ export async function loadCustomerActivity(tenantId: string, customerId: string)
       .order("start_time", { ascending: true }),
     supabase
       .from("queue_entries")
-      .select("id, status, ticket_number, joined_at, booking_id, services ( name )")
+      .select(
+        "id, status, ticket_number, joined_at, booking_id, " +
+          "services!queue_entries_service_id_fkey ( name ), " +
+          "queue_entry_services ( position, services ( name ) )",
+      )
       .eq("tenant_id", tenantId)
       .eq("customer_id", customerId)
       .in("status", ["waiting", "called"])
@@ -110,7 +138,7 @@ export async function loadCustomerActivity(tenantId: string, customerId: string)
     id: row.id as string,
     status: row.status as "waiting" | "called",
     ticketNumber: (row.ticket_number as number | null) ?? null,
-    serviceName: joinedName(row.services),
+    serviceName: serviceNameFrom(row.queue_entry_services, row.services),
     bookingId: (row.booking_id as string | null) ?? null,
     joinedAt: row.joined_at as string,
   }))
@@ -120,7 +148,7 @@ export async function loadCustomerActivity(tenantId: string, customerId: string)
     reference: row.booking_reference as string,
     startTime: row.start_time as string,
     endTime: row.end_time as string,
-    serviceName: joinedName(row.services),
+    serviceName: serviceNameFrom(row.booking_services, row.services),
     queueEntry: queueEntries.find((q) => q.bookingId === row.id) ?? null,
   }))
 
