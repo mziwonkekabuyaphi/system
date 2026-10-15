@@ -147,6 +147,12 @@ import {
 } from "@/lib/services/shared/tenant-scheduling"
 
 import {
+  parseServicePicks,
+  tooManyServicesMessage,
+  combineServices,
+} from "@/lib/services/shared/multi-select"
+
+import {
   CANCEL_BUTTON,
   ENTRY_CHOICE_BUTTONS,
   entryChoicePromptMessage,
@@ -265,7 +271,12 @@ export interface BookingSlot {
 
 interface BookingStateData {
   services?: BookingServiceOffer[]
+  /** Primary service (the first one picked). */
   selectedService?: BookingServiceOffer
+  /** 2nd, 3rd... services when the shop allows several. Absent = one service. */
+  extraServices?: BookingServiceOffer[]
+  /** booking_settings.max_services_per_booking when the list was shown. */
+  maxServices?: number
   dateOptions?: Array<{ date: string; label: string }>
   selectedDate?: string
   pendingSlots?: BookingSlot[]
@@ -872,10 +883,18 @@ export async function presentServices(tenantId: string): Promise<ActionResult> {
     return { reply: noServicesMessage(), buttons: [], nextState: null }
   }
 
+  // How many may be picked. Failure means 1: the list then behaves as before.
+  let maxServices = 1
+  try {
+    maxServices = await getMaxServicesPerBooking(tenantId)
+  } catch (error) {
+    console.error("[booking] Could not read max services, using 1", { tenantId, error })
+  }
+
   return {
-    reply: servicesListMessage(services),
+    reply: servicesListMessage(services, maxServices),
     buttons: [],
-    nextState: { state: BOOKING_STATE_SERVICE_SELECTION, data: { services } },
+    nextState: { state: BOOKING_STATE_SERVICE_SELECTION, data: { services, maxServices } },
   }
 }
 
@@ -959,13 +978,19 @@ export async function buildDateOptions(tenantId: string): Promise<Array<{ date: 
 async function handleServiceSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const services = data.services ?? []
-  const index = Number(rawReplyText(message)) - 1
+  const maxServices = data.maxServices ?? 1
 
-  if (!Number.isInteger(index) || index < 0 || index >= services.length) {
-    return { reply: invalidSelectionMessage(services.length), buttons: [], nextState: state }
+  const picks = parseServicePicks(rawReplyText(message), services.length, maxServices)
+  if (!picks.ok) {
+    return {
+      reply: picks.reason === "too_many" ? tooManyServicesMessage(maxServices) : invalidSelectionMessage(services.length),
+      buttons: [],
+      nextState: state,
+    }
   }
 
-  const selectedService = services[index]
+  const chosen = picks.indexes.map((i) => services[i])
+  const [selectedService, ...extraServices] = chosen
   const dateOptions = await buildDateOptions(tenantId)
 
   return {
@@ -973,7 +998,7 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
     buttons: [],
     nextState: {
       state: BOOKING_STATE_DATE_SELECTION,
-      data: mergeBookingData(data, { selectedService, dateOptions }),
+      data: mergeBookingData(data, { selectedService, extraServices, dateOptions }),
     },
   }
 }
@@ -997,10 +1022,12 @@ async function handleDateSelection(tenantId: string, state: ConversationState, m
   }
 
   const chosen = dateOptions[index]
+  // One entry standing for the whole visit: names joined, minutes summed.
+  const visit = combineServices([selectedService, ...(data.extraServices ?? [])])
 
   let slots: BookingSlot[]
   try {
-    slots = await getAvailableSlots(tenantId, chosen.date, selectedService.durationMinutes)
+    slots = await getAvailableSlots(tenantId, chosen.date, visit.durationMinutes)
   } catch (error) {
     console.error("[booking] Error loading slots", { tenantId, date: chosen.date, error })
     return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
@@ -1011,7 +1038,7 @@ async function handleDateSelection(tenantId: string, state: ConversationState, m
   }
 
   return {
-    reply: slotsListMessage(selectedService.name, chosen.label, slots),
+    reply: slotsListMessage(visit.name, chosen.label, slots),
     buttons: [],
     nextState: {
       state: BOOKING_STATE_TIME_SELECTION,
@@ -1042,7 +1069,7 @@ async function handleTimeSelection(tenantId: string, state: ConversationState, m
   }
 
   return {
-    reply: confirmationMessage(selectedService, dateLabel, selectedSlot),
+    reply: confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot),
     buttons: [],
     nextState: {
       state: BOOKING_STATE_CONFIRM,
@@ -1077,8 +1104,10 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
   }
 
   try {
+    const extraServices = data.extraServices ?? []
     const result = await createBooking(tenantId, {
       service: selectedService,
+      extraServices,
       dateISO: selectedDate,
       slot: selectedSlot,
       phone: message.from,
@@ -1093,7 +1122,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       reply:
         bookingConfirmedMessage({
           customerName: result.customer.name,
-          serviceName: selectedService.name,
+          serviceName: result.services.map((s) => s.name).join(" + "),
           slotLabel: selectedSlot.label,
           bookingReference: result.bookingReference,
         }) + webNote,
@@ -1106,6 +1135,9 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     }
     if (error instanceof Error && error.message === BOOKING_OUTSIDE_ALLOWED_WINDOW) {
       return { reply: bookingWindowClosedMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_TOO_MANY_SERVICES) {
+      return { reply: tooManyServicesMessage(data.maxServices ?? 1), buttons: [], nextState: null }
     }
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
       return { reply: planLimitReachedMessage(), buttons: [], nextState: null }

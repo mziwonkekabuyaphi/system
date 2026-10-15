@@ -103,6 +103,11 @@ import {
   queueErrorMessage,
 } from "@/lib/services/messages/queue"
 import {
+  parseServicePicks,
+  tooManyServicesMessage,
+  combineServices,
+} from "@/lib/services/shared/multi-select"
+import {
   queueShopClosedMessage,
   queueAlreadyInQueueMessage,
   queueHasUpcomingBookingMessage,
@@ -176,6 +181,8 @@ function rawReplyText(message: IncomingMessage): string {
 
 interface QueueStateData {
   services?: CatalogService[]
+  /** queue_settings.max_services_per_queue_entry when the list was shown. */
+  maxServices?: number
 }
 
 function getQueueData(state: ConversationState): QueueStateData {
@@ -225,10 +232,18 @@ async function startQueueFlow(tenantId: string): Promise<ActionResult> {
     return { reply: noServicesMessage(), buttons: [], nextState: null }
   }
 
+  // How many may be picked. Failure means 1: the list then behaves as before.
+  let maxServices = 1
+  try {
+    maxServices = await getMaxServicesPerQueueEntry(tenantId)
+  } catch (error) {
+    console.error("[queue] Could not read max services, using 1", { tenantId, error })
+  }
+
   return {
-    reply: servicesListMessage(services),
+    reply: servicesListMessage(services, maxServices),
     buttons: [],
-    nextState: { state: QUEUE_STATE_SERVICE_SELECTION, data: { services } },
+    nextState: { state: QUEUE_STATE_SERVICE_SELECTION, data: { services, maxServices } },
   }
 }
 
@@ -806,23 +821,37 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
 async function handleServiceSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getQueueData(state)
   const services = data.services ?? []
-  const index = Number(rawReplyText(message)) - 1
+  const maxServices = data.maxServices ?? 1
 
-  if (!Number.isInteger(index) || index < 0 || index >= services.length) {
-    return { reply: invalidSelectionMessage(services.length), buttons: [], nextState: state }
+  const picks = parseServicePicks(rawReplyText(message), services.length, maxServices)
+  if (!picks.ok) {
+    return {
+      reply: picks.reason === "too_many" ? tooManyServicesMessage(maxServices) : invalidSelectionMessage(services.length),
+      buttons: [],
+      nextState: state,
+    }
   }
 
-  const selectedService = services[index]
+  const [selectedService, ...extraServices] = picks.indexes.map((i) => services[i])
 
   try {
-    const { position, etaMinutes } = await joinQueue(tenantId, { service: selectedService, phone: message.from })
+    const { position, etaMinutes } = await joinQueue(tenantId, {
+      service: selectedService,
+      extraServices,
+      phone: message.from,
+    })
 
     return {
-      reply: joinedQueueMessage(selectedService, position, etaMinutes) + (await getTenantWebLinkNote(tenantId)),
+      reply:
+        joinedQueueMessage(combineServices([selectedService, ...extraServices]), position, etaMinutes) +
+        (await getTenantWebLinkNote(tenantId)),
       buttons: [],
       nextState: null,
     }
   } catch (error) {
+    if (error instanceof Error && error.message === QUEUE_TOO_MANY_SERVICES) {
+      return { reply: tooManyServicesMessage(maxServices), buttons: [], nextState: null }
+    }
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
       // TODO: move this into lib/services/messages/queue.ts as a proper
       // planLimitReachedMessage(), same as booking.ts's matching TODO —
