@@ -50,6 +50,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { last4 } from "@/lib/payroll/staff-details"
+import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
 import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
@@ -287,7 +288,7 @@ async function getSettingsData(
     supabase
       .from("tenant_branding")
       .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
+        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
           "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
           "display_theme, display_layout, display_background_color, display_tagline, " +
@@ -366,6 +367,9 @@ async function getSettingsData(
       primaryColor: brandingResult.data.primary_color,
       secondaryColor: brandingResult.data.secondary_color,
       removePoweredBy: brandingResult.data.remove_powered_by,
+      sidebarColor: brandingResult.data.admin_sidebar_color ?? null,
+      sidebarTextColor: brandingResult.data.admin_sidebar_text_color ?? null,
+      accentColor: brandingResult.data.admin_accent_color ?? null,
     },
     kioskEnabled: kioskResult.data?.enabled ?? false,
     kioskSettings: {
@@ -510,7 +514,11 @@ async function getTenantIdentity(
 }> {
   const [tenantResult, brandingResult] = await Promise.all([
     supabase.from("tenants").select("plan, slug, name").eq("id", tenantId).single(),
-    supabase.from("tenant_branding").select("display_name, logo_url").eq("tenant_id", tenantId).single(),
+    supabase
+      .from("tenant_branding")
+      .select("display_name, logo_url, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color")
+      .eq("tenant_id", tenantId)
+      .single(),
   ])
 
   if (tenantResult.error) throw new Error(`Failed to load tenant identity: ${tenantResult.error.message}`)
@@ -527,6 +535,10 @@ async function getTenantIdentity(
       primaryColor: null,
       secondaryColor: null,
       removePoweredBy: false,
+      // Everyone who opens the admin sees the tenant's sidebar colours, not just owners.
+      sidebarColor: brandingResult.data.admin_sidebar_color ?? null,
+      sidebarTextColor: brandingResult.data.admin_sidebar_text_color ?? null,
+      accentColor: brandingResult.data.admin_accent_color ?? null,
     },
     kioskEnabled: false,
     kioskSettings: null,
@@ -752,6 +764,13 @@ export default async function AdminPage() {
     console.error("[admin] getActiveShifts failed — falling back to empty list", err)
   }
 
+  // Custom sidebar colours need the 'branding' plan module, same as the kiosk's
+  // brand colours: stored values are ignored (not deleted) without it.
+  const brandingEntitled = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding).catch(() => false)
+  const adminBranding: AdminBranding = brandingEntitled
+    ? settingsData.branding
+    : { ...settingsData.branding, sidebarColor: null, sidebarTextColor: null, accentColor: null }
+
   return (
     <AdminView
       initialBookings={bookings}
@@ -767,7 +786,7 @@ export default async function AdminPage() {
       tenantSlug={settingsData.slug}
       tenantName={settingsData.name}
       initialTenantSettings={settingsData.settings}
-      initialBranding={settingsData.branding}
+      initialBranding={adminBranding}
       initialKioskEnabled={settingsData.kioskEnabled}
       initialKioskSettings={settingsData.kioskSettings}
       initialDisplaySettings={settingsData.displaySettings}

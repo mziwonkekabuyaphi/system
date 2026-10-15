@@ -229,6 +229,12 @@ export interface AdminBranding {
   primaryColor: string | null
   secondaryColor: string | null
   removePoweredBy: boolean
+  /** Admin dashboard sidebar colours (tenant_branding.admin_*). null = built-in
+   *  look. Optional so loaders that don't send them still compile. Part of the
+   *  'branding' plan module, like primary/secondary. See sidebar-theme.ts. */
+  sidebarColor?: string | null
+  sidebarTextColor?: string | null
+  accentColor?: string | null
 }
 
 /** Which paths the public kiosk offers. Mirrors

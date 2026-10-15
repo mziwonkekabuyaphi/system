@@ -494,8 +494,23 @@ export async function updateBranding(input: {
   primaryColor: string | null
   secondaryColor: string | null
   removePoweredBy: boolean
+  /** Admin sidebar colours (hex). Omitting a key leaves the stored value
+   *  untouched; null/"" clears it back to the built-in look. */
+  sidebarColor?: string | null
+  sidebarTextColor?: string | null
+  accentColor?: string | null
 }): Promise<ActionResult> {
   try {
+    for (const [label, value] of [
+      ["Sidebar colour", input.sidebarColor],
+      ["Sidebar text colour", input.sidebarTextColor],
+      ["Active item colour", input.accentColor],
+    ] as const) {
+      if (value && !/^#[0-9A-Fa-f]{6}$/.test(value)) {
+        return { success: false, error: `${label} must be a hex value like #1F3A5F.` }
+      }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     if (input.removePoweredBy) {
@@ -535,17 +550,27 @@ export async function updateBranding(input: {
     if (canCustomizeBranding) {
       updates.primary_color = input.primaryColor
       updates.secondary_color = input.secondaryColor
+      if (input.sidebarColor !== undefined) updates.admin_sidebar_color = input.sidebarColor || null
+      if (input.sidebarTextColor !== undefined) updates.admin_sidebar_text_color = input.sidebarTextColor || null
+      if (input.accentColor !== undefined) updates.admin_accent_color = input.accentColor || null
     } else {
       const { data: current } = await supabase
         .from("tenant_branding")
-        .select("primary_color, secondary_color")
+        .select("primary_color, secondary_color, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color")
         .eq("tenant_id", tenantId)
         .maybeSingle()
 
       const norm = (v: string | null | undefined) => (v ?? "").toLowerCase()
+      // Sidebar colours: without the module a tenant may only clear them or
+      // re-send what is stored, never set a new one.
+      const sidebarChanged = (sent: string | null | undefined, stored: string | null | undefined) =>
+        !!sent && norm(sent) !== norm(stored)
       if (
         norm(input.primaryColor) !== norm(current?.primary_color) ||
-        norm(input.secondaryColor) !== norm(current?.secondary_color)
+        norm(input.secondaryColor) !== norm(current?.secondary_color) ||
+        sidebarChanged(input.sidebarColor, current?.admin_sidebar_color) ||
+        sidebarChanged(input.sidebarTextColor, current?.admin_sidebar_text_color) ||
+        sidebarChanged(input.accentColor, current?.admin_accent_color)
       ) {
         return {
           success: false,
