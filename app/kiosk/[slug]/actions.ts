@@ -33,12 +33,32 @@
  * already get their confirmation as the natural chat reply, so
  * createBooking()/joinQueue() themselves stay message-agnostic to avoid
  * double-sending to WhatsApp customers.
+ *
+ * MULTI-SERVICE: the booking and queue paths each accept optional
+ * `extraServiceIds` (the 2nd, 3rd... services a customer ticked, the first
+ * stays in `serviceId`). The ids are NEVER trusted: each one is re-resolved
+ * against this tenant's own bookable catalog (resolveExtraServices below), so
+ * a tampered request can't attach another shop's service or an inactive one.
+ * The per-tenant limit (booking_settings.max_services_per_booking /
+ * queue_settings.max_services_per_queue_entry) is enforced again inside
+ * createBooking()/joinQueue(); the BOOKING_/QUEUE_TOO_MANY_SERVICES errors
+ * they throw are turned into friendly messages here. Omitting extraServiceIds
+ * behaves exactly as before.
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
-import { buildDateOptions, getAvailableSlots, createBooking, BOOKING_SLOT_NO_LONGER_AVAILABLE, BOOKING_ALREADY_HAS_UPCOMING, type BookingSlot } from "@/lib/services/booking"
-import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
+import {
+  buildDateOptions,
+  getAvailableSlots,
+  createBooking,
+  getMaxServicesPerBooking,
+  BOOKING_SLOT_NO_LONGER_AVAILABLE,
+  BOOKING_ALREADY_HAS_UPCOMING,
+  BOOKING_TOO_MANY_SERVICES,
+  type BookingSlot,
+} from "@/lib/services/booking"
+import { joinQueue, formatQueueTicketNumber, QUEUE_TOO_MANY_SERVICES } from "@/lib/services/queue"
 import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
@@ -81,6 +101,49 @@ async function resolveKioskTenantId(slug: string): Promise<string> {
 
 function kioskErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message === KIOSK_UNAVAILABLE ? KIOSK_UNAVAILABLE_MESSAGE : fallback
+}
+
+// ---- Multi-service helpers ---------------------------------------------------
+
+// Hard ceiling on how many ids a request may carry, matching the DB's 1-5
+// CHECK. Only a guard against absurd payloads; the real per-tenant limit is
+// enforced by createBooking()/joinQueue().
+const MAX_SERVICES_PER_REQUEST = 5
+
+const TOO_MANY_SERVICES_MESSAGE = "You've picked more services than this shop allows. Please remove one and try again."
+
+type ExtraServicesResult = { ok: true; extras: CatalogService[] } | { ok: false; error: string }
+
+/**
+ * Turns the client's extra service ids into catalog entries from THIS
+ * tenant's own bookable catalog. Ignores blanks, repeats and the primary
+ * service itself. Any id that isn't in the catalog fails the whole request
+ * (a service may have been switched off since the kiosk loaded).
+ */
+function resolveExtraServices(
+  catalog: CatalogService[],
+  primaryId: string,
+  extraServiceIds: unknown,
+): ExtraServicesResult {
+  if (extraServiceIds === undefined || extraServiceIds === null) return { ok: true, extras: [] }
+  if (!Array.isArray(extraServiceIds)) return { ok: false, error: "Something went wrong. Please try again." }
+  if (extraServiceIds.length > MAX_SERVICES_PER_REQUEST) return { ok: false, error: TOO_MANY_SERVICES_MESSAGE }
+
+  const seen = new Set<string>([primaryId])
+  const extras: CatalogService[] = []
+  for (const id of extraServiceIds) {
+    if (typeof id !== "string" || id.length === 0 || seen.has(id)) continue
+    seen.add(id)
+    const found = catalog.find((s) => s.id === id)
+    if (!found) return { ok: false, error: "One of those services isn't available anymore." }
+    extras.push(found)
+  }
+  return { ok: true, extras }
+}
+
+/** "Fade + Beard trim" — what goes on the ticket and in the WhatsApp text. */
+function joinServiceNames(services: CatalogService[]): string {
+  return services.map((s) => s.name).join(" + ")
 }
 
 // Same fail-closed posture as app/kiosk/[slug]/page.tsx's queueBehavior
@@ -136,6 +199,9 @@ export async function fetchKioskTimeSlots(
   slug: string,
   serviceId: string,
   dateISO: string,
+  // Optional 2nd, 3rd... services (multi-service bookings). Omitted = one
+  // service, exactly as before.
+  extraServiceIds?: string[],
 ): Promise<KioskActionResult<BookingSlot[]>> {
   try {
     const tenantId = await resolveKioskTenantId(slug)
@@ -143,10 +209,20 @@ export async function fetchKioskTimeSlots(
     const service = services.find((s) => s.id === serviceId)
     if (!service) return { ok: false, error: "That service isn't available anymore." }
 
-    const slots = await getAvailableSlots(tenantId, dateISO, service.durationMinutes)
+    const resolved = resolveExtraServices(services, service.id, extraServiceIds)
+    if (!resolved.ok) return { ok: false, error: resolved.error }
+
+    // The booking is as long as every chosen service added together, so the
+    // times offered must have room for the whole thing.
+    if (resolved.extras.length > 0 && 1 + resolved.extras.length > (await getMaxServicesPerBooking(tenantId))) {
+      return { ok: false, error: TOO_MANY_SERVICES_MESSAGE }
+    }
+    const totalMinutes = service.durationMinutes + resolved.extras.reduce((sum, s) => sum + s.durationMinutes, 0)
+
+    const slots = await getAvailableSlots(tenantId, dateISO, totalMinutes)
     return { ok: true, data: slots }
   } catch (error) {
-    console.error("[kiosk] fetchKioskTimeSlots failed", { slug, serviceId, dateISO, error })
+    console.error("[kiosk] fetchKioskTimeSlots failed", { slug, serviceId, extraServiceIds, dateISO, error })
     return { ok: false, error: kioskErrorMessage(error, "Couldn't load available times. Please try again.") }
   }
 }
@@ -157,6 +233,8 @@ export async function fetchKioskTimeSlots(
 
 export interface KioskBookingInput {
   serviceId: string
+  /** 2nd, 3rd... services. Optional: omitted = a single-service booking. */
+  extraServiceIds?: string[]
   dateISO: string
   dateLabel: string
   slot: BookingSlot
@@ -184,8 +262,14 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     const service = services.find((s) => s.id === input.serviceId)
     if (!service) return { ok: false, error: "That service isn't available anymore." }
 
+    const resolved = resolveExtraServices(services, service.id, input.extraServiceIds)
+    if (!resolved.ok) return { ok: false, error: resolved.error }
+    const chosenServices = [service, ...resolved.extras]
+    const serviceNames = joinServiceNames(chosenServices)
+
     const result = await createBooking(tenantId, {
       service,
+      extraServices: resolved.extras,
       dateISO: input.dateISO,
       slot: input.slot,
       phone: input.phone,
@@ -201,7 +285,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       kind: "booking",
       ticketNumber: result.bookingReference,
       customerName: name,
-      serviceName: service.name,
+      serviceName: serviceNames,
       dateLabel: input.dateLabel,
       slotLabel: input.slot.label,
     }
@@ -210,7 +294,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
-        `Hi ${name}! You're booked for ${service.name} on ${input.dateLabel} at ${input.slot.label}. ` +
+        `Hi ${name}! You're booked for ${serviceNames} on ${input.dateLabel} at ${input.slot.label}. ` +
           `Your reference is ${result.bookingReference}. See you soon!`,
       )
     } catch (sendError) {
@@ -221,6 +305,9 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
   } catch (error) {
     if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
       return { ok: false, error: "That time was just taken. Please pick another." }
+    }
+    if (error instanceof Error && error.message === BOOKING_TOO_MANY_SERVICES) {
+      return { ok: false, error: TOO_MANY_SERVICES_MESSAGE }
     }
     // Expected business-rule refusal (DB trigger): not logged as an error.
     if (error instanceof Error && error.message === BOOKING_ALREADY_HAS_UPCOMING) {
@@ -250,6 +337,8 @@ export interface KioskQueueInput {
   // Null when the tenant has require_service_selection off and the
   // customer never saw ServiceScreen — see KioskApp.tsx's enterQueueFlow.
   serviceId: string | null
+  /** 2nd, 3rd... services. Optional, and ignored when serviceId is null. */
+  extraServiceIds?: string[]
   name: string
   phone: string
 }
@@ -291,7 +380,21 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       if (!service) return { ok: false, error: "That service isn't available anymore." }
     }
 
-    const { position, etaMinutes, ticketNumber, ticketPrefix } = await joinQueue(tenantId, { service, phone: input.phone })
+    // Extra services only make sense on top of a first one.
+    let extraServices: CatalogService[] = []
+    if (service) {
+      const resolved = resolveExtraServices(services, service.id, input.extraServiceIds)
+      if (!resolved.ok) return { ok: false, error: resolved.error }
+      extraServices = resolved.extras
+    }
+    const chosenServices = service ? [service, ...extraServices] : []
+    const serviceNames = chosenServices.length > 0 ? joinServiceNames(chosenServices) : null
+
+    const { position, etaMinutes, ticketNumber, ticketPrefix } = await joinQueue(tenantId, {
+      service,
+      extraServices,
+      phone: input.phone,
+    })
     await updateCustomer(tenantId, input.phone, { name })
 
     // formatQueueTicketNumber() is the single source of truth for the
@@ -305,7 +408,7 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
     const formattedTicketNumber = formatQueueTicketNumber(ticketNumber, ticketPrefix)
 
     try {
-      const serviceClause = service ? ` for ${service.name}` : ""
+      const serviceClause = serviceNames ? ` for ${serviceNames}` : ""
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
@@ -322,12 +425,15 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
         kind: "queue",
         ticketNumber: formattedTicketNumber,
         customerName: name,
-        serviceName: service?.name ?? null,
+        serviceName: serviceNames,
         position,
         etaMinutes,
       },
     }
   } catch (error) {
+    if (error instanceof Error && error.message === QUEUE_TOO_MANY_SERVICES) {
+      return { ok: false, error: TOO_MANY_SERVICES_MESSAGE }
+    }
     // Mirrors queue.ts's own PLAN_VISIT_LIMIT_REACHED message
     // (handleServiceSelection's catch block) — same reasoning as
     // submitKioskBooking's version of this above.
