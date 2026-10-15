@@ -58,6 +58,14 @@
  * component and generateMetadata needed this fix, since each
  * independently destructures `params`.
  *
+ * MULTI-SERVICE (fix): KioskApp's tick-several service screen only appears when
+ * it is handed maxServicesBooking / maxServicesQueue. This page used to resolve
+ * neither, so both defaulted to 1 and every tap picked one service and moved on,
+ * whatever the admin had set. They are now read from
+ * booking_settings.max_services_per_booking and
+ * queue_settings.max_services_per_queue_entry (1-5, anything else = 1) and
+ * passed down. The server re-checks the real limit on every submit.
+ *
  * KIOSK-AVAILABILITY GATE: a tenant existing and being active (checked
  * above) is not the same as that tenant having the kiosk *module* turned
  * on — that's a separate on/off switch admins flip from Settings
@@ -190,9 +198,19 @@ interface TenantBrandingRow {
 // behavior for a tenant that never configured this.
 interface KioskQueueBehavior {
   requireServiceSelection: boolean
+  /** queue_settings.max_services_per_queue_entry, 1-5. */
+  maxServicesQueue: number
+  /** booking_settings.max_services_per_booking, 1-5. */
+  maxServicesBooking: number
 }
 
 const DEFAULT_REQUIRE_SERVICE_SELECTION = true
+
+/** Anything that isn't a whole number from 1 to 5 means "one service". */
+function resolveMaxServices(value: unknown): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 1
+}
 
 type KioskLoadResult =
   | {
@@ -299,18 +317,29 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   // row or query error means "behave as if service selection is
   // required", not "silently skip it" — an admin who hasn't touched this
   // setting yet gets the flow they already had.
-  const { data: queueSettingsRow, error: queueSettingsError } = await supabase
-    .from("queue_settings")
-    .select("require_service_selection")
-    .eq("tenant_id", tenant.id)
-    .maybeSingle()
+  const [
+    { data: queueSettingsRow, error: queueSettingsError },
+    { data: bookingSettingsRow, error: bookingSettingsError },
+  ] = await Promise.all([
+    supabase
+      .from("queue_settings")
+      .select("require_service_selection, max_services_per_queue_entry")
+      .eq("tenant_id", tenant.id)
+      .maybeSingle(),
+    supabase.from("booking_settings").select("max_services_per_booking").eq("tenant_id", tenant.id).maybeSingle(),
+  ])
 
   if (queueSettingsError) {
     console.error("[kiosk] queue_settings lookup failed", { tenantId: tenant.id, error: queueSettingsError })
   }
+  if (bookingSettingsError) {
+    console.error("[kiosk] booking_settings lookup failed", { tenantId: tenant.id, error: bookingSettingsError })
+  }
 
   const queueBehavior: KioskQueueBehavior = {
     requireServiceSelection: queueSettingsRow?.require_service_selection ?? DEFAULT_REQUIRE_SERVICE_SELECTION,
+    maxServicesQueue: resolveMaxServices(queueSettingsRow?.max_services_per_queue_entry),
+    maxServicesBooking: resolveMaxServices(bookingSettingsRow?.max_services_per_booking),
   }
 
   // Don't even touch the services catalog when the module's off — the
@@ -359,6 +388,8 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
         branding={kioskBranding}
         initialServices={services}
         requireServiceSelection={requireServiceSelection}
+        maxServicesBooking={queueBehavior.maxServicesBooking}
+        maxServicesQueue={queueBehavior.maxServicesQueue}
       />
     </div>
   )
