@@ -155,6 +155,7 @@ import {
 import {
   CANCEL_BUTTON,
   CANCEL_NOW_BUTTON,
+  CONFIRM_BUTTONS,
   ENTRY_CHOICE_BUTTONS,
   entryChoicePromptMessage,
   entryChoiceInvalidMessage,
@@ -810,7 +811,7 @@ async function trySmartBooking(tenantId: string, message: IncomingMessage): Prom
     if (slot) {
       return {
         reply: confirmationMessage(service, chosen.label, slot),
-        buttons: [],
+        buttons: CONFIRM_BUTTONS,
         nextState: { state: BOOKING_STATE_CONFIRM, data: mergeBookingData(withDate, { selectedSlot: slot }) },
       }
     }
@@ -1071,7 +1072,7 @@ async function handleTimeSelection(tenantId: string, state: ConversationState, m
 
   return {
     reply: confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot),
-    buttons: [],
+    buttons: CONFIRM_BUTTONS,
     nextState: {
       state: BOOKING_STATE_CONFIRM,
       data: mergeBookingData(data, { selectedSlot }),
@@ -1088,7 +1089,14 @@ const YES_WORDS = new Set(["yes", "y", "ewe", "yebo", "ja", "ja asseblief", "yes
 const NO_WORDS = new Set(["no", "n", "hayi", "cha", "nee", "no thanks", "hayi enkosi"])
 
 async function handleConfirm(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
-  const text = normalizedReplyText(message).replace(/[.!]+$/, "")
+  // A button tap arrives as its title ("✅ Yes", maybe tagged "[button reply]"):
+  // drop the tag, emoji and punctuation so it reads exactly like a typed
+  // "yes" / "no".
+  const text = normalizedReplyText(message)
+    .replace(/^\[(?:button|interactive) reply\]\s*/i, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
   const data = getBookingData(state)
 
   if (NO_WORDS.has(text) || text.includes("cancel")) {
@@ -1096,7 +1104,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
   }
 
   if (!YES_WORDS.has(text) && !text.includes("confirm")) {
-    return { reply: confirmYesNoReminderMessage(), buttons: [], nextState: state }
+    return { reply: confirmYesNoReminderMessage(), buttons: CONFIRM_BUTTONS, nextState: state }
   }
 
   const { selectedService, selectedDate, selectedSlot } = data
@@ -1127,7 +1135,9 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
           slotLabel: selectedSlot.label,
           bookingReference: result.bookingReference,
         }) + webNote,
-      buttons: result.customer.name ? CANCEL_BUTTON : [],
+      // "Book again" would be a dead end right after booking (one upcoming
+      // booking per customer), so offer the one useful next step instead.
+      buttons: result.customer.name ? CANCEL_NOW_BUTTON : [],
       nextState: result.customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
     }
   } catch (error) {
@@ -1178,7 +1188,7 @@ async function handleNameCollection(tenantId: string, message: IncomingMessage):
 
   return {
     reply: nameCollectionThanksMessage(name) + (await getTenantWebLinkNote(tenantId)),
-    buttons: CANCEL_BUTTON,
+    buttons: CANCEL_NOW_BUTTON,
     nextState: null,
   }
 }
