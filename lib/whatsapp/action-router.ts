@@ -185,8 +185,7 @@ async function menuPromptFor(tenantId: string): Promise<string> {
   }
   return (
     `${MENU_PROMPT}\n\n` +
-    `Or just type what you need in your own words, like _"haircut tomorrow at 3"_ or _"what time do you close?"_ ` +
-    `and I'll take care of it. English, isiXhosa, isiZulu and Afrikaans all work 💬`
+    `Or just type what you need in your own words and I'll take care of it.💬'
   )
 }
 
