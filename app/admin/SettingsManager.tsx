@@ -69,7 +69,7 @@ const SETTINGS_NAV: Array<{
       },
       {
         id: "messages",
-        label: "WhatsApp messages",
+        label: "WhatsApp Settings",
         title: "WhatsApp messages",
         description: "The messages customers receive for bookings and queue updates.",
       },
