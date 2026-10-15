@@ -37,7 +37,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getQueueSimulation, formatQueueTicketNumber } from "@/lib/services/queue"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
-import { buildServicesListMessage } from "@/lib/whatsapp/utils/services-list"
+import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 
 // ============================================================================
@@ -413,6 +413,32 @@ function buildProfileMessage(data: ProfileData): string {
 }
 
 // ============================================================================
+// FOLLOW-UP MENU
+// ============================================================================
+
+/**
+ * The same menu as the greeting, minus the rows this screen already covers:
+ * the profile shows the customer's booking and queue spot (what Check Status
+ * would show) and they are already looking at My Profile, so those two rows
+ * would only repeat it. Filtered by row id, so the greeting menu is untouched.
+ */
+function buildProfileFollowUp(bodyText: string) {
+  const menu = buildServicesListMessage(bodyText)
+  const hidden: string[] = [MENU_ROW_IDS.status, MENU_ROW_IDS.profile]
+  if (!menu.list) return menu
+  return {
+    ...menu,
+    list: {
+      ...menu.list,
+      sections: menu.list.sections.map((section) => ({
+        ...section,
+        rows: section.rows.filter((row) => !hidden.includes(row.id)),
+      })),
+    },
+  }
+}
+
+// ============================================================================
 // ENTRY POINT
 // ============================================================================
 
@@ -428,9 +454,10 @@ async function handleProfile(
     reply,
     buttons: [],
     nextState: null,
-    // Same four-row menu as the greeting: Book Now / Join Queue /
-    // Check Status / Cancel Now. Row taps are routed by id upstream.
-    followUp: [buildServicesListMessage("What would you like to do next? 👇")],
+    // The greeting menu without Check Status and My Profile (this screen
+    // already shows both): Book Now / Join Queue / Cancel Now. Row taps are
+    // routed by id upstream.
+    followUp: [buildProfileFollowUp("What would you like to do next? 👇")],
   }
 }
 
