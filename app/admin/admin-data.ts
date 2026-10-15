@@ -19,6 +19,24 @@ type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
 const DEFAULT_TICKET_PREFIX = "Q"
 
+/** One label for a visit's services, e.g. "Fade + Beard". The primary
+ *  (service_id) service always comes first; link-table rows (booking_services /
+ *  queue_entry_services) add the rest in `position` order. Duplicates are
+ *  dropped, so it works whether or not the link table also repeats the primary. */
+export function joinServiceLabels(
+  primaryName: string | null | undefined,
+  links: Array<{ position?: number | null; services?: { name?: string | null } | null }> | null | undefined,
+): string | null {
+  const names: string[] = []
+  if (primaryName) names.push(primaryName)
+  const sorted = [...(links ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+  for (const l of sorted) {
+    const n = l.services?.name
+    if (n && !names.includes(n)) names.push(n)
+  }
+  return names.length ? names.join(" + ") : null
+}
+
 /** Tenant timezone + ticket prefix. Neither is sensitive (the prefix is
  *  printed on public tickets), so every admin caller gets them — unlike the
  *  rest of tenant_settings/queue_settings, which stay settings.manage-only in
@@ -55,6 +73,7 @@ export async function loadQueueEntries(
     .select(
       `id, status, joined_at, called_at, completed_at, source, ticket_number, booking_id, service_id,
        services!queue_entries_service_id_fkey ( name ),
+       queue_entry_services ( position, services ( name ) ),
        tenant_customers ( full_name, phone )`,
     )
     .eq("tenant_id", tenantId)
@@ -93,7 +112,7 @@ export async function loadQueueEntries(
       bookingId: q.booking_id,
       serviceId: q.service_id,
       // service_id is nullable (queue_settings.require_service_selection = false)
-      serviceName: q.services?.name ?? "No service",
+      serviceName: joinServiceLabels(q.services?.name, q.queue_entry_services) ?? "No service",
       customerName: q.tenant_customers?.full_name ?? null,
       customerPhone: q.tenant_customers?.phone ?? "",
     }

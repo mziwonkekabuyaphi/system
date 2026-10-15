@@ -283,6 +283,13 @@ export interface AdminKioskSettings {
    *  choice screen, or right after welcome on a booking-only/queue-only
    *  kiosk). Defaults to "What are you here for?". */
   serviceScreenTitle: string | null
+  // Optional so a loader that doesn't send them yet still compiles; KioskPanels
+  // treats a missing value as "use the default".
+  dateScreenTitle?: string | null
+  timeScreenTitle?: string | null
+  detailsScreenTitle?: string | null
+  ticketBookingEyebrow?: string | null
+  ticketQueueEyebrow?: string | null
 }
 
 /** tenant_branding's Display-TV columns, one row per tenant. Backs the
@@ -402,12 +409,28 @@ export interface AdminClockSettings {
  *  queue_entries.source = 'booking' and booking_id set back to this row.
  *  When false, bookings and the walk-in queue stay fully separate, same as
  *  before this feature existed. */
+/** How a promoted booking is ordered against walk-ins. Mirrors
+ *  booking_settings.queue_priority_mode. */
+export type AdminQueuePriorityMode = "fifo" | "priority" | "hybrid"
+
 export interface AdminBookingSettings {
   unifyWithQueue: boolean
   queueLeadTimeMinutes: number
   minNoticeMinutes: number
   maxAdvanceDays: number
   cancellationWindowMinutes: number
+  /** How many date buttons the kiosk/WhatsApp list (1-14). Mirrors
+   *  booking_settings.max_dates_offered. */
+  maxDatesOffered: number
+  queuePriorityMode: AdminQueuePriorityMode
+  /** How many services a customer can pick for one booking (1-5). 1 = a
+   *  single service. Backed by booking_settings.max_services_per_booking. */
+  maxServicesPerBooking: number
+  /** false = bookings skip the service step. Optional so a loader that
+   *  doesn't send it yet still compiles; the panel treats missing as true. */
+  requireServiceSelection?: boolean
+  /** Appointment length used when no service is chosen (5-480). */
+  defaultDurationMinutes?: number
 }
 
 /** queue_settings, one row per tenant. */
@@ -437,6 +460,10 @@ export interface AdminQueueSettings {
    *  constraint). Used by formatQueueTicketNumber() in
    *  lib/services/queue.ts, never hardcoded at the call site. */
   ticketNumberPrefix: string
+  /** How many services a walk-in can pick for one queue ticket (1-5). 1 = a
+   *  single service. Backed by queue_settings.max_services_per_queue_entry.
+   *  Only used while requireServiceSelection is on. */
+  maxServicesPerQueueEntry: number
 }
 
 /** message_settings, one row per tenant. WhatsApp copy used by the booking

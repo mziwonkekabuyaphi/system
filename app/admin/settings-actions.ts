@@ -126,6 +126,12 @@ const MAX_CHOICE_TITLE_LENGTH = 80
 const MAX_CARD_TITLE_LENGTH = 40
 const MAX_CARD_SUBTITLE_LENGTH = 100
 const MAX_SERVICE_SCREEN_TITLE_LENGTH = 80
+// Later screens in the kiosk flow (must match the maxLength on the inputs in
+// app/admin/panels/KioskPanels.tsx).
+const MAX_DATE_SCREEN_TITLE_LENGTH = 80
+const MAX_TIME_SCREEN_TITLE_LENGTH = 40
+const MAX_DETAILS_SCREEN_TITLE_LENGTH = 80
+const MAX_TICKET_EYEBROW_LENGTH = 30
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 // Mirrors booking_settings' own CHECK constraints — validated here too so
@@ -157,6 +163,18 @@ const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority"
 // message rather than a raw Postgres constraint violation.
 const MIN_TICKET_NUMBER_PREFIX_LENGTH = 1
 const MAX_TICKET_NUMBER_PREFIX_LENGTH = 4
+
+// Mirrors booking_settings.max_services_per_booking and
+// queue_settings.max_services_per_queue_entry CHECK constraints (1-5).
+// 1 = single service (the original behaviour). Booking and Queue are
+// separate settings on purpose: a shop may let customers book a cut + beard
+// trim but keep walk-ins to one service per ticket, or the reverse.
+const MIN_SERVICES_PER_VISIT = 1
+const MAX_SERVICES_PER_VISIT = 5
+
+function isValidServicesPerVisit(value: number): boolean {
+  return Number.isInteger(value) && value >= MIN_SERVICES_PER_VISIT && value <= MAX_SERVICES_PER_VISIT
+}
 
 // Mirrors tenant_branding's own display_* CHECK constraints — validated
 // here too, same reasoning as every other bounds check in this file.
@@ -574,6 +592,14 @@ export async function updateKioskSettings(input: {
   /** Heading on the service-picker screen. Optional/nullable, same
    *  clear-to-default posture as the choice-screen wording above. */
   serviceScreenTitle?: string | null
+  /** Later kiosk screens. Unlike the fields above, OMITTING one of these
+   *  leaves the stored value untouched (so an older caller can't wipe it);
+   *  sending null/"" clears it back to the default. */
+  dateScreenTitle?: string | null
+  timeScreenTitle?: string | null
+  detailsScreenTitle?: string | null
+  ticketBookingEyebrow?: string | null
+  ticketQueueEyebrow?: string | null
 }): Promise<ActionResult> {
   try {
     if (
@@ -609,6 +635,11 @@ export async function updateKioskSettings(input: {
       { label: "Queue card title", value: input.queueCardTitle, max: MAX_CARD_TITLE_LENGTH },
       { label: "Queue card subtitle", value: input.queueCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
       { label: "Service screen title", value: input.serviceScreenTitle, max: MAX_SERVICE_SCREEN_TITLE_LENGTH },
+      { label: "Date screen title", value: input.dateScreenTitle, max: MAX_DATE_SCREEN_TITLE_LENGTH },
+      { label: "Time screen title", value: input.timeScreenTitle, max: MAX_TIME_SCREEN_TITLE_LENGTH },
+      { label: "Details screen title", value: input.detailsScreenTitle, max: MAX_DETAILS_SCREEN_TITLE_LENGTH },
+      { label: "Booking ticket label", value: input.ticketBookingEyebrow, max: MAX_TICKET_EYEBROW_LENGTH },
+      { label: "Queue ticket label", value: input.ticketQueueEyebrow, max: MAX_TICKET_EYEBROW_LENGTH },
     ]
     for (const field of wordingFields) {
       if (field.value && field.value.trim().length > field.max) {
@@ -631,6 +662,17 @@ export async function updateKioskSettings(input: {
         queue_card_title: input.queueCardTitle?.trim() || null,
         queue_card_subtitle: input.queueCardSubtitle?.trim() || null,
         service_screen_title: input.serviceScreenTitle?.trim() || null,
+        ...(input.dateScreenTitle !== undefined ? { date_screen_title: input.dateScreenTitle?.trim() || null } : {}),
+        ...(input.timeScreenTitle !== undefined ? { time_screen_title: input.timeScreenTitle?.trim() || null } : {}),
+        ...(input.detailsScreenTitle !== undefined
+          ? { details_screen_title: input.detailsScreenTitle?.trim() || null }
+          : {}),
+        ...(input.ticketBookingEyebrow !== undefined
+          ? { ticket_booking_eyebrow: input.ticketBookingEyebrow?.trim() || null }
+          : {}),
+        ...(input.ticketQueueEyebrow !== undefined
+          ? { ticket_queue_eyebrow: input.ticketQueueEyebrow?.trim() || null }
+          : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
@@ -749,6 +791,7 @@ export async function updateBookingSettings(input: {
   maxAdvanceDays: number
   cancellationWindowMinutes: number
   queuePriorityMode: AdminQueuePriorityMode
+  maxServicesPerBooking: number
   // Optional so an older caller / loader that doesn't send them can't make a
   // save fail or overwrite the stored value with garbage.
   /** false = bookings skip the service step (see booking_settings.require_service_selection). */
@@ -759,6 +802,13 @@ export async function updateBookingSettings(input: {
   maxDatesOffered?: number
 }): Promise<ActionResult> {
   try {
+    if (!isValidServicesPerVisit(input.maxServicesPerBooking)) {
+      return {
+        success: false,
+        error: `Services per booking must be a whole number from ${MIN_SERVICES_PER_VISIT} to ${MAX_SERVICES_PER_VISIT}.`,
+      }
+    }
+
     if (!Number.isFinite(input.queueLeadTimeMinutes) || input.queueLeadTimeMinutes < MIN_QUEUE_LEAD_TIME_MINUTES) {
       return { success: false, error: "Queue lead time must be 0 or more minutes." }
     }
@@ -814,6 +864,7 @@ export async function updateBookingSettings(input: {
         max_advance_days: input.maxAdvanceDays,
         cancellation_window_minutes: input.cancellationWindowMinutes,
         queue_priority_mode: input.queuePriorityMode,
+        max_services_per_booking: input.maxServicesPerBooking,
         // Only written when the caller sent them (see the optional fields above).
         ...(input.requireServiceSelection !== undefined
           ? { require_service_selection: input.requireServiceSelection }
@@ -847,8 +898,16 @@ export async function updateQueueSettings(input: {
   requireServiceSelection: boolean
   defaultServiceDurationMinutes: number
   ticketNumberPrefix: string
+  maxServicesPerQueueEntry: number
 }): Promise<ActionResult> {
   try {
+    if (!isValidServicesPerVisit(input.maxServicesPerQueueEntry)) {
+      return {
+        success: false,
+        error: `Services per queue ticket must be a whole number from ${MIN_SERVICES_PER_VISIT} to ${MAX_SERVICES_PER_VISIT}.`,
+      }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     const ticketNumberPrefix = input.ticketNumberPrefix.trim().toUpperCase()
@@ -870,6 +929,7 @@ export async function updateQueueSettings(input: {
         require_service_selection: input.requireServiceSelection,
         default_service_duration_minutes: input.defaultServiceDurationMinutes,
         ticket_number_prefix: ticketNumberPrefix,
+        max_services_per_queue_entry: input.maxServicesPerQueueEntry,
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
