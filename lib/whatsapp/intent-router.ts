@@ -2,6 +2,8 @@ import { generateObject } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 
+import { getAiModelName } from "@/lib/ai/openai"
+
 /**
  * Intent router — the "brain" layer of the QLess WhatsApp assistant for
  * salons and barbershops (multi-tenant appointment booking + walk-in queue).
@@ -159,8 +161,10 @@ const LOW_CONFIDENCE_FALLBACK: RoutedIntent = {
 const GREETINGS = new Set([
   "hi", "hello", "hey", "howzit",
   "good morning", "good afternoon", "good evening",
+  // isiXhosa / isiZulu / Afrikaans / Sesotho-Setswana greetings
+  "molo", "molweni", "sawubona", "sanibonani", "hallo", "goeie more", "goeie middag", "goeie naand", "goeiedag", "dumela",
 ])
-const THANKS = new Set(["thanks", "thank you", "thx", "thank"])
+const THANKS = new Set(["thanks", "thank you", "thx", "thank", "enkosi", "ngiyabonga", "baie dankie", "dankie", "ke a leboha"])
 
 function checkGreetingOrThanks(text: string): RoutedIntent | null {
   const normalized = text.trim().toLowerCase()
@@ -187,6 +191,7 @@ function checkGreetingOrThanks(text: string): RoutedIntent | null {
 
 const CONTINUATION_KEYWORDS = new Set([
   "yes", "y", "no", "n", "yeah", "yep", "nope",
+  "ewe", "yebo", "ja", "hayi", "cha", "nee",
   "ok", "okay", "sure",
   "same", "that one", "this one",
   "continue", "next", "tomorrow", "today",
@@ -244,8 +249,8 @@ function resolveFromContext(text: string, context?: IntentRouterContext): Routed
 // Example: "yes" during booking confirmation → context says "booking"
 //           "yes" as standalone → fast-path says "support"
 
-const AFFIRMATIVE = new Set(["yes", "y", "yeah", "yep"])
-const NEGATIVE = new Set(["no", "n", "nope"])
+const AFFIRMATIVE = new Set(["yes", "y", "yeah", "yep", "ewe", "yebo", "ja"])
+const NEGATIVE = new Set(["no", "n", "nope", "hayi", "cha", "nee"])
 const MENU_SELECTION = new Set(["1", "2", "3", "4", "5", "next", "continue"])
 
 // Short, exact-phrase allowlist for messages that unambiguously mean "I want
@@ -455,8 +460,30 @@ Typical services customers mention: haircut, fade, taper, line-up, trim,
 beard trim, shave, braids, cornrows, locs, wash, blow-dry, colour, highlights,
 relaxer, treatment, manicure, pedicure, nails, kids cut.
 
-Local phrasing is common. "Howzit" is a greeting. "Is there space" and
-"can I come now" are asking for a slot or a place in the queue.
+Local phrasing is common. "Howzit" is a greeting. "Can I come now" is asking
+for a place in the queue.
+
+LANGUAGES
+Customers write in English, isiXhosa, isiZulu, Afrikaans, Sesotho, Setswana
+and often mix them. Classify by MEANING in whatever language the message is
+in. Examples of how the same intents sound locally:
+
+  "Molo, ndifuna ukubhukisha"              → booking  (isiXhosa: I want to book)
+  "Ndifuna ukusika iinwele kusasa"         → booking  (I want a haircut tomorrow)
+  "Ndingangena ngoku?"                     → booking  (can I come in now?)
+  "Sawubona, ngifuna ukubhuka"             → booking  (isiZulu: I want to book)
+  "Ngifuna ukugunda izinwele kusasa"       → booking  (I want a haircut tomorrow)
+  "Ek wil 'n afspraak maak"                → booking  (Afrikaans: I want an appointment)
+  "Kan ek more 'n haarsny kry?"            → booking  (can I get a haircut tomorrow?)
+  "Ndifuna ukucima ibhuking yam"           → cancel   (isiXhosa: I want to cancel my booking)
+  "Ngifuna ukukhansela"                    → cancel   (isiZulu: I want to cancel)
+  "Kanselleer my afspraak"                 → cancel   (Afrikaans)
+  "Ndiphi kulayini?" / "Ngikuphi emgqeni?" → status   (where am I in the queue?)
+  "Waar is ek in die tou?"                 → status   (Afrikaans)
+  "Yintoni iprofayile yam" / "My besoeke"  → profile
+  "Nivula ngentsimbi yani?"                → support  (what time do you open?)
+  "Ni-ngakanani amaxabiso?"                → support  (how much are your prices?)
+  "Wat kos 'n haarsny?"                    → support  (how much is a haircut?)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE INTENTS
@@ -477,17 +504,11 @@ I need a haircut
 
 can I get a fade tomorrow
 
-any space today
-
 can I come now
 
 join the queue
 
 walk-in
-
-how long is the wait
-
-what services do you offer
 
 appointment for Saturday
 
@@ -590,6 +611,20 @@ what time do you open
 where are you located
 
 do you take card
+
+what services do you offer
+
+how much is a haircut
+
+what are your prices
+
+how long is the wait
+
+is there space today
+
+how busy are you
+
+are you open on Sunday
 
 the booking message I got was wrong
 
@@ -698,8 +733,12 @@ it is never "booking" (they are not asking for a new one):
 - checking it, or asking where they are in the queue → "status"
 - rescheduling, changing, running late, or complaining about it → "support"
 
-If uncertain between booking and support, prefer booking when the customer
-is clearly asking for a service, a slot, or a place in the queue.
+A QUESTION ABOUT THE SHOP (opening hours, prices, services offered, address,
+how busy it is, whether there is space) is "support" — the shop assistant
+answers it from the shop's real data. WANTING one (book me, I need a haircut,
+can I come now) is "booking". If uncertain between booking and support, prefer
+booking when the customer is clearly asking for a service, a slot, or a place
+in the queue to take, not just information.
 
 Examples:
 
@@ -1041,7 +1080,7 @@ export async function routeIntent(
     })
 
     const classificationPromise = generateObject({
-      model: openai("gpt-4o-mini"),
+      model: openai(getAiModelName()),
       schema: intentSchema,
       system: SYSTEM_PROMPT,
       prompt: text,

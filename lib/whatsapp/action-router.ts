@@ -53,6 +53,7 @@ import { queueService } from "@/lib/services/queue"
 import { statusService } from "@/lib/services/status"
 import { cancelService } from "@/lib/services/cancel"
 import { profileService } from "@/lib/services/profile"
+import { conciergeService } from "@/lib/ai/concierge"
 
 import { stateService, type ConversationState } from "@/lib/services/state"
 import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
@@ -133,7 +134,7 @@ const GLOBAL_INTERRUPT_KEYWORDS = [...RESET_KEYWORDS, "cancel"]
 const CANCEL_STATE_PREFIX = "cancel_"
 
 /** Short answers like "2" or "yes" are answering a prompt, never switching topic. */
-const PLAIN_ANSWER_PATTERN = /^(\d{1,2}|y|n|yes|no|yeah|yep|nope|ok|okay|sure)[.!]*$/
+const PLAIN_ANSWER_PATTERN = /^(\d{1,2}|y|n|yes|no|yeah|yep|nope|ok|okay|sure|ewe|yebo|ja|hayi|cha|nee)[.!]*$/
 
 /**
  * Maps a state name to the intent that owns it (by naming convention).
@@ -145,6 +146,14 @@ function resolveOwningIntent(stateName: string): Intent | null {
   if (stateName.startsWith("queue_")) return "booking"
   if (stateName.startsWith(CANCEL_STATE_PREFIX)) return "cancel"
   return null
+}
+
+/**
+ * A shop question worth sending to the AI answerer: multi-word or an explicit
+ * question. Keeps one-word noise ("thanks", "next") from costing an AI call.
+ */
+function looksLikeShopQuestion(text: string): boolean {
+  return text.includes("?") || text.split(/\s+/).filter(Boolean).length >= 2
 }
 
 /** First name for the greeting, or "there" for a nameless/unknown customer. */
@@ -276,6 +285,20 @@ export async function routeAction(
       return buildEntryReply(tenantId, message, false)
     }
 
+    // 2c-0. A shop question mid-flow ("what time do you close?") gets an
+    // answer from the shop's own data and the customer's booking/queue/cancel
+    // state is left exactly where it was. Only for typed, multi-word text the
+    // classifier called "support"; if the AI can't answer, falls through.
+    if (
+      intent?.intent === "support" &&
+      !isButtonReply &&
+      !PLAIN_ANSWER_PATTERN.test(text) &&
+      looksLikeShopQuestion(text)
+    ) {
+      const answered = await conciergeService.answerShopQuestion(tenantId, message, state)
+      if (answered) return answered
+    }
+
     // 2c. A button tap is always answering the prompt the active flow just
     // showed — never let raw classification override that. Plain answers
     // ("2", "yes") likewise never switch topic.
@@ -298,6 +321,17 @@ export async function routeAction(
   }
 
   // ── 3. INTENT ROUTING (no conversation in progress) ────────────────
+  // "support" with a shop question in it: answer from the shop's data, in the
+  // customer's language. null (AI off / failed / not in the data) means the
+  // behaviour is exactly what it was before: greeting + menu.
+  if (intent?.intent === "support" && !message.interactiveId) {
+    const text = (message.contentSummary ?? message.text ?? "").trim()
+    if (looksLikeShopQuestion(text)) {
+      const answered = await conciergeService.answerShopQuestion(tenantId, message, null)
+      if (answered) return answered
+    }
+  }
+
   const handler = intent?.intent ? intentHandlers[intent.intent] : undefined
   if (!handler) return buildEntryReply(tenantId, message, true)
 
