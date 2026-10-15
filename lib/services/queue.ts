@@ -94,6 +94,7 @@ import { getBookableServices, type CatalogService } from "@/lib/services/shared/
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
+import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 
 import {
   servicesListMessage,
@@ -818,6 +819,29 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
 // STEP: service selection → join immediately
 // ============================================================================
 
+/**
+ * The menu sent right after a successful join: only the two rows that make
+ * sense now — Check Status and Cancel Now. (Booking and joining again are
+ * left off: the customer is already in the queue.) Filtered from the shared
+ * menu by row id, so titles and ids stay defined in one place and a tap is
+ * routed by action-router.ts exactly like any other menu tap.
+ */
+function buildQueuedFollowUp() {
+  const menu = buildServicesListMessage("Need anything else while you wait? 👇")
+  const keep: string[] = [MENU_ROW_IDS.status, MENU_ROW_IDS.cancel]
+  if (!menu.list) return menu
+  return {
+    ...menu,
+    list: {
+      ...menu.list,
+      sections: menu.list.sections.map((section) => ({
+        ...section,
+        rows: section.rows.filter((row) => keep.includes(row.id)),
+      })),
+    },
+  }
+}
+
 async function handleServiceSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getQueueData(state)
   const services = data.services ?? []
@@ -847,6 +871,7 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
         (await getTenantWebLinkNote(tenantId)),
       buttons: [],
       nextState: null,
+      followUp: [buildQueuedFollowUp()],
     }
   } catch (error) {
     if (error instanceof Error && error.message === QUEUE_TOO_MANY_SERVICES) {
