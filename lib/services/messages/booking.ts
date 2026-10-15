@@ -50,6 +50,14 @@ export const CANCEL_BUTTON = ["📅 Book again"]
  */
 export const CANCEL_NOW_BUTTON = ["❌ Cancel Now"]
 
+/**
+ * Shown with the "Just to confirm" summary (and its yes/no reminder). A tap
+ * arrives as the button's title, which handleConfirm reads as yes / no
+ * (emoji and the "[button reply]" tag are ignored). Titles are limited to 20
+ * characters by WhatsApp.
+ */
+export const CONFIRM_BUTTONS = ["✅ Yes", "❌ No"]
+
 export const ENTRY_CHOICE_BOOK_BUTTON = "📅 Book a time"
 export const ENTRY_CHOICE_QUEUE_BUTTON = "🚶 Join the queue"
 export const ENTRY_CHOICE_BUTTONS = [ENTRY_CHOICE_BOOK_BUTTON, ENTRY_CHOICE_QUEUE_BUTTON]
