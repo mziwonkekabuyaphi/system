@@ -5,6 +5,11 @@
  * Still a PURE DISPATCHER: it decides WHICH service handles a message and
  * hands off. No business logic lives here.
  *
+ * CLOSED HOURS: when the shop is closed (business_hours, via is_tenant_open_now)
+ * the greeting says so nicely, says when we open again, and that booking is
+ * still open; the "Join Queue" row is left off that greeting's menu because
+ * the walk-in queue only runs while the shop is open.
+ *
  * FIRST CONTACT (new): a customer who says "hi" — or sends anything we
  * can't map to a real intent — gets TWO WhatsApp messages, the same pattern
  * the old Rands bot used:
@@ -61,6 +66,7 @@ import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getSmartGreeting } from "@/lib/whatsapp/greeting"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 import { getTenantWebLink } from "@/lib/whatsapp/utils/tenant-web-link"
+import { getOpenStatus } from "@/lib/whatsapp/utils/business-hours"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 
@@ -162,6 +168,21 @@ function firstNameFromCustomer(customer: Customer | null): string {
   return customer.name.trim().split(/\s+/)[0] || "there"
 }
 
+/** The menu minus "Join Queue" (shown while the shop is closed). */
+function withoutQueueRow(menu: ReturnType<typeof buildServicesListMessage>): ReturnType<typeof buildServicesListMessage> {
+  if (!menu.list) return menu
+  return {
+    ...menu,
+    list: {
+      ...menu.list,
+      sections: menu.list.sections.map((section) => ({
+        ...section,
+        rows: section.rows.filter((row) => row.id !== MENU_ROW_IDS.queue),
+      })),
+    },
+  }
+}
+
 /**
  * Greeting + menu. Used for a fresh conversation, an unrecognised message
  * (greet = true), and for an explicit reset like "menu" (greet = false,
@@ -218,17 +239,22 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
     console.error("[action-router] greeting context lookup failed:", error)
   }
 
+  const openStatus = await getOpenStatus(tenantId)
+
   const greeting = getSmartGreeting({ timeZone, isReturning })
-  const welcomeLine = shopName
-    ? `Welcome to *${shopName}*. I can help you book an appointment or join the walk-in queue.`
-    : "Welcome! I can help you book an appointment or join the walk-in queue."
+  // Closed: no mention of joining the queue; the note explains it instead.
+  const canDo = openStatus.isClosed
+    ? "I can help you book an appointment."
+    : "I can help you book an appointment or join the walk-in queue."
+  const welcomeLine = shopName ? `Welcome to *${shopName}*. ${canDo}` : `Welcome! ${canDo}`
+  const closedLine = openStatus.isClosed ? `\n\n${openStatus.note}` : ""
   const webLine = webLink ? `\n\nPrefer to do it online? You can also use ${webLink}` : ""
 
   return {
-    reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}${webLine}`,
+    reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}${closedLine}${webLine}`,
     buttons: [],
     nextState: null,
-    followUp: [menu],
+    followUp: [openStatus.isClosed ? withoutQueueRow(menu) : menu],
   }
 }
 
