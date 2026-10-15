@@ -144,6 +144,12 @@ const MIN_QUEUE_LEAD_TIME_MINUTES = 0
 const MIN_NOTICE_MINUTES_FLOOR = 0
 const MIN_MAX_ADVANCE_DAYS = 0
 const MIN_CANCELLATION_WINDOW_MINUTES = 0
+// Mirrors booking_settings_default_duration_minutes_check (5-480) and
+// max_dates_offered's own check (1-14).
+const MIN_BOOKING_DEFAULT_DURATION_MINUTES = 5
+const MAX_BOOKING_DEFAULT_DURATION_MINUTES = 480
+const MIN_DATES_OFFERED = 1
+const MAX_DATES_OFFERED = 14
 const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
 // Mirrors queue_settings.ticket_number_prefix's own CHECK constraint
@@ -743,6 +749,14 @@ export async function updateBookingSettings(input: {
   maxAdvanceDays: number
   cancellationWindowMinutes: number
   queuePriorityMode: AdminQueuePriorityMode
+  // Optional so an older caller / loader that doesn't send them can't make a
+  // save fail or overwrite the stored value with garbage.
+  /** false = bookings skip the service step (see booking_settings.require_service_selection). */
+  requireServiceSelection?: boolean
+  /** Appointment length used when no service is chosen (5-480). */
+  defaultDurationMinutes?: number
+  /** How many date buttons the kiosk/WhatsApp list (1-14). */
+  maxDatesOffered?: number
 }): Promise<ActionResult> {
   try {
     if (!Number.isFinite(input.queueLeadTimeMinutes) || input.queueLeadTimeMinutes < MIN_QUEUE_LEAD_TIME_MINUTES) {
@@ -768,6 +782,27 @@ export async function updateBookingSettings(input: {
       return { success: false, error: "Choose a valid queue priority mode." }
     }
 
+    if (
+      input.defaultDurationMinutes !== undefined &&
+      (!Number.isInteger(input.defaultDurationMinutes) ||
+        input.defaultDurationMinutes < MIN_BOOKING_DEFAULT_DURATION_MINUTES ||
+        input.defaultDurationMinutes > MAX_BOOKING_DEFAULT_DURATION_MINUTES)
+    ) {
+      return {
+        success: false,
+        error: `Default appointment length must be a whole number between ${MIN_BOOKING_DEFAULT_DURATION_MINUTES} and ${MAX_BOOKING_DEFAULT_DURATION_MINUTES} minutes.`,
+      }
+    }
+
+    if (
+      input.maxDatesOffered !== undefined &&
+      (!Number.isInteger(input.maxDatesOffered) ||
+        input.maxDatesOffered < MIN_DATES_OFFERED ||
+        input.maxDatesOffered > MAX_DATES_OFFERED)
+    ) {
+      return { success: false, error: `Dates shown must be a whole number between ${MIN_DATES_OFFERED} and ${MAX_DATES_OFFERED}.` }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     const { error } = await supabase
@@ -779,6 +814,14 @@ export async function updateBookingSettings(input: {
         max_advance_days: input.maxAdvanceDays,
         cancellation_window_minutes: input.cancellationWindowMinutes,
         queue_priority_mode: input.queuePriorityMode,
+        // Only written when the caller sent them (see the optional fields above).
+        ...(input.requireServiceSelection !== undefined
+          ? { require_service_selection: input.requireServiceSelection }
+          : {}),
+        ...(input.defaultDurationMinutes !== undefined
+          ? { default_duration_minutes: input.defaultDurationMinutes }
+          : {}),
+        ...(input.maxDatesOffered !== undefined ? { max_dates_offered: input.maxDatesOffered } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
