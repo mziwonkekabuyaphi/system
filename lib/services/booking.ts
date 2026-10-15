@@ -154,6 +154,7 @@ import {
 
 import {
   CANCEL_BUTTON,
+  CANCEL_NOW_BUTTON,
   ENTRY_CHOICE_BUTTONS,
   entryChoicePromptMessage,
   entryChoiceInvalidMessage,
@@ -1145,7 +1146,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     if (error instanceof Error && error.message === BOOKING_ALREADY_HAS_UPCOMING) {
       return {
         reply: bookingAlreadyHasUpcomingMessage(),
-        buttons: CANCEL_BUTTON,
+        buttons: CANCEL_NOW_BUTTON,
         nextState: null,
       }
     }
