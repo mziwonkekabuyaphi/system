@@ -67,6 +67,7 @@ import { getSmartGreeting } from "@/lib/whatsapp/greeting"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 import { getTenantWebLink } from "@/lib/whatsapp/utils/tenant-web-link"
 import { getOpenStatus } from "@/lib/whatsapp/utils/business-hours"
+import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 
@@ -168,6 +169,27 @@ function firstNameFromCustomer(customer: Customer | null): string {
   return customer.name.trim().split(/\s+/)[0] || "there"
 }
 
+const MENU_PROMPT = "Tap below to choose what you'd like to do 👇"
+
+/**
+ * The text above the menu. When the shop's AI is on it also tells customers
+ * they can skip the menu and just write what they want, in their own
+ * language. With AI off (or if that can't be checked) it is the plain prompt,
+ * so we never promise something the bot won't do.
+ */
+async function menuPromptFor(tenantId: string): Promise<string> {
+  try {
+    if (!(await isAiEnabledForTenant(tenantId))) return MENU_PROMPT
+  } catch {
+    return MENU_PROMPT
+  }
+  return (
+    `${MENU_PROMPT}\n\n` +
+    `Or just type what you need in your own words, like _"haircut tomorrow at 3"_ or _"what time do you close?"_ ` +
+    `and I'll take care of it. English, isiXhosa, isiZulu and Afrikaans all work 💬`
+  )
+}
+
 /** The menu minus "Join Queue" (shown while the shop is closed). */
 function withoutQueueRow(menu: ReturnType<typeof buildServicesListMessage>): ReturnType<typeof buildServicesListMessage> {
   if (!menu.list) return menu
@@ -193,7 +215,7 @@ function withoutQueueRow(menu: ReturnType<typeof buildServicesListMessage>): Ret
  * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const menu = buildServicesListMessage("Tap below to choose what you'd like to do 👇")
+  const menu = buildServicesListMessage(await menuPromptFor(tenantId))
 
   if (!greet) {
     return {
