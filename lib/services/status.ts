@@ -25,7 +25,7 @@ import type { ActionResult } from "@/lib/types/action"
 import { getCustomer } from "@/lib/services/tenant-customer"
 import { getQueueSimulation, type QueueSimulationEntry } from "@/lib/services/queue"
 import { loadCustomerActivity } from "@/lib/services/shared/customer-activity"
-import { buildServicesListMessage } from "@/lib/whatsapp/utils/services-list"
+import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 
 import {
   statusErrorMessage,
@@ -33,6 +33,29 @@ import {
   statusNothingMessage,
   statusSummaryMessage,
 } from "@/lib/services/messages/status"
+
+/**
+ * The menu shown under a status summary (the customer HAS a booking or queue
+ * spot): only My Profile and Cancel Now. Check Status is what they just did,
+ * and Book Now / Join Queue don't apply while they already have one. Filtered
+ * from the shared menu by row id, so titles and ids stay defined in one place.
+ * (The "nothing to show" reply below keeps the full menu.)
+ */
+function buildSummaryFollowUp() {
+  const menu = buildServicesListMessage(statusMenuPromptMessage())
+  const keep: string[] = [MENU_ROW_IDS.profile, MENU_ROW_IDS.cancel]
+  if (!menu.list) return menu
+  return {
+    ...menu,
+    list: {
+      ...menu.list,
+      sections: menu.list.sections.map((section) => ({
+        ...section,
+        rows: section.rows.filter((row) => keep.includes(row.id)),
+      })),
+    },
+  }
+}
 
 async function handleStatus(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
   try {
@@ -66,7 +89,7 @@ async function handleStatus(tenantId: string, _intent: RoutedIntent, message: In
       reply: statusSummaryMessage(activity, simulation),
       buttons: [],
       nextState: null,
-      followUp: [buildServicesListMessage(statusMenuPromptMessage())],
+      followUp: [buildSummaryFollowUp()],
     }
   } catch (error) {
     console.error("[status] Error checking status", { tenantId, error })
