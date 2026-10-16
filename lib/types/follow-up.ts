@@ -24,6 +24,11 @@ export interface FollowUpListSection {
 }
 
 export interface FollowUpMessage {
+  /**
+   * An image to send (e.g. the booking ticket). When set, `reply` is used as
+   * the image CAPTION (may be empty) and `buttons` / `list` are ignored.
+   */
+  image?: { url: string }
   /** Body text shown above the buttons / list button. */
   reply: string
   /** Up to 3 reply buttons (sent via sendWhatsAppButtonsMessage). */
