@@ -17,6 +17,8 @@
  *   dates/money tenant_settings.timezone / currency
  *   powered-by  hidden when tenant_branding.remove_powered_by is true
  *   on/off + every show_* toggle + header_style: tenant_booking_ticket_settings
+ *   plan access: the `booking_ticket` module (plan_modules; today Business). A
+ *               tenant without it never gets a ticket, whatever their saved row says.
  *
  * A tenant with NO tenant_booking_ticket_settings row gets the defaults below
  * (ticket enabled, gradient header in their brand colours), so every existing
@@ -29,6 +31,7 @@
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import {
   cleanHex,
   renderBookingTicketPng,
@@ -172,6 +175,8 @@ async function loadLogoDataUri(url: string | null | undefined): Promise<string |
 // ----------------------------------------------------------------------------
 
 interface ResolvedTenantTicket {
+  /** Plan includes the booking_ticket module. */
+  entitled: boolean
   enabled: boolean
   style: ResolvedTicketStyle
   timeZone: string
@@ -196,6 +201,14 @@ async function resolveTenantTicket(
     supabase.from("tenant_settings").select("timezone, currency, address, brand_name").eq("tenant_id", tenantId).maybeSingle(),
     supabase.from("tenant_booking_ticket_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
   ])
+
+  // Fail closed: if the plan check errors, skip the ticket (text confirmation still goes out).
+  let entitled = false
+  try {
+    entitled = await tenantHasModule(supabase, tenantId, MODULE_KEYS.bookingTicket)
+  } catch (error) {
+    console.warn("[booking-ticket] Could not verify plan; skipping ticket", { tenantId, error })
+  }
 
   const branding = brandingRes.data
   const settings = settingsRes.data
@@ -226,7 +239,8 @@ async function resolveTenantTicket(
   }
 
   return {
-    enabled: cfg.enabled ?? true,
+    entitled,
+    enabled: entitled && (cfg.enabled ?? true),
     style,
     timeZone: settings?.timezone || "Africa/Johannesburg",
     currency: settings?.currency || "ZAR",
@@ -266,6 +280,7 @@ export async function renderBookingTicketForTenant(
   overrides?: TicketSettingsRow,
 ): Promise<Buffer | null> {
   const resolved = await resolveTenantTicket(tenantId, overrides)
+  if (!resolved.entitled) return null
   if (!resolved.enabled && !overrides) return null
   return renderBookingTicketPng(resolved.style, toRenderable(resolved, booking))
 }
