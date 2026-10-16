@@ -59,7 +59,6 @@ import {
 import { parseYesNo } from "@/lib/services/cancel"
 
 import {
-  CANCEL_NOW_BUTTON,
   CONFIRM_BUTTONS,
   availabilityErrorMessage,
   dateOptionsMessage,
@@ -68,6 +67,7 @@ import {
   slotsListMessage,
 } from "@/lib/services/messages/booking"
 import {
+  CANCEL_OR_RESCHEDULE_BUTTONS,
   rescheduleAlreadyGoneMessage,
   rescheduleChooseMessage,
   rescheduleConfirmMessage,
@@ -453,7 +453,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
             slotLabel: selectedSlot.label,
             bookingReference: result.bookingReference ?? booking.reference,
           }),
-          buttons: CANCEL_NOW_BUTTON,
+          buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
           nextState: null,
         }
       }

@@ -158,9 +158,10 @@ import {
   combineServices,
 } from "@/lib/services/shared/multi-select"
 
+import { CANCEL_OR_RESCHEDULE_BUTTONS } from "@/lib/services/messages/reschedule"
+
 import {
   CANCEL_BUTTON,
-  CANCEL_NOW_BUTTON,
   CONFIRM_BUTTONS,
   ENTRY_CHOICE_BUTTONS,
   entryChoicePromptMessage,
@@ -1321,7 +1322,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
         }) + webNote,
       // "Book again" would be a dead end right after booking (one upcoming
       // booking per customer), so offer the one useful next step instead.
-      buttons: result.customer.name ? CANCEL_NOW_BUTTON : [],
+      buttons: result.customer.name ? CANCEL_OR_RESCHEDULE_BUTTONS : [],
       nextState: result.customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
     }
   } catch (error) {
@@ -1340,7 +1341,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     if (error instanceof Error && error.message === BOOKING_ALREADY_HAS_UPCOMING) {
       return {
         reply: bookingAlreadyHasUpcomingMessage(),
-        buttons: CANCEL_NOW_BUTTON,
+        buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
         nextState: null,
       }
     }
@@ -1372,7 +1373,7 @@ async function handleNameCollection(tenantId: string, message: IncomingMessage):
 
   return {
     reply: nameCollectionThanksMessage(name) + (await getTenantWebLinkNote(tenantId)),
-    buttons: CANCEL_NOW_BUTTON,
+    buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
     nextState: null,
   }
 }
