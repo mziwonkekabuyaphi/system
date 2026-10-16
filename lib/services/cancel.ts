@@ -57,7 +57,7 @@ import {
   type CustomerActivity,
 } from "@/lib/services/shared/customer-activity"
 import { getBookingSettings } from "@/lib/services/shared/tenant-scheduling"
-import { buildServicesListMessage } from "@/lib/whatsapp/utils/services-list"
+import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 
 import {
   CANCEL_CONFIRM_BUTTONS,
@@ -112,8 +112,28 @@ function normalizedReplyText(message: IncomingMessage): string {
   return (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
 }
 
+/**
+ * The menu shown at the end of the cancel flow: Book Now, Join Queue and My
+ * Profile. Cancel Now and Check Status are left off — the customer has just
+ * dealt with exactly that. Filtered from the shared menu by row id, so titles
+ * and ids stay defined in one place.
+ */
 function menuFollowUp() {
-  return [buildServicesListMessage(cancelMenuPromptMessage())]
+  const menu = buildServicesListMessage(cancelMenuPromptMessage())
+  const keep: string[] = [MENU_ROW_IDS.book, MENU_ROW_IDS.queue, MENU_ROW_IDS.profile]
+  if (!menu.list) return [menu]
+  return [
+    {
+      ...menu,
+      list: {
+        ...menu.list,
+        sections: menu.list.sections.map((section) => ({
+          ...section,
+          rows: section.rows.filter((row) => keep.includes(row.id)),
+        })),
+      },
+    },
+  ]
 }
 
 function done(reply: string): ActionResult {
