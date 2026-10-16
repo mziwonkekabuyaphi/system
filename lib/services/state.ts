@@ -13,11 +13,9 @@ export type ConversationState = {
   readonly updatedAt?: string
 }
 
-export interface ActionResult {
-  reply: string
-  buttons: string[]
-  nextState: ConversationState | null
-}
+// Single source of truth lives in lib/types/action.ts (type-only, so the
+// import cycle with that file is erased at compile time).
+export type { ActionResult } from "@/lib/types/action"
 
 /**
  * Internal cache record. We store an explicit expiry timestamp rather than
