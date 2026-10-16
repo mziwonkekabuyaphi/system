@@ -19,6 +19,7 @@ import {
   Toggle,
   inputClass,
 } from "./ui"
+import { BookingTicketCard } from "./BookingTicketCard"
 
 // ---------------------------------------------------------------------------
 const QUEUE_PRIORITY_MODE_OPTIONS: Array<{
@@ -304,6 +305,8 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
 
         <SaveRow isPending={isPending} onSave={save} message={message} />
       </div>
+
+      <BookingTicketCard />
     </div>
   )
 }
