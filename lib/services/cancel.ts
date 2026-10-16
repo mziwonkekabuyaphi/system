@@ -292,9 +292,11 @@ async function handleChoice(tenantId: string, state: ConversationState, message:
 // STEP: yes / no -> cancel
 // ============================================================================
 
-type CancelOutcome = "cancelled" | "too_late" | "already_gone" | "called"
+export type CancelOutcome = "cancelled" | "too_late" | "already_gone" | "called"
 
-async function cancelBooking(tenantId: string, customerId: string, bookingId: string): Promise<{ outcome: CancelOutcome; windowMinutes: number }> {
+/** Exported so the reminder's "Can't make it" button (reminder-reply.ts) cancels through
+ *  exactly the same rules as the Cancel Now flow: window, called-entry check, queue cleanup. */
+export async function cancelBooking(tenantId: string, customerId: string, bookingId: string): Promise<{ outcome: CancelOutcome; windowMinutes: number }> {
   const supabase = getClientOrThrow()
 
   const { data: booking, error } = await supabase
