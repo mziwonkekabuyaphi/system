@@ -6,20 +6,16 @@
  */
 
 import { CANCEL_NOW_BUTTON } from "@/lib/services/messages/booking"
-import { MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 
 /**
  * The buttons shown under "you're booked": the existing Cancel Now button, with
- * Reschedule next to it. The Reschedule button is built FROM the Cancel one, so
- * it has exactly the same shape; only its id and title differ. Its id is the
- * Reschedule menu row's id, so action-router.ts routes a tap exactly like a tap
- * on that menu row (no extra routing needed).
+ * Reschedule next to it. Buttons are plain strings (sendWhatsAppButtonsMessage
+ * takes string[] and assigns its own ids, btn_1, btn_2, ...), so a tap arrives
+ * as the button's TITLE, e.g. "[button reply] 🔁 Reschedule". intent-router.ts
+ * must map that to the reschedule intent, the same way it already does for
+ * "❌ Cancel Now". (Button titles are limited to 20 characters by WhatsApp.)
  */
-export const RESCHEDULE_BUTTON = CANCEL_NOW_BUTTON.map((button) => ({
-  ...button,
-  id: MENU_ROW_IDS.reschedule,
-  title: "🔁 Reschedule", // WhatsApp button titles are limited to 20 characters
-}))
+export const RESCHEDULE_BUTTON = ["🔁 Reschedule"]
 
 export const CANCEL_OR_RESCHEDULE_BUTTONS = [...CANCEL_NOW_BUTTON, ...RESCHEDULE_BUTTON]
 
