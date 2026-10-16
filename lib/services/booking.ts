@@ -105,6 +105,12 @@
  * here, server-side, not just hidden in the kiosk UI. WhatsApp still offers
  * one service per booking until its flow is updated.
  *
+ * RESCHEDULING (new): rescheduleBooking() moves a confirmed booking to a new
+ * time in one UPDATE (services, reference and length unchanged). The customer
+ * flow that drives it is lib/services/reschedule.ts. getAvailableSlots() and
+ * claimStaffForSlot() gained an optional "ignore this booking" argument so a
+ * booking never blocks its own new time.
+ *
  * ONE-MESSAGE BOOKING (new, AI): when a typed message carries real detail
  * ("haircut tomorrow 3pm", in English, isiXhosa, isiZulu, Afrikaans...),
  * trySmartBooking() asks lib/ai/booking-parser.ts to extract service / date /
@@ -327,14 +333,19 @@ async function getBookingsInWindow(
   tenantId: string,
   windowStart: Date,
   windowEnd: Date,
+  /** Rescheduling: the booking being moved must not block its own new time. */
+  excludeBookingId?: string,
 ): Promise<Array<{ staffId: string; start: Date; end: Date }>> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("bookings")
     .select("staff_id, start_time, end_time")
     .eq("tenant_id", tenantId)
     .eq("status", "confirmed")
     .gte("start_time", windowStart.toISOString())
     .lte("start_time", windowEnd.toISOString())
+  if (excludeBookingId) query = query.neq("id", excludeBookingId)
+
+  const { data, error } = await query
 
   if (error) throw new Error(`Failed to load bookings: ${error.message}`)
 
@@ -394,7 +405,13 @@ async function resolveDayWindow(supabase: SupabaseClient, tenantId: string, date
  * it's checking the exact same availability WhatsApp would show for the
  * same tenant/date/service, not a second calculation that could disagree.
  */
-export async function getAvailableSlots(tenantId: string, dateISO: string, durationMinutes: number): Promise<BookingSlot[]> {
+export async function getAvailableSlots(
+  tenantId: string,
+  dateISO: string,
+  durationMinutes: number,
+  /** Rescheduling only: ignore this booking when checking who is free. */
+  excludeBookingId?: string,
+): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
 
   const [staff, bookingSettings, dayWindow] = await Promise.all([
@@ -410,7 +427,13 @@ export async function getAvailableSlots(tenantId: string, dateISO: string, durat
   const today = todayInTimezone(dayWindow.timezone)
   if (!isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) return []
 
-  const existingBookings = await getBookingsInWindow(supabase, tenantId, dayWindow.dayOpenUTC, dayWindow.dayCloseUTC)
+  const existingBookings = await getBookingsInWindow(
+    supabase,
+    tenantId,
+    dayWindow.dayOpenUTC,
+    dayWindow.dayCloseUTC,
+    excludeBookingId,
+  )
 
   const minNoticeCutoffMillis = Date.now() + bookingSettings.minNoticeMinutes * 60_000
 
@@ -457,6 +480,9 @@ async function claimStaffForSlot(
   dateISO: string,
   slot: BookingSlot,
   durationMinutes: number,
+  /** Rescheduling: ignore the booking being moved, and keep the customer with
+   *  the same staff member when that person is free at the new time. */
+  options: { excludeBookingId?: string; preferStaffId?: string } = {},
 ): Promise<ActiveStaff> {
   const staff = await getActiveStaff(supabase, tenantId)
   const dayWindow = await resolveDayWindow(supabase, tenantId, dateISO)
@@ -471,12 +497,15 @@ async function claimStaffForSlot(
   const windowStart = dayWindow.dayOpenUTC ?? slotStart
   const windowEnd = dayWindow.dayCloseUTC ?? slotEnd
 
-  const existingBookings = await getBookingsInWindow(supabase, tenantId, windowStart, windowEnd)
+  const existingBookings = await getBookingsInWindow(supabase, tenantId, windowStart, windowEnd, options.excludeBookingId)
 
-  const freeStaff = staff.find((member) => {
+  const isFree = (member: ActiveStaff) => {
     const memberBookings = existingBookings.filter((b) => b.staffId === member.id)
     return !memberBookings.some((b) => overlaps(slotStart, slotEnd, b.start, b.end))
-  })
+  }
+  const freeStaff =
+    (options.preferStaffId ? staff.find((m) => m.id === options.preferStaffId && isFree(m)) : undefined) ??
+    staff.find(isFree)
 
   if (!freeStaff) {
     throw new Error(BOOKING_SLOT_NO_LONGER_AVAILABLE)
@@ -744,6 +773,161 @@ export async function completeBooking(tenantId: string, bookingId: string): Prom
   if (updateError) throw new Error(updateError.message)
 
   return { id: bookingId, status: "completed" }
+}
+
+// ============================================================================
+// RESCHEDULING — move a confirmed booking to a new time in ONE step.
+// ============================================================================
+
+export type RescheduleOutcome = "rescheduled" | "unchanged" | "too_late" | "already_gone" | "in_queue"
+
+export interface RescheduleBookingResult {
+  outcome: RescheduleOutcome
+  /** booking_settings.cancellation_window_minutes — reported so the caller can
+   *  explain a "too_late". Moving a booking follows the same cut-off as
+   *  cancelling it: both give the slot back. */
+  windowMinutes: number
+  bookingReference?: string
+  /** "Fade + Beard" for a multi-service booking. */
+  serviceName?: string
+  startTime?: string
+  endTime?: string
+}
+
+/**
+ * Moves one confirmed booking to a new slot. Only the time (and, if the same
+ * person isn't free, the staff member) changes: the services, the reference and
+ * the booking's length stay as they are, so a multi-service booking keeps its
+ * full duration. It is a single UPDATE, so the customer is never without a
+ * booking half-way through: if the new time can't be had, the old one stands.
+ *
+ * Everything is re-checked here, never trusted from the conversation:
+ *   - the booking is this customer's, this tenant's and still 'confirmed'
+ *   - it is not closer than the cancellation window (too_late)
+ *   - it is not already in the live queue or being served (in_queue) — a human
+ *     needs to handle that one
+ *   - the new slot passes business hours / max_advance / min_notice
+ *   - somebody is free for the booking's full length (its own old slot doesn't
+ *     count against it)
+ * and the UPDATE only applies if the booking still starts at the time we read,
+ * so two taps or a staff edit in between can't be overwritten silently.
+ *
+ * Throws BOOKING_SLOT_NO_LONGER_AVAILABLE / BOOKING_OUTSIDE_ALLOWED_WINDOW, the
+ * same codes createBooking() uses; every other outcome is returned.
+ */
+export async function rescheduleBooking(
+  tenantId: string,
+  customerId: string,
+  bookingId: string,
+  dateISO: string,
+  slot: BookingSlot,
+): Promise<RescheduleBookingResult> {
+  const supabase = getClientOrThrow()
+
+  const { data: booking, error } = await supabase
+    .from("bookings")
+    .select(
+      `id, start_time, end_time, staff_id, booking_reference,
+       services!bookings_service_id_fkey ( name ),
+       booking_services ( position, services ( name ) )`,
+    )
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customerId)
+    .eq("status", "confirmed")
+    .maybeSingle()
+
+  if (error) throw new Error(`Failed to load booking: ${error.message}`)
+
+  const settings = await getBookingSettings(supabase, tenantId)
+  const windowMinutes = settings.cancellationWindowMinutes
+  if (!booking) return { outcome: "already_gone", windowMinutes }
+
+  const oldStartMillis = new Date(booking.start_time).getTime()
+  const nowMillis = Date.now()
+  if (oldStartMillis <= nowMillis || oldStartMillis - nowMillis < Math.max(0, windowMinutes) * 60_000) {
+    return { outcome: "too_late", windowMinutes }
+  }
+
+  const { data: liveEntry, error: queueError } = await supabase
+    .from("queue_entries")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("booking_id", bookingId)
+    .in("status", ["waiting", "called"])
+    .limit(1)
+  if (queueError) throw new Error(`Failed to check queue entry: ${queueError.message}`)
+  if ((liveEntry ?? []).length > 0) return { outcome: "in_queue", windowMinutes }
+
+  // Names for the confirmation: primary first, then the link table in order.
+  const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null))
+  const names: string[] = []
+  const primaryName = one<{ name: string | null }>(booking.services as never)?.name
+  if (primaryName) names.push(primaryName)
+  const links = [...((booking.booking_services ?? []) as unknown as Array<{ position: number | null; services: unknown }>)].sort(
+    (a, b) => (a.position ?? 0) - (b.position ?? 0),
+  )
+  for (const link of links) {
+    const n = one<{ name: string | null }>(link.services as never)?.name
+    if (n && !names.includes(n)) names.push(n)
+  }
+  const serviceName = names.join(" + ") || "Appointment"
+
+  const durationMinutes = Math.max(
+    1,
+    Math.round((new Date(booking.end_time).getTime() - oldStartMillis) / 60_000),
+  )
+
+  if (new Date(slot.start).getTime() === oldStartMillis) {
+    return {
+      outcome: "unchanged",
+      windowMinutes,
+      bookingReference: booking.booking_reference,
+      serviceName,
+      startTime: booking.start_time,
+      endTime: booking.end_time,
+    }
+  }
+
+  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, durationMinutes)
+
+  const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, durationMinutes, {
+    excludeBookingId: booking.id,
+    preferStaffId: booking.staff_id,
+  })
+
+  const newStart = new Date(slot.start)
+  const newEnd = new Date(newStart.getTime() + durationMinutes * 60_000)
+
+  const { data: updated, error: updateError } = await supabase
+    .from("bookings")
+    .update({
+      start_time: newStart.toISOString(),
+      end_time: newEnd.toISOString(),
+      staff_id: staff.id,
+      // The reminder and the customer's "I'm coming" tap belonged to the OLD
+      // time: clear both so the reminder goes out again for the new one.
+      reminder_sent_at: null,
+      customer_confirmed_at: null,
+    })
+    .eq("id", booking.id)
+    .eq("tenant_id", tenantId)
+    .eq("customer_id", customerId)
+    .eq("status", "confirmed")
+    .eq("start_time", booking.start_time)
+    .select("id")
+
+  if (updateError) throw new Error(`Failed to reschedule booking: ${updateError.message}`)
+  if (!updated || updated.length === 0) return { outcome: "already_gone", windowMinutes }
+
+  return {
+    outcome: "rescheduled",
+    windowMinutes,
+    bookingReference: booking.booking_reference,
+    serviceName,
+    startTime: newStart.toISOString(),
+    endTime: newEnd.toISOString(),
+  }
 }
 
 // ============================================================================
