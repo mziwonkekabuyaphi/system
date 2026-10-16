@@ -158,6 +158,12 @@ const MIN_DATES_OFFERED = 1
 const MAX_DATES_OFFERED = 14
 const VALID_QUEUE_PRIORITY_MODES: AdminQueuePriorityMode[] = ["fifo", "priority", "hybrid"]
 
+// Mirrors booking_settings_reminder_lead_minutes_check (30 minutes to 24 hours).
+// Below 30 a reminder lands too close to the start to be useful; above 24h it
+// would go out before most customers have even planned their day.
+const MIN_REMINDER_LEAD_MINUTES = 30
+const MAX_REMINDER_LEAD_MINUTES = 1440
+
 // Mirrors queue_settings.ticket_number_prefix's own CHECK constraint
 // (char_length BETWEEN 1 AND 4) — validated here too for a clean error
 // message rather than a raw Postgres constraint violation.
@@ -825,6 +831,10 @@ export async function updateBookingSettings(input: {
   defaultDurationMinutes?: number
   /** How many date buttons the kiosk/WhatsApp list (1-14). */
   maxDatesOffered?: number
+  /** Send customers a WhatsApp reminder before their appointment. */
+  bookingRemindersEnabled?: boolean
+  /** How long before the start the reminder goes out (30-1440 minutes). */
+  bookingReminderLeadMinutes?: number
 }): Promise<ActionResult> {
   try {
     if (!isValidServicesPerVisit(input.maxServicesPerBooking)) {
@@ -878,6 +888,18 @@ export async function updateBookingSettings(input: {
       return { success: false, error: `Dates shown must be a whole number between ${MIN_DATES_OFFERED} and ${MAX_DATES_OFFERED}.` }
     }
 
+    if (
+      input.bookingReminderLeadMinutes !== undefined &&
+      (!Number.isInteger(input.bookingReminderLeadMinutes) ||
+        input.bookingReminderLeadMinutes < MIN_REMINDER_LEAD_MINUTES ||
+        input.bookingReminderLeadMinutes > MAX_REMINDER_LEAD_MINUTES)
+    ) {
+      return {
+        success: false,
+        error: `Reminder time must be a whole number of minutes between ${MIN_REMINDER_LEAD_MINUTES} and ${MAX_REMINDER_LEAD_MINUTES}.`,
+      }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     const { error } = await supabase
@@ -898,6 +920,12 @@ export async function updateBookingSettings(input: {
           ? { default_duration_minutes: input.defaultDurationMinutes }
           : {}),
         ...(input.maxDatesOffered !== undefined ? { max_dates_offered: input.maxDatesOffered } : {}),
+        ...(input.bookingRemindersEnabled !== undefined
+          ? { booking_reminders_enabled: input.bookingRemindersEnabled }
+          : {}),
+        ...(input.bookingReminderLeadMinutes !== undefined
+          ? { booking_reminder_lead_minutes: input.bookingReminderLeadMinutes }
+          : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
