@@ -208,6 +208,7 @@ export const MODULE_KEYS = {
   branding: "branding",
   prioritySupport: "priority_support",
   removePoweredBy: "remove_powered_by",
+  bookingTicket: "booking_ticket",
 } as const
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
