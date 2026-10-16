@@ -138,7 +138,6 @@ import { getBookableServices, type CatalogService } from "@/lib/services/shared/
 import { queueService } from "@/lib/services/queue"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
-import { tryGenerateBookingTicketUrl } from "@/lib/whatsapp/booking-ticket-image"
 import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 
@@ -1320,6 +1319,9 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     // (and its Cancel/Reschedule buttons) as a follow-up. Never throws: null
     // means tickets are off for this shop or generation failed, and the customer
     // simply gets the text confirmation as before.
+    // Loaded lazily so the PNG engine (native resvg) is only pulled in on this
+    // WhatsApp path, not into every bundle that imports booking.ts (e.g. the kiosk).
+    const { tryGenerateBookingTicketUrl } = await import("@/lib/whatsapp/booking-ticket-image")
     const ticketUrl = await tryGenerateBookingTicketUrl(tenantId, {
       bookingId: result.bookingId,
       bookingReference: result.bookingReference,
