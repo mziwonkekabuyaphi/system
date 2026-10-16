@@ -7,7 +7,8 @@
  * support. Now it is a short flow that reuses the booking flow's own date and
  * time screens and swaps the time in one step.
  *
- * ENTRY: a typed request ("reschedule", "move my booking", "change my
+ * ENTRY: the "Reschedule" menu row, the reminder's "Move it" button
+ * (rem_move:<booking id>, via reminder-reply.ts), or a typed request ("reschedule", "move my booking", "change my
  * appointment"...) matched by RESCHEDULE_REQUEST_PATTERN in action-router.ts.
  * That is deterministic, so it never reaches AI classification.
  *
@@ -261,13 +262,32 @@ async function loadMovableBookings(tenantId: string, customerId: string): Promis
 // ============================================================================
 
 async function handleReschedule(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
+  return startFlow(tenantId, message.from)
+}
+
+/**
+ * Starts the flow for ONE booking — used by the reminder's "Move it" button
+ * (reminder-reply.ts), whose id carries the booking. The caller has already
+ * checked the booking is this customer's and still confirmed; everything is
+ * checked again here and in rescheduleBooking().
+ */
+async function handleRescheduleForBooking(tenantId: string, message: IncomingMessage, bookingId: string): Promise<ActionResult> {
+  return startFlow(tenantId, message.from, bookingId)
+}
+
+async function startFlow(tenantId: string, phone: string, onlyBookingId?: string): Promise<ActionResult> {
   try {
-    const customer = await getCustomer(tenantId, message.from)
+    const customer = await getCustomer(tenantId, phone)
     if (!customer) return done(rescheduleNothingMessage())
 
     const loaded = await loadMovableBookings(tenantId, customer.id)
 
-    if (loaded.movable.length === 0) {
+    if (onlyBookingId) {
+      const target = loaded.movable.find((b) => b.id === onlyBookingId)
+      if (target) return await startDateStep(tenantId, target)
+    }
+
+    if (loaded.movable.length === 0 || onlyBookingId) {
       if (loaded.inQueue > 0) return done(rescheduleInQueueMessage())
       if (loaded.tooLate > 0) return done(rescheduleTooLateMessage(loaded.windowMinutes))
       return done(rescheduleNothingMessage())
@@ -479,5 +499,6 @@ async function handleState(tenantId: string, state: ConversationState, message: 
 
 export const rescheduleService = {
   handleReschedule,
+  handleRescheduleForBooking,
   handleState,
 }
