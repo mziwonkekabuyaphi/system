@@ -1,5 +1,5 @@
 {
   "crons": [
-    { "path": "/api/cron/cleanup-queue", "schedule": "30 0 * * *" }
+    { "path": "/api/cron/sweep-stale-queue", "schedule": "30 0 * * *" }
   ]
 }
