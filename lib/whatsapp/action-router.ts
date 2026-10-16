@@ -15,8 +15,8 @@
  * the old Rands bot used:
  *   1. a short smart greeting + their first name + a line welcoming them to
  *      the shop + the shop's own web link (the main `reply`), then
- *   2. the five-row interactive menu (Book Now / Join Queue / Check Status /
- *      Cancel Now / My Profile), attached as `followUp`.
+ *   2. the six-row interactive menu (Book Now / Join Queue / Check Status /
+ *      Reschedule / Cancel Now / My Profile), attached as `followUp`.
  * lib/whatsapp/send-action-result.ts is what actually delivers the follow-up.
  * An explicit "menu" / "start over" (or a bare "cancel" while a booking is
  * half-done) also shows the menu, with a shorter lead-in instead of the greeting.
@@ -120,6 +120,7 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
   [MENU_ROW_IDS.book]: (tenantId) => bookingService.startBookingFlow(tenantId),
   [MENU_ROW_IDS.queue]: (tenantId) => queueService.startQueueFlow(tenantId),
   [MENU_ROW_IDS.status]: statusService.handleStatus,
+  [MENU_ROW_IDS.reschedule]: rescheduleService.handleReschedule,
   [MENU_ROW_IDS.cancel]: cancelService.handleCancel,
   [MENU_ROW_IDS.profile]: profileService.handleProfile,
 }
