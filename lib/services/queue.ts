@@ -92,6 +92,7 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
+import { startOfTenantDay } from "@/lib/services/shared/queue-day"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
@@ -414,12 +415,17 @@ async function loadSimEntries(
   supabase: SupabaseClient,
   tenantId: string,
   defaultDurationMinutes: number,
+  /** ISO start of the tenant's current local day. Entries that joined before
+   *  it are leftovers from a previous day (the stale-queue sweep cancels
+   *  them nightly) and must never count towards today's wait estimate. */
+  todayStartIso: string,
 ): Promise<SimEntry[]> {
   const { data, error } = await supabase
     .from("queue_entries")
     .select("id, status, joined_at, called_at, booking_id, services!queue_entries_service_id_fkey ( duration_minutes )")
     .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
+    .gte("joined_at", todayStartIso)
 
   if (error) throw new Error(`Failed to load queue entries: ${error.message}`)
 
@@ -571,9 +577,10 @@ export async function getQueueSimulation(tenantId: string): Promise<Map<string, 
   // service_id = null row in a single pass, rather than each row
   // re-querying queue_settings.
   const defaultDurationMinutes = await getDefaultServiceDurationMinutes(supabase, tenantId)
+  const todayStartIso = startOfTenantDay(await getTenantTimezone(supabase, tenantId)).toISOString()
 
   const [entries, staffCount, bookingSettings, statusRowsResult] = await Promise.all([
-    loadSimEntries(supabase, tenantId, defaultDurationMinutes),
+    loadSimEntries(supabase, tenantId, defaultDurationMinutes, todayStartIso),
     getActiveStaffCount(supabase, tenantId),
     getBookingSettings(supabase, tenantId),
     supabase.from("queue_entries").select("id, status").eq("tenant_id", tenantId).in("status", ["waiting", "called"]),
