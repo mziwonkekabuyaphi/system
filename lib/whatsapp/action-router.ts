@@ -21,6 +21,10 @@
  * An explicit "menu" / "start over" (or a bare "cancel" while a booking is
  * half-done) also shows the menu, with a shorter lead-in instead of the greeting.
  *
+ * RESCHEDULE (new): a typed "reschedule" / "move my booking" request opens the
+ * move-my-booking flow (lib/services/reschedule.ts) before anything else, and
+ * the reschedule_* states are owned by that service.
+ *
  * ROUTING ORDER inside routeAction (order matters — it fixes the "cancel"
  * trap):
  *   1. MENU ROW TAP (by row id) — a deliberate, unambiguous choice. Wins over
@@ -57,6 +61,7 @@ import { bookingService } from "@/lib/services/booking"
 import { queueService } from "@/lib/services/queue"
 import { statusService } from "@/lib/services/status"
 import { cancelService } from "@/lib/services/cancel"
+import { RESCHEDULE_REQUEST_PATTERN, rescheduleService } from "@/lib/services/reschedule"
 import { REMINDER_TAP_PATTERN, handleReminderTap } from "@/lib/services/reminder-reply"
 import { profileService } from "@/lib/services/profile"
 import { conciergeService } from "@/lib/ai/concierge"
@@ -96,7 +101,7 @@ type Handler = IntentService["handle"]
 // booking.ts's handleEntryChoice (or the "Join Queue" row, which sets a
 // queue_* state itself), so booking gets first refusal on every state name.
 // cancelService owns exactly the "cancel_*" states.
-const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService]
+const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService]
 
 const intentHandlers: Record<string, Handler> = {
   booking: bookingService.handleBooking.bind(bookingService),
@@ -152,6 +157,9 @@ const PLAIN_ANSWER_PATTERN = /^(\d{1,2}|y|n|yes|no|yeah|yep|nope|ok|okay|sure|ew
 function resolveOwningIntent(stateName: string): Intent | null {
   if (stateName.startsWith("booking_")) return "booking"
   if (stateName.startsWith("queue_")) return "booking"
+  // Moving a booking is part of the booking family: another intent (status,
+  // cancel...) can still take over, a plain answer never does.
+  if (stateName.startsWith("reschedule_")) return "booking"
   if (stateName.startsWith(CANCEL_STATE_PREFIX)) return "cancel"
   return null
 }
@@ -309,6 +317,18 @@ export async function routeAction(
   if (message.interactiveId && REMINDER_TAP_PATTERN.test(message.interactiveId)) {
     await stateService.clearState(tenantId, message.from)
     return handleReminderTap(tenantId, message)
+  }
+
+  // ── 0b. TYPED RESCHEDULE REQUEST ("reschedule", "move my booking") ──
+  // Deterministic, like the menu taps: it never goes through AI classification
+  // (which used to hand it to a human as "support"). Works with or without a
+  // conversation open; whatever the customer was doing is cleared first.
+  if (!message.interactiveId) {
+    const typed = (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
+    if (typed && RESCHEDULE_REQUEST_PATTERN.test(typed)) {
+      await stateService.clearState(tenantId, message.from)
+      return rescheduleService.handleReschedule(tenantId, intent, message)
+    }
   }
 
   // ── 1. MENU ROW TAP (checked before everything else) ───────────────
