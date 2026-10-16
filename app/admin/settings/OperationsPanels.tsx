@@ -50,6 +50,10 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
+  // Older loaders may not send these yet; fall back to the database defaults.
+  const remindersEnabled = form.bookingRemindersEnabled ?? true
+  const reminderLeadMinutes = form.bookingReminderLeadMinutes ?? 120
+
   function save() {
     setMessage(null)
     startTransition(async () => {
@@ -207,6 +211,57 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
             />
           </FieldRow>
         </div>
+
+        <SaveRow isPending={isPending} onSave={save} message={message} />
+      </div>
+
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Booking reminders</p>
+            <p className="text-sm text-stone-500">
+              Send customers a WhatsApp reminder shortly before their appointment, with buttons to confirm or say
+              they can&apos;t make it.
+            </p>
+          </div>
+          <Toggle
+            checked={remindersEnabled}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, bookingRemindersEnabled: next })}
+          />
+        </div>
+
+        {remindersEnabled && (
+          <div className="mt-4 space-y-3">
+            <FieldRow
+              label="Send the reminder this many minutes before the appointment (30-1440)"
+              hint="For example 120 = 2 hours before, 1440 = the day before. Bookings made inside this window don't get a reminder, because the customer has only just heard about them."
+            >
+              <input
+                type="number"
+                min={30}
+                max={1440}
+                className={inputClass}
+                value={reminderLeadMinutes}
+                onChange={(e) => setForm({ ...form, bookingReminderLeadMinutes: Number(e.target.value) })}
+              />
+            </FieldRow>
+
+            {form.cancellationWindowMinutes >= reminderLeadMinutes && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Your free cancellation window ({form.cancellationWindowMinutes} min) is as long as, or longer than,
+                this reminder time. Customers who tap &ldquo;Can&apos;t make it&rdquo; will be told it&apos;s too
+                late to cancel. Send the reminder earlier, or shorten the cancellation window above.
+              </p>
+            )}
+          </div>
+        )}
+
+        <p className="mt-3 text-xs text-stone-400">
+          Reminders go out within about 5 minutes of the time above. Customers who messaged your WhatsApp in the last
+          24 hours get it as a normal message. Everyone else only gets it if they&apos;ve agreed to WhatsApp updates
+          and your reminder template (Messages tab) is approved by WhatsApp.
+        </p>
 
         <SaveRow isPending={isPending} onSave={save} message={message} />
       </div>
