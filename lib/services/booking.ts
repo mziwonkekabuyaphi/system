@@ -138,6 +138,7 @@ import { getBookableServices, type CatalogService } from "@/lib/services/shared/
 import { queueService } from "@/lib/services/queue"
 import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
+import { tryGenerateBookingTicketUrl } from "@/lib/whatsapp/booking-ticket-image"
 import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 
@@ -616,6 +617,8 @@ export interface CreateBookingParams {
 }
 
 export interface CreateBookingResult {
+  /** bookings.id — used for the ticket image's file name. */
+  bookingId: string
   customer: Customer
   /** Every service on the booking, primary first. */
   services: CatalogService[]
@@ -716,6 +719,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   }
 
   return {
+    bookingId: inserted.id as string,
     customer,
     services,
     totalDurationMinutes,
@@ -1312,6 +1316,21 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     // the link is added to the "thanks" message instead, see handleNameCollection).
     const webNote = result.customer.name ? await getTenantWebLinkNote(tenantId) : ""
 
+    // The shop-branded ticket image, sent right AFTER the confirmation text
+    // (and its Cancel/Reschedule buttons) as a follow-up. Never throws: null
+    // means tickets are off for this shop or generation failed, and the customer
+    // simply gets the text confirmation as before.
+    const ticketUrl = await tryGenerateBookingTicketUrl(tenantId, {
+      bookingId: result.bookingId,
+      bookingReference: result.bookingReference,
+      customerName: result.customer.name,
+      customerPhone: message.from,
+      serviceNames: result.services.map((s) => s.name),
+      totalPrice: result.services.reduce((sum, s) => sum + Number(s.price), 0),
+      startTime: result.startTime,
+      endTime: result.endTime,
+    })
+
     return {
       reply:
         bookingConfirmedMessage({
@@ -1324,6 +1343,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       // booking per customer), so offer the one useful next step instead.
       buttons: result.customer.name ? CANCEL_OR_RESCHEDULE_BUTTONS : [],
       nextState: result.customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
+      ...(ticketUrl ? { followUp: [{ reply: "", image: { url: ticketUrl } }] } : {}),
     }
   } catch (error) {
     if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
