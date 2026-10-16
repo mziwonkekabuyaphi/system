@@ -361,6 +361,27 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart < bEnd && bStart < aEnd
 }
 
+/**
+ * True when a bookings INSERT/UPDATE failed because that staff member already
+ * has a confirmed booking at an overlapping time — i.e. we lost a race that the
+ * read-then-write check in claimStaffForSlot() cannot rule out on its own.
+ * The database is the final arbiter:
+ *   - bookings_no_staff_overlap (exclusion constraint, SQLSTATE 23P01):
+ *     any overlapping confirmed range for the same staff_id
+ *   - bookings_staff_start_time_unique_confirmed (unique index, 23505):
+ *     identical start time for the same staff_id
+ * The 23505 case is matched by constraint name on purpose: a 23505 on
+ * booking_reference (or anything else) is NOT a slot conflict.
+ */
+function isStaffConflictError(error: { code?: string; message?: string; details?: string } | null | undefined): boolean {
+  if (!error) return false
+  const text = `${error.message ?? ""} ${error.details ?? ""}`
+  // bookings has exactly one exclusion constraint, so any 23P01 here is this one.
+  if (error.code === "23P01") return true
+  if (error.code === "23505") return text.includes("bookings_staff_start_time_unique_confirmed")
+  return false
+}
+
 interface DayWindow {
   timezone: string
   hours: DayHours
@@ -483,7 +504,7 @@ async function claimStaffForSlot(
   durationMinutes: number,
   /** Rescheduling: ignore the booking being moved, and keep the customer with
    *  the same staff member when that person is free at the new time. */
-  options: { excludeBookingId?: string; preferStaffId?: string } = {},
+  options: { excludeBookingId?: string; preferStaffId?: string; excludeStaffIds?: string[] } = {},
 ): Promise<ActiveStaff> {
   const staff = await getActiveStaff(supabase, tenantId)
   const dayWindow = await resolveDayWindow(supabase, tenantId, dateISO)
@@ -501,6 +522,9 @@ async function claimStaffForSlot(
   const existingBookings = await getBookingsInWindow(supabase, tenantId, windowStart, windowEnd, options.excludeBookingId)
 
   const isFree = (member: ActiveStaff) => {
+    // A staff member the database just rejected for this slot (lost a race) is
+    // never offered again within the same booking attempt.
+    if (options.excludeStaffIds?.includes(member.id)) return false
     const memberBookings = existingBookings.filter((b) => b.staffId === member.id)
     return !memberBookings.some((b) => overlaps(slotStart, slotEnd, b.start, b.end))
   }
@@ -663,7 +687,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
 
   await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, totalDurationMinutes)
 
-  const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes)
+  let staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes)
 
   // Minimal (phone-only) tenant_customers row if this is a brand-new
   // customer — no name/email required to book, on either channel.
@@ -673,30 +697,54 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   const endTime = new Date(startTime.getTime() + totalDurationMinutes * 60_000)
   const bookingReference = crypto.randomUUID().slice(0, 8).toUpperCase()
 
-  const { data: inserted, error } = await supabase
-    .from("bookings")
-    .insert([
-      {
-        tenant_id: tenantId,
-        customer_id: customer.id,
-        service_id: service.id,
-        staff_id: staff.id,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        status: "confirmed",
-        booking_reference: bookingReference,
-      },
-    ])
-    .select("id")
-    .single()
+  // claimStaffForSlot() is a read, this insert is the write, and two customers
+  // can slip between them. The database (bookings_no_staff_overlap exclusion
+  // constraint + bookings_staff_start_time_unique_confirmed) is what actually
+  // refuses a double-booking; when it does, take the next free staff member
+  // instead of failing a customer who could still be served. Each conflict adds
+  // one staff id to `conflicted`, so this ends in at most (active staff) tries,
+  // and when nobody is left claimStaffForSlot() throws
+  // BOOKING_SLOT_NO_LONGER_AVAILABLE like it always has.
+  const conflicted: string[] = []
+  let inserted: { id: string }
+  for (;;) {
+    const { data, error } = await supabase
+      .from("bookings")
+      .insert([
+        {
+          tenant_id: tenantId,
+          customer_id: customer.id,
+          service_id: service.id,
+          staff_id: staff.id,
+          start_time: startTime.toISOString(),
+          end_time: endTime.toISOString(),
+          status: "confirmed",
+          booking_reference: bookingReference,
+        },
+      ])
+      .select("id")
+      .single()
 
-  if (error) {
+    if (!error) {
+      inserted = data as { id: string }
+      break
+    }
+
     // The bookings trigger raises this text when the customer already has an
     // upcoming booking. Translate it into a stable code so every caller can
     // handle it without matching on database wording.
     if (error.message.includes("already have an upcoming booking")) {
       throw new Error(BOOKING_ALREADY_HAS_UPCOMING)
     }
+
+    if (isStaffConflictError(error)) {
+      conflicted.push(staff.id)
+      staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes, {
+        excludeStaffIds: conflicted,
+      })
+      continue
+    }
+
     throw new Error(error.message)
   }
 
@@ -921,6 +969,10 @@ export async function rescheduleBooking(
     .eq("start_time", booking.start_time)
     .select("id")
 
+  // Someone else took this staff member's time between the check above and
+  // this UPDATE: the database refused it. Same outcome as a slot that was
+  // already full at claim time, and the old booking is untouched.
+  if (isStaffConflictError(updateError)) throw new Error(BOOKING_SLOT_NO_LONGER_AVAILABLE)
   if (updateError) throw new Error(`Failed to reschedule booking: ${updateError.message}`)
   if (!updated || updated.length === 0) return { outcome: "already_gone", windowMinutes }
 
