@@ -1470,7 +1470,6 @@ function DetailsScreen({
             />
             <span>
               Send me WhatsApp updates about my visit
-              <small>Only about this visit: when you&apos;re nearly up and when it&apos;s your turn.</small>
             </span>
           </label>
         )}
