@@ -28,12 +28,8 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { parseIncomingMessages, type IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import { processIncomingMessage } from "@/lib/whatsapp/reply"
-import {
-  sendWhatsAppTextMessage,
-  sendWhatsAppButtonsMessage,
-  sendWhatsAppImageMessage,
-  sendWhatsAppListMessage,
-} from "@/lib/whatsapp/send-message"
+import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
+import { sendActionResult } from "@/lib/whatsapp/send-action-result"
 import { storeIncomingMessage, storeOutboundMessage } from "@/lib/whatsapp/store"
 import { isAIEnabled, shouldEscalate, escalateToHumanAndNotify } from "@/lib/handover"
 
@@ -189,72 +185,22 @@ export async function POST(request: Request): Promise<NextResponse> {
         continue
       }
 
-      if (result.buttons && result.buttons.length > 0) {
-        await sendWhatsAppButtonsMessage(tenantId, message.from, result.reply, result.buttons)
-      } else {
-        await sendWhatsAppTextMessage(tenantId, message.from, result.reply)
-      }
-
-      if (stored.ok && stored.conversationId) {
-        const outboundStore = await storeOutboundMessage(tenantId, stored.conversationId, result.reply, null)
-        if (!outboundStore.ok) {
-          console.error("[webhook] Failed to store outbound message", {
-            tenantId,
-            waMessageId: message.waMessageId,
-            from: message.from,
-            error: outboundStore.error,
-          })
-        }
-      }
-
-      if (result.media) {
-        for (const media of result.media) {
-          try {
-            await sendWhatsAppImageMessage(tenantId, message.from, media.url, media.caption)
-          } catch (mediaError) {
-            console.error("[webhook] Error sending media reply", {
+      // Main reply -> media -> follow-ups, in order. Blank messages are skipped
+      // inside sendActionResult; every successful send is stored via onSent.
+      await sendActionResult(tenantId, message.from, result, {
+        onSent: async (summary) => {
+          if (!stored.ok || !stored.conversationId) return
+          const outboundStore = await storeOutboundMessage(tenantId, stored.conversationId, summary, null)
+          if (!outboundStore.ok) {
+            console.error("[webhook] Failed to store outbound message", {
               tenantId,
               waMessageId: message.waMessageId,
               from: message.from,
-              mediaUrl: media.url,
-              error: mediaError instanceof Error ? mediaError.message : "Unknown error",
+              error: outboundStore.error,
             })
           }
-        }
-      }
-
-      if (result.followUp) {
-        for (const followUp of result.followUp) {
-          try {
-            if (followUp.list) {
-              await sendWhatsAppListMessage(tenantId, message.from, followUp.reply, followUp.list.buttonText, followUp.list.sections)
-            } else if (followUp.buttons && followUp.buttons.length > 0) {
-              await sendWhatsAppButtonsMessage(tenantId, message.from, followUp.reply, followUp.buttons)
-            } else {
-              await sendWhatsAppTextMessage(tenantId, message.from, followUp.reply)
-            }
-
-            if (stored.ok && stored.conversationId) {
-              const followUpStore = await storeOutboundMessage(tenantId, stored.conversationId, followUp.reply, null)
-              if (!followUpStore.ok) {
-                console.error("[webhook] Failed to store follow-up outbound message", {
-                  tenantId,
-                  waMessageId: message.waMessageId,
-                  from: message.from,
-                  error: followUpStore.error,
-                })
-              }
-            }
-          } catch (followUpError) {
-            console.error("[webhook] Error sending follow-up reply", {
-              tenantId,
-              waMessageId: message.waMessageId,
-              from: message.from,
-              error: followUpError instanceof Error ? followUpError.message : "Unknown error",
-            })
-          }
-        }
-      }
+        },
+      })
     } catch (error) {
       console.error("[webhook] Error processing message", {
         tenantId,
