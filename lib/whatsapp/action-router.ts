@@ -25,6 +25,9 @@
  * move-my-booking flow (lib/services/reschedule.ts) before anything else, and
  * the reschedule_* states are owned by that service.
  *
+ * WAITLIST (new): the "See times" button on a waitlist alert ("wl_book:<id>")
+ * is handled before anything else (step 0a below), by lib/services/waitlist-reply.ts.
+ *
  * ROUTING ORDER inside routeAction (order matters — it fixes the "cancel"
  * trap):
  *   1. MENU ROW TAP (by row id) — a deliberate, unambiguous choice. Wins over
@@ -63,6 +66,7 @@ import { statusService } from "@/lib/services/status"
 import { cancelService } from "@/lib/services/cancel"
 import { RESCHEDULE_REQUEST_PATTERN, rescheduleService } from "@/lib/services/reschedule"
 import { REMINDER_TAP_PATTERN, handleReminderTap } from "@/lib/services/reminder-reply"
+import { WAITLIST_TAP_PATTERN, handleWaitlistTap } from "@/lib/services/waitlist-reply"
 import { profileService } from "@/lib/services/profile"
 import { conciergeService } from "@/lib/ai/concierge"
 
@@ -318,6 +322,17 @@ export async function routeAction(
   if (message.interactiveId && REMINDER_TAP_PATTERN.test(message.interactiveId)) {
     await stateService.clearState(tenantId, message.from)
     return handleReminderTap(tenantId, message)
+  }
+
+  // ── 0a. WAITLIST "SEE TIMES" TAP ───────────────────────────────────
+  // Sent by the waitlist-notify edge function when a booked time frees up.
+  // Carries the waitlist entry id in the button id, so like the reminder taps
+  // it works with no conversation open. An expired offer gets a polite
+  // "sorry, that offer has expired"; a live one jumps into the normal booking
+  // flow at the time-picking step (lib/services/waitlist-reply.ts).
+  if (message.interactiveId && WAITLIST_TAP_PATTERN.test(message.interactiveId)) {
+    await stateService.clearState(tenantId, message.from)
+    return handleWaitlistTap(tenantId, message)
   }
 
   // ── 0b. TYPED RESCHEDULE REQUEST ("reschedule", "move my booking") ──
