@@ -102,11 +102,37 @@ async function logAndThrowGraphError(kind: string, response: Response, to: strin
   throw new Error(`WhatsApp ${kind.toLowerCase()} send failed (${response.status}) for tenant ${tenantId}`)
 }
 
+
+// ---------------------------------------------------------------------------
+// Outgoing body validation
+// ---------------------------------------------------------------------------
+// Meta rejects a text/interactive body that is missing or blank with
+// "(#100) The parameter text.body is required". Check BEFORE the API call so
+// the failure is caught locally with a diagnostic that says which tenant and
+// message kind, without logging the message content or the full phone number.
+function maskRecipient(to: string): string {
+  const digits = (to ?? "").replace(/\D/g, "")
+  return digits.length > 4 ? `***${digits.slice(-4)}` : "***"
+}
+
+function assertSendableBody(kind: string, tenantId: string, to: string, body: unknown): asserts body is string {
+  if (typeof body === "string" && body.trim().length > 0) return
+  console.error("[send-message] Refusing to send: message body is missing or blank", {
+    kind,
+    tenantId,
+    recipient: maskRecipient(to),
+    bodyType: body === null ? "null" : typeof body,
+    bodyLength: typeof body === "string" ? body.length : null,
+  })
+  throw new Error(`WhatsApp ${kind} send aborted: empty message body (tenant ${tenantId})`)
+}
+
 /**
  * Sends a plain text message to a WhatsApp user, via `tenantId`'s own
  * WhatsApp integration.
  */
 export async function sendWhatsAppTextMessage(tenantId: string, to: string, body: string): Promise<void> {
+  assertSendableBody("text", tenantId, to, body)
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
   const normalizedTo = normalizePhoneNumber(to)
 
@@ -187,6 +213,7 @@ export async function sendWhatsAppListMessage(
   buttonText: string,
   sections: WhatsAppListSection[],
 ): Promise<void> {
+  assertSendableBody("list", tenantId, to, body)
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
   const normalizedTo = normalizePhoneNumber(to)
 
@@ -251,6 +278,7 @@ export async function sendWhatsAppListMessage(
  * 3-button limit is unchanged from the single-tenant version.
  */
 export async function sendWhatsAppButtonsMessage(tenantId: string, to: string, body: string, buttons: string[]): Promise<void> {
+  assertSendableBody("buttons", tenantId, to, body)
   const { phoneNumberId, accessToken } = await getTenantCredentials(tenantId)
   const normalizedTo = normalizePhoneNumber(to)
 
