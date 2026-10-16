@@ -22,6 +22,7 @@
 
 import {
   sendWhatsAppButtonsMessage,
+  sendWhatsAppImageMessage,
   sendWhatsAppListMessage,
   sendWhatsAppTextMessage,
 } from "@/lib/whatsapp/send-message"
@@ -36,9 +37,15 @@ export interface SendableResult {
 async function sendOne(
   tenantId: string,
   to: string,
-  message: { reply: string; buttons?: string[]; list?: FollowUpMessage["list"] },
+  message: { reply: string; buttons?: string[]; list?: FollowUpMessage["list"]; image?: FollowUpMessage["image"] },
 ): Promise<void> {
   const body = message.reply?.trim()
+
+  // An image (e.g. the booking ticket) goes out with `reply` as its caption.
+  if (message.image?.url) {
+    await sendWhatsAppImageMessage(tenantId, to, message.image.url, body || undefined)
+    return
+  }
 
   if (message.list && message.list.sections.some((s) => s.rows.length > 0)) {
     await sendWhatsAppListMessage(tenantId, to, body || "Please choose an option:", message.list.buttonText, message.list.sections)
