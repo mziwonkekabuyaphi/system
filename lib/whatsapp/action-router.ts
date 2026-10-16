@@ -57,6 +57,7 @@ import { bookingService } from "@/lib/services/booking"
 import { queueService } from "@/lib/services/queue"
 import { statusService } from "@/lib/services/status"
 import { cancelService } from "@/lib/services/cancel"
+import { REMINDER_TAP_PATTERN, handleReminderTap } from "@/lib/services/reminder-reply"
 import { profileService } from "@/lib/services/profile"
 import { conciergeService } from "@/lib/ai/concierge"
 
@@ -301,6 +302,15 @@ export async function routeAction(
   state: ConversationState | null,
   message: IncomingMessage,
 ): Promise<ActionResult> {
+  // ── 0. REMINDER BUTTON TAP ("Confirm" / "Can't make it") ───────────
+  // Carries the booking id in the button id, so it works with no conversation
+  // open (the reminder was sent by the system, not as part of a flow) and must
+  // never be mistaken for a reply to whatever flow the customer last left open.
+  if (message.interactiveId && REMINDER_TAP_PATTERN.test(message.interactiveId)) {
+    await stateService.clearState(tenantId, message.from)
+    return handleReminderTap(tenantId, message)
+  }
+
   // ── 1. MENU ROW TAP (checked before everything else) ───────────────
   const rowHandler = message.interactiveId ? MENU_ROW_HANDLERS[message.interactiveId] : undefined
   if (rowHandler) {
