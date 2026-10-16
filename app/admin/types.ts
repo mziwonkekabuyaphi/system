@@ -432,6 +432,12 @@ export interface AdminBookingSettings {
   /** How many services a customer can pick for one booking (1-5). 1 = a
    *  single service. Backed by booking_settings.max_services_per_booking. */
   maxServicesPerBooking: number
+  /** Whether customers get a WhatsApp reminder before their appointment.
+   *  Mirrors booking_settings.booking_reminders_enabled (default true). */
+  bookingRemindersEnabled: boolean
+  /** How many minutes before the appointment the reminder is sent (30-1440).
+   *  Mirrors booking_settings.booking_reminder_lead_minutes (default 120). */
+  bookingReminderLeadMinutes: number
   /** false = bookings skip the service step. Optional so a loader that
    *  doesn't send it yet still compiles; the panel treats missing as true. */
   requireServiceSelection?: boolean
