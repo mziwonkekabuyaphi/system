@@ -1,26 +1,46 @@
+// lib/types/action.ts
 /**
- * Shared result type for server actions and service functions.
+ * Result of handling one inbound WhatsApp message: what to say back, and
+ * what conversation state to persist next.
  *
- * Pattern: every action returns either `{ ok: true, data? }` on success
- * or `{ ok: false, error: string }` on failure. Callers narrow on `.ok`
- * before touching `.data` or `.error`, so the failure branch can't be
- * accidentally read.
+ * Delivery order (see lib/whatsapp/send-action-result.ts):
+ *   reply (+ buttons) -> media[] -> followUp[]
  */
 
-export type ActionResult<T = void> =
-  | { ok: true; data?: T }
-  | { ok: false; error: string }
+import type { ConversationState } from "@/lib/services/state"
+import type { FollowUpMessage } from "@/lib/types/follow-up"
 
-/** Convenience aliases used across the codebase. */
-export type ActionSuccess<T = void> = { ok: true; data?: T }
-export type ActionFailure = { ok: false; error: string }
+export interface ActionResult {
+  /** Main reply text. */
+  reply: string
+  /** Up to 3 reply buttons attached to the main reply. */
+  buttons: string[]
+  /** State to persist; null clears the conversation state. */
+  nextState: ConversationState | null
+  /**
+   * True for a genuine "we don't know what to do" reply. handover.ts's
+   * shouldEscalate() reads this flag instead of raw intent confidence.
+   */
+  unhandled?: boolean
+  /** Extra messages sent after the main reply (menu list, ticket image, etc). */
+  followUp?: FollowUpMessage[]
+  /** Images sent after the main reply, before follow-ups. */
+  media?: { url: string; caption?: string }[]
+}
 
-/** Helper: build a success result. */
-export function ok<T = void>(data?: T): ActionResult<T> {
+/**
+ * The ok/fail union that used to be called ActionResult, renamed so it no
+ * longer collides with the WhatsApp reply shape above. Only for service
+ * functions that return success/failure.
+ */
+export type Result<T = void> = { ok: true; data?: T } | { ok: false; error: string }
+export type ResultSuccess<T = void> = { ok: true; data?: T }
+export type ResultFailure = { ok: false; error: string }
+
+export function ok<T = void>(data?: T): Result<T> {
   return { ok: true, data }
 }
 
-/** Helper: build a failure result. */
-export function fail(error: string): ActionResult<never> {
+export function fail(error: string): Result<never> {
   return { ok: false, error }
 }
