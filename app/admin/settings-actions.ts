@@ -835,6 +835,8 @@ export async function updateBookingSettings(input: {
   bookingRemindersEnabled?: boolean
   /** How long before the start the reminder goes out (30-1440 minutes). */
   bookingReminderLeadMinutes?: number
+  /** true = WhatsApp customers may ask for a named staff member (booking_settings.allow_customer_staff_choice). */
+  allowCustomerStaffChoice?: boolean
 }): Promise<ActionResult> {
   try {
     if (!isValidServicesPerVisit(input.maxServicesPerBooking)) {
@@ -925,6 +927,9 @@ export async function updateBookingSettings(input: {
           : {}),
         ...(input.bookingReminderLeadMinutes !== undefined
           ? { booking_reminder_lead_minutes: input.bookingReminderLeadMinutes }
+          : {}),
+        ...(input.allowCustomerStaffChoice !== undefined
+          ? { allow_customer_staff_choice: input.allowCustomerStaffChoice === true }
           : {}),
         updated_at: new Date().toISOString(),
       })
