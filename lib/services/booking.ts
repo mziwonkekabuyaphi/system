@@ -210,6 +210,7 @@ import {
 
 import {
   REBOOK_BUTTONS,
+  bookingAlreadyInQueueMessage,
   sameAgainOfferMessage,
   sameAgainReminderMessage,
 } from "@/lib/services/messages/rebook"
@@ -253,6 +254,13 @@ export const BOOKING_OUTSIDE_ALLOWED_WINDOW = "BOOKING_OUTSIDE_ALLOWED_WINDOW"
  *  not log it as an error. Exported so the kiosk action can match on it
  *  without string-comparing the raw database text. */
 export const BOOKING_ALREADY_HAS_UPCOMING = "BOOKING_ALREADY_HAS_UPCOMING"
+
+/** Thrown by createBooking() when the customer is still in the live walk-in queue
+ *  (a 'waiting' or 'called' queue_entries row, including one promoted from an
+ *  earlier booking). The database trigger block_duplicate_booking refuses the insert
+ *  with "You are already in the queue"; without this code the customer just saw the
+ *  generic "something went wrong confirming your booking". */
+export const BOOKING_ALREADY_IN_QUEUE = "BOOKING_ALREADY_IN_QUEUE"
 
 /** Thrown by createBooking() when more services were sent than the tenant's
  *  booking_settings.max_services_per_booking allows. A stale or tampered kiosk
@@ -834,6 +842,9 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     // handle it without matching on database wording.
     if (error.message.includes("already have an upcoming booking")) {
       throw new Error(BOOKING_ALREADY_HAS_UPCOMING)
+    }
+    if (error.message.includes("already in the queue")) {
+      throw new Error(BOOKING_ALREADY_IN_QUEUE)
     }
 
     if (isStaffConflictError(error)) {
@@ -1745,6 +1756,9 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
         buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
         nextState: null,
       }
+    }
+    if (error instanceof Error && error.message === BOOKING_ALREADY_IN_QUEUE) {
+      return { reply: bookingAlreadyInQueueMessage(), buttons: [], nextState: null }
     }
     console.error("[booking] Error creating booking", { tenantId, error })
     return { reply: bookingErrorMessage(), buttons: [], nextState: null }
