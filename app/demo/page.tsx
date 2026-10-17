@@ -7,6 +7,7 @@ import { ChatDemo } from "./ChatDemo";
 import { KioskDemo } from "./KioskDemo";
 import { IndustryProvider, IndustryPicker } from "./IndustryContext";
 import { DashboardDemo } from "./DashboardDemo";
+import { DisplayDemo } from "./DisplayDemo";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
 export const metadata = {
@@ -346,6 +347,23 @@ export default async function DemoPage() {
           <KioskDemo />
         </div>
       </section>
+
+      <section id="display" className={styles.flow}>
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>On the wall: the waiting-area screen</p>
+          <div className={styles.sectionHead}>
+            <h2>Put a TV in the waiting area, and everyone can see where they stand.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            Open one link on any TV browser and leave it. No login, no app, no one to operate it. It shows your menu,
+            today&rsquo;s bookings and the live queue, and keeps itself up to date. You decide what it shows: pick rotating
+            slides or a live board, switch screens on and off, choose which details appear next to each name, and reword
+            every heading. Customer phone numbers are always masked.
+          </p>
+          <IndustryPicker />
+          <DisplayDemo />
+        </div>
+      </section>
       </IndustryProvider>
 
       <section id="dashboard" className={styles.dashSection}>
@@ -516,6 +534,12 @@ export default async function DemoPage() {
               A tablet or screen with a web browser, opened on your shop&rsquo;s kiosk link. You decide whether it
               offers bookings, the walk-in queue or both, and what each button says. Which plans include it is on the{" "}
               <a href={PRICING_URL}>pricing page</a>.
+            </Faq>
+            <Faq q="What do I need for the waiting-area TV?">
+              Any TV or screen with a web browser, opened on your shop&rsquo;s display link and left on. You choose rotating
+              slides or a live board, which screens to show, and which queue details appear. A customer&rsquo;s phone number is
+              only ever shown masked, and changes you make in settings reach the TV by themselves within seconds. Which plans
+              include it is on the <a href={PRICING_URL}>pricing page</a>.
             </Faq>
             <Faq q="Can two customers book the same barber at the same time?">
               No. The database itself refuses two overlapping bookings for one staff member, so even two people tapping
