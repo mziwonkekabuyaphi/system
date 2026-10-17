@@ -5,6 +5,7 @@ import { Logo } from "@/components/Logo";
 import { PlanCards } from "./PlanCards";
 import { ChatDemo } from "./ChatDemo";
 import { KioskDemo } from "./KioskDemo";
+import { IndustryProvider, IndustryPicker } from "./IndustryContext";
 import { DashboardDemo } from "./DashboardDemo";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
@@ -318,12 +319,14 @@ export default async function DemoPage() {
         </div>
       </section>
 
+      <IndustryProvider>
       <section id="demo" className={styles.flow}>
         <div className={styles.wrapWide}>
           <p className={styles.sectionLabel}>Channel one: WhatsApp</p>
           <div className={styles.sectionHead}>
             <h2>On their phone, customers book in the chat they already have.</h2>
           </div>
+          <IndustryPicker />
           <ChatDemo />
         </div>
       </section>
@@ -335,12 +338,15 @@ export default async function DemoPage() {
             <h2>At your door, walk-ins check themselves in.</h2>
           </div>
           <p className={styles.sectionIntro}>
-            Choose what the kiosk offers: bookings, the walk-in queue, or both. It resets after every customer or
-            after a spell of inactivity, so one person&rsquo;s details never show up for the next.
+            Choose what the kiosk offers: bookings, the walk-in queue, or both. Every button, title and colour is
+            yours to change, so it fits a clinic or a tyre centre as well as a barbershop. It resets after every
+            customer or after a spell of inactivity, so one person&rsquo;s details never show up for the next.
           </p>
+          <IndustryPicker />
           <KioskDemo />
         </div>
       </section>
+      </IndustryProvider>
 
       <section id="dashboard" className={styles.dashSection}>
         <div className={styles.wrapWide}>

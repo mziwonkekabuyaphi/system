@@ -1598,11 +1598,11 @@
   width: 17cqw;
   height: 17cqw;
   border-radius: 50%;
-  background: var(--qless-navy);
-  color: var(--qless-amber);
+  background: var(--k-main, var(--qless-navy));
+  color: var(--k-accent, var(--qless-amber));
   font-size: 8cqw;
   font-weight: 800;
-  box-shadow: 0 0 0 1.2cqw var(--qless-paper), 0 0 0 1.5cqw var(--qless-amber);
+  box-shadow: 0 0 0 1.2cqw var(--qless-paper), 0 0 0 1.5cqw var(--k-accent, var(--qless-amber));
 }
 .kShop { font-size: max(15px, 6.2cqw); font-weight: 800; letter-spacing: -0.02em; text-align: center; }
 .kTapLine { font-size: max(11px, 2.8cqw); font-weight: 600; color: var(--qless-ink-soft); }
@@ -1618,8 +1618,8 @@
   border-radius: 2.6cqw;
   box-shadow: 0 1.6cqw 3cqw rgba(23, 20, 18, 0.18);
 }
-.kTileBook { background: linear-gradient(155deg, var(--qless-navy), var(--qless-navy-deep)); color: var(--qless-paper); }
-.kTileQueue { background: linear-gradient(155deg, var(--qless-amber), var(--qless-amber-dim)); color: var(--qless-navy-deep); }
+.kTileBook { background: linear-gradient(155deg, var(--k-main, var(--qless-navy)), var(--k-main-deep, var(--qless-navy-deep))); color: var(--qless-paper); }
+.kTileQueue { background: linear-gradient(155deg, var(--k-accent, var(--qless-amber)), var(--k-accent-deep, var(--qless-amber-dim))); color: var(--k-on-accent, var(--qless-navy-deep)); }
 .kTileIcon { width: 6cqw; height: 6cqw; margin-bottom: 1cqw; }
 .kTileTitle { font-size: max(12px, 3.5cqw); font-weight: 800; }
 .kTileSub { font-size: max(10px, 2.3cqw); opacity: 0.85; }
@@ -1638,7 +1638,7 @@
   font-weight: 700;
   text-align: center;
 }
-.kServiceOn { border-color: var(--qless-navy); background: var(--qless-navy); color: var(--qless-paper); }
+.kServiceOn { border-color: var(--k-main, var(--qless-navy)); background: var(--k-main, var(--qless-navy)); color: var(--qless-paper); }
 
 /* Details */
 .kForm { display: flex; flex-direction: column; gap: 2.2cqw; width: 70%; }
@@ -1660,7 +1660,7 @@
   width: 3.6cqw;
   height: 3.6cqw;
   border-radius: 0.9cqw;
-  background: var(--qless-navy);
+  background: var(--k-main, var(--qless-navy));
   color: var(--qless-paper);
   font-size: max(9px, 2.4cqw);
   font-weight: 800;
@@ -1671,8 +1671,8 @@
   place-items: center;
   padding: 2cqw;
   border-radius: 1.8cqw;
-  background: var(--qless-amber);
-  color: var(--qless-navy-deep);
+  background: var(--k-accent, var(--qless-amber));
+  color: var(--k-on-accent, var(--qless-navy-deep));
   font-size: max(12px, 3.2cqw);
   font-weight: 800;
 }
@@ -1685,8 +1685,8 @@
   background: #ffffff;
   box-shadow: 0 1.6cqw 3.2cqw rgba(23, 20, 18, 0.18);
 }
-.kStubTop { display: flex; flex-direction: column; align-items: center; gap: 0.6cqw; padding: 3cqw 3cqw 2.6cqw; background: var(--qless-navy); color: var(--qless-paper); }
-.kEyebrow { font-size: max(9px, 2cqw); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--qless-amber); }
+.kStubTop { display: flex; flex-direction: column; align-items: center; gap: 0.6cqw; padding: 3cqw 3cqw 2.6cqw; background: var(--k-main, var(--qless-navy)); color: var(--qless-paper); }
+.kEyebrow { font-size: max(9px, 2cqw); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--k-accent, var(--qless-amber)); }
 .kNumber { font-family: var(--qless-font-mono); font-size: max(22px, 8.4cqw); font-weight: 800; line-height: 1; }
 .kPerf { border-top: 0.5cqw dashed var(--qless-line); }
 .kStubBottom { display: flex; flex-direction: column; gap: 1cqw; padding: 2.4cqw 3.2cqw 3cqw; }
@@ -1697,7 +1697,7 @@
   place-items: center;
   padding: 1.4cqw 7cqw;
   border-radius: 1.6cqw;
-  background: var(--qless-navy);
+  background: var(--k-main, var(--qless-navy));
   color: var(--qless-paper);
   font-size: max(11px, 2.8cqw);
   font-weight: 800;
@@ -1712,7 +1712,7 @@
   top: 55%;
   width: 4.6cqw;
   height: 4.6cqw;
-  border: 0.4cqw solid var(--qless-amber);
+  border: 0.4cqw solid var(--k-accent, var(--qless-amber));
   border-radius: 50%;
   background: rgba(240, 166, 35, 0.4);
   opacity: 0;
@@ -1740,3 +1740,24 @@
   .kioskTabs { flex-direction: column; flex-wrap: nowrap; }
   .kioskTabs .demoTab { text-align: left; border-radius: 12px; }
 }
+
+/* ---------- Industry picker ---------- */
+
+.industryPicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 32px;
+}
+
+.industryLabel {
+  font-family: var(--qless-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qless-ink-soft);
+}
+
+.industryChips { display: flex; flex-wrap: wrap; gap: 8px; }
