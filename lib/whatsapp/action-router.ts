@@ -121,7 +121,10 @@ const intentHandlers: Record<string, Handler> = {
  * classification. Row ids come from MENU_ROW_IDS in services-list.ts.
  */
 const MENU_ROW_HANDLERS: Record<string, Handler> = {
-  [MENU_ROW_IDS.book]: (tenantId) => bookingService.startBookingFlow(tenantId),
+  // Passing the phone lets a returning customer see the one-tap "Same again?" offer
+  // before the services list (booking.ts's offerSameAgain; null = normal flow).
+  [MENU_ROW_IDS.book]: (tenantId, _intent, message) =>
+    bookingService.startBookingFlow(tenantId, undefined, message.from),
   [MENU_ROW_IDS.queue]: (tenantId) => queueService.startQueueFlow(tenantId),
   [MENU_ROW_IDS.status]: statusService.handleStatus,
   [MENU_ROW_IDS.reschedule]: rescheduleService.handleReschedule,

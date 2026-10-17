@@ -280,6 +280,17 @@ const BOOKING_PHRASES = new Set([
   "walk in",
   "walk-in",
   "walkin",
+  // "Same again?" asks: booking.ts shows a returning customer their one-tap offer.
+  "same again",
+  "same again please",
+  "same as last time",
+  "the usual",
+  "my usual",
+  "usual",
+  "rebook",
+  "re-book",
+  "book again",
+  "book same again",
 ])
 
 // Exact-phrase allowlist for "show me my profile". Compared AFTER
