@@ -7,6 +7,7 @@ import {
   loadWhatsAppTemplates,
   saveWhatsAppTemplateBody,
   seedWhatsAppTemplates,
+  setWhatsAppTemplateEnabled,
   submitWhatsAppTemplate,
   syncWhatsAppTemplateStatuses,
   type WhatsAppTemplateDto,
@@ -110,6 +111,18 @@ export function WhatsAppTemplatesPanel() {
     })
   }
 
+  function toggleEnabled(t: WhatsAppTemplateDto) {
+    const next = !t.enabled
+    setBusyKey(t.key)
+    startTransition(async () => {
+      const result = await setWhatsAppTemplateEnabled(t.key, next)
+      setBusyKey(null)
+      if (!result.success) return note(t.key, result.error, false)
+      setTemplates((list) => list?.map((x) => (x.key === t.key ? { ...x, enabled: next } : x)) ?? null)
+      note(t.key, next ? "Turned on." : "Turned off. Customers won't get this message.", true)
+    })
+  }
+
   function submit(t: WhatsAppTemplateDto) {
     setBusyKey(t.key)
     startTransition(async () => {
@@ -171,14 +184,42 @@ export function WhatsAppTemplatesPanel() {
             const msg = messages[t.key]
             const busy = busyKey === t.key
             return (
-              <div key={t.key} className="space-y-2 rounded-xl border border-stone-200 p-4">
+              <div key={t.key} className={`space-y-2 rounded-xl border border-stone-200 p-4 ${t.enabled ? "" : "bg-stone-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-stone-900">{info.label}</p>
                     <p className="text-xs text-stone-500">{info.when}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${style.className}`}>{style.label}</span>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${style.className}`}>{style.label}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={t.enabled}
+                      aria-label={`Send "${info.label}" message`}
+                      onClick={() => toggleEnabled(t)}
+                      disabled={isPending}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                        t.enabled ? "bg-emerald-600" : "bg-stone-300"
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                          t.enabled ? "translate-x-5" : "translate-x-0.5"
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
+
+                {!t.enabled && (
+                  <p className="text-xs text-stone-500">Off: customers won&apos;t receive this message.</p>
+                )}
+                {t.enabled && t.key === "queue_called" && (
+                  <p className="text-xs text-stone-400">
+                    This is how customers learn it&apos;s their turn. Only turn it off if you tell them another way.
+                  </p>
+                )}
 
                 <textarea
                   className={`${inputClass} min-h-[96px]`}
