@@ -13,7 +13,7 @@ import {
   type WhatsAppTemplateDto,
   type WhatsAppTemplateStatus,
 } from "../whatsapp-template-actions"
-import { SettingsCard, inputClass, secondaryButtonClass } from "./ui"
+import { SettingsCard, inputClass, primaryButtonClass, secondaryButtonClass } from "./ui"
 
 // ---------------------------------------------------------------------------
 // WhatsApp message templates — what customers get when they have NOT messaged
@@ -25,6 +25,10 @@ const TEMPLATE_INFO: Record<string, { label: string; when: string }> = {
   queue_joined: { label: "Joined the queue", when: "Sent when someone joins the queue." },
   queue_almost_turn: { label: "Nearly their turn", when: "Sent once, when they reach the “notify before turn” position in Queue rules." },
   queue_called: { label: "It's their turn", when: "Sent when you call them from the queue." },
+  waitlist_slot_open: {
+    label: "A time opened up (waitlist)",
+    when: "Sent when a booked time is freed up and this customer is next on the waitlist for that day.",
+  },
 }
 
 const VARIABLE_LABELS: Record<string, string> = {
@@ -34,6 +38,7 @@ const VARIABLE_LABELS: Record<string, string> = {
   ticket: "ticket number",
   people_ahead: "people ahead",
   wait_minutes: "estimated wait (minutes)",
+  booking_date: "the day they're waiting for",
 }
 
 const STATUS_STYLE: Record<WhatsAppTemplateStatus, { label: string; className: string }> = {
@@ -48,9 +53,6 @@ const STATUS_STYLE: Record<WhatsAppTemplateStatus, { label: string; className: s
 function preview(t: WhatsAppTemplateDto, body: string): string {
   return body.replace(/\{\{(\d+)\}\}/g, (_, n) => t.exampleValues[Number(n) - 1] ?? "…")
 }
-
-const primaryButtonClass =
-  "rounded-lg bg-stone-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
 
 export function WhatsAppTemplatesPanel() {
   const [templates, setTemplates] = useState<WhatsAppTemplateDto[] | null>(null)

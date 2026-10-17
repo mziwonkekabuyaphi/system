@@ -289,11 +289,11 @@ export function DisplayPanel({
                   aria-pressed={selected}
                   className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
                     selected
-                      ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                      ? "border-[color:var(--sb-bg,#7A2E3A)] bg-[color-mix(in_srgb,var(--sb-bg,#7A2E3A)_6%,transparent)] ring-1 ring-[color:var(--sb-bg,#7A2E3A)]"
                       : "border-stone-300 bg-stone-50 hover:bg-stone-100"
                   }`}
                 >
-                  <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                  <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-800"}`}>
                     {option.title}
                   </span>
                   <span className="text-xs text-stone-500">{option.description}</span>
@@ -328,13 +328,13 @@ export function DisplayPanel({
                     locked ? "cursor-not-allowed opacity-60 " : ""
                   }${
                     selected
-                      ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]"
+                      ? "border-[color:var(--sb-bg,#7A2E3A)] bg-[color-mix(in_srgb,var(--sb-bg,#7A2E3A)_6%,transparent)] ring-1 ring-[color:var(--sb-bg,#7A2E3A)]"
                       : "border-stone-300 bg-stone-50 hover:bg-stone-100"
                   }`}
                 >
                   <span className="flex items-center gap-2">
                     <span className="h-4 w-4 shrink-0 rounded-full border border-stone-300" style={{ background: swatch }} />
-                    <span className={`text-sm font-semibold ${selected ? "text-[#7A2E3A]" : "text-stone-800"}`}>
+                    <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-800"}`}>
                       {option.title}
                     </span>
                   </span>
@@ -608,7 +608,7 @@ function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               href={displayUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-block text-sm font-medium text-[#7A2E3A] hover:underline"
+              className="inline-block text-sm font-medium text-[color:var(--sb-bg,#7A2E3A)] hover:underline"
             >
               Open the screen ↗
             </a>
