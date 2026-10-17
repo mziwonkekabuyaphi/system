@@ -309,7 +309,7 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -448,6 +448,7 @@ async function getSettingsData(
       cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
       maxServicesPerBooking: bookingSettingsResult.data.max_services_per_booking ?? 1,
       maxDatesOffered: bookingSettingsResult.data.max_dates_offered ?? 7,
+      allowCustomerStaffChoice: bookingSettingsResult.data.allow_customer_staff_choice === true,
       queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)
         ? (bookingSettingsResult.data.queue_priority_mode as AdminBookingSettings["queuePriorityMode"])
         : "fifo",
