@@ -183,11 +183,18 @@ function mapRowToState(row: {
   }
 }
 
-async function loadFromDatabase(tenantId: string, phone: string): Promise<ConversationState | null> {
+/**
+ * `failed` separates "the database answered: no state row" (state = null) from
+ * "the database could not be reached" (failed = true), because getState() must
+ * treat those differently: only the second may fall back to this instance's cache.
+ */
+type DatabaseLoad = { state: ConversationState | null; failed: boolean }
+
+async function loadFromDatabase(tenantId: string, phone: string): Promise<DatabaseLoad> {
   const supabase = getSupabaseServerClient()
   if (!supabase) {
     logInfo("Supabase client unavailable, skipping database load", { tenantId, phone })
-    return null
+    return { state: null, failed: true }
   }
 
   try {
@@ -201,16 +208,15 @@ async function loadFromDatabase(tenantId: string, phone: string): Promise<Conver
     if (error) {
       // PGRST116 = no rows found for .single() - this is an expected "no
       // state yet" case, not a failure, so we don't log it as an error.
-      if (error.code !== "PGRST116") {
-        logError("Database error while loading state", error, { tenantId, phone })
-      }
-      return null
+      if (error.code === "PGRST116") return { state: null, failed: false }
+      logError("Database error while loading state", error, { tenantId, phone })
+      return { state: null, failed: true }
     }
 
-    return mapRowToState(data)
+    return { state: mapRowToState(data), failed: false }
   } catch (error) {
     logError("Unexpected error while loading state from database", error, { tenantId, phone })
-    return null
+    return { state: null, failed: true }
   }
 }
 
@@ -321,26 +327,36 @@ async function findStaleConversations(
 export const stateService = {
   /**
    * Gets the current state for a (tenant, phone) pair.
-   * Priority: fresh memory cache → Supabase → null.
+   * Supabase is the source of truth and is read on EVERY call. The memory cache is
+   * only a fallback for when Supabase can't be reached.
+   *
+   * Why not "cache first": on Vercel, consecutive messages from one customer can be
+   * served by DIFFERENT warm instances, and an instance's cache is never told about
+   * writes made by the others. A cache hit could therefore be minutes stale (seen in
+   * production: a customer at the "confirm" step was served an old "pick a service"
+   * state held by another instance, and told to reply with a number 1-9). One indexed
+   * single-row read per message is negligible next to the AI and WhatsApp calls.
    */
   async getState(tenantId: string, phone: string): Promise<ConversationState | null> {
     assertValidId(tenantId, "tenantId")
     assertValidId(phone, "phone")
     const key = cacheKey(tenantId, phone)
 
+    const loaded = await loadFromDatabase(tenantId, phone)
+
+    if (!loaded.failed) {
+      // Refresh (or drop) the cache so the fallback below is as fresh as possible.
+      if (loaded.state) writeToCache(key, loaded.state)
+      else stateStore.delete(key)
+      return loaded.state
+    }
+
     const cached = readFromCache(key)
     if (cached) {
-      logInfo("Cache hit", { tenantId, phone })
+      logInfo("Database unavailable, serving cached state", { tenantId, phone })
       return cached
     }
-
-    logInfo("Cache miss", { tenantId, phone })
-
-    const fromDb = await loadFromDatabase(tenantId, phone)
-    if (fromDb) {
-      writeToCache(key, fromDb)
-    }
-    return fromDb
+    return null
   },
 
   /**
@@ -355,10 +371,14 @@ export const stateService = {
     const key = cacheKey(tenantId, phone)
 
     await enqueueWrite(key, async () => {
+      // Always stamped "now". Handlers often return the state they were given
+      // (e.g. an invalid reply re-asks the same question with `nextState: state`),
+      // and carrying that object's old updatedAt back into the row made an active
+      // conversation look idle to the inactivity sweep (findStaleConversations).
       const next: ConversationState = {
         state: state.state,
         data: state.data ?? {},
-        updatedAt: state.updatedAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       }
 
       writeToCache(key, next)
