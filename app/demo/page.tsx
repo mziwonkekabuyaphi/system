@@ -4,13 +4,14 @@ import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { PlanCards } from "./PlanCards";
 import { ChatDemo } from "./ChatDemo";
+import { KioskDemo } from "./KioskDemo";
 import { DashboardDemo } from "./DashboardDemo";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
 export const metadata = {
-  title: "ZozoQueue — WhatsApp booking & queueing for real shops",
+  title: "ZozoQueue — WhatsApp & kiosk booking and queueing for real shops",
   description:
-    "Turn your shop’s WhatsApp number into a booking desk, a walk-in queue and a waitlist. Bookings that can’t clash, a live board, a kiosk, and payroll.",
+    "Give your shop two front doors: a WhatsApp number that books and queues customers, and a self-serve kiosk for walk-ins. Bookings that can’t clash, one live board, and payroll.",
 };
 
 // Plans on this page are read from the database (same tables as the admin
@@ -64,24 +65,24 @@ const DAY: Array<{ time: string; title: string; text: string }> = [
 
 const STEPS: Array<{ title: string; text: string }> = [
   {
-    title: "Customer messages your WhatsApp number",
-    text: "No app to download, no account to create. Just the number they already have saved, or a QR code at the door.",
+    title: "A customer arrives through either door",
+    text: "They message your WhatsApp number (or scan the QR code at the door), or tap the kiosk as they walk in. No app to download, no account to create.",
   },
   {
-    title: "The AI checks services, staff and hours live",
-    text: "It knows what you offer, who’s working, and when you’re actually open, so it never offers a slot that doesn’t exist.",
+    title: "Services, staff and hours are checked live",
+    text: "The AI and the kiosk work from the same list of what you offer, who’s working and when you’re open, so neither offers a slot that doesn’t exist.",
   },
   {
     title: "A booking or queue spot is confirmed on the spot",
-    text: "No back-and-forth. The customer gets a reference number and a time, or their position in line and an estimated wait.",
+    text: "No back-and-forth. On WhatsApp they get a reference and a time. At the kiosk they get a ticket with their number, place in line and estimated wait.",
   },
   {
     title: "You see it land on your dashboard, live",
-    text: "Call the next customer, reschedule, or jump into the chat yourself any time the conversation needs a human.",
+    text: "Chats, kiosk check-ins and bookings sit on one board, tagged by where they came from. Call the next customer, reschedule, or jump into a chat yourself.",
   },
   {
     title: "Customers are kept in the loop",
-    text: "A heads-up when it’s nearly their turn and a message when it’s time. If the day is full, a waitlist message the moment a slot opens.",
+    text: "A WhatsApp heads-up when it’s nearly their turn (kiosk customers just opt in), and a message when it’s time. If the day is full, a waitlist message the moment a slot opens.",
   },
 ];
 
@@ -92,6 +93,16 @@ const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: bo
     title: "WhatsApp AI receptionist",
     text: "Books appointments, joins the queue, and answers “are you open?” without anyone touching a phone.",
     icon: <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />,
+  },
+  {
+    title: "Self-service kiosk",
+    text: "A tablet by the door where walk-ins book a time or join the queue in a few taps, in your name, logo and colours. It resets itself after every customer.",
+    icon: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M9 8h6M9 12h6M9 16h3" />
+      </>
+    ),
   },
   {
     title: "Bookings that can’t clash",
@@ -131,16 +142,6 @@ const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: bo
       <>
         <path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Z" />
         <path d="M9 11h2v2H9zM14 9v6" />
-      </>
-    ),
-  },
-  {
-    title: "Self-service kiosk",
-    text: "A tablet by the door lets walk-ins check themselves in, branded with your name, logo and colours.",
-    icon: (
-      <>
-        <rect x="4" y="3" width="16" height="18" rx="2" />
-        <path d="M9 8h6M9 12h6M9 16h3" />
       </>
     ),
   },
@@ -252,14 +253,15 @@ export default async function DemoPage() {
         </aside>
         <div className={styles.heroMain}>
           <div>
-            <h1>Every WhatsApp message is a customer already trying to walk in.</h1>
+            <h1>Whether they message or walk in, they’re already in line.</h1>
             <p>
-              ZozoQueue turns your shop&rsquo;s WhatsApp number into a booking desk, a walk-in queue and a waitlist, so
-              nobody waits on a reply, and nobody gets lost between the three.
+              ZozoQueue gives your shop two front doors: a WhatsApp number that books and queues customers around the
+              clock, and a self-serve kiosk for walk-ins. Both feed one live board, so nobody waits on a reply and
+              nobody gets lost between them.
             </p>
             <div className={styles.heroCtas}>
-              <a className={`${styles.btn} ${styles.btnPrimary}`} href="#demo">
-                Watch a customer book
+              <a className={`${styles.btn} ${styles.btnPrimary}`} href="#channels">
+                See both ways in
               </a>
               <a className={`${styles.btn} ${styles.btnSecondary}`} href="#contact">
                 Book a demo
@@ -272,13 +274,71 @@ export default async function DemoPage() {
         </div>
       </section>
 
-      <section id="demo">
+      <section id="channels">
         <div className={styles.wrapWide}>
-          <p className={styles.sectionLabel}>See it work</p>
+          <p className={styles.sectionLabel}>Two ways in</p>
           <div className={styles.sectionHead}>
-            <h2>This is what your customers see.</h2>
+            <h2>Customers reach you on their phone or at your door. You run both from one place.</h2>
+          </div>
+          <div className={styles.channels}>
+            <div className={styles.channel}>
+              <svg className={styles.channelIcon} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />
+              </svg>
+              <span className={styles.channelTag}>Channel one</span>
+              <h3>WhatsApp</h3>
+              <p>
+                Customers message the number they already have saved, at any hour. The AI books, reschedules and
+                cancels, answers &ldquo;are you open?&rdquo;, and hands over to you with one tap.
+              </p>
+              <a className={styles.channelLink} href="#demo">
+                See a customer book on WhatsApp
+              </a>
+            </div>
+            <div className={styles.channel}>
+              <svg className={styles.channelIcon} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                <rect x="4" y="3" width="16" height="18" rx="2" />
+                <path d="M9 8h6M9 12h6M9 16h3" />
+              </svg>
+              <span className={styles.channelTag}>Channel two</span>
+              <h3>Self-serve kiosk</h3>
+              <p>
+                A tablet by your door where walk-ins book a time or join the queue themselves, with big buttons and
+                a ticket at the end. No one has to stop what they&rsquo;re doing at the till.
+              </p>
+              <a className={styles.channelLink} href="#kiosk">
+                See the kiosk in action
+              </a>
+            </div>
+          </div>
+          <p className={styles.channelsNote}>
+            Both channels book against the same diary and join the same queue, so a customer can&rsquo;t clash with
+            another one, whichever door they came through.
+          </p>
+        </div>
+      </section>
+
+      <section id="demo" className={styles.flow}>
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Channel one: WhatsApp</p>
+          <div className={styles.sectionHead}>
+            <h2>On their phone, customers book in the chat they already have.</h2>
           </div>
           <ChatDemo />
+        </div>
+      </section>
+
+      <section id="kiosk">
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Channel two: the self-serve kiosk</p>
+          <div className={styles.sectionHead}>
+            <h2>At your door, walk-ins check themselves in.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            Choose what the kiosk offers: bookings, the walk-in queue, or both. It resets after every customer or
+            after a spell of inactivity, so one person&rsquo;s details never show up for the next.
+          </p>
+          <KioskDemo />
         </div>
       </section>
 
@@ -289,7 +349,7 @@ export default async function DemoPage() {
             <h2>And this is what you see, live.</h2>
           </div>
           <p className={styles.dashIntro}>
-            Every booking, walk-in and message lands on one dashboard the moment it happens. Open each view below.
+            Every WhatsApp chat, kiosk check-in and booking lands on one dashboard the moment it happens. Open each view below.
           </p>
           <DashboardDemo />
         </div>
@@ -315,7 +375,7 @@ export default async function DemoPage() {
               <h3>With ZozoQueue</h3>
               <ul>
                 <li>An AI receptionist replies on WhatsApp instantly, any hour</li>
-                <li>Bookings and the walk-in queue sit on one live board</li>
+                <li>Bookings and the walk-in queue sit on one live board, fed by WhatsApp and the kiosk</li>
                 <li>A staff member can’t be booked twice for the same time</li>
                 <li>A full day becomes a waitlist, and a cancellation fills itself</li>
               </ul>
@@ -441,6 +501,16 @@ export default async function DemoPage() {
               If your number is currently used in the regular WhatsApp app, we&rsquo;ll walk you through your options
               before anything changes.
             </Faq>
+            <Faq q="Do my customers need WhatsApp to use ZozoQueue?">
+              No. The kiosk works with just a name and a phone number. If your shop has WhatsApp connected, the kiosk
+              also offers a tick box for WhatsApp updates about their visit. It&rsquo;s never pre-ticked, so customers
+              choose.
+            </Faq>
+            <Faq q="What do I need to run the kiosk?">
+              A tablet or screen with a web browser, opened on your shop&rsquo;s kiosk link. You decide whether it
+              offers bookings, the walk-in queue or both, and what each button says. Which plans include it is on the{" "}
+              <a href={PRICING_URL}>pricing page</a>.
+            </Faq>
             <Faq q="Can two customers book the same barber at the same time?">
               No. The database itself refuses two overlapping bookings for one staff member, so even two people tapping
               &ldquo;confirm&rdquo; in the same second can&rsquo;t both get the slot. The second one is offered another time.
@@ -481,10 +551,10 @@ export default async function DemoPage() {
 
       <section className={styles.closing} id="contact">
         <div className={styles.wrap} style={{ textAlign: "center" }}>
-          <h2 style={{ margin: "0 auto" }}>Stop losing customers between messages.</h2>
+          <h2 style={{ margin: "0 auto" }}>Stop losing customers in the inbox and at the door.</h2>
           <p style={{ marginLeft: "auto", marginRight: "auto" }}>
-            See ZozoQueue running on your own WhatsApp number, with your own services and hours, in a 20-minute
-            walkthrough.
+            See ZozoQueue running on your own WhatsApp number and kiosk, with your own services and hours, in a
+            20-minute walkthrough.
           </p>
           <a className={`${styles.btn} ${styles.btnPrimary}`} href="mailto:hello@ndithini.com">
             Get in touch
@@ -493,7 +563,7 @@ export default async function DemoPage() {
       </section>
 
       <footer>
-        ZozoQueue — WhatsApp booking &amp; queueing for shops that never close their door.
+        ZozoQueue — WhatsApp &amp; kiosk booking and queueing for shops that never close their door.
         <br />A Ndithini product.
       </footer>
     </div>

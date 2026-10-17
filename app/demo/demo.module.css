@@ -1420,3 +1420,323 @@
 
 /* Compact (hero) variant has no sidebar: use the full width and natural height */
 .dashCompact .dashBody { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+
+/* =====================================================================
+   CHANNELS ("two ways in") + KIOSK DEMO
+   ===================================================================== */
+
+.sectionIntro {
+  margin: 18px 0 0;
+  max-width: 56ch;
+  font-size: 17px;
+  color: var(--qless-ink-soft);
+}
+
+/* ---------- Two ways in ---------- */
+
+.channels {
+  display: grid;
+  gap: 20px;
+  margin-top: 40px;
+}
+
+.channel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 28px;
+  border: 1px solid var(--qless-line);
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.channelIcon { width: 34px; height: 34px; color: var(--qless-navy); }
+
+.channelTag {
+  font-family: var(--qless-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qless-ink-soft);
+}
+
+.channel h3 { font-size: 22px; }
+.channel p { margin: 0; color: var(--qless-ink-soft); }
+
+.channelLink {
+  margin-top: auto;
+  padding-top: 6px;
+  font-weight: 700;
+  color: var(--qless-navy);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.channelsNote {
+  margin: 28px 0 0;
+  max-width: 62ch;
+  font-size: 17px;
+  color: var(--qless-ink);
+}
+
+@media (min-width: 760px) {
+  .channels { grid-template-columns: 1fr 1fr; gap: 28px; }
+}
+
+/* ---------- Kiosk demo: a tablet showing the real flow ---------- */
+
+.kioskLayout {
+  display: grid;
+  gap: 28px;
+  min-width: 0;
+  margin-top: 40px;
+}
+
+.kioskSide { min-width: 0; }
+
+.kioskTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kioskCaption {
+  margin: 22px 0 0;
+  max-width: 44ch;
+  font-size: 16.5px;
+  line-height: 1.5;
+  color: var(--qless-ink);
+}
+
+.kioskFine {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--qless-ink-soft);
+}
+
+.kioskResume {
+  margin-top: 14px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--qless-navy);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.kioskResume:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
+
+.tablet {
+  position: relative;
+  justify-self: center;
+  width: 100%;
+  max-width: 680px;
+  padding: 3.4%;
+  border-radius: 26px;
+  background: var(--qless-navy-deep);
+  box-shadow: 0 30px 60px -24px rgba(11, 22, 40, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+/* a little stand so it reads as a kiosk, not a phone */
+.tablet::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -18px;
+  width: 22%;
+  height: 18px;
+  transform: translateX(-50%);
+  border-radius: 0 0 10px 10px;
+  background: var(--qless-navy-deep);
+}
+
+/* Everything inside sizes off the screen's own width (cqw), so the mock scales
+   as one piece. max() keeps the smallest text readable on a phone. */
+.tabletScreen {
+  container-type: inline-size;
+  display: flex;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--qless-paper);
+  color: var(--qless-ink);
+  text-align: left;
+  line-height: 1.25;
+}
+
+.kFade { flex: 1; display: flex; min-width: 0; animation: kIn 0.4s ease-out; }
+@keyframes kIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.kScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3.2cqw;
+  min-width: 0;
+  padding: 4cqw 5cqw;
+}
+
+.kTitle {
+  font-size: max(12px, 3.6cqw);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-align: center;
+  color: var(--qless-ink);
+}
+
+/* Welcome */
+.kLogo {
+  display: grid;
+  place-items: center;
+  width: 17cqw;
+  height: 17cqw;
+  border-radius: 50%;
+  background: var(--qless-navy);
+  color: var(--qless-amber);
+  font-size: 8cqw;
+  font-weight: 800;
+  box-shadow: 0 0 0 1.2cqw var(--qless-paper), 0 0 0 1.5cqw var(--qless-amber);
+}
+.kShop { font-size: max(15px, 6.2cqw); font-weight: 800; letter-spacing: -0.02em; text-align: center; }
+.kTapLine { font-size: max(11px, 2.8cqw); font-weight: 600; color: var(--qless-ink-soft); }
+
+/* Choice */
+.kTiles { display: grid; grid-template-columns: 1fr 1fr; gap: 2.6cqw; width: 100%; }
+.kTile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.2cqw;
+  padding: 3.4cqw;
+  border-radius: 2.6cqw;
+  box-shadow: 0 1.6cqw 3cqw rgba(23, 20, 18, 0.18);
+}
+.kTileBook { background: linear-gradient(155deg, var(--qless-navy), var(--qless-navy-deep)); color: var(--qless-paper); }
+.kTileQueue { background: linear-gradient(155deg, var(--qless-amber), var(--qless-amber-dim)); color: var(--qless-navy-deep); }
+.kTileIcon { width: 6cqw; height: 6cqw; margin-bottom: 1cqw; }
+.kTileTitle { font-size: max(12px, 3.5cqw); font-weight: 800; }
+.kTileSub { font-size: max(10px, 2.3cqw); opacity: 0.85; }
+
+/* Service */
+.kServices { display: grid; grid-template-columns: 1fr 1fr; gap: 2.4cqw; width: 100%; }
+.kService {
+  display: grid;
+  place-items: center;
+  min-height: 11cqw;
+  padding: 1.6cqw 2cqw;
+  border: 0.5cqw solid var(--qless-line);
+  border-radius: 2cqw;
+  background: #ffffff;
+  font-size: max(11px, 3cqw);
+  font-weight: 700;
+  text-align: center;
+}
+.kServiceOn { border-color: var(--qless-navy); background: var(--qless-navy); color: var(--qless-paper); }
+
+/* Details */
+.kForm { display: flex; flex-direction: column; gap: 2.2cqw; width: 70%; }
+.kField { display: flex; flex-direction: column; gap: 0.8cqw; }
+.kFieldLabel { font-size: max(10px, 2.1cqw); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--qless-ink-soft); }
+.kFieldBox {
+  padding: 1.8cqw 2.2cqw;
+  border: 0.4cqw solid var(--qless-line);
+  border-radius: 1.6cqw;
+  background: #ffffff;
+  font-size: max(11px, 2.9cqw);
+  font-weight: 600;
+}
+.kOptIn { display: flex; align-items: center; gap: 1.6cqw; font-size: max(10px, 2.3cqw); font-weight: 600; }
+.kCheck {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3.6cqw;
+  height: 3.6cqw;
+  border-radius: 0.9cqw;
+  background: var(--qless-navy);
+  color: var(--qless-paper);
+  font-size: max(9px, 2.4cqw);
+  font-weight: 800;
+  line-height: 1;
+}
+.kConfirm {
+  display: grid;
+  place-items: center;
+  padding: 2cqw;
+  border-radius: 1.8cqw;
+  background: var(--qless-amber);
+  color: var(--qless-navy-deep);
+  font-size: max(12px, 3.2cqw);
+  font-weight: 800;
+}
+
+/* Ticket */
+.kStub {
+  width: 56%;
+  overflow: hidden;
+  border-radius: 2.2cqw;
+  background: #ffffff;
+  box-shadow: 0 1.6cqw 3.2cqw rgba(23, 20, 18, 0.18);
+}
+.kStubTop { display: flex; flex-direction: column; align-items: center; gap: 0.6cqw; padding: 3cqw 3cqw 2.6cqw; background: var(--qless-navy); color: var(--qless-paper); }
+.kEyebrow { font-size: max(9px, 2cqw); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--qless-amber); }
+.kNumber { font-family: var(--qless-font-mono); font-size: max(22px, 8.4cqw); font-weight: 800; line-height: 1; }
+.kPerf { border-top: 0.5cqw dashed var(--qless-line); }
+.kStubBottom { display: flex; flex-direction: column; gap: 1cqw; padding: 2.4cqw 3.2cqw 3cqw; }
+.kRow { display: flex; justify-content: space-between; gap: 2cqw; font-size: max(10px, 2.3cqw); color: var(--qless-ink-soft); }
+.kRow strong { color: var(--qless-ink); }
+.kDone {
+  display: grid;
+  place-items: center;
+  padding: 1.4cqw 7cqw;
+  border-radius: 1.6cqw;
+  background: var(--qless-navy);
+  color: var(--qless-paper);
+  font-size: max(11px, 2.8cqw);
+  font-weight: 800;
+}
+
+/* The "finger" that taps the highlighted control on each screen */
+.kTarget { position: relative; }
+.kTarget::after {
+  content: "";
+  position: absolute;
+  right: 8%;
+  top: 55%;
+  width: 4.6cqw;
+  height: 4.6cqw;
+  border: 0.4cqw solid var(--qless-amber);
+  border-radius: 50%;
+  background: rgba(240, 166, 35, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  animation: kTap 1.8s ease-out 0.7s infinite;
+}
+@keyframes kTap {
+  0% { transform: scale(0.4); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kFade, .kTarget::after { animation: none; }
+}
+
+@media (max-width: 520px) {
+  .tabletScreen { aspect-ratio: 1 / 1; }
+  .kForm { width: 86%; }
+  .kStub { width: 74%; }
+}
+
+@media (min-width: 1000px) {
+  .kioskLayout { grid-template-columns: minmax(0, 1fr) 260px; gap: 56px; align-items: center; }
+  .kioskTabs { flex-direction: column; flex-wrap: nowrap; }
+  .kioskTabs .demoTab { text-align: left; border-radius: 12px; }
+}
