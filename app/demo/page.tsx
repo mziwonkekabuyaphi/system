@@ -4,6 +4,7 @@ import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { PlanCards } from "./PlanCards";
 import { ChatDemo } from "./ChatDemo";
+import { DashboardDemo } from "./DashboardDemo";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
 export const metadata = {
@@ -250,18 +251,23 @@ export default async function DemoPage() {
           <span className={styles.heroStubLabel}>A Ndithini product</span>
         </aside>
         <div className={styles.heroMain}>
-          <h1>Every WhatsApp message is a customer already trying to walk in.</h1>
-          <p>
-            ZozoQueue turns your shop&rsquo;s WhatsApp number into a booking desk, a walk-in queue and a waitlist, so
-            nobody waits on a reply, and nobody gets lost between the three.
-          </p>
-          <div className={styles.heroCtas}>
-            <a className={`${styles.btn} ${styles.btnPrimary}`} href="#demo">
-              Watch a customer book
-            </a>
-            <a className={`${styles.btn} ${styles.btnSecondary}`} href="#contact">
-              Book a demo
-            </a>
+          <div>
+            <h1>Every WhatsApp message is a customer already trying to walk in.</h1>
+            <p>
+              ZozoQueue turns your shop&rsquo;s WhatsApp number into a booking desk, a walk-in queue and a waitlist, so
+              nobody waits on a reply, and nobody gets lost between the three.
+            </p>
+            <div className={styles.heroCtas}>
+              <a className={`${styles.btn} ${styles.btnPrimary}`} href="#demo">
+                Watch a customer book
+              </a>
+              <a className={`${styles.btn} ${styles.btnSecondary}`} href="#contact">
+                Book a demo
+              </a>
+            </div>
+          </div>
+          <div className={styles.heroPreview}>
+            <DashboardDemo compact />
           </div>
         </div>
       </section>
@@ -273,6 +279,19 @@ export default async function DemoPage() {
             <h2>This is what your customers see.</h2>
           </div>
           <ChatDemo />
+        </div>
+      </section>
+
+      <section id="dashboard" className={styles.dashSection}>
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Your side of the counter</p>
+          <div className={styles.sectionHead}>
+            <h2>And this is what you see, live.</h2>
+          </div>
+          <p className={styles.dashIntro}>
+            Every booking, walk-in and message lands on one dashboard the moment it happens. Open each view below.
+          </p>
+          <DashboardDemo />
         </div>
       </section>
 
@@ -326,7 +345,7 @@ export default async function DemoPage() {
       </section>
 
       <section className={styles.flow} id="how">
-        <div className={styles.wrap}>
+        <div className={styles.wrapWide}>
           <p className={styles.sectionLabel}>How it works</p>
           <div className={styles.sectionHead}>
             <h2>From a WhatsApp message to a confirmed spot, with nobody at the till.</h2>
