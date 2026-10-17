@@ -29,6 +29,8 @@ export interface WhatsAppTemplateDto {
   exampleValues: string[]
   status: WhatsAppTemplateStatus
   rejectionReason: string | null
+  /** Tenant on/off switch (whatsapp_templates.enabled). Separate from Meta's review status. */
+  enabled: boolean
 }
 
 type Result<T = object> = ({ success: true } & T) | { success: false; error: string }
@@ -81,6 +83,7 @@ function toDto(row: Record<string, any>): WhatsAppTemplateDto {
     exampleValues: row.example_values,
     status: row.status,
     rejectionReason: row.rejection_reason ?? null,
+    enabled: row.enabled !== false,
   }
 }
 
@@ -165,6 +168,25 @@ export async function saveWhatsAppTemplateBody(key: string, body: string): Promi
       .single()
     if (updateError) return { success: false, error: updateError.message }
     return { success: true, template: toDto(updated) }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+}
+
+/** Turns one message on or off for this tenant. queue-notify checks this flag before every send and
+ *  logs a "skipped" row in whatsapp_send_log when it's off. Doesn't touch wording or Meta status. */
+export async function setWhatsAppTemplateEnabled(key: string, enabled: boolean): Promise<Result> {
+  try {
+    const { supabase, tenantId } = await tenantContext()
+    const { data, error } = await supabase
+      .from("whatsapp_templates")
+      .update({ enabled, updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .eq("key", key)
+      .select("key")
+    if (error) return { success: false, error: error.message }
+    if (!data || data.length === 0) return { success: false, error: "Template not found." }
+    return { success: true }
   } catch (err) {
     return { success: false, error: (err as Error).message }
   }
