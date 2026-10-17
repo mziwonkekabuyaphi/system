@@ -4,23 +4,11 @@
  * messages/booking.ts: wording lives here, state transitions live in booking.ts.
  */
 
-import type { ActionResult } from "@/lib/types/action"
-
-/** Ids booking.ts matches a button tap against (it falls back to the typed/title text). */
-export const REBOOK_BUTTON_IDS = {
-  yes: "rebook_yes",
-  other: "rebook_other",
-  menu: "rebook_menu",
-} as const
-
-// WhatsApp reply buttons: max 3, titles max 20 characters.
-// NOTE: written as { id, title }. If your buttons in messages/booking.ts use a different
-// shape, adjust it here: it is the only place this feature builds one.
-export const REBOOK_BUTTONS: NonNullable<ActionResult["buttons"]> = [
-  { id: REBOOK_BUTTON_IDS.yes, title: "✅ Yes, book it" },
-  { id: REBOOK_BUTTON_IDS.other, title: "🕒 Other time" },
-  { id: REBOOK_BUTTON_IDS.menu, title: "↩️ Something else" },
-]
+// WhatsApp reply buttons are plain titles (send-message.ts numbers the ids itself,
+// btn_1..btn_3, and a tap arrives in booking.ts as its title text). Max 3 buttons,
+// titles are cut at 20 characters, so keep them short. booking.ts's readRebookChoice()
+// matches on the words "book it", "other" and "else": keep those if you reword.
+export const REBOOK_BUTTONS: string[] = ["✅ Yes, book it", "🕒 Other time", "↩️ Something else"]
 
 export function sameAgainOfferMessage(args: {
   customerName: string | null
