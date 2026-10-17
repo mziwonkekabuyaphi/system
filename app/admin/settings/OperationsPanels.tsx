@@ -219,6 +219,33 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
       <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
+            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">
+              Allow customers to choose staff
+            </p>
+            <p className="text-sm text-stone-500">
+              When on, customers can ask for a specific staff member on WhatsApp, for example &ldquo;book with
+              Sipho&rdquo;. They are only offered times that person is free, and are told if that person
+              isn&apos;t available. When off, every booking is assigned automatically to whoever is free.
+            </p>
+          </div>
+          <Toggle
+            checked={form.allowCustomerStaffChoice ?? false}
+            disabled={isPending}
+            onChange={(next) => setForm({ ...form, allowCustomerStaffChoice: next })}
+          />
+        </div>
+
+        <p className="mt-3 text-xs text-stone-400">
+          Customers are never given a different person than the one they asked for. Rescheduling and the kiosk
+          still assign staff automatically.
+        </p>
+
+        <SaveRow isPending={isPending} onSave={save} message={message} />
+      </div>
+
+      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
             <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Booking reminders</p>
             <p className="text-sm text-stone-500">
               Send customers a WhatsApp reminder shortly before their appointment, with buttons to confirm or say
