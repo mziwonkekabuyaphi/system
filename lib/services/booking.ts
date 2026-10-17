@@ -210,7 +210,6 @@ import {
 
 import {
   REBOOK_BUTTONS,
-  REBOOK_BUTTON_IDS,
   sameAgainOfferMessage,
   sameAgainReminderMessage,
 } from "@/lib/services/messages/rebook"
@@ -1341,11 +1340,8 @@ async function offerSameAgain(tenantId: string, phone: string): Promise<ActionRe
 type RebookChoice = "yes" | "other_time" | "something_else" | "unknown"
 
 function readRebookChoice(message: IncomingMessage): RebookChoice {
-  if (message.interactiveId === REBOOK_BUTTON_IDS.yes) return "yes"
-  if (message.interactiveId === REBOOK_BUTTON_IDS.other) return "other_time"
-  if (message.interactiveId === REBOOK_BUTTON_IDS.menu) return "something_else"
-
-  // Typed answer (or a button that arrived as its title): same clean-up as handleConfirm().
+  // A button tap arrives as its title (ids are btn_1..3, assigned by send-message.ts), so
+  // taps and typed answers are read the same way, with the same clean-up as handleConfirm().
   const text = normalizedReplyText(message)
     .replace(/^\[(?:button|interactive) reply\]\s*/i, "")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
