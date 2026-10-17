@@ -30,6 +30,12 @@ export function sameAgainOfferMessage(args: {
   return lines.join("\n")
 }
 
+/** Shown when a booking is refused because the customer is still in the walk-in queue.
+ *  Lives here for now; move it into messages/booking.ts if you prefer. */
+export function bookingAlreadyInQueueMessage(): string {
+  return "You're already in the walk-in queue, so I can't book another visit yet. Reply *cancel* to leave the queue, then book again, or use *Check Status* to see where you are."
+}
+
 export function sameAgainReminderMessage(): string {
   return "Please tap one of the buttons: *Yes, book it*, *Other time* or *Something else*."
 }
