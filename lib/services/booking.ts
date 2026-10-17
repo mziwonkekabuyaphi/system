@@ -121,6 +121,15 @@
  * anything. The customer still replies "yes" at the confirm step, and
  * createBooking() is still the only writer. Any AI failure or missing detail
  * returns null and the ordinary flow below runs exactly as before.
+ *
+ * SAME AGAIN? (new): a returning customer (one with a completed visit in
+ * queue_entries or bookings) is offered their last service(s), the same staff
+ * member when staff choice is on, and one concrete free slot near their usual
+ * weekday and time, with Yes / Other time / Something else buttons. Yes runs
+ * handleConfirm() unchanged, so createBooking() stays the only writer. Entered
+ * from handleBooking() (typed "book", "same again", "I need a haircut"...) and,
+ * if the caller passes the phone, from presentServices() (the "Book Now" row).
+ * The lookup lives in lib/services/rebook.ts and is read-only.
  */
 
 import crypto from "node:crypto"
@@ -199,10 +208,18 @@ import {
   bookingAlreadyHasUpcomingMessage,
 } from "@/lib/services/messages/booking"
 
+import {
+  REBOOK_BUTTONS,
+  REBOOK_BUTTON_IDS,
+  sameAgainOfferMessage,
+  sameAgainReminderMessage,
+} from "@/lib/services/messages/rebook"
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
+const BOOKING_STATE_REBOOK_OFFER = "booking_rebook_offer"
 const BOOKING_STATE_ENTRY_CHOICE = "booking_entry_choice"
 const BOOKING_STATE_SERVICE_SELECTION = "booking_service_selection"
 const BOOKING_STATE_DATE_SELECTION = "booking_date_selection"
@@ -1232,6 +1249,14 @@ async function handleBooking(tenantId: string, _intent: RoutedIntent, message: I
   const smart = await trySmartBooking(tenantId, message, requestedStaff)
   if (smart) return smart
 
+  // Returning customer: offer "Same again?" before the Queue-or-Book question or the
+  // services list. Skipped when they asked for a specific person (they have a plan) or
+  // clearly want the queue. Returns null when there is nothing sensible to offer.
+  if (!requestedStaff && !(wantsQueue && !wantsBooking)) {
+    const sameAgain = await offerSameAgain(tenantId, message.from)
+    if (sameAgain) return sameAgain
+  }
+
   // Only ONE of the two clearly mentioned -> the customer already told us
   // what they want, so skip the "Queue or Book?" question. Both mentioned,
   // or neither (e.g. "I need a haircut"), is genuinely ambiguous -> ask.
@@ -1263,6 +1288,122 @@ async function handleEntryChoice(tenantId: string, state: ConversationState, mes
   }
 }
 
+// ============================================================================
+// SAME AGAIN? — one-tap rebooking for returning customers (see rebook.ts)
+// ============================================================================
+
+/**
+ * Builds the "Same again?" offer for a returning customer, or returns null when
+ * there is nothing to offer (new customer, upcoming booking, retired service, no
+ * free slot...). Never throws; the caller just carries on with the normal flow.
+ *
+ * The offer is a normal booking in waiting: the state below carries exactly what
+ * the ordinary confirm step needs, so tapping "Yes" runs handleConfirm() and gets
+ * its ticket image, name prompt, plan-limit and stale-slot handling for free.
+ */
+async function offerSameAgain(tenantId: string, phone: string): Promise<ActionResult | null> {
+  try {
+    // Lazy: rebook.ts imports availability helpers from this file.
+    const { findSameAgainOffer } = await import("@/lib/services/rebook")
+    const offer = await findSameAgainOffer(tenantId, phone)
+    if (!offer) return null
+
+    const [selectedService, ...extraServices] = offer.services
+    const visit = combineServices(offer.services)
+
+    const data: BookingStateData = {
+      selectedService,
+      extraServices,
+      maxServices: offer.maxServices,
+      dateOptions: offer.dateOptions,
+      selectedDate: offer.dateISO,
+      selectedSlot: offer.slot,
+      ...(offer.staff ? { requestedStaff: offer.staff } : {}),
+    }
+
+    return {
+      reply: sameAgainOfferMessage({
+        customerName: offer.customerName,
+        serviceName: visit.name,
+        dateLabel: offer.dateLabel,
+        slotLabel: offer.slot.label,
+        staffName: offer.staff?.name,
+      }),
+      buttons: REBOOK_BUTTONS,
+      nextState: { state: BOOKING_STATE_REBOOK_OFFER, data: mergeBookingData({}, data) },
+    }
+  } catch (error) {
+    console.error("[booking] same-again offer failed, using normal flow", { tenantId, error })
+    return null
+  }
+}
+
+type RebookChoice = "yes" | "other_time" | "something_else" | "unknown"
+
+function readRebookChoice(message: IncomingMessage): RebookChoice {
+  if (message.interactiveId === REBOOK_BUTTON_IDS.yes) return "yes"
+  if (message.interactiveId === REBOOK_BUTTON_IDS.other) return "other_time"
+  if (message.interactiveId === REBOOK_BUTTON_IDS.menu) return "something_else"
+
+  // Typed answer (or a button that arrived as its title): same clean-up as handleConfirm().
+  const text = normalizedReplyText(message)
+    .replace(/^\[(?:button|interactive) reply\]\s*/i, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  if (text.includes("else") || text.includes("different") || text.includes("menu") || NO_WORDS.has(text)) {
+    return "something_else"
+  }
+  if (YES_WORDS.has(text) || text.includes("book it")) return "yes"
+  if (text.includes("other") || text.includes("time")) return "other_time"
+  return "unknown"
+}
+
+async function handleRebookOffer(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+  const data = getBookingData(state)
+
+  switch (readRebookChoice(message)) {
+    case "yes": {
+      if (!data.selectedService || !data.selectedDate || !data.selectedSlot) {
+        return { reply: missingBookingDataMessage(), buttons: [], nextState: null }
+      }
+      // Exactly a "yes" at the normal confirm step. createBooking() inside re-checks
+      // business hours, notice, the one-upcoming-booking rule, staff and the slot itself.
+      return handleConfirm(
+        tenantId,
+        { ...state, state: BOOKING_STATE_CONFIRM },
+        { ...message, text: "yes", contentSummary: "yes" },
+      )
+    }
+
+    case "other_time": {
+      // Services are already chosen: skip straight to the date list.
+      const dateOptions = data.dateOptions?.length ? data.dateOptions : await buildDateOptions(tenantId)
+      return {
+        reply: dateOptionsMessage(dateOptions),
+        buttons: [],
+        nextState: {
+          state: BOOKING_STATE_DATE_SELECTION,
+          data: mergeBookingData(data, {
+            dateOptions,
+            selectedDate: undefined,
+            selectedSlot: undefined,
+            pendingSlots: undefined,
+          }),
+        },
+      }
+    }
+
+    case "something_else":
+      // No phone passed, so this can't loop back into the offer.
+      return presentServices(tenantId)
+
+    default:
+      return { reply: sameAgainReminderMessage(), buttons: REBOOK_BUTTONS, nextState: state }
+  }
+}
+
 /**
  * Shows this shop's services and starts the booking flow (the numbered "reply
  * with a number" list). Exported so the "Book Now" menu row can go straight
@@ -1272,7 +1413,15 @@ export async function presentServices(
   tenantId: string,
   /** Customer asked for this person (only ever passed when the shop allows staff choice). */
   requestedStaff?: { id: string; name: string },
+  /** Pass the customer's phone (e.g. from the "Book Now" menu tap) to show a returning
+   *  customer the one-tap "Same again?" offer first. Omit it to go straight to the list. */
+  customerPhone?: string,
 ): Promise<ActionResult> {
+  if (customerPhone && !requestedStaff) {
+    const sameAgain = await offerSameAgain(tenantId, customerPhone)
+    if (sameAgain) return sameAgain
+  }
+
   let services: BookingServiceOffer[]
   try {
     services = await getBookableServices(tenantId)
@@ -1640,6 +1789,8 @@ async function handleNameCollection(tenantId: string, message: IncomingMessage):
 
 async function handleState(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult | null> {
   switch (state.state) {
+    case BOOKING_STATE_REBOOK_OFFER:
+      return handleRebookOffer(tenantId, state, message)
     case BOOKING_STATE_ENTRY_CHOICE:
       return handleEntryChoice(tenantId, state, message)
     case BOOKING_STATE_SERVICE_SELECTION:
