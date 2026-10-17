@@ -305,8 +305,14 @@ export function AdminView({
   const brandName = branding.displayName?.trim() || tenantName?.trim() || "Shop admin"
   const brandInitial = brandName.charAt(0).toUpperCase() || "S"
 
+  // The shop's dashboard colours are set on the whole page (not only the sidebar) so settings
+  // buttons, toggles and highlights can use them too. Everything that reads var(--sb-bg, ...) falls
+  // back to the standard maroon when no custom colours are switched on.
   return (
-    <div className="min-h-screen bg-admin-body text-admin-text">
+    <div
+      style={{ ...(sidebarVars ?? {}) }}
+      className="min-h-screen bg-admin-body text-admin-text"
+    >
       {/* ================= SIDEBAR ================= */}
       <aside
         onMouseEnter={() => setHovered(true)}
