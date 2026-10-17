@@ -32,6 +32,7 @@ import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { sendActionResult } from "@/lib/whatsapp/send-action-result"
 import { storeIncomingMessage, storeOutboundMessage } from "@/lib/whatsapp/store"
 import { isAIEnabled, shouldEscalate, escalateToHumanAndNotify } from "@/lib/handover"
+import { getSignatureMode, verifyMetaSignature } from "@/lib/whatsapp/verify-signature"
 
 export const runtime = "nodejs"
 
@@ -89,8 +90,32 @@ async function resolveTenantId(phoneNumberId: string | null): Promise<string | n
 export async function POST(request: Request): Promise<NextResponse> {
   let payload: unknown
 
+  // ─── SIGNATURE CHECK (added) ───
+  // Meta signs the exact bytes it sends, so read the RAW body first and check
+  // it before parsing. WHATSAPP_SIGNATURE_MODE decides what a bad signature
+  // does: "log" (default) only logs it and carries on exactly as before;
+  // "enforce" rejects it with 401. See lib/whatsapp/verify-signature.ts.
+  let rawBody: Buffer
   try {
-    payload = await request.json()
+    rawBody = Buffer.from(await request.arrayBuffer())
+  } catch (error) {
+    console.error("[webhook] Failed to read request body", error)
+    return NextResponse.json({ received: true })
+  }
+
+  const signatureMode = getSignatureMode()
+  const signature = verifyMetaSignature(rawBody, request.headers.get("x-hub-signature-256"))
+  if (signature.ok) {
+    console.log("[webhook] Signature OK")
+  } else {
+    console.error("[webhook] Signature check failed", { mode: signatureMode, reason: signature.reason })
+    if (signatureMode === "enforce") {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
+    }
+  }
+
+  try {
+    payload = JSON.parse(rawBody.toString("utf8"))
   } catch (error) {
     console.error("[webhook] Failed to parse request body as JSON", error)
     return NextResponse.json({ received: true })
