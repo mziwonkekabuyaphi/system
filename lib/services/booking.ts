@@ -160,6 +160,16 @@ import {
 
 import { CANCEL_OR_RESCHEDULE_BUTTONS } from "@/lib/services/messages/reschedule"
 
+import { matchStaffRequest, pickStaffForSlot, type StaffCandidate } from "@/lib/services/shared/staff-request"
+import {
+  staffRequestedLine,
+  staffInactiveMessage,
+  staffAmbiguousMessage,
+  staffNoSlotsMessage,
+  staffNoLongerAvailableMessage,
+  staffChoiceOffMessage,
+} from "@/lib/services/messages/booking-staff"
+
 import {
   CANCEL_BUTTON,
   CONFIRM_BUTTONS,
@@ -233,6 +243,17 @@ export const BOOKING_ALREADY_HAS_UPCOMING = "BOOKING_ALREADY_HAS_UPCOMING"
  *  request, not a bug in normal use. */
 export const BOOKING_TOO_MANY_SERVICES = "BOOKING_TOO_MANY_SERVICES"
 
+/** Thrown by createBooking() when the customer asked for a specific staff member
+ *  and that person is not an active member of this tenant's staff, or is not free
+ *  for the whole slot (including losing a double-booking race at insert time).
+ *  NEVER answered by quietly picking someone else. */
+export const BOOKING_REQUESTED_STAFF_UNAVAILABLE = "BOOKING_REQUESTED_STAFF_UNAVAILABLE"
+
+/** Thrown by createBooking() when a staff member was requested but the tenant has
+ *  booking_settings.allow_customer_staff_choice switched off (e.g. the admin turned
+ *  it off while the customer was mid-conversation). */
+export const BOOKING_STAFF_CHOICE_DISABLED = "BOOKING_STAFF_CHOICE_DISABLED"
+
 /** Hard ceiling, mirrors the DB CHECK on max_services_per_booking. */
 const ABSOLUTE_MAX_SERVICES_PER_BOOKING = 5
 
@@ -290,6 +311,9 @@ interface BookingStateData {
   selectedDate?: string
   pendingSlots?: BookingSlot[]
   selectedSlot?: BookingSlot
+  /** The staff member the customer asked for ("book with Sipho"). Only ever set when
+   *  booking_settings.allow_customer_staff_choice is on; createBooking() re-checks it. */
+  requestedStaff?: { id: string; name: string }
 }
 
 function getBookingData(state: ConversationState): BookingStateData {
@@ -317,6 +341,40 @@ async function getActiveStaff(supabase: SupabaseClient, tenantId: string): Promi
     .eq("active", true)
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
   return data ?? []
+}
+
+/**
+ * Reads booking_settings.allow_customer_staff_choice for this tenant. Its own small
+ * query (same approach as getDatesOffered below) so it doesn't touch getBookingSettings.
+ * FAILS CLOSED: a missing row, a database error, or a column that hasn't been added yet
+ * all mean "off", so customer staff requests are ignored and automatic assignment runs
+ * exactly as before.
+ */
+async function readAllowCustomerStaffChoice(supabase: SupabaseClient, tenantId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("booking_settings")
+    .select("allow_customer_staff_choice")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (error) {
+    console.error("[booking] Failed to load allow_customer_staff_choice, treating as off", {
+      tenantId,
+      error: error.message,
+    })
+    return false
+  }
+  return data?.allow_customer_staff_choice === true
+}
+
+/** This tenant's staff, active or not, for matching a typed name. Tenant-scoped. */
+async function getStaffForNameMatching(supabase: SupabaseClient, tenantId: string): Promise<StaffCandidate[]> {
+  const { data, error } = await supabase.from("staff").select("id, name, active").eq("tenant_id", tenantId)
+  if (error) throw new Error(`Failed to load staff: ${error.message}`)
+  return (data ?? []).map((row: { id: string; name: string; active: boolean | null }) => ({
+    id: row.id,
+    name: row.name,
+    active: row.active === true,
+  }))
 }
 
 /**
@@ -433,15 +491,19 @@ export async function getAvailableSlots(
   durationMinutes: number,
   /** Rescheduling only: ignore this booking when checking who is free. */
   excludeBookingId?: string,
+  /** Customer asked for this staff member: only their free times are offered. */
+  requestedStaffId?: string,
 ): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
 
-  const [staff, bookingSettings, dayWindow] = await Promise.all([
+  const [activeStaff, bookingSettings, dayWindow] = await Promise.all([
     getActiveStaff(supabase, tenantId),
     getBookingSettings(supabase, tenantId),
     resolveDayWindow(supabase, tenantId, dateISO),
   ])
 
+  // A requested staff member that is not in this tenant's ACTIVE list leaves nobody: no slots.
+  const staff = requestedStaffId ? activeStaff.filter((member) => member.id === requestedStaffId) : activeStaff
   if (staff.length === 0) return []
   // Closed that day / no hours configured for that weekday at all.
   if (!dayWindow.dayOpenUTC || !dayWindow.dayCloseUTC) return []
@@ -504,7 +566,7 @@ async function claimStaffForSlot(
   durationMinutes: number,
   /** Rescheduling: ignore the booking being moved, and keep the customer with
    *  the same staff member when that person is free at the new time. */
-  options: { excludeBookingId?: string; preferStaffId?: string; excludeStaffIds?: string[] } = {},
+  options: { excludeBookingId?: string; preferStaffId?: string; excludeStaffIds?: string[]; requireStaffId?: string } = {},
 ): Promise<ActiveStaff> {
   const staff = await getActiveStaff(supabase, tenantId)
   const dayWindow = await resolveDayWindow(supabase, tenantId, dateISO)
@@ -528,15 +590,22 @@ async function claimStaffForSlot(
     const memberBookings = existingBookings.filter((b) => b.staffId === member.id)
     return !memberBookings.some((b) => overlaps(slotStart, slotEnd, b.start, b.end))
   }
-  const freeStaff =
-    (options.preferStaffId ? staff.find((m) => m.id === options.preferStaffId && isFree(m)) : undefined) ??
-    staff.find(isFree)
-
-  if (!freeStaff) {
-    throw new Error(BOOKING_SLOT_NO_LONGER_AVAILABLE)
+  // requireStaffId (the customer's own choice) has NO fallback; preferStaffId
+  // (reschedule: keep the same person if free) still falls back to anyone free.
+  // isFree() above also honours excludeStaffIds, so a requested person who has just
+  // lost a double-booking race counts as unavailable here too.
+  const pick = pickStaffForSlot({
+    staff,
+    isFree,
+    preferStaffId: options.preferStaffId,
+    requireStaffId: options.requireStaffId,
+  })
+  if (!pick.ok) {
+    throw new Error(
+      pick.reason === "requested_unavailable" ? BOOKING_REQUESTED_STAFF_UNAVAILABLE : BOOKING_SLOT_NO_LONGER_AVAILABLE,
+    )
   }
-
-  return freeStaff
+  return pick.staff
 }
 
 /**
@@ -637,6 +706,10 @@ export interface CreateBookingParams {
   /** Raw or normalized — ensureCustomer() normalizes internally, so
    *  either is safe to pass here. */
   phone: string
+  /** The staff member the customer asked for. Omit for automatic assignment. Only honoured
+   *  while the tenant's allow_customer_staff_choice is on (re-read here, never trusted from
+   *  the caller); the slot is then booked with this person or not at all. */
+  requestedStaffId?: string
 }
 
 export interface CreateBookingResult {
@@ -650,6 +723,8 @@ export interface CreateBookingResult {
   bookingReference: string
   startTime: string
   endTime: string
+  /** Who the booking was assigned to. */
+  staffName?: string
 }
 
 /**
@@ -687,7 +762,15 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
 
   await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, totalDurationMinutes)
 
-  let staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes)
+  // A customer-requested staff member is only honoured while the shop allows it; otherwise
+  // refuse rather than quietly assigning someone the customer didn't choose.
+  if (params.requestedStaffId && !(await readAllowCustomerStaffChoice(supabase, tenantId))) {
+    throw new Error(BOOKING_STAFF_CHOICE_DISABLED)
+  }
+
+  let staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes, {
+    requireStaffId: params.requestedStaffId,
+  })
 
   // Minimal (phone-only) tenant_customers row if this is a brand-new
   // customer — no name/email required to book, on either channel.
@@ -739,8 +822,11 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
 
     if (isStaffConflictError(error)) {
       conflicted.push(staff.id)
+      // requireStaffId stays set: if the customer's chosen person lost the race this throws
+      // BOOKING_REQUESTED_STAFF_UNAVAILABLE instead of moving them to someone else.
       staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes, {
         excludeStaffIds: conflicted,
+        requireStaffId: params.requestedStaffId,
       })
       continue
     }
@@ -773,6 +859,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     bookingReference,
     startTime: startTime.toISOString(),
     endTime: endTime.toISOString(),
+    staffName: staff.name,
   }
 }
 
@@ -996,12 +1083,65 @@ export async function rescheduleBooking(
 const QUEUE_REQUEST_PATTERN = /\b(queue|walk[\s-]?in|walkin)\b/
 const BOOK_REQUEST_PATTERN = /\b(book|booking|appointment|reserve|reservation)\b/
 
+/** "👤 With Sipho" + blank line, or "" when no staff member was requested. */
+function staffPrefix(requestedStaff: { name: string } | undefined): string {
+  return requestedStaff ? `${staffRequestedLine(requestedStaff.name)}\n\n` : ""
+}
+
+type StaffRequestOutcome =
+  | { kind: "none" }
+  | { kind: "use"; staff: { id: string; name: string } }
+  | { kind: "reply"; result: ActionResult }
+
+/**
+ * Looks for a staff member's name in a typed booking message ("book with Sipho").
+ *
+ *  - Setting OFF (or unreadable): returns "none" and the message is treated exactly as
+ *    before; the customer's staff preference is ignored.
+ *  - Setting ON: names are matched only against THIS tenant's staff. A match on an
+ *    inactive person, or on a name shared by several people, is answered with an explicit
+ *    message. Nothing here ever picks a different person on the customer's behalf.
+ * Only typed text is inspected: list/button taps never name a person.
+ */
+async function resolveStaffRequest(tenantId: string, message: IncomingMessage): Promise<StaffRequestOutcome> {
+  if (message.interactiveId || message.type !== "text") return { kind: "none" }
+  const text = rawReplyText(message)
+  if (!text) return { kind: "none" }
+
+  const supabase = getSupabaseServerClient()
+  if (!supabase || !(await readAllowCustomerStaffChoice(supabase, tenantId))) return { kind: "none" }
+
+  let match
+  try {
+    match = matchStaffRequest(text, await getStaffForNameMatching(supabase, tenantId))
+  } catch (error) {
+    // Staff choice is ON but we can't tell who was asked for: say so rather than assign anyone.
+    console.error("[booking] Could not check the requested staff member", { tenantId, error })
+    return { kind: "reply", result: { reply: availabilityErrorMessage(), buttons: [], nextState: null } }
+  }
+
+  switch (match.kind) {
+    case "match":
+      return { kind: "use", staff: { id: match.staff.id, name: match.staff.name } }
+    case "inactive":
+      return { kind: "reply", result: { reply: staffInactiveMessage(match.staff.name), buttons: [], nextState: null } }
+    case "ambiguous":
+      return { kind: "reply", result: { reply: staffAmbiguousMessage(match.names), buttons: [], nextState: null } }
+    default:
+      return { kind: "none" }
+  }
+}
+
 /**
  * AI shortcut for a typed booking request that already contains detail.
  * Returns null whenever it can't (or shouldn't) help, so the caller falls
  * through to the normal flow. Never throws.
  */
-async function trySmartBooking(tenantId: string, message: IncomingMessage): Promise<ActionResult | null> {
+async function trySmartBooking(
+  tenantId: string,
+  message: IncomingMessage,
+  requestedStaff?: { id: string; name: string },
+): Promise<ActionResult | null> {
   try {
     const text = rawReplyText(message)
     if (message.interactiveId || !hasBookingDetail(text)) return null
@@ -1018,13 +1158,20 @@ async function trySmartBooking(tenantId: string, message: IncomingMessage): Prom
     if (!parsed) return null
 
     // "can I come now" in any language -> straight to the walk-in queue.
-    if (parsed.wantsQueue) return queueService.startQueueFlow(tenantId)
+    // A queue ticket can't be for one staff member: don't drop the request, let the normal
+    // flow below ask "Queue or Book?" with it still attached.
+    if (parsed.wantsQueue) return requestedStaff ? null : queueService.startQueueFlow(tenantId)
 
     // Without a recognised service there is nothing to pre-fill.
     if (parsed.serviceIndex === null) return null
     const service = services[parsed.serviceIndex]
 
-    const data: BookingStateData = { services, selectedService: service, dateOptions }
+    const data: BookingStateData = {
+      services,
+      selectedService: service,
+      dateOptions,
+      ...(requestedStaff ? { requestedStaff } : {}),
+    }
 
     // Service only (a time without a date can't be trusted) -> date screen.
     const chosen = parsed.date ? dateOptions.find((d) => d.date === parsed.date) : undefined
@@ -1036,10 +1183,10 @@ async function trySmartBooking(tenantId: string, message: IncomingMessage): Prom
       }
     }
 
-    const slots = await getAvailableSlots(tenantId, chosen.date, service.durationMinutes)
+    const slots = await getAvailableSlots(tenantId, chosen.date, service.durationMinutes, undefined, requestedStaff?.id)
     if (slots.length === 0) {
       return {
-        reply: `${noSlotsMessage()}\n\n${dateOptionsMessage(dateOptions)}`,
+        reply: `${requestedStaff ? staffNoSlotsMessage(requestedStaff.name) : noSlotsMessage()}\n\n${dateOptionsMessage(dateOptions)}`,
         buttons: [],
         nextState: { state: BOOKING_STATE_DATE_SELECTION, data: mergeBookingData(data, {}) },
       }
@@ -1050,7 +1197,7 @@ async function trySmartBooking(tenantId: string, message: IncomingMessage): Prom
     const slot = pickSlotByTime(slots, parsed.time)
     if (slot) {
       return {
-        reply: confirmationMessage(service, chosen.label, slot),
+        reply: staffPrefix(requestedStaff) + confirmationMessage(service, chosen.label, slot),
         buttons: CONFIRM_BUTTONS,
         nextState: { state: BOOKING_STATE_CONFIRM, data: mergeBookingData(withDate, { selectedSlot: slot }) },
       }
@@ -1058,7 +1205,7 @@ async function trySmartBooking(tenantId: string, message: IncomingMessage): Prom
 
     const notFree = parsed.time ? `Sorry, ${parsed.time} isn't available on ${chosen.label}. Here's what is free:\n\n` : ""
     return {
-      reply: notFree + slotsListMessage(service.name, chosen.label, slots),
+      reply: staffPrefix(requestedStaff) + notFree + slotsListMessage(service.name, chosen.label, slots),
       buttons: [],
       nextState: { state: BOOKING_STATE_TIME_SELECTION, data: mergeBookingData(withDate, {}) },
     }
@@ -1069,41 +1216,50 @@ async function trySmartBooking(tenantId: string, message: IncomingMessage): Prom
 }
 
 async function handleBooking(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
+  const text = normalizedReplyText(message)
+  const wantsQueue = QUEUE_REQUEST_PATTERN.test(text)
+  const wantsBooking = BOOK_REQUEST_PATTERN.test(text)
+
+  // "Book with Sipho": only when the shop allows it, and never for a queue-only message.
+  let requestedStaff: { id: string; name: string } | undefined
+  if (!(wantsQueue && !wantsBooking)) {
+    const staffRequest = await resolveStaffRequest(tenantId, message)
+    if (staffRequest.kind === "reply") return staffRequest.result
+    if (staffRequest.kind === "use") requestedStaff = staffRequest.staff
+  }
+
   // AI shortcut first: a message like "haircut tomorrow 3pm" skips ahead.
-  const smart = await trySmartBooking(tenantId, message)
+  const smart = await trySmartBooking(tenantId, message, requestedStaff)
   if (smart) return smart
 
   // Only ONE of the two clearly mentioned -> the customer already told us
   // what they want, so skip the "Queue or Book?" question. Both mentioned,
   // or neither (e.g. "I need a haircut"), is genuinely ambiguous -> ask.
-  const text = normalizedReplyText(message)
-  const wantsQueue = QUEUE_REQUEST_PATTERN.test(text)
-  const wantsBooking = BOOK_REQUEST_PATTERN.test(text)
-
   if (wantsQueue && !wantsBooking) return queueService.startQueueFlow(tenantId)
-  if (wantsBooking && !wantsQueue) return presentServices(tenantId)
+  if (wantsBooking && !wantsQueue) return presentServices(tenantId, requestedStaff)
 
   return {
     reply: entryChoicePromptMessage(),
     buttons: ENTRY_CHOICE_BUTTONS,
-    nextState: { state: BOOKING_STATE_ENTRY_CHOICE, data: {} },
+    nextState: { state: BOOKING_STATE_ENTRY_CHOICE, data: requestedStaff ? { requestedStaff } : {} },
   }
 }
 
-async function handleEntryChoice(tenantId: string, message: IncomingMessage): Promise<ActionResult> {
+async function handleEntryChoice(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const text = normalizedReplyText(message)
+  const requestedStaff = getBookingData(state).requestedStaff
 
   if (text.includes("queue")) {
     return queueService.startQueueFlow(tenantId)
   }
   if (text.includes("book")) {
-    return presentServices(tenantId)
+    return presentServices(tenantId, requestedStaff)
   }
 
   return {
     reply: entryChoiceInvalidMessage(),
     buttons: ENTRY_CHOICE_BUTTONS,
-    nextState: { state: BOOKING_STATE_ENTRY_CHOICE, data: {} },
+    nextState: { state: BOOKING_STATE_ENTRY_CHOICE, data: requestedStaff ? { requestedStaff } : {} },
   }
 }
 
@@ -1112,7 +1268,11 @@ async function handleEntryChoice(tenantId: string, message: IncomingMessage): Pr
  * with a number" list). Exported so the "Book Now" menu row can go straight
  * here instead of through the Queue-or-Book question.
  */
-export async function presentServices(tenantId: string): Promise<ActionResult> {
+export async function presentServices(
+  tenantId: string,
+  /** Customer asked for this person (only ever passed when the shop allows staff choice). */
+  requestedStaff?: { id: string; name: string },
+): Promise<ActionResult> {
   let services: BookingServiceOffer[]
   try {
     services = await getBookableServices(tenantId)
@@ -1134,9 +1294,12 @@ export async function presentServices(tenantId: string): Promise<ActionResult> {
   }
 
   return {
-    reply: servicesListMessage(services, maxServices),
+    reply: staffPrefix(requestedStaff) + servicesListMessage(services, maxServices),
     buttons: [],
-    nextState: { state: BOOKING_STATE_SERVICE_SELECTION, data: { services, maxServices } },
+    nextState: {
+      state: BOOKING_STATE_SERVICE_SELECTION,
+      data: { services, maxServices, ...(requestedStaff ? { requestedStaff } : {}) },
+    },
   }
 }
 
@@ -1269,18 +1432,21 @@ async function handleDateSelection(tenantId: string, state: ConversationState, m
 
   let slots: BookingSlot[]
   try {
-    slots = await getAvailableSlots(tenantId, chosen.date, visit.durationMinutes)
+    slots = await getAvailableSlots(tenantId, chosen.date, visit.durationMinutes, undefined, data.requestedStaff?.id)
   } catch (error) {
     console.error("[booking] Error loading slots", { tenantId, date: chosen.date, error })
     return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
   }
 
   if (slots.length === 0) {
-    return { reply: noSlotsMessage(), buttons: [], nextState: { state: BOOKING_STATE_DATE_SELECTION, data } }
+    const reply = data.requestedStaff
+      ? `${staffNoSlotsMessage(data.requestedStaff.name)}\n\n${dateOptionsMessage(dateOptions)}`
+      : noSlotsMessage()
+    return { reply, buttons: [], nextState: { state: BOOKING_STATE_DATE_SELECTION, data } }
   }
 
   return {
-    reply: slotsListMessage(visit.name, chosen.label, slots),
+    reply: staffPrefix(data.requestedStaff) + slotsListMessage(visit.name, chosen.label, slots),
     buttons: [],
     nextState: {
       state: BOOKING_STATE_TIME_SELECTION,
@@ -1311,7 +1477,9 @@ async function handleTimeSelection(tenantId: string, state: ConversationState, m
   }
 
   return {
-    reply: confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot),
+    reply:
+      staffPrefix(data.requestedStaff) +
+      confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot),
     buttons: CONFIRM_BUTTONS,
     nextState: {
       state: BOOKING_STATE_CONFIRM,
@@ -1360,6 +1528,8 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       dateISO: selectedDate,
       slot: selectedSlot,
       phone: message.from,
+      // Re-validated inside createBooking(): tenant, active, free, and the setting still on.
+      requestedStaffId: data.requestedStaff?.id,
     })
 
     // The web link goes on the confirmation only when we are NOT about to ask
@@ -1392,7 +1562,9 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
           serviceName: result.services.map((s) => s.name).join(" + "),
           slotLabel: selectedSlot.label,
           bookingReference: result.bookingReference,
-        }) + webNote,
+        }) +
+        (data.requestedStaff ? `\n${staffRequestedLine(result.staffName ?? data.requestedStaff.name)}` : "") +
+        webNote,
       // "Book again" would be a dead end right after booking (one upcoming
       // booking per customer), so offer the one useful next step instead.
       buttons: result.customer.name ? CANCEL_OR_RESCHEDULE_BUTTONS : [],
@@ -1402,6 +1574,16 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
   } catch (error) {
     if (error instanceof Error && error.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
       return { reply: slotStaleMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_REQUESTED_STAFF_UNAVAILABLE) {
+      return {
+        reply: staffNoLongerAvailableMessage(data.requestedStaff?.name ?? "That team member"),
+        buttons: [],
+        nextState: null,
+      }
+    }
+    if (error instanceof Error && error.message === BOOKING_STAFF_CHOICE_DISABLED) {
+      return { reply: staffChoiceOffMessage(), buttons: [], nextState: null }
     }
     if (error instanceof Error && error.message === BOOKING_OUTSIDE_ALLOWED_WINDOW) {
       return { reply: bookingWindowClosedMessage(), buttons: [], nextState: null }
@@ -1459,7 +1641,7 @@ async function handleNameCollection(tenantId: string, message: IncomingMessage):
 async function handleState(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult | null> {
   switch (state.state) {
     case BOOKING_STATE_ENTRY_CHOICE:
-      return handleEntryChoice(tenantId, message)
+      return handleEntryChoice(tenantId, state, message)
     case BOOKING_STATE_SERVICE_SELECTION:
       return handleServiceSelection(tenantId, state, message)
     case BOOKING_STATE_DATE_SELECTION:
