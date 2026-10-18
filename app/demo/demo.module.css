@@ -1789,3 +1789,165 @@
 }
 
 .industryChips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* =====================================================================
+   TRUST: strip under the hero, "Security & privacy" section, full footer.
+   Appended; nothing above was edited by this block.
+   ===================================================================== */
+
+/* ---------- Trust strip ---------- */
+
+.page .trustStrip {
+  padding: 28px 0;
+  border-top: 1px solid var(--qless-line);
+  border-bottom: 1px solid var(--qless-line);
+  background: var(--qless-paper-dim);
+}
+
+.trustList {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0 28px;
+  max-width: 1240px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.trustItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.trustIcon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  color: var(--qless-navy);
+}
+
+.trustItem strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--qless-ink);
+}
+
+.trustItem span {
+  display: block;
+  margin-top: 2px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--qless-ink-soft);
+}
+
+@media (min-width: 640px) {
+  .trustList { grid-template-columns: 1fr 1fr; gap: 22px 32px; }
+}
+@media (min-width: 1100px) {
+  .trustList { grid-template-columns: repeat(4, 1fr); gap: 32px; }
+}
+
+/* ---------- Security & privacy ---------- */
+
+.page .security { background: var(--qless-paper-dim); }
+
+.securityGrid {
+  margin-top: 44px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px 40px;
+}
+
+.securityItem {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.securityTick {
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  color: var(--qless-amber-dim);
+}
+
+.securityItem h3 { font-size: 17px; margin-bottom: 6px; }
+.securityItem p { margin: 0; color: var(--qless-ink-soft); font-size: 15px; max-width: 52ch; }
+
+.securityNote {
+  margin: 44px 0 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--qless-line);
+  font-size: 15.5px;
+  color: var(--qless-ink);
+}
+.securityNote a { font-weight: 700; text-underline-offset: 3px; }
+
+@media (min-width: 760px) {
+  .securityGrid { grid-template-columns: 1fr 1fr; }
+}
+@media (min-width: 1100px) {
+  .securityGrid { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---------- Footer ---------- */
+
+.page .siteFooter {
+  padding: 56px 0 28px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--qless-ink-soft);
+  border-top: 1px solid var(--qless-line);
+}
+
+.footerGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+.footerBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--qless-ink);
+}
+
+.footerBrandCol p { margin: 14px 0 0; max-width: 34ch; line-height: 1.5; }
+
+.footerCol { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.footerCol h4 {
+  margin: 0 0 4px;
+  font-family: var(--qless-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qless-ink);
+}
+.footerCol a { text-decoration: none; }
+.footerCol a:hover { color: var(--qless-ink); text-decoration: underline; text-underline-offset: 3px; }
+
+.footerBase {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--qless-line);
+  font-size: 13px;
+}
+.footerLegal { display: inline-flex; gap: 18px; }
+.footerLegal a { text-underline-offset: 3px; }
+
+@media (min-width: 760px) {
+  .footerGrid { grid-template-columns: 1.6fr 1fr 1fr 1.4fr; gap: 40px; }
+}

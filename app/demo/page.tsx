@@ -22,6 +22,10 @@ const SIGN_UP_URL = "https://system-eta-azure.vercel.app/signup";
 const PRICING_URL = "/demo/pricing";
 /** The interactive demo page (WhatsApp, kiosk, waiting-area screen, dashboard). */
 const DEMO_URL = "/demo/live";
+const CONTACT_EMAIL = "hello@ndithini.com";
+/** Legal pages. Leave empty until the pages exist: the footer only shows a link when it is set. */
+const PRIVACY_URL = "";
+const TERMS_URL = "";
 
 // ---------------------------------------------------------------------------
 // Copy lives in these lists so it can be edited without touching the layout.
@@ -179,6 +183,76 @@ const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: bo
   },
 ];
 
+/**
+ * Trust copy. Every line here restates something this page or the product already
+ * does. Do not add certifications (ISO, SOC 2, POPIA "compliant"), customer logos or
+ * testimonials until they are real and you can show them.
+ */
+const TRUST_STRIP: Array<{ title: string; text: string; icon: ReactNode }> = [
+  {
+    title: "Official WhatsApp API",
+    text: "Connected through Meta’s Cloud API, on your own business number.",
+    icon: <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />,
+  },
+  {
+    title: "Your data stays yours",
+    text: "Every business is walled off from the others at the database level.",
+    icon: (
+      <>
+        <rect x="5" y="11" width="14" height="9" rx="2" />
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+  },
+  {
+    title: "No double-bookings",
+    text: "The database itself refuses two bookings for one person at one time.",
+    icon: (
+      <>
+        <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" />
+        <path d="M9 12l2 2 4-4" />
+      </>
+    ),
+  },
+  {
+    title: "Customers choose",
+    text: "Kiosk WhatsApp updates are opt-in, never pre-ticked.",
+    icon: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+        <path d="M8.5 12l2.5 2.5 4.5-5" />
+      </>
+    ),
+  },
+];
+
+const SECURITY: Array<{ title: string; text: string }> = [
+  {
+    title: "Separate by design",
+    text: "Each business’s bookings, queue, customers and messages are isolated at the database level. There is no view or export path that crosses into another business’s data.",
+  },
+  {
+    title: "Official WhatsApp connection",
+    text: "Messages run through Meta’s official Cloud API on a WhatsApp number that belongs to your business, not a workaround or a scraped account.",
+  },
+  {
+    title: "Bookings enforced by the database",
+    text: "Overlapping bookings and bookings outside your business hours are refused by the database, so the rules hold even when two people tap at the same second.",
+  },
+  {
+    title: "Phone numbers masked in public",
+    text: "The waiting-area screen only ever shows a customer’s number masked, so nobody in the room sees someone else’s details.",
+  },
+  {
+    title: "Consent comes first",
+    text: "On the kiosk, WhatsApp updates are a tick box that is never pre-ticked. Customers without WhatsApp can still book or queue with just a name and number.",
+  },
+  {
+    title: "A person can always step in",
+    text: "Any conversation can be handed to a human with one tap. The AI steps back and nothing is locked to the bot.",
+  },
+];
+
 const FIT: Array<{ who: string; text: string }> = [
   {
     who: "Barbershops & hair salons",
@@ -280,6 +354,22 @@ export default async function DemoPage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className={styles.trustStrip} aria-label="Why shops trust ZozoQueue">
+        <ul className={styles.trustList}>
+          {TRUST_STRIP.map((t) => (
+            <li key={t.title} className={styles.trustItem}>
+              <svg className={styles.trustIcon} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                {t.icon}
+              </svg>
+              <div>
+                <strong>{t.title}</strong>
+                <span>{t.text}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className={styles.flow}>
@@ -394,6 +484,36 @@ export default async function DemoPage() {
         </div>
       </section>
 
+      <section className={styles.security} id="security">
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Security &amp; privacy</p>
+          <div className={styles.sectionHead}>
+            <h2>Your customers’ details are handled like they matter.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            You are trusting us with your customer list and your front door. Here is what that looks like in practice.
+          </p>
+          <div className={styles.securityGrid}>
+            {SECURITY.map((s) => (
+              <div key={s.title} className={styles.securityItem}>
+                <svg className={styles.securityTick} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M8.5 12.2l2.4 2.4 4.6-5" />
+                </svg>
+                <div>
+                  <h3>{s.title}</h3>
+                  <p>{s.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className={styles.securityNote}>
+            Questions about security or how your data is handled? Email{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and a person will answer.
+          </p>
+        </div>
+      </section>
+
       <section id="faq">
         <div className={styles.wrap}>
           <p className={styles.sectionLabel}>FAQ</p>
@@ -467,15 +587,50 @@ export default async function DemoPage() {
             See ZozoQueue running on your own WhatsApp number and kiosk, with your own services and hours, in a
             20-minute walkthrough.
           </p>
-          <a className={`${styles.btn} ${styles.btnPrimary}`} href="mailto:hello@ndithini.com">
+          <a className={`${styles.btn} ${styles.btnPrimary}`} href={`mailto:${CONTACT_EMAIL}`}>
             Get in touch
           </a>
         </div>
       </section>
 
-      <footer>
-        ZozoQueue — WhatsApp &amp; kiosk booking and queueing for shops that never close their door.
-        <br />A Ndithini product.
+      <footer className={styles.siteFooter}>
+        <div className={styles.wrapWide}>
+          <div className={styles.footerGrid}>
+            <div className={styles.footerBrandCol}>
+              <span className={styles.footerBrand}>
+                <Logo size={32} />
+                ZozoQueue
+              </span>
+              <p>WhatsApp &amp; kiosk booking and queueing for shops that never close their door.</p>
+            </div>
+            <nav aria-label="Product" className={styles.footerCol}>
+              <h4>Product</h4>
+              <a href={DEMO_URL}>Live demo</a>
+              <a href={PRICING_URL}>Pricing</a>
+              <a href="#security">Security &amp; privacy</a>
+              <a href="#faq">FAQ</a>
+            </nav>
+            <nav aria-label="Account" className={styles.footerCol}>
+              <h4>Account</h4>
+              <a href={SIGN_IN_URL}>Sign in</a>
+              <a href={SIGN_UP_URL}>Try for free</a>
+            </nav>
+            <div className={styles.footerCol}>
+              <h4>Contact</h4>
+              <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+              <span>A Ndithini product</span>
+            </div>
+          </div>
+          <div className={styles.footerBase}>
+            <span>© {new Date().getFullYear()} Ndithini. All rights reserved.</span>
+            {(PRIVACY_URL || TERMS_URL) && (
+              <span className={styles.footerLegal}>
+                {PRIVACY_URL && <a href={PRIVACY_URL}>Privacy policy</a>}
+                {TERMS_URL && <a href={TERMS_URL}>Terms of service</a>}
+              </span>
+            )}
+          </div>
+        </div>
       </footer>
     </div>
   );
