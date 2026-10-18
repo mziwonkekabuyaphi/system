@@ -1,194 +1,217 @@
-"use server";
+"use server"
 
-import { randomBytes } from "crypto";
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
-import { createSessionClient } from "@/lib/supabase/session-server";
-import { getSupabaseServerClient } from "@/lib/supabase/admin";
+// app/onboarding/whatsapp/actions.ts
+/**
+ * Server actions behind the "Connect WhatsApp" button (onboarding step AND the
+ * admin settings panel).
+ *
+ * TENANT AND ROLE NEVER COME FROM THE BROWSER. Every action works out the
+ * tenant from the signed-in user's active tenant_members row
+ * (getCurrentTenantMember via getConnectContext) and requires the
+ * tenant_owner role. None of these functions accepts a tenant id.
+ *
+ * CSRF / replay: beginWhatsAppConnectAction sets a random, single-use,
+ * HTTP-only cookie (bound to the tenant) and returns the same random value;
+ * completeWhatsAppConnectAction only proceeds if the browser sends that value
+ * back AND still holds the matching cookie, and the cookie is deleted on first
+ * use. This sits on top of Next.js's own same-origin check for server actions.
+ *
+ * Access tokens and the App Secret never leave the server; nothing returned to
+ * the browser contains one.
+ */
 
-const TENANT_OWNER_ROLE_KEY = "tenant_owner";
+import { randomBytes, timingSafeEqual } from "crypto"
+import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 
-async function getCurrentUserOrRedirect() {
-  const supabase = await createSessionClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  return user;
+import { connectWhatsApp, type ConnectErrorCode } from "@/lib/whatsapp/embedded-signup/connect"
+import {
+  getConnectContext,
+  loadConnectionStatus,
+  type ConnectBlock,
+  type ConnectConfig,
+  type ConnectionStatus,
+} from "@/lib/whatsapp/embedded-signup/status"
+import { loadWhatsAppTemplates, seedWhatsAppTemplates, submitWhatsAppTemplate } from "@/app/admin/whatsapp-template-actions"
+
+const STATE_COOKIE = "wa_connect_state"
+const STATE_MAX_AGE_SECONDS = 10 * 60
+
+const BLOCK_MESSAGES: Record<ConnectBlock, string> = {
+  not_owner: "Only the business owner can connect WhatsApp.",
+  plan: "WhatsApp isn't included in your current plan. Upgrade in Billing to connect it.",
+  not_configured: "Connecting WhatsApp yourself isn't available on this platform yet. Please contact support.",
 }
 
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 60);
+const NOT_SIGNED_IN = "You need to be signed in to a business to do this."
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length > 0 && left.length === right.length && timingSafeEqual(left, right)
 }
 
-async function uniqueSlug(
-  admin: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
-  base: string
-): Promise<string> {
-  const root = slugify(base) || "business";
-  let candidate = root;
-  let suffix = 1;
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : "Something went wrong. Please try again."
+}
 
-  while (true) {
-    const { data, error } = await admin
-      .from("tenants")
-      .select("id")
-      .eq("slug", candidate)
-      .maybeSingle();
-    if (error) throw new Error(`Failed to check slug availability: ${error.message}`);
-    if (!data) return candidate;
-    suffix += 1;
-    candidate = `${root}-${suffix}`;
+// ---------------------------------------------------------------------------
+// Status for the settings panel
+// ---------------------------------------------------------------------------
+export type ConnectionPanelData =
+  | { success: true; status: ConnectionStatus; block: null; config: ConnectConfig }
+  | { success: true; status: ConnectionStatus; block: ConnectBlock; config: null }
+  | { success: false; error: string }
+
+export async function getWhatsAppConnectionPanelAction(): Promise<ConnectionPanelData> {
+  try {
+    const ctx = await getConnectContext()
+    if (!ctx.ok) return { success: false, error: NOT_SIGNED_IN }
+    const status = await loadConnectionStatus(ctx.tenantId)
+    if (ctx.block === null) return { success: true, status, block: null, config: ctx.config }
+    return { success: true, status, block: ctx.block, config: null }
+  } catch (error) {
+    return { success: false, error: messageOf(error) }
   }
 }
 
-export async function createTenantAction(formData: FormData) {
-  const user = await getCurrentUserOrRedirect();
-  const businessName = String(formData.get("businessName") ?? "").trim();
+// ---------------------------------------------------------------------------
+// Step 1: called just before the Meta popup opens
+// ---------------------------------------------------------------------------
+export async function beginWhatsAppConnectAction(): Promise<{ success: true; state: string } | { success: false; error: string }> {
+  try {
+    const ctx = await getConnectContext()
+    if (!ctx.ok) return { success: false, error: NOT_SIGNED_IN }
+    if (ctx.block !== null) return { success: false, error: BLOCK_MESSAGES[ctx.block] }
 
-  if (!businessName) {
-    return { error: "Enter a business name." };
+    const state = randomBytes(24).toString("base64url")
+    const store = await cookies()
+    store.set(STATE_COOKIE, `${ctx.tenantId}.${state}`, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: STATE_MAX_AGE_SECONDS,
+    })
+    return { success: true, state }
+  } catch (error) {
+    return { success: false, error: messageOf(error) }
   }
-
-  const admin = getSupabaseServerClient();
-  if (!admin) {
-    return { error: "Admin isn't configured. Set SUPABASE_SERVICE_ROLE_KEY." };
-  }
-
-  const { data: ownerRole, error: roleError } = await admin
-    .from("roles")
-    .select("id")
-    .eq("key", TENANT_OWNER_ROLE_KEY)
-    .single();
-
-  if (roleError || !ownerRole) {
-    return { error: "Couldn't find the tenant_owner role. Check the roles table." };
-  }
-
-  const slug = await uniqueSlug(admin, businessName);
-
-  const { data: tenant, error: tenantError } = await admin
-    .from("tenants")
-    .insert({ name: businessName, slug })
-    .select("id")
-    .single();
-
-  if (tenantError || !tenant) {
-    return { error: `Failed to create business: ${tenantError?.message}` };
-  }
-
-  // trg_handle_new_tenant fires here and creates tenant_settings,
-  // tenant_branding, booking_settings, queue_settings, message_settings
-  // in the same transaction -- nothing else to insert for those.
-
-  const { error: memberError } = await admin.from("tenant_members").insert({
-    tenant_id: tenant.id,
-    profile_id: user.id,
-    role_id: ownerRole.id,
-    status: "active",
-  });
-
-  if (memberError) {
-    await admin.from("tenants").delete().eq("id", tenant.id);
-    return { error: `Failed to link you to the business: ${memberError.message}` };
-  }
-
-  revalidatePath("/admin");
-  redirect("/onboarding/whatsapp");
 }
 
-export async function joinTenantAction(formData: FormData) {
-  const user = await getCurrentUserOrRedirect();
-  const code = String(formData.get("inviteCode") ?? "").trim();
+// ---------------------------------------------------------------------------
+// Step 2: called when the popup finished
+// ---------------------------------------------------------------------------
+export interface CompleteWhatsAppConnectInput {
+  /** The one-time code from FB.login (valid for about 30 seconds). */
+  code: string
+  wabaId: string
+  phoneNumberId: string
+  /** The popup's own event name. Only "FINISH" (a new Cloud API number) is accepted in v1. */
+  signupEvent: string
+  /** The value beginWhatsAppConnectAction returned. */
+  state: string
+  /** The owner confirmed they may replace a different, currently active number. */
+  replace: boolean
+}
 
-  if (!code) {
-    return { error: "Enter an invite code." };
-  }
+export type CompleteWhatsAppConnectResult =
+  | { success: true; displayPhone: string | null }
+  | { success: false; error: string; code?: ConnectErrorCode }
 
-  const admin = getSupabaseServerClient();
-  if (!admin) {
-    return { error: "Admin isn't configured. Set SUPABASE_SERVICE_ROLE_KEY." };
-  }
+export async function completeWhatsAppConnectAction(input: CompleteWhatsAppConnectInput): Promise<CompleteWhatsAppConnectResult> {
+  try {
+    const ctx = await getConnectContext()
+    if (!ctx.ok) return { success: false, error: NOT_SIGNED_IN }
+    if (ctx.block !== null) return { success: false, error: BLOCK_MESSAGES[ctx.block] }
 
-  const { data: invite, error: inviteError } = await admin
-    .from("tenant_invites")
-    .select("id, tenant_id, role_id, email, status, expires_at")
-    .eq("code", code)
-    .maybeSingle();
-
-  if (inviteError) return { error: `Failed to look up invite: ${inviteError.message}` };
-  if (!invite) return { error: "That invite code isn't valid." };
-  if (invite.status !== "pending") return { error: "That invite has already been used or revoked." };
-  if (new Date(invite.expires_at) < new Date()) return { error: "That invite code has expired." };
-  if (invite.email && invite.email.toLowerCase() !== (user.email ?? "").toLowerCase()) {
-    return { error: "This invite was issued for a different email address." };
-  }
-
-  const { error: memberError } = await admin.from("tenant_members").insert({
-    tenant_id: invite.tenant_id,
-    profile_id: user.id,
-    role_id: invite.role_id,
-    status: "active",
-  });
-
-  if (memberError) {
-    if (memberError.code === "23505") {
-      return { error: "You're already a member of that business." };
+    // Single-use state: read it, then delete it straight away, even if everything after fails.
+    const store = await cookies()
+    const stored = store.get(STATE_COOKIE)?.value ?? ""
+    store.delete(STATE_COOKIE)
+    const sentState = typeof input?.state === "string" ? input.state : ""
+    if (!safeEqual(stored, `${ctx.tenantId}.${sentState}`)) {
+      return { success: false, error: "This sign-up session expired. Please press Connect again." }
     }
-    return { error: `Failed to join: ${memberError.message}` };
+
+    if (
+      typeof input.code !== "string" ||
+      typeof input.wabaId !== "string" ||
+      typeof input.phoneNumberId !== "string" ||
+      !input.code ||
+      !input.wabaId ||
+      !input.phoneNumberId
+    ) {
+      return { success: false, error: "The sign-up details from Meta looked incomplete. Please try again." }
+    }
+
+    if (input.signupEvent !== "FINISH") {
+      return {
+        success: false,
+        error:
+          "That kind of WhatsApp number isn't supported yet. Please connect a new number that isn't already used in the WhatsApp or WhatsApp Business app.",
+      }
+    }
+
+    const result = await connectWhatsApp({
+      tenantId: ctx.tenantId,
+      code: input.code,
+      wabaId: input.wabaId,
+      phoneNumberId: input.phoneNumberId,
+      replace: input.replace === true,
+    })
+    if (!result.ok) return { success: false, error: result.message, code: result.code }
+
+    revalidatePath("/admin")
+    return { success: true, displayPhone: result.displayPhone }
+  } catch (error) {
+    console.error("[whatsapp-connect] complete action failed", { error: messageOf(error) })
+    return { success: false, error: "Something went wrong while connecting WhatsApp. Please try again." }
   }
-
-  await admin
-    .from("tenant_invites")
-    .update({ status: "accepted", accepted_by: user.id, accepted_at: new Date().toISOString() })
-    .eq("id", invite.id);
-
-  revalidatePath("/admin");
-  redirect("/admin");
 }
 
-// For later: wire this to an "Invite teammate" button in the admin Team
-// settings tab. joinTenantAction above has nothing to redeem without it.
-export async function createInviteAction(
-  tenantId: string,
-  roleKey: "tenant_owner" | "tenant_staff",
-  email?: string
-) {
-  const user = await getCurrentUserOrRedirect();
-  const admin = getSupabaseServerClient();
-  if (!admin) throw new Error("Admin isn't configured.");
+// ---------------------------------------------------------------------------
+// Step 3 (after the connection is active): create + submit the default templates
+// ---------------------------------------------------------------------------
+export type TemplateSetupResult =
+  | { success: true; submitted: number; failed: Array<{ key: string; error: string }> }
+  | { success: false; error: string }
 
-  const { data: membership } = await admin
-    .from("tenant_members")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("profile_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
+/**
+ * Uses the EXISTING template code (seed / submit), so wording, validation and
+ * Meta payloads stay identical. Seeds only when the tenant has no templates at
+ * all, and submits only templates still in "draft": a tenant that already has
+ * templates (approved, pending, rejected...) is left exactly as it is.
+ */
+export async function setUpWhatsAppTemplatesAction(): Promise<TemplateSetupResult> {
+  try {
+    const ctx = await getConnectContext()
+    if (!ctx.ok) return { success: false, error: NOT_SIGNED_IN }
+    if (!ctx.isOwner) return { success: false, error: BLOCK_MESSAGES.not_owner }
 
-  if (!membership) throw new Error("You're not a member of this business.");
+    let loaded = await loadWhatsAppTemplates()
+    if (!loaded.success) return { success: false, error: loaded.error }
+    if (!loaded.connected) return { success: false, error: "WhatsApp isn't active yet." }
 
-  const { data: role, error: roleError } = await admin
-    .from("roles")
-    .select("id")
-    .eq("key", roleKey)
-    .single();
-  if (roleError || !role) throw new Error("Unknown role.");
+    if (loaded.templates.length === 0) {
+      const seeded = await seedWhatsAppTemplates()
+      if (!seeded.success) return { success: false, error: seeded.error }
+      loaded = await loadWhatsAppTemplates()
+      if (!loaded.success) return { success: false, error: loaded.error }
+    }
 
-  const code = randomBytes(5).toString("hex");
+    let submitted = 0
+    const failed: Array<{ key: string; error: string }> = []
+    for (const template of loaded.templates) {
+      if (template.status !== "draft") continue
+      const result = await submitWhatsAppTemplate(template.key)
+      if (result.success) submitted += 1
+      else failed.push({ key: template.key, error: result.error })
+    }
 
-  const { data: invite, error } = await admin
-    .from("tenant_invites")
-    .insert({ tenant_id: tenantId, role_id: role.id, email: email || null, code, created_by: user.id })
-    .select("code, expires_at")
-    .single();
-
-  if (error || !invite) throw new Error(`Failed to create invite: ${error?.message}`);
-
-  return invite;
+    revalidatePath("/admin")
+    return { success: true, submitted, failed }
+  } catch (error) {
+    return { success: false, error: messageOf(error) }
+  }
 }
