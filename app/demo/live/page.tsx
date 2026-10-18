@@ -8,13 +8,15 @@ import { WhatsAppAdminDemo } from "../WhatsAppAdminDemo";
 import { IndustryProvider, IndustryPicker } from "../IndustryContext";
 import { DashboardDemo } from "../DashboardDemo";
 import { DisplayDemo } from "../DisplayDemo";
+import { SetupDemo } from "../SetupDemo";
 
 // app/demo/live/page.tsx
 //
 // The interactive demo page, linked from the "Demo" button in the landing page's nav.
 // These sections were moved here unchanged from the landing page (app/demo/page.tsx):
-// Two ways in, WhatsApp, WhatsApp messages (admin), the kiosk, the waiting-area screen
-// and the dashboard.
+// Two ways in, WhatsApp, WhatsApp messages (admin), the kiosk, the waiting-area screen and
+// the dashboard, plus the new "Set it up yourself" workspace (SetupDemo.tsx: branding, staff,
+// clock-in and payroll).
 
 export const metadata: Metadata = {
   title: "ZozoQueue demo — WhatsApp, kiosk, waiting-area screen and dashboard",
@@ -155,7 +157,6 @@ export default function DemoLivePage() {
           <DisplayDemo />
         </div>
       </section>
-      </IndustryProvider>
 
       <section id="dashboard" className={styles.dashSection}>
         <div className={styles.wrapWide}>
@@ -169,6 +170,23 @@ export default function DemoLivePage() {
           <DashboardDemo />
         </div>
       </section>
+
+      <section id="setup" className={styles.flow}>
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Set it up yourself</p>
+          <div className={styles.sectionHead}>
+            <h2>From your logo to payday, set up your whole shop right here.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            This is the same set-up you do in your own dashboard, in the order you would do it: brand it, add your team,
+            let them clock in, and see their hours turn into pay. Change anything and the rest follows. Add a logo and
+            your colours reach the clock pad and the payslip. Add a staff member and they can clock in with their PIN.
+          </p>
+          <IndustryPicker />
+          <SetupDemo />
+        </div>
+      </section>
+      </IndustryProvider>
 
       <footer>
         ZozoQueue — WhatsApp &amp; kiosk booking and queueing for shops that never close their door.
