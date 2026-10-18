@@ -202,6 +202,10 @@ interface KioskQueueBehavior {
   maxServicesQueue: number
   /** booking_settings.max_services_per_booking, 1-5. */
   maxServicesBooking: number
+  /** booking_settings.require_service_selection. False = the booking path skips the service
+   *  screen (appointments use booking_settings.default_duration_minutes). Separate from the
+   *  queue flag above. Anything but an explicit false means true. */
+  requireServiceBooking: boolean
 }
 
 const DEFAULT_REQUIRE_SERVICE_SELECTION = true
@@ -326,7 +330,11 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
       .select("require_service_selection, max_services_per_queue_entry")
       .eq("tenant_id", tenant.id)
       .maybeSingle(),
-    supabase.from("booking_settings").select("max_services_per_booking").eq("tenant_id", tenant.id).maybeSingle(),
+    supabase
+      .from("booking_settings")
+      .select("max_services_per_booking, require_service_selection")
+      .eq("tenant_id", tenant.id)
+      .maybeSingle(),
   ])
 
   if (queueSettingsError) {
@@ -340,6 +348,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     requireServiceSelection: queueSettingsRow?.require_service_selection ?? DEFAULT_REQUIRE_SERVICE_SELECTION,
     maxServicesQueue: resolveMaxServices(queueSettingsRow?.max_services_per_queue_entry),
     maxServicesBooking: resolveMaxServices(bookingSettingsRow?.max_services_per_booking),
+    requireServiceBooking: bookingSettingsRow?.require_service_selection !== false,
   }
 
   // Don't even touch the services catalog when the module's off — the
@@ -378,8 +387,12 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
   // the server in actions.ts (submitKioskQueueJoin).
   const hasServices = Array.isArray(services) && services.length > 0
   const requireServiceSelection = queueBehavior.requireServiceSelection && hasServices
+  // A booking only needs a service when the shop requires one: with "require a service to
+  // book" off, appointments work with an empty catalog, so the booking option stays.
   const kioskBranding: KioskBranding =
-    !hasServices && branding.registrationType === "both" ? { ...branding, registrationType: "queue" } : branding
+    !hasServices && queueBehavior.requireServiceBooking && branding.registrationType === "both"
+      ? { ...branding, registrationType: "queue" }
+      : branding
 
   return (
     <div className={manrope.className}>
@@ -388,6 +401,7 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
         branding={kioskBranding}
         initialServices={services}
         requireServiceSelection={requireServiceSelection}
+        requireServiceBooking={queueBehavior.requireServiceBooking}
         maxServicesBooking={queueBehavior.maxServicesBooking}
         maxServicesQueue={queueBehavior.maxServicesQueue}
       />

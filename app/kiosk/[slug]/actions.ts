@@ -52,9 +52,12 @@ import {
   buildDateOptions,
   getAvailableSlots,
   createBooking,
+  getBookingServiceMode,
   getMaxServicesPerBooking,
   BOOKING_SLOT_NO_LONGER_AVAILABLE,
   BOOKING_ALREADY_HAS_UPCOMING,
+  BOOKING_ALREADY_IN_QUEUE,
+  BOOKING_SERVICE_REQUIRED,
   BOOKING_TOO_MANY_SERVICES,
   type BookingSlot,
 } from "@/lib/services/booking"
@@ -197,7 +200,8 @@ export async function fetchKioskDateOptions(slug: string): Promise<KioskActionRe
 
 export async function fetchKioskTimeSlots(
   slug: string,
-  serviceId: string,
+  // Null = no service chosen: only accepted while the shop has "require a service to book" off.
+  serviceId: string | null,
   dateISO: string,
   // Optional 2nd, 3rd... services (multi-service bookings). Omitted = one
   // service, exactly as before.
@@ -205,6 +209,16 @@ export async function fetchKioskTimeSlots(
 ): Promise<KioskActionResult<BookingSlot[]>> {
   try {
     const tenantId = await resolveKioskTenantId(slug)
+
+    // No service: the booking is the shop's default appointment length. The setting is read
+    // here every time, never taken from the client, so a shop that still requires a service
+    // can't be tricked into offering times without one.
+    if (!serviceId) {
+      const mode = await getBookingServiceMode(tenantId)
+      if (mode.requireService) return { ok: false, error: "Please choose a service." }
+      return { ok: true, data: await getAvailableSlots(tenantId, dateISO, mode.defaultDurationMinutes) }
+    }
+
     const services = await getBookableServices(tenantId)
     const service = services.find((s) => s.id === serviceId)
     if (!service) return { ok: false, error: "That service isn't available anymore." }
@@ -232,8 +246,10 @@ export async function fetchKioskTimeSlots(
 // ============================================================================
 
 export interface KioskBookingInput {
-  serviceId: string
-  /** 2nd, 3rd... services. Optional: omitted = a single-service booking. */
+  /** Null when the shop has "require a service to book" off and the customer was never
+   *  shown the service screen. Re-checked server-side (createBooking). */
+  serviceId: string | null
+  /** 2nd, 3rd... services. Optional: omitted = a single-service booking. Ignored when serviceId is null. */
   extraServiceIds?: string[]
   dateISO: string
   dateLabel: string
@@ -258,18 +274,26 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
 
   try {
     const tenantId = await resolveKioskTenantId(slug)
-    const services = await getBookableServices(tenantId)
-    const service = services.find((s) => s.id === input.serviceId)
-    if (!service) return { ok: false, error: "That service isn't available anymore." }
+    // Null serviceId = booked without a service. Only legal while the shop has that switched
+    // on: createBooking re-reads the setting and throws BOOKING_SERVICE_REQUIRED otherwise.
+    let service: CatalogService | null = null
+    let extraServices: CatalogService[] = []
+    if (input.serviceId) {
+      const services = await getBookableServices(tenantId)
+      service = services.find((s) => s.id === input.serviceId) ?? null
+      if (!service) return { ok: false, error: "That service isn't available anymore." }
 
-    const resolved = resolveExtraServices(services, service.id, input.extraServiceIds)
-    if (!resolved.ok) return { ok: false, error: resolved.error }
-    const chosenServices = [service, ...resolved.extras]
+      const resolved = resolveExtraServices(services, service.id, input.extraServiceIds)
+      if (!resolved.ok) return { ok: false, error: resolved.error }
+      extraServices = resolved.extras
+    }
+    const chosenServices = service ? [service, ...extraServices] : []
+    // "" when there is no service: the ticket then hides its Service row.
     const serviceNames = joinServiceNames(chosenServices)
 
     const result = await createBooking(tenantId, {
       service,
-      extraServices: resolved.extras,
+      extraServices,
       dateISO: input.dateISO,
       slot: input.slot,
       phone: input.phone,
@@ -294,7 +318,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
-        `Hi ${name}! You're booked for ${serviceNames} on ${input.dateLabel} at ${input.slot.label}. ` +
+        `Hi ${name}! You're booked${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}. ` +
           `Your reference is ${result.bookingReference}. See you soon!`,
       )
     } catch (sendError) {
@@ -315,6 +339,14 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
         ok: false,
         error: "This number already has an upcoming booking. Please speak to staff if you need to change it.",
       }
+    }
+    if (error instanceof Error && error.message === BOOKING_SERVICE_REQUIRED) {
+      return { ok: false, error: "Please choose a service." }
+    }
+    // Still in the walk-in line (including a booking already moved into it): the database
+    // refuses a second booking. Without this the customer only saw "Something went wrong".
+    if (error instanceof Error && error.message === BOOKING_ALREADY_IN_QUEUE) {
+      return { ok: false, error: "This number is already in the queue. Please check in with staff." }
     }
     // Mirrors booking.ts's own PLAN_VISIT_LIMIT_REACHED message
     // (handleServiceSelection's catch block) — a plan-capped tenant gets
