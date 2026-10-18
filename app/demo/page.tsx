@@ -5,6 +5,7 @@ import { Logo } from "@/components/Logo";
 import { PlanCards } from "./PlanCards";
 import { ChatDemo } from "./ChatDemo";
 import { KioskDemo } from "./KioskDemo";
+import { WhatsAppAdminDemo } from "./WhatsAppAdminDemo";
 import { IndustryProvider, IndustryPicker } from "./IndustryContext";
 import { DashboardDemo } from "./DashboardDemo";
 import { DisplayDemo } from "./DisplayDemo";
@@ -329,6 +330,18 @@ export default async function DemoPage() {
           </div>
           <IndustryPicker />
           <ChatDemo />
+
+          <div style={{ marginTop: 72 }}>
+            <p className={styles.sectionLabel}>When the customer hasn&rsquo;t messaged you</p>
+            <div className={styles.sectionHead}>
+              <h2>Kiosk customers get a WhatsApp too, and you choose the wording.</h2>
+            </div>
+            <p className={styles.sectionIntro}>
+              Someone who checks in at the kiosk has no open chat with you, so WhatsApp only lets you message them with a template
+              Meta has approved. Switch each message on or off, reword it, and send it for approval from your dashboard.
+            </p>
+            <WhatsAppAdminDemo />
+          </div>
         </div>
       </section>
 

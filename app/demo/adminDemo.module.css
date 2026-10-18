@@ -1,0 +1,275 @@
+/* ZozoQueue demo page: the little "admin" panels shown under the Kiosk and WhatsApp demos
+   (KioskDemo.tsx, WhatsAppAdminDemo.tsx). Mirrors the look of the real settings cards.
+   Uses the --qless-* tokens from app/auth/theme.css, like demo.module.css. */
+
+.aHead { display: flex; flex-direction: column; gap: 6px; margin-top: 56px; }
+.aTag {
+  font-family: var(--qless-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qless-ink-soft);
+}
+.aLine { max-width: 52ch; font-size: 19px; line-height: 1.4; color: var(--qless-ink); }
+
+.aCols { display: grid; gap: 16px; margin-top: 20px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.aCol { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (min-width: 900px) {
+  .aCols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.aCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--qless-line);
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--qless-ink);
+  box-shadow: 0 1px 0 rgba(11, 22, 40, 0.04);
+}
+.aCardTitle { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+.aCardSub { margin: 2px 0 10px; font-size: 13px; line-height: 1.4; color: var(--qless-ink-soft); }
+
+.aGroup {
+  margin: 14px 0 6px;
+  font-family: var(--qless-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qless-ink-soft);
+}
+.aGroup:first-of-type { margin-top: 4px; }
+.aGroupHint { margin: -2px 0 8px; font-size: 12.5px; color: var(--qless-ink-soft); }
+
+/* option buttons (Booking and Queue / Booking only / ...) */
+.aOpts { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.aOpt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--qless-line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--qless-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.aOpt:hover { border-color: var(--qless-amber-dim); }
+.aOpt:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
+.aOpt[aria-pressed="true"] {
+  border-color: var(--qless-navy);
+  box-shadow: 0 0 0 1px var(--qless-navy);
+  background: color-mix(in srgb, var(--qless-navy) 6%, transparent);
+}
+.aOptTitle { font-size: 14px; font-weight: 700; }
+.aOpt[aria-pressed="true"] .aOptTitle { color: var(--qless-navy); }
+.aOptText { font-size: 12.5px; line-height: 1.4; color: var(--qless-ink-soft); }
+@media (min-width: 560px) and (max-width: 899px) {
+  .aOpts.aOpts3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .aOpts.aOpts2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* text fields */
+.aFields { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); margin-bottom: 4px; }
+@media (min-width: 560px) {
+  .aFields.aPair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.aField { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.aFieldLabel { font-size: 13px; font-weight: 700; }
+.aInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--qless-line);
+  border-radius: 10px;
+  background: #fbfaf6;
+  color: var(--qless-ink);
+  font: inherit;
+  font-size: 15px;
+}
+.aInput::placeholder { color: #a39d8e; }
+.aInput:focus { outline: 2px solid var(--qless-amber-dim); outline-offset: 1px; background: #ffffff; }
+textarea.aInput { min-height: 92px; resize: vertical; line-height: 1.45; }
+textarea.aInput:disabled { opacity: 0.6; cursor: not-allowed; }
+.aHint { font-size: 12px; color: var(--qless-ink-soft); }
+
+.aMinutes { max-width: 220px; margin-top: 12px; }
+
+.aNote {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #f4f1e8;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--qless-ink-soft);
+}
+.aNoteWarn { background: #fdebc8; color: #7a4d00; }
+
+/* switch + rows */
+.aToggle { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.aSwitch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #cfc9bb;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.aSwitch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(11, 22, 40, 0.3);
+  transition: transform 0.2s ease;
+}
+.aSwitch[aria-checked="true"] { background: #1f7a45; }
+.aSwitch[aria-checked="true"]::after { transform: translateX(16px); }
+.aSwitch:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
+
+/* buttons */
+.aBtns { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.aBtn {
+  padding: 9px 16px;
+  border: 1px solid var(--qless-navy);
+  border-radius: 999px;
+  background: var(--qless-navy);
+  color: var(--qless-paper);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.aBtn:hover { background: var(--qless-navy-deep); }
+.aBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.aBtn:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
+.aBtnGhost { background: transparent; color: var(--qless-navy); }
+.aBtnGhost:hover { background: color-mix(in srgb, var(--qless-navy) 8%, transparent); }
+.aMsg { font-size: 13px; font-weight: 600; color: #1f7a45; }
+.aMsgBad { color: #a3182a; }
+
+/* ---------- WhatsApp templates ---------- */
+
+.tplLayout { display: grid; gap: 20px; margin-top: 20px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 900px) {
+  .tplLayout { grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; }
+}
+
+.tplList { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.tplRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--qless-line);
+  border-radius: 12px;
+  background: transparent;
+}
+.tplRowOn { border-color: var(--qless-navy); box-shadow: 0 0 0 1px var(--qless-navy); background: color-mix(in srgb, var(--qless-navy) 5%, transparent); }
+.tplPick {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--qless-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tplPick:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 4px; border-radius: 6px; }
+.tplName { font-size: 14px; font-weight: 700; }
+.tplWhen { font-size: 12.5px; line-height: 1.35; color: var(--qless-ink-soft); }
+
+.aStatus { flex-shrink: 0; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.stDraft { background: #ece8dc; color: #5b564a; }
+.stPending { background: #fdebc8; color: #7a4d00; }
+.stApproved { background: #dcf6e4; color: #17653a; }
+
+.aVars { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; font-size: 12.5px; color: var(--qless-ink-soft); }
+.aVars code { padding: 0 4px; border-radius: 4px; background: #f1eee3; font-family: var(--qless-font-mono); font-size: 12px; color: var(--qless-ink); }
+.aPreview { margin: 10px 0 0; padding: 9px 12px; border-radius: 10px; background: #f6f3ea; font-size: 14px; line-height: 1.45; }
+.aPreview small { font-size: 12px; color: #8a8372; }
+
+/* the customer's phone */
+.waWrap { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+.waLabel { font-family: var(--qless-font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--qless-ink-soft); text-align: center; }
+.waPhone {
+  width: 100%;
+  max-width: 300px;
+  overflow: hidden;
+  border: 8px solid var(--qless-navy-deep);
+  border-radius: 28px;
+  background: var(--qless-navy-deep);
+  box-shadow: 0 30px 60px -28px rgba(11, 22, 40, 0.55);
+}
+.waHead { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #1f5f4a; color: #ffffff; }
+.waAvatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  font-size: 14px;
+  font-weight: 800;
+}
+.waHeadText { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.waHeadName { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.waHeadSub { font-size: 11px; opacity: 0.75; }
+.waBody { display: flex; flex-direction: column; gap: 8px; min-height: 250px; padding: 12px; background: #efeae2; }
+.waSys {
+  align-self: center;
+  max-width: 92%;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #fff3c4;
+  color: #6b5a1a;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+.waBubble {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: 8px 10px 6px;
+  border-radius: 10px;
+  border-top-left-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 1px 1px rgba(11, 22, 40, 0.12);
+  font-size: 13.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  animation: waIn 0.3s ease-out;
+  transition: opacity 0.2s ease;
+}
+.waBubbleOff { opacity: 0.4; border: 1px dashed #8a8372; box-shadow: none; }
+.waTime { display: block; margin-top: 2px; font-size: 10.5px; text-align: right; color: #8a8372; }
+@keyframes waIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.waDelivery { max-width: 300px; font-size: 13px; line-height: 1.4; text-align: center; font-weight: 600; }
+.waOk { color: #1f7a45; }
+.waNo { color: #a3182a; }
+
+@media (prefers-reduced-motion: reduce) {
+  .waBubble, .aSwitch, .aSwitch::after { animation: none; transition: none; }
+}
