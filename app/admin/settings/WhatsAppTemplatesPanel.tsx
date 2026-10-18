@@ -14,6 +14,7 @@ import {
   type WhatsAppTemplateStatus,
 } from "../whatsapp-template-actions"
 import { SettingsCard, inputClass, primaryButtonClass, secondaryButtonClass } from "./ui"
+import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel"
 
 // ---------------------------------------------------------------------------
 // WhatsApp message templates — what customers get when they have NOT messaged
@@ -145,6 +146,9 @@ export function WhatsAppTemplatesPanel() {
   }
 
   return (
+    <div className="space-y-6">
+    {/* Connection status + Connect/Reconnect. After a (re)connect, reload this panel's own "connected" flag. */}
+    <WhatsAppConnectionPanel onConnected={() => void load()} />
     <SettingsCard
       title="Messages to customers who haven't messaged you"
       description="WhatsApp only lets you message someone first with a template Meta has approved. Customers who check in at the kiosk have no open chat, so these are what they receive."
@@ -270,5 +274,6 @@ export function WhatsAppTemplatesPanel() {
         </div>
       )}
     </SettingsCard>
+    </div>
   )
 }
