@@ -49,7 +49,7 @@ const VIEWS: Array<{ id: DashView; tab: string; nav: string; caption: string }> 
 ]
 
 const NAV = ["Appointments", "Live Queue", "Inbox", "Customers", "Services", "Staff", "Payroll", "Analytics", "Billing & Plans", "Settings"]
-const SHOP = "Thabo’s Barbershop"
+const SHOP = "Mzido’s Barbershop"
 const TICK_MS = 3200
 
 // ---------------------------------------------------------------------------
