@@ -264,6 +264,9 @@ export default async function DemoPage() {
           <span className={styles.heroStubLabel}>A Ndithini product</span>
         </aside>
         <div className={styles.heroMain}>
+          <div className={styles.heroPreview}>
+            <DashboardDemo compact />
+          </div>
           <div>
             <h1>Whether they message or walk in, they’re already in line.</h1>
             <p>
@@ -279,9 +282,6 @@ export default async function DemoPage() {
                 Book a demo
               </a>
             </div>
-          </div>
-          <div className={styles.heroPreview}>
-            <DashboardDemo compact />
           </div>
         </div>
       </section>

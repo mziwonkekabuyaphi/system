@@ -304,7 +304,7 @@
   letter-spacing: -0.01em;
   max-width: 16ch;
   opacity: 0;
-  animation: rise 0.7s ease-out 0.15s forwards;
+  animation: rise 0.7s ease-out 0.4s forwards;
 }
 
 .heroMain p {
@@ -313,7 +313,7 @@
   font-size: 17px;
   color: var(--qless-ink-soft);
   opacity: 0;
-  animation: rise 0.7s ease-out 0.28s forwards;
+  animation: rise 0.7s ease-out 0.5s forwards;
 }
 
 .heroCtas {
@@ -323,7 +323,7 @@
   gap: 14px;
   flex-wrap: wrap;
   opacity: 0;
-  animation: rise 0.7s ease-out 0.4s forwards;
+  animation: rise 0.7s ease-out 0.6s forwards;
 }
 
 @keyframes rise {
@@ -937,9 +937,9 @@
 
 .heroPreview {
   min-width: 0;
-  margin-top: 44px;
+  margin-bottom: 44px; /* dashboard sits first; the headline follows below it */
   opacity: 0;
-  animation: rise 0.8s ease-out 0.55s forwards;
+  animation: rise 0.8s ease-out 0.15s forwards;
 }
 
 @media (max-width: 860px) {
@@ -1411,15 +1411,11 @@
   .wrapWide { max-width: 1120px; }
   .sectionHead { max-width: 52ch; }
 
-  /* Hero: headline on the left, live board on the right */
-  .heroMain {
-    display: grid;
-    grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
-    gap: 56px;
-    align-items: center;
-  }
-  .heroPreview { margin-top: 0; }
-  .heroMain h1 { font-size: clamp(38px, 3.3vw, 54px); max-width: 14ch; }
+  /* Hero: the live board on its own across the top, headline and buttons below it */
+  .heroMain { display: flex; flex-direction: column; justify-content: center; }
+  .heroPreview { margin-bottom: 48px; }
+  .heroMain h1 { font-size: clamp(38px, 3.3vw, 54px); max-width: 20ch; }
+  .heroMain p { max-width: 60ch; }
 
   /* How it works: five steps across */
   .flowSteps { flex-direction: row; gap: 28px; }
@@ -1442,7 +1438,6 @@
   .wrap { max-width: 1040px; }
   .wrapWide { max-width: 1240px; }
   .page .heroSplit { --hero-stub-width: minmax(360px, 440px); }
-  .heroMain { gap: 72px; }
   .dashLayout { grid-template-columns: 260px minmax(0, 1fr); gap: 56px; }
   .dashBody { min-height: 500px; }
 }
