@@ -94,6 +94,9 @@ async function loadLastVisit(supabase: SupabaseClient, tenantId: string, custome
       .eq("tenant_id", tenantId)
       .in("customer_id", customerIds)
       .eq("status", "completed")
+      // A booking marked complete before its start time (done early, or while testing) is not a
+      // visit that has happened yet: without this it would outrank every real past visit.
+      .lte("start_time", new Date().toISOString())
       .order("start_time", { ascending: false })
       .limit(1),
   ])
