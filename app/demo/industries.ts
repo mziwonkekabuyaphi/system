@@ -107,7 +107,7 @@ export const INDUSTRIES: Industry[] = [
     waitMin: 35,
     chat: {
       emoji: "💅",
-      name: "Naledi",
+      name: "Sisipho",
       day: "Saturday",
       menu: [
         { name: "Gel set", price: 280, mins: 60 },
@@ -135,7 +135,7 @@ export const INDUSTRIES: Industry[] = [
     serviceTitle: "What is your visit for?",
     services: ["Consultation", "Blood pressure", "Vaccination", "Repeat script"],
     picked: "Vaccination",
-    customer: "Mandla R.",
+    customer: "Mzonke R.",
     phone: "083 555 0188",
     ticket: "A031",
     position: 4,
