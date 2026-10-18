@@ -62,7 +62,7 @@
 .siteNavInner {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 16px 24px;
 }
 
@@ -73,10 +73,39 @@
   pointer-events: auto;
 }
 
+/* Left side of the floating nav: Pricing and Demo. It sits over the navy ticket panel
+   (on desktop and when stacked on mobile), so it is light-on-dark. */
+.siteNavLinks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.navLink {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--demo-line-on-dark);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--qless-paper);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.navLink:hover { background: rgba(255, 255, 255, 0.1); }
+.navLink:focus-visible { outline: 2px solid var(--qless-amber); outline-offset: 2px; }
+
 /* Phone / tablet portrait: the blue panel is on top, so the buttons sit on
    dark navy and need light-on-dark colours. */
 @media (max-width: 860px) {
-  .siteNavInner { padding: 14px 16px; }
+  .siteNavInner { padding: 14px 16px; gap: 8px; }
+  .siteNavLinks { gap: 6px; }
+  .navLink, .siteNavActions .btnSm { padding: 7px 10px; font-size: 13px; }
   .siteNavActions .btnSecondary {
     color: var(--qless-paper);
     border-color: var(--demo-line-on-dark);

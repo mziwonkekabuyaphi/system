@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
-import { PlanCards } from "./PlanCards";
 import { ChatDemo } from "./ChatDemo";
 import { KioskDemo } from "./KioskDemo";
 import { WhatsAppAdminDemo } from "./WhatsAppAdminDemo";
@@ -17,8 +16,9 @@ export const metadata = {
     "Give your shop two front doors: a WhatsApp number that books and queues customers, and a self-serve kiosk for walk-ins. Bookings that can’t clash, one live board, and payroll.",
 };
 
-// Plans on this page are read from the database (same tables as the admin
-// Billing panel), so re-generate every 5 minutes to pick up price changes.
+// Pricing is still read from the database (it feeds the FAQ answers below), so
+// re-generate every 5 minutes to pick up price changes. The Plans section itself
+// was moved out of this page: see PlansSection.tsx.
 export const revalidate = 300;
 
 const SIGN_IN_URL = "https://system-eta-azure.vercel.app/login";
@@ -230,6 +230,15 @@ export default async function DemoPage() {
     <div className={styles.page}>
       <nav className={styles.siteNav}>
         <div className={styles.siteNavInner}>
+          <div className={styles.siteNavLinks}>
+            <a className={styles.navLink} href={PRICING_URL}>
+              Pricing
+            </a>
+            {/* No destination yet: this is a plain button, so it doesn't navigate anywhere. */}
+            <button type="button" className={styles.navLink}>
+              Demo
+            </button>
+          </div>
           <div className={styles.siteNavActions}>
             <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
               Sign in
@@ -500,28 +509,6 @@ export default async function DemoPage() {
                 <p>{row.text}</p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div className={styles.wrapWide}>
-          <p className={styles.sectionLabel}>Plans</p>
-          <div className={styles.sectionHead}>
-            <h2>Start simple. Go private-label when you&rsquo;re ready.</h2>
-          </div>
-          {pricing ? (
-            <PlanCards plans={pricing.plans} />
-          ) : (
-            <p>
-              Our pricing is being updated. <a href="mailto:hello@ndithini.com">Get in touch</a> and we&rsquo;ll send it to
-              you.
-            </p>
-          )}
-          <div style={{ marginTop: 28, textAlign: "center" }}>
-            <a className={`${styles.btn} ${styles.btnSecondary}`} href={PRICING_URL}>
-              See full pricing and examples
-            </a>
           </div>
         </div>
       </section>
