@@ -33,6 +33,7 @@ import { sendActionResult } from "@/lib/whatsapp/send-action-result"
 import { storeIncomingMessage, storeOutboundMessage } from "@/lib/whatsapp/store"
 import { isAIEnabled, shouldEscalate, escalateToHumanAndNotify } from "@/lib/handover"
 import { getSignatureMode, verifyMetaSignature } from "@/lib/whatsapp/verify-signature"
+import { handleTemplateStatusUpdates } from "@/lib/whatsapp/template-status-webhook"
 
 export const runtime = "nodejs"
 
@@ -120,6 +121,9 @@ export async function POST(request: Request): Promise<NextResponse> {
     console.error("[webhook] Failed to parse request body as JSON", error)
     return NextResponse.json({ received: true })
   }
+
+  // Template approvals/rejections from Meta. Never throws; does not affect message handling below.
+  await handleTemplateStatusUpdates(supabase, payload)
 
   const messages = parseIncomingMessages(payload)
 
