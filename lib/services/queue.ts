@@ -114,6 +114,7 @@ import {
   queueAlreadyInQueueMessage,
   queueHasUpcomingBookingMessage,
 } from "@/lib/services/messages/queue-join-errors"
+import { joinedQueueNoServiceMessage } from "@/lib/services/messages/no-service"
 
 // ============================================================================
 // CONSTANTS
@@ -217,9 +218,19 @@ async function isShopClosedNow(tenantId: string): Promise<boolean> {
   }
 }
 
-async function startQueueFlow(tenantId: string): Promise<ActionResult> {
+/**
+ * `phone` is the customer's WhatsApp number. It is only needed when the shop has
+ * turned "require a service" off: there is then no list to show and no pick to
+ * wait for, so the customer joins the line right here, in this one reply. Callers
+ * that don't pass it (or any shop that does ask for a service) get the list.
+ */
+async function startQueueFlow(tenantId: string, phone?: string): Promise<ActionResult> {
   if (await isShopClosedNow(tenantId)) {
     return { reply: queueShopClosedMessage(), buttons: [], nextState: null }
+  }
+
+  if (phone && !(await getQueueRequireServiceSelection(tenantId))) {
+    return joinAndReply(tenantId, phone, null, [], 1)
   }
 
   let services: CatalogService[]
@@ -348,6 +359,30 @@ async function readMaxServicesPerQueueEntry(supabase: SupabaseClient, tenantId: 
  *  looking anything up. */
 export async function getMaxServicesPerQueueEntry(tenantId: string): Promise<number> {
   return readMaxServicesPerQueueEntry(getClientOrThrow(), tenantId)
+}
+
+/**
+ * queue_settings.require_service_selection ("Customers pick a service" vs "No
+ * services, one line" in the admin). Never throws: a missing row, an error or any
+ * value other than an explicit false means TRUE, so a settings hiccup can only
+ * ever show the services list, never silently drop it.
+ */
+export async function getQueueRequireServiceSelection(tenantId: string): Promise<boolean> {
+  try {
+    const { data, error } = await getClientOrThrow()
+      .from("queue_settings")
+      .select("require_service_selection")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (error) {
+      console.error("[queue] Failed to load require_service_selection, asking for a service", { tenantId, error: error.message })
+      return true
+    }
+    return data?.require_service_selection !== false
+  } catch (error) {
+    console.error("[queue] Could not read require_service_selection, asking for a service", { tenantId, error })
+    return true
+  }
 }
 
 /** Keeps the first occurrence of each service id, preserving order. The link
@@ -864,18 +899,33 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
   }
 
   const [selectedService, ...extraServices] = picks.indexes.map((i) => services[i])
+  return joinAndReply(tenantId, message.from, selectedService, extraServices, maxServices)
+}
 
+/**
+ * Joins the queue and builds the WhatsApp reply, including the friendly replies for
+ * every expected refusal. Shared by the numbered-list flow (handleServiceSelection)
+ * and the no-service flow (startQueueFlow with the setting off, `selectedService` null).
+ */
+async function joinAndReply(
+  tenantId: string,
+  phone: string,
+  selectedService: CatalogService | null,
+  extraServices: CatalogService[],
+  maxServices: number,
+): Promise<ActionResult> {
   try {
     const { position, etaMinutes } = await joinQueue(tenantId, {
       service: selectedService,
       extraServices,
-      phone: message.from,
+      phone,
     })
 
     return {
       reply:
-        joinedQueueMessage(combineServices([selectedService, ...extraServices]), position, etaMinutes) +
-        (await getTenantWebLinkNote(tenantId)),
+        (selectedService
+          ? joinedQueueMessage(combineServices([selectedService, ...extraServices]), position, etaMinutes)
+          : joinedQueueNoServiceMessage(position, etaMinutes)) + (await getTenantWebLinkNote(tenantId)),
       buttons: [],
       nextState: null,
       followUp: [buildQueuedFollowUp()],
