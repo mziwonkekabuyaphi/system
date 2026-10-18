@@ -56,7 +56,7 @@ export const INDUSTRIES: Industry[] = [
   {
     id: "barber",
     label: "Barbershop",
-    shop: "Thabo’s Barbershop",
+    shop: "Mzansi Cuts Barbershop",
     initial: "T",
     choiceTitle: "How can we help you today?",
     bookTitle: "Book a time",
@@ -90,7 +90,7 @@ export const INDUSTRIES: Industry[] = [
   {
     id: "beauty",
     label: "Beauty & nails",
-    shop: "Lerato’s Beauty Studio",
+    shop: "Cape Town’s Beauty Studio",
     initial: "L",
     choiceTitle: "Welcome! What would you like to do?",
     bookTitle: "Book a treatment",
@@ -221,7 +221,7 @@ export const INDUSTRIES: Industry[] = [
       ],
       times: ["08:00", "09:30", "11:00", "15:30"],
       ref: "V6J5QE",
-      ticket: "A019",
+      ticket: "Q019",
       ahead: 3,
       waitMin: 30,
     },
