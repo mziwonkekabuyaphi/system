@@ -236,10 +236,11 @@ function KioskServicesPanel({
       )}
 
       <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
-        Bookings always need a service (available times depend on how long it takes), so pair &ldquo;No
-        services&rdquo; with <strong>Queue Only</strong> under Customer options below. This setting also applies to
-        WhatsApp and admin walk-ins. If you haven&apos;t added any services yet, the kiosk already skips the service
-        screen and shows only the walk-in queue.
+        This setting covers the walk-in queue on the kiosk, WhatsApp and admin. Appointments have their own
+        switch, <strong>Require a service to book</strong> on the Booking tab: turn that off too if appointments
+        should also skip the service screen (they then use the appointment length set there). If you haven&apos;t
+        added any services yet and appointments still need one, the kiosk skips the service screen and shows only
+        the walk-in queue.
       </p>
     </SettingsCard>
   )
