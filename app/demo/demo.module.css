@@ -76,6 +76,12 @@
   pointer-events: auto;
 }
 
+/* Desktop: the nav row is as tall as the hero panel's logo (44px), so the logo and the
+   nav buttons share one centre line. Phones use the stacked bar below instead. */
+@media (min-width: 861px) {
+  .siteNavInner { box-sizing: content-box; min-height: 44px; }
+}
+
 /* Pricing and Demo: the left group of the nav, next to Sign in. They sit on the paper
    background (never on the navy panel), so they are dark-on-light. */
 .siteNavLinks {
@@ -171,7 +177,7 @@
 .page .heroSplit {
   --hero-stub-width: minmax(320px, 400px);
   --hero-min-height: 100vh;
-  --hero-stub-pad: 4.5rem 2.5rem 3rem; /* top padding clears the floating buttons */
+  --hero-stub-pad: 16px 2.5rem 3rem; /* top padding = the nav's, so the brand shares the nav's line */
   --hero-main-pad: 96px 56px 64px;
 
   display: grid;
@@ -185,7 +191,7 @@
   .page .heroSplit {
     --hero-stub-width: minmax(280px, 320px);
     --hero-min-height: 560px;
-    --hero-stub-pad: 4.5rem 2rem 2.5rem;
+    --hero-stub-pad: 16px 2rem 2.5rem;
     --hero-main-pad: 96px 36px 56px;
   }
 }
