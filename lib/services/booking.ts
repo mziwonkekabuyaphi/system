@@ -208,6 +208,8 @@ import {
   bookingAlreadyHasUpcomingMessage,
 } from "@/lib/services/messages/booking"
 
+import { NO_SERVICE_ID, NO_SERVICE_LABEL, noServiceConfirmationMessage } from "@/lib/services/messages/no-service"
+
 import {
   REBOOK_BUTTONS,
   bookingAlreadyInQueueMessage,
@@ -261,6 +263,11 @@ export const BOOKING_ALREADY_HAS_UPCOMING = "BOOKING_ALREADY_HAS_UPCOMING"
  *  with "You are already in the queue"; without this code the customer just saw the
  *  generic "something went wrong confirming your booking". */
 export const BOOKING_ALREADY_IN_QUEUE = "BOOKING_ALREADY_IN_QUEUE"
+
+/** Thrown by createBooking() when it is called with no service while the shop still
+ *  requires one (booking_settings.require_service_selection is on). A stale or
+ *  tampered request, not a normal flow: the setting is re-read here every time. */
+export const BOOKING_SERVICE_REQUIRED = "BOOKING_SERVICE_REQUIRED"
 
 /** Thrown by createBooking() when more services were sent than the tenant's
  *  booking_settings.max_services_per_booking allows. A stale or tampered kiosk
@@ -338,6 +345,10 @@ interface BookingStateData {
   /** The staff member the customer asked for ("book with Sipho"). Only ever set when
    *  booking_settings.allow_customer_staff_choice is on; createBooking() re-checks it. */
   requestedStaff?: { id: string; name: string }
+  /** True when the shop has "require a service to book" OFF: the customer was never shown a
+   *  services list, `selectedService` is only a placeholder carrying the default appointment
+   *  length, and createBooking() is called with no service. */
+  noService?: boolean
 }
 
 function getBookingData(state: ConversationState): BookingStateData {
@@ -707,6 +718,45 @@ export async function getMaxServicesPerBooking(tenantId: string): Promise<number
   return readMaxServicesPerBooking(getClientOrThrow(), tenantId)
 }
 
+export interface BookingServiceMode {
+  /** booking_settings.require_service_selection: false = customers book without choosing one. */
+  requireService: boolean
+  /** booking_settings.default_duration_minutes: the appointment length when no service is chosen. */
+  defaultDurationMinutes: number
+}
+
+const FALLBACK_NO_SERVICE_DURATION_MINUTES = 30
+
+async function readBookingServiceMode(supabase: SupabaseClient, tenantId: string): Promise<BookingServiceMode> {
+  const { data, error } = await supabase
+    .from("booking_settings")
+    .select("require_service_selection, default_duration_minutes")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (error) {
+    console.error("[booking] Failed to load require_service_selection, asking for a service", { tenantId, error: error.message })
+    return { requireService: true, defaultDurationMinutes: FALLBACK_NO_SERVICE_DURATION_MINUTES }
+  }
+  const minutes = Number(data?.default_duration_minutes)
+  return {
+    // Only an explicit false turns the service step off; anything else keeps it.
+    requireService: data?.require_service_selection !== false,
+    defaultDurationMinutes:
+      Number.isInteger(minutes) && minutes >= 5 && minutes <= 480 ? minutes : FALLBACK_NO_SERVICE_DURATION_MINUTES,
+  }
+}
+
+/** Never throws: any failure means "ask for a service" (the long-standing behaviour).
+ *  Exported for the kiosk's Server Actions. */
+export async function getBookingServiceMode(tenantId: string): Promise<BookingServiceMode> {
+  try {
+    return await readBookingServiceMode(getClientOrThrow(), tenantId)
+  } catch (error) {
+    console.error("[booking] Could not read the booking service setting, asking for a service", { tenantId, error })
+    return { requireService: true, defaultDurationMinutes: FALLBACK_NO_SERVICE_DURATION_MINUTES }
+  }
+}
+
 /** Keeps the first occurrence of each service id, preserving order. The link
  *  table has one row per (booking, service), so a repeat would fail anyway. */
 function dedupeServices(list: CatalogService[]): CatalogService[] {
@@ -719,8 +769,11 @@ export interface CreateBookingParams {
    *  it in hand (WhatsApp from conversation state, kiosk from its own
    *  services fetch), and durationMinutes is needed for the claim check
    *  regardless. This is the PRIMARY service: it is what bookings.service_id
-   *  stores. */
-  service: CatalogService
+   *  stores. Null ONLY when the shop has booking_settings.require_service_selection
+   *  off (re-checked in createBooking, which throws BOOKING_SERVICE_REQUIRED otherwise):
+   *  the booking then lasts default_duration_minutes, bookings.service_id is stored
+   *  null and no booking_services rows are written. */
+  service: CatalogService | null
   /** Further services in the same visit (multi-service). Omit for the usual
    *  single-service booking. Total count, primary included, must not exceed
    *  booking_settings.max_services_per_booking. */
@@ -770,8 +823,14 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
 
   // Primary first, repeats dropped. Everything below uses this list, so the
   // length check, the summed duration and the link rows can't disagree.
-  const services = dedupeServices([service, ...extraServices])
-  const totalDurationMinutes = services.reduce((sum, s) => sum + s.durationMinutes, 0)
+  const services = service ? dedupeServices([service, ...extraServices]) : []
+  let totalDurationMinutes = services.reduce((sum, s) => sum + s.durationMinutes, 0)
+  if (!service) {
+    // No service is only legal while the shop has the step switched off.
+    const mode = await readBookingServiceMode(supabase, tenantId)
+    if (mode.requireService) throw new Error(BOOKING_SERVICE_REQUIRED)
+    totalDurationMinutes = mode.defaultDurationMinutes
+  }
 
   // Limit check first: it writes nothing and is a stricter rule than any
   // below. Read from the database every time, never from the client.
@@ -821,7 +880,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
         {
           tenant_id: tenantId,
           customer_id: customer.id,
-          service_id: service.id,
+          service_id: service?.id ?? null,
           staff_id: staff.id,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
@@ -864,7 +923,8 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   // Full service list, in the order the customer picked them. If this fails
   // the booking is removed again so the customer is never left holding a slot
   // whose length (end_time) covers services the record doesn't list.
-  const { error: linkError } = await supabase.from("booking_services").insert(
+  // A no-service booking has nothing to link.
+  const { error: linkError } = services.length === 0 ? { error: null } : await supabase.from("booking_services").insert(
     services.map((s, index) => ({
       booking_id: inserted.id,
       service_id: s.id,
@@ -1187,7 +1247,10 @@ async function trySmartBooking(
     // "can I come now" in any language -> straight to the walk-in queue.
     // A queue ticket can't be for one staff member: don't drop the request, let the normal
     // flow below ask "Queue or Book?" with it still attached.
-    if (parsed.wantsQueue) return requestedStaff ? null : queueService.startQueueFlow(tenantId)
+    if (parsed.wantsQueue) return requestedStaff ? null : queueService.startQueueFlow(tenantId, message.from)
+
+    // No-service shop: there is no service to pre-fill, the normal flow goes straight to the date.
+    if (!(await getBookingServiceMode(tenantId)).requireService) return null
 
     // Without a recognised service there is nothing to pre-fill.
     if (parsed.serviceIndex === null) return null
@@ -1270,7 +1333,7 @@ async function handleBooking(tenantId: string, _intent: RoutedIntent, message: I
   // Only ONE of the two clearly mentioned -> the customer already told us
   // what they want, so skip the "Queue or Book?" question. Both mentioned,
   // or neither (e.g. "I need a haircut"), is genuinely ambiguous -> ask.
-  if (wantsQueue && !wantsBooking) return queueService.startQueueFlow(tenantId)
+  if (wantsQueue && !wantsBooking) return queueService.startQueueFlow(tenantId, message.from)
   if (wantsBooking && !wantsQueue) return presentServices(tenantId, requestedStaff)
 
   return {
@@ -1285,7 +1348,7 @@ async function handleEntryChoice(tenantId: string, state: ConversationState, mes
   const requestedStaff = getBookingData(state).requestedStaff
 
   if (text.includes("queue")) {
-    return queueService.startQueueFlow(tenantId)
+    return queueService.startQueueFlow(tenantId, message.from)
   }
   if (text.includes("book")) {
     return presentServices(tenantId, requestedStaff)
@@ -1313,6 +1376,9 @@ async function handleEntryChoice(tenantId: string, state: ConversationState, mes
  */
 async function offerSameAgain(tenantId: string, phone: string): Promise<ActionResult | null> {
   try {
+    // A shop that books without services has no "same service" to repeat.
+    if (!(await getBookingServiceMode(tenantId)).requireService) return null
+
     // Lazy: rebook.ts imports availability helpers from this file.
     const { findSameAgainOffer } = await import("@/lib/services/rebook")
     const offer = await findSameAgainOffer(tenantId, phone)
@@ -1429,6 +1495,11 @@ export async function presentServices(
     if (sameAgain) return sameAgain
   }
 
+  // "Require a service to book" is off: no list, straight to the date. Checked before
+  // loading services so a shop with none set up can still take appointments.
+  const mode = await getBookingServiceMode(tenantId)
+  if (!mode.requireService) return startNoServiceBooking(tenantId, mode.defaultDurationMinutes, requestedStaff)
+
   let services: BookingServiceOffer[]
   try {
     services = await getBookableServices(tenantId)
@@ -1455,6 +1526,46 @@ export async function presentServices(
     nextState: {
       state: BOOKING_STATE_SERVICE_SELECTION,
       data: { services, maxServices, ...(requestedStaff ? { requestedStaff } : {}) },
+    },
+  }
+}
+
+/**
+ * Starts a booking for a shop with "require a service to book" OFF. The customer is
+ * never shown a services list: they go straight to choosing a day. The state keeps a
+ * placeholder one-line "service" (so every later step works unchanged) whose duration is
+ * the shop's default appointment length, plus `noService: true` so the confirm step
+ * knows to book with no service.
+ */
+async function startNoServiceBooking(
+  tenantId: string,
+  durationMinutes: number,
+  requestedStaff?: { id: string; name: string },
+): Promise<ActionResult> {
+  let dateOptions: Array<{ date: string; label: string }>
+  try {
+    dateOptions = await buildDateOptions(tenantId)
+  } catch (error) {
+    console.error("[booking] Error building date options (no-service booking)", { tenantId, error })
+    return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
+  }
+  if (dateOptions.length === 0) {
+    return { reply: noSlotsMessage(), buttons: [], nextState: null }
+  }
+
+  const placeholder: BookingServiceOffer = { id: NO_SERVICE_ID, name: NO_SERVICE_LABEL, price: 0, durationMinutes }
+
+  return {
+    reply: staffPrefix(requestedStaff) + dateOptionsMessage(dateOptions),
+    buttons: [],
+    nextState: {
+      state: BOOKING_STATE_DATE_SELECTION,
+      data: {
+        selectedService: placeholder,
+        dateOptions,
+        noService: true,
+        ...(requestedStaff ? { requestedStaff } : {}),
+      },
     },
   }
 }
@@ -1635,7 +1746,9 @@ async function handleTimeSelection(tenantId: string, state: ConversationState, m
   return {
     reply:
       staffPrefix(data.requestedStaff) +
-      confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot),
+      (data.noService
+        ? noServiceConfirmationMessage(dateLabel, selectedSlot.label)
+        : confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot)),
     buttons: CONFIRM_BUTTONS,
     nextState: {
       state: BOOKING_STATE_CONFIRM,
@@ -1679,8 +1792,9 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
   try {
     const extraServices = data.extraServices ?? []
     const result = await createBooking(tenantId, {
-      service: selectedService,
-      extraServices,
+      // No service when the customer was never asked for one (createBooking re-checks the setting).
+      service: data.noService ? null : selectedService,
+      extraServices: data.noService ? [] : extraServices,
       dateISO: selectedDate,
       slot: selectedSlot,
       phone: message.from,
@@ -1715,7 +1829,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       reply:
         bookingConfirmedMessage({
           customerName: result.customer.name,
-          serviceName: result.services.map((s) => s.name).join(" + "),
+          serviceName: result.services.map((s) => s.name).join(" + ") || NO_SERVICE_LABEL,
           slotLabel: selectedSlot.label,
           bookingReference: result.bookingReference,
         }) +
