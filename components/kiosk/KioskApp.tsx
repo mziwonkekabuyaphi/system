@@ -220,6 +220,12 @@ interface KioskAppProps {
   // real limit on every submit, this only decides what the screen offers.
   maxServicesBooking?: number
   maxServicesQueue?: number
+  // From booking_settings.require_service_selection (resolved in page.tsx). False = the
+  // booking path skips ServiceScreen and goes straight to the date, with no service
+  // attached (bookings.service_id is stored null; the length is the shop's default
+  // appointment length). Separate from requireServiceSelection above, which is the
+  // queue's own flag. Omitted = true, the old behaviour.
+  requireServiceBooking?: boolean
 }
 
 function clampMaxServices(value: number | undefined): number {
@@ -311,6 +317,7 @@ export function KioskApp({
   requireServiceSelection,
   maxServicesBooking,
   maxServicesQueue,
+  requireServiceBooking = true,
 }: KioskAppProps) {
   // Web mode = opened from the WhatsApp link (/web/[slug]) on the customer's
   // own phone, as opposed to the shop's walk-in tablet (/kiosk/[slug]).
@@ -401,9 +408,9 @@ export function KioskApp({
 
   // Queue-only tenants with requireServiceSelection off have nothing to
   // pick between and no service screen to show — drop straight to
-  // DetailsScreen with no service attached. Booking always goes through
-  // ServiceScreen regardless of this flag: a booking's date/time
-  // availability is looked up per-service, so there's no "skip" path for it.
+  // DetailsScreen with no service attached. This flag is the QUEUE's only:
+  // the booking path has its own (requireServiceBooking, see
+  // enterBookingFlow below).
   const enterQueueFlow = () => {
     setPath("queue")
     if (!requireServiceSelection) {
@@ -414,6 +421,36 @@ export function KioskApp({
     setStep("service")
   }
 
+  // Booking with "require a service to book" OFF: nothing to pick, so go straight to
+  // the date. The date screen is shown first (it has its own "Loading…" and error
+  // line) because the welcome and choice screens have nowhere to show either.
+  const enterBookingFlowWithoutService = async () => {
+    setPath("booking")
+    setSelectedServices([])
+    setError(null)
+    setStep("date")
+    setBusy(true)
+    const result = await fetchKioskDateOptions(slug)
+    setBusy(false)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    const options = Array.isArray(result.data) ? result.data : []
+    setDateOptions(options)
+    // Same one-day shortcut as chooseServices(): nothing to choose, go to the times.
+    if (options.length === 1) await chooseDate(options[0], [])
+  }
+
+  const enterBookingFlow = () => {
+    if (!requireServiceBooking) {
+      void enterBookingFlowWithoutService()
+      return
+    }
+    setPath("booking")
+    setStep("service")
+  }
+
   // "both" shows the normal book-vs-queue choice screen. A registration
   // type locked to a single path skips that screen entirely and drops
   // the customer straight into service selection for that path — there's
@@ -421,8 +458,7 @@ export function KioskApp({
   // with only one live option.
   const goToChoice = () => {
     if (branding.registrationType === "booking") {
-      setPath("booking")
-      setStep("service")
+      enterBookingFlow()
       return
     }
     if (branding.registrationType === "queue") {
@@ -437,8 +473,7 @@ export function KioskApp({
       enterQueueFlow()
       return
     }
-    setPath(p)
-    setStep("service")
+    enterBookingFlow()
   }
 
   // How many services this path lets the customer tick (1 = single tap).
@@ -480,7 +515,8 @@ export function KioskApp({
 
   const chooseDate = async (option: DateOption, servicesOverride?: CatalogService[]) => {
     const chosen = servicesOverride ?? selectedServices
-    if (chosen.length === 0) return
+    // No services is only valid when the shop doesn't require one for bookings.
+    if (chosen.length === 0 && requireServiceBooking) return
     setSelectedDate(option)
     setError(null)
     setBusy(true)
@@ -488,7 +524,7 @@ export function KioskApp({
     // for the combined duration, so only slots where everything fits are shown.
     const result = await fetchKioskTimeSlots(
       slug,
-      chosen[0].id,
+      chosen[0]?.id ?? null,
       option.date,
       chosen.slice(1).map((s) => s.id),
     )
@@ -512,7 +548,7 @@ export function KioskApp({
     // on — when it's off, selectedServices is empty by construction
     // (enterQueueFlow never lets the customer reach ServiceScreen), so
     // this guard would otherwise silently block every queue submission.
-    if (path === "booking" && selectedServices.length === 0) return
+    if (path === "booking" && requireServiceBooking && selectedServices.length === 0) return
     if (path === "queue" && requireServiceSelection && selectedServices.length === 0) return
     setError(null)
     setBusy(true)
@@ -528,12 +564,12 @@ export function KioskApp({
     }
 
     if (path === "booking") {
-      if (!selectedDate || !selectedSlot || selectedServices.length === 0) {
+      if (!selectedDate || !selectedSlot || (requireServiceBooking && selectedServices.length === 0)) {
         setBusy(false)
         return
       }
       const result = await submitKioskBooking(slug, {
-        serviceId: selectedServices[0].id,
+        serviceId: selectedServices[0]?.id ?? null,
         extraServiceIds: selectedServices.slice(1).map((s) => s.id),
         dateISO: selectedDate.date,
         dateLabel: selectedDate.label,
