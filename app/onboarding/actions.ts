@@ -99,7 +99,7 @@ export async function createTenantAction(formData: FormData) {
   }
 
   revalidatePath("/admin");
-  redirect("/admin");
+  redirect("/onboarding/whatsapp");
 }
 
 export async function joinTenantAction(formData: FormData) {
