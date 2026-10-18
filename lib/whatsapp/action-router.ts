@@ -125,7 +125,8 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
   // before the services list (booking.ts's offerSameAgain; null = normal flow).
   [MENU_ROW_IDS.book]: (tenantId, _intent, message) =>
     bookingService.startBookingFlow(tenantId, undefined, message.from),
-  [MENU_ROW_IDS.queue]: (tenantId) => queueService.startQueueFlow(tenantId),
+  // Phone passed so a shop with "No services" on joins the line in one step.
+  [MENU_ROW_IDS.queue]: (tenantId, _intent, message) => queueService.startQueueFlow(tenantId, message.from),
   [MENU_ROW_IDS.status]: statusService.handleStatus,
   [MENU_ROW_IDS.reschedule]: rescheduleService.handleReschedule,
   [MENU_ROW_IDS.cancel]: cancelService.handleCancel,
