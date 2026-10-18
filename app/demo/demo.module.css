@@ -48,8 +48,10 @@
 
 /* ---------- Site nav ---------- */
 
-/* No bar any more: the Sign in / Sign up buttons float over the top-right
-   of the hero so the blue ticket panel can start at the very top edge. */
+/* No bar on desktop: Pricing, Demo, Sign in and Try for free float over the top-right
+   of the hero, on the paper side, so the blue ticket panel starts at the very top edge
+   and nothing sits on it. On phones the nav becomes a normal bar above the panel
+   (see the max-width: 860px block below). */
 .siteNav {
   position: absolute;
   top: 0;
@@ -62,7 +64,8 @@
 .siteNavInner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end; /* all four on the right, links just left of Sign in */
+  gap: 10px;
   padding: 16px 24px;
 }
 
@@ -73,8 +76,8 @@
   pointer-events: auto;
 }
 
-/* Left side of the floating nav: Pricing and Demo. It sits over the navy ticket panel
-   (on desktop and when stacked on mobile), so it is light-on-dark. */
+/* Pricing and Demo: the left group of the nav, next to Sign in. They sit on the paper
+   background (never on the navy panel), so they are dark-on-light. */
 .siteNavLinks {
   display: flex;
   align-items: center;
@@ -85,10 +88,10 @@
 .navLink {
   display: inline-block;
   padding: 8px 14px;
-  border: 1px solid var(--demo-line-on-dark);
+  border: 1px solid var(--qless-line);
   border-radius: 8px;
   background: transparent;
-  color: var(--qless-paper);
+  color: var(--qless-ink);
   font: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -97,19 +100,20 @@
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
-.navLink:hover { background: rgba(255, 255, 255, 0.1); }
-.navLink:focus-visible { outline: 2px solid var(--qless-amber); outline-offset: 2px; }
+.navLink:hover { background: var(--qless-paper-dim); }
+.navLink:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
 
-/* Phone / tablet portrait: the blue panel is on top, so the buttons sit on
-   dark navy and need light-on-dark colours. */
+/* Phone / tablet portrait: the blue panel stacks on top, so a floating nav would land on
+   it. Instead the nav becomes a normal bar above the panel, on the paper background, and
+   the dark-on-light button colours apply unchanged. */
 @media (max-width: 860px) {
-  .siteNavInner { padding: 14px 16px; gap: 8px; }
+  .siteNav {
+    position: static;
+    pointer-events: auto;
+  }
+  .siteNavInner { padding: 12px 16px; gap: 8px; flex-wrap: wrap; }
   .siteNavLinks { gap: 6px; }
   .navLink, .siteNavActions .btnSm { padding: 7px 10px; font-size: 13px; }
-  .siteNavActions .btnSecondary {
-    color: var(--qless-paper);
-    border-color: var(--demo-line-on-dark);
-  }
 }
 
 /* Solid top bar variant, used on pages without a hero panel (e.g. /demo/pricing):
@@ -191,7 +195,7 @@
   .page .heroSplit {
     grid-template-columns: 1fr;
     --hero-min-height: 0;
-    --hero-stub-pad: 4.25rem 1.75rem 2.5rem;
+    --hero-stub-pad: 2.5rem 1.75rem 2.5rem; /* nav is a bar above the panel now */
     --hero-main-pad: 40px 28px 56px;
   }
 }
@@ -199,7 +203,7 @@
 /* Small phones */
 @media (max-width: 480px) {
   .page .heroSplit {
-    --hero-stub-pad: 4rem 1.25rem 2.25rem;
+    --hero-stub-pad: 2.25rem 1.25rem 2.25rem;
     --hero-main-pad: 32px 20px 48px;
   }
 }
