@@ -368,7 +368,6 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           align-items: center;
           justify-content: center;
           text-align: center;
-          position: relative;
         }
         .glow {
           position: absolute;
