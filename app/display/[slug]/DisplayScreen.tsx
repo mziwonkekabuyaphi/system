@@ -296,7 +296,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                     )}
                     {calledEntries.map(renderQueueRow)}
                     {calledEntries.length > 0 && waitingEntries.length > 0 && (
-                      <tr className="group-row">
+                      <tr className="group-row up-next">
                         <td colSpan={colCount}>Up next</td>
                       </tr>
                     )}
@@ -568,6 +568,11 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .queue-table .group-row.serving td {
           color: var(--accent);
+        }
+        /* Divider between "Now serving" and "Up next", in the primary colour. */
+        .queue-table .group-row.up-next td {
+          border-top: 2px solid var(--accent);
+          padding-top: 2.2vh;
         }
         .queue-table .row.called td {
           background: var(--accent-soft);
