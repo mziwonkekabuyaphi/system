@@ -104,6 +104,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
 import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+import { detailsFieldsFrom, detailsFieldsProblem } from "@/lib/kiosk/detailsFields"
 import type { AdminClockSettings, AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
 import type { AdminEmployerDetails } from "./payroll-types"
 
@@ -132,6 +133,8 @@ const MAX_DATE_SCREEN_TITLE_LENGTH = 80
 const MAX_TIME_SCREEN_TITLE_LENGTH = 40
 const MAX_DETAILS_SCREEN_TITLE_LENGTH = 80
 const MAX_TICKET_EYEBROW_LENGTH = 30
+// The custom question on the details screen (kiosk_custom_label). Same limit as the DB check.
+const MAX_CUSTOM_FIELD_LABEL_LENGTH = 40
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
 
 // Mirrors booking_settings' own CHECK constraints — validated here too so
@@ -633,8 +636,32 @@ export async function updateKioskSettings(input: {
   detailsScreenTitle?: string | null
   ticketBookingEyebrow?: string | null
   ticketQueueEyebrow?: string | null
+  /** Details-screen fields (see lib/kiosk/detailsFields.ts). Like the screens above,
+   *  OMITTING one leaves the stored value untouched. */
+  showName?: boolean
+  showSurname?: boolean
+  showPhone?: boolean
+  showEmail?: boolean
+  emailRequired?: boolean
+  showCustom?: boolean
+  customLabel?: string | null
+  customRequired?: boolean
 }): Promise<ActionResult> {
   try {
+    // Bookings and the queue identify every customer by their cellphone number (and the
+    // "already in the queue" checks work off it), so it can't be switched off yet.
+    if (input.showPhone === false) {
+      return {
+        success: false,
+        error: "Cellphone number can't be switched off yet: bookings and the queue identify each customer by their number.",
+      }
+    }
+    if (input.customLabel && input.customLabel.trim().length > MAX_CUSTOM_FIELD_LABEL_LENGTH) {
+      return { success: false, error: `Custom question must be ${MAX_CUSTOM_FIELD_LABEL_LENGTH} characters or fewer.` }
+    }
+    const detailsProblem = detailsFieldsProblem(detailsFieldsFrom(input))
+    if (detailsProblem) return { success: false, error: detailsProblem }
+
     if (
       !Number.isFinite(input.idleRefreshSeconds) ||
       input.idleRefreshSeconds < MIN_IDLE_REFRESH_SECONDS ||
@@ -706,6 +733,15 @@ export async function updateKioskSettings(input: {
         ...(input.ticketQueueEyebrow !== undefined
           ? { ticket_queue_eyebrow: input.ticketQueueEyebrow?.trim() || null }
           : {}),
+        // Details-screen fields: only written when the caller sent them.
+        ...(input.showName !== undefined ? { kiosk_show_name: input.showName === true } : {}),
+        ...(input.showSurname !== undefined ? { kiosk_show_surname: input.showSurname === true } : {}),
+        ...(input.showPhone !== undefined ? { kiosk_show_phone: true } : {}),
+        ...(input.showEmail !== undefined ? { kiosk_show_email: input.showEmail === true } : {}),
+        ...(input.emailRequired !== undefined ? { kiosk_email_required: input.emailRequired === true } : {}),
+        ...(input.showCustom !== undefined ? { kiosk_show_custom: input.showCustom === true } : {}),
+        ...(input.customLabel !== undefined ? { kiosk_custom_label: input.customLabel?.trim() || null } : {}),
+        ...(input.customRequired !== undefined ? { kiosk_custom_required: input.customRequired === true } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

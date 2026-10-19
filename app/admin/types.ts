@@ -296,6 +296,22 @@ export interface AdminKioskSettings {
   detailsScreenTitle?: string | null
   ticketBookingEyebrow?: string | null
   ticketQueueEyebrow?: string | null
+
+  // -- Details screen fields (what the customer is asked for right before
+  // "Confirm"). Shape, defaults and validation: lib/kiosk/detailsFields.ts.
+  // Optional so a loader that doesn't send them yet still compiles; a missing
+  // value means the default (name + cellphone only). Backed by
+  // tenant_branding.kiosk_* (sql/migration_kiosk_details_fields.sql).
+  showName?: boolean
+  showSurname?: boolean
+  /** Always true for now: bookings and the queue identify a customer by their number. */
+  showPhone?: boolean
+  showEmail?: boolean
+  emailRequired?: boolean
+  showCustom?: boolean
+  /** The custom question, e.g. "Car registration". Max 40 characters. */
+  customLabel?: string | null
+  customRequired?: boolean
 }
 
 /** tenant_branding's Display-TV columns, one row per tenant. Backs the
