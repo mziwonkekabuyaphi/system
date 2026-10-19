@@ -148,6 +148,15 @@ export async function POST(request: Request): Promise<NextResponse> {
       })
     }
 
+    // ─── DUPLICATE DELIVERY ───
+    // Meta retries a webhook when it doesn't get a fast 200. The message was
+    // already stored (and is being or was processed) on the first delivery,
+    // so skip it: no second AI call, no second reply to the customer.
+    if (stored.ok && stored.duplicate) {
+      console.log("[webhook] Duplicate delivery, skipping", { tenantId, waMessageId: message.waMessageId })
+      continue
+    }
+
     // ─── HANDOVER GATE ───
     try {
       const aiEnabled = await isAIEnabled(supabase, tenantId, message.from)
