@@ -76,6 +76,30 @@ const DISPLAY: Record<IndustryId, ShopDisplay> = {
     menu: [["Check-up", 380], ["Vaccination", 290], ["Dental clean", 950], ["Sick pet", 420], ["Microchip", 250]],
     bookings: [["10:00", "Lize V.", "Check-up"], ["10:30", "Sizwe N.", "Vaccination"], ["11:00", "Marelize P.", "Dental clean"], ["11:45", "Tumi R.", "Microchip"]],
   },
+  retail: {
+    tagline: "Shop, collect, return",
+    terms: { menu: "Services", bookings: "Booked today", queue: "At the till", serving: "Now serving", waiting: "Waiting" },
+    menu: [["Personal styling", 150], ["Alterations", 120], ["Wardrobe consult", 350], ["Gift wrapping", 40], ["Garment steaming", 60]],
+    bookings: [["10:00", "Thandeka M.", "Personal styling"], ["10:30", "Lindo B.", "Alterations"], ["11:30", "Cathy W.", "Wardrobe consult"], ["12:15", "Sbu N.", "Gift wrapping"]],
+  },
+  events: {
+    tagline: "Welcome to the show",
+    terms: { menu: "Sessions", bookings: "Booked sessions", queue: "Check-in queue", serving: "At the desk", waiting: "Waiting" },
+    menu: [["Workshop seat", 150], ["Venue tour", 80], ["VIP lounge", 300], ["Photo booth", 60], ["Meet & greet", 200]],
+    bookings: [["10:00", "Kagiso L.", "Venue tour"], ["10:30", "Amahle Z.", "Workshop seat"], ["11:00", "Dylan P.", "VIP lounge"], ["12:00", "Naomi F.", "Meet & greet"]],
+  },
+  restaurant: {
+    tagline: "Your table is nearly ready",
+    terms: { menu: "Table deposits", bookings: "Reservations", queue: "Waiting list", serving: "Seating now", waiting: "Next up" },
+    menu: [["Table for 2", 100], ["Table for 4", 200], ["Large group (6+)", 400], ["Chef’s tasting", 320], ["Sunday lunch", 220]],
+    bookings: [["10:00", "Nomsa D.", "Table for 4"], ["10:30", "Chris V.", "Table for 2"], ["11:00", "Fatima S.", "Large group (6+)"], ["11:30", "Jabu M.", "Table for 2"]],
+  },
+  pharmacy: {
+    tagline: "Open late, here to help",
+    terms: { menu: "Our services", bookings: "Booked today", queue: "Waiting", serving: "Now serving", waiting: "Next up" },
+    menu: [["Flu vaccine", 180], ["Health check", 120], ["Pharmacist consult", 150], ["Blood sugar test", 60], ["Blood pressure", 50]],
+    bookings: [["10:00", "Fatima S.", "Flu vaccine"], ["10:20", "Mpho T.", "Health check"], ["11:00", "Alan K.", "Pharmacist consult"], ["11:40", "Zodwa N.", "Blood sugar test"]],
+  },
 }
 
 /** Phones are always shown masked on the real TV; the full number is never sent to it. */
