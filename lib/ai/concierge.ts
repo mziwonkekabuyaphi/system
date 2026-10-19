@@ -27,6 +27,7 @@ import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import { generateAiText } from "@/lib/ai/openai"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import { loadShopContext } from "@/lib/ai/shop-context"
+import { buildFaqAnswer, detectShopFaq } from "@/lib/ai/shop-faq"
 import { buildServicesListMessage } from "@/lib/whatsapp/utils/services-list"
 
 const HANDOFF_TOKEN = "HANDOFF"
@@ -65,6 +66,24 @@ export function cleanConciergeAnswer(raw: string): string | null {
   return text.length > MAX_REPLY_CHARS ? `${text.slice(0, MAX_REPLY_CHARS - 1).trimEnd()}…` : text
 }
 
+/** Wraps a finished answer (templated or from the model) in the reply the flow expects. */
+function toConciergeResult(answer: string, keepState?: ConversationState | null): ActionResult {
+  if (keepState) {
+    return {
+      reply: `${answer}\n\n↩️ Reply with a number to continue your booking, or type *menu* to start over.`,
+      buttons: [],
+      nextState: keepState,
+    }
+  }
+
+  return {
+    reply: answer,
+    buttons: [],
+    nextState: null,
+    followUp: [buildServicesListMessage("Want to book or join the queue? 👇")],
+  }
+}
+
 /**
  * Answers a shop question, or returns null if it can't (AI off, failure, or
  * not answerable from the shop's data) so the caller can fall back.
@@ -86,6 +105,18 @@ export async function answerShopQuestion(
     const context = await loadShopContext(tenantId)
     if (!context.shop && !context.services && !context.openingHours) return null // nothing to answer from
 
+    // Plain English hours / address / price questions are answered straight from
+    // the shop's data: no model call. Anything else (other languages, combined
+    // questions, data missing) falls through to the model below.
+    const faqKind = detectShopFaq(question)
+    if (faqKind) {
+      const templated = buildFaqAnswer(faqKind, question, context)
+      if (templated) {
+        console.log("[concierge] Answered from shop data (no AI):", faqKind)
+        return toConciergeResult(templated, keepState)
+      }
+    }
+
     const ai = await generateAiText({
       systemPrompt: SYSTEM_PROMPT,
       userMessage: question,
@@ -101,20 +132,7 @@ export async function answerShopQuestion(
     const answer = cleanConciergeAnswer(ai.message)
     if (!answer) return null
 
-    if (keepState) {
-      return {
-        reply: `${answer}\n\n↩️ Reply with a number to continue your booking, or type *menu* to start over.`,
-        buttons: [],
-        nextState: keepState,
-      }
-    }
-
-    return {
-      reply: answer,
-      buttons: [],
-      nextState: null,
-      followUp: [buildServicesListMessage("Want to book or join the queue? 👇")],
-    }
+    return toConciergeResult(answer, keepState)
   } catch (error) {
     console.error("[concierge] unexpected error:", error)
     return null

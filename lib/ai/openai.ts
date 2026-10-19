@@ -75,7 +75,7 @@ export async function generateAiText(request: AiTextRequest): Promise<AiTextResp
 
   let system = request.systemPrompt
   if (request.context && Object.keys(request.context).length > 0) {
-    system += `\n\nSHOP DATA (the ONLY facts you may use):\n${JSON.stringify(request.context, null, 2)}`
+    system += `\n\nSHOP DATA (the ONLY facts you may use):\n${JSON.stringify(request.context)}`
   }
 
   const body = {

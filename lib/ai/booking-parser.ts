@@ -59,17 +59,32 @@ const FILLER = new Set([
   "like", "please", "pls", "can", "could", "get", "make", "me", "my", "for", "an", "hi", "hello", "hey", "slot",
 ])
 
+// Signals that there is something concrete to extract. Deliberately broad and
+// multilingual (English, isiXhosa, isiZulu, Afrikaans, Sesotho/Setswana): a miss only
+// means the customer is asked step by step, a hit costs one AI call.
+const DAY_SIGNAL =
+  /\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|weekend|morning|afternoon|evening|kusasa|namhlanje|ngomso|namuhla|m[oô]re|vandag|maandag|dinsdag|woensdag|donderdag|vrydag|saterdag|sondag|mmaraka|kamoso)\b/
+const TIME_SIGNAL = /\b\d{1,2}\s?([:h.]\s?\d{2})?\s?(am|pm|h)?\b|\b(noon|midday|half past|quarter)\b/
+const NOW_SIGNAL = /\b(now|asap|right away|ngoku|manje|nou|nako eno|jaanong)\b/
+const SERVICE_SIGNAL =
+  /\b(hair|haircut|cut|fade|taper|trim|line-?up|shave|beard|braids?|cornrows?|locs?|dreads?|wash|blow-?dry|colou?r|highlights?|relaxer|treatment|manicure|pedicure|nails?|kids?|sika|sikwa|iinwele|inwele|izinwele|gunda|haarsny|hare|hari)\b/
+
 /**
  * Cheap gate: is there anything beyond "book an appointment, please" worth a
- * second AI call? Plain "book" / "I want to book" skip the call entirely.
+ * second AI call? Plain "book" / "I want to book" skip the call entirely, and
+ * so does a vague 3+ word message with no day, time, "now" or service word
+ * ("I want to book please", "can I make an appointment"): there is nothing
+ * for the model to extract, so the normal step-by-step flow handles it.
  */
 export function hasBookingDetail(text: string): boolean {
-  const words = text
-    .toLowerCase()
+  const lower = text.toLowerCase()
+  const words = lower
     .replace(/[^\p{L}\p{N}:\s]/gu, " ")
     .split(/\s+/)
     .filter(Boolean)
-  return words.filter((w) => !FILLER.has(w)).length >= 1 && words.length >= 3
+  if (words.length < 3) return false
+  if (words.filter((w) => !FILLER.has(w)).length < 1) return false
+  return DAY_SIGNAL.test(lower) || TIME_SIGNAL.test(lower) || NOW_SIGNAL.test(lower) || SERVICE_SIGNAL.test(lower)
 }
 
 /**
