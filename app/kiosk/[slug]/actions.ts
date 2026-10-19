@@ -66,6 +66,7 @@ import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
+import { detailsFieldsFrom, isValidEmail, type KioskDetailsFields } from "@/lib/kiosk/detailsFields"
 
 export type KioskActionResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -173,6 +174,110 @@ async function resolveRequireServiceSelection(tenantId: string): Promise<boolean
   return data?.require_service_selection ?? true
 }
 
+// ---- Details-screen fields ----------------------------------------------------
+//
+// Which fields the shop asks for (Settings > Kiosk > Details screen) is read from the
+// database on every submit: the client's idea of what was asked is never trusted, so a
+// shop that requires an email can't be bypassed by a direct call that leaves it out.
+
+const MAX_EMAIL_LENGTH = 254
+const MAX_CUSTOM_ANSWER_LENGTH = 120
+
+async function resolveDetailsFields(tenantId: string): Promise<KioskDetailsFields> {
+  const supabase = getSupabaseServerClient()
+  if (!supabase) throw new Error("Supabase server client is unavailable")
+
+  const { data, error } = await supabase
+    .from("tenant_branding")
+    .select(
+      "kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required",
+    )
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  // On a failed lookup fall back to the defaults (name + cellphone): those are the ones the
+  // rest of this file already insists on, so nothing gets through that used to be refused.
+  if (error) console.error("[kiosk] details fields lookup failed", { tenantId, error })
+
+  return detailsFieldsFrom({
+    showName: data?.kiosk_show_name,
+    showSurname: data?.kiosk_show_surname,
+    showPhone: true,
+    showEmail: data?.kiosk_show_email,
+    emailRequired: data?.kiosk_email_required,
+    showCustom: data?.kiosk_show_custom,
+    customLabel: data?.kiosk_custom_label?.trim(),
+    customRequired: data?.kiosk_custom_required,
+  })
+}
+
+type SubmittedDetails =
+  | { ok: true; name: string; email: string; customLabel: string; customAnswer: string }
+  | { ok: false; error: string }
+
+/** Checks what the customer typed against the fields this shop switched on. */
+async function checkSubmittedDetails(
+  tenantId: string,
+  input: { name: string; email?: string; customAnswer?: string },
+): Promise<SubmittedDetails> {
+  const fields = await resolveDetailsFields(tenantId)
+
+  const asksForName = fields.showName || fields.showSurname
+  const name = asksForName ? String(input.name ?? "").trim() : ""
+  if (asksForName && name.length < 2) return { ok: false, error: "Please enter your name." }
+  // First name and surname arrive joined together, so a surname means at least two words.
+  if (fields.showName && fields.showSurname && name.split(/\s+/).length < 2) {
+    return { ok: false, error: "Please enter your name and surname." }
+  }
+
+  const email = fields.showEmail ? String(input.email ?? "").trim() : ""
+  if (fields.showEmail && fields.emailRequired && !email) return { ok: false, error: "Please enter your email address." }
+  if (email && (email.length > MAX_EMAIL_LENGTH || !isValidEmail(email))) {
+    return { ok: false, error: "Please enter a valid email address." }
+  }
+
+  // The question comes from the shop's own setting, never from the request.
+  const customLabel = fields.showCustom ? fields.customLabel.trim() : ""
+  const customAnswer = fields.showCustom ? String(input.customAnswer ?? "").trim() : ""
+  if (fields.showCustom && fields.customRequired && !customAnswer) {
+    return { ok: false, error: `Please fill in: ${customLabel}.` }
+  }
+  if (customAnswer.length > MAX_CUSTOM_ANSWER_LENGTH) {
+    return { ok: false, error: `Your answer must be ${MAX_CUSTOM_ANSWER_LENGTH} characters or fewer.` }
+  }
+
+  return { ok: true, name, email, customLabel, customAnswer }
+}
+
+/**
+ * Keeps the email / custom answer with the ticket it belongs to (table kiosk_checkin_details,
+ * sql/migration_kiosk_details_fields.sql). Best-effort like the WhatsApp confirmation: the booking or
+ * queue entry already exists, so a failure here is only logged and never stops the ticket showing.
+ */
+async function saveCheckinDetails(
+  tenantId: string,
+  entry: { kind: "booking" | "queue"; ticketRef: string; phone: string },
+  details: { email: string; customLabel: string; customAnswer: string },
+): Promise<void> {
+  if (!details.email && !details.customAnswer) return
+  try {
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return
+    const { error } = await supabase.from("kiosk_checkin_details").insert({
+      tenant_id: tenantId,
+      kind: entry.kind,
+      ticket_ref: entry.ticketRef,
+      customer_phone: entry.phone,
+      email: details.email || null,
+      custom_label: details.customAnswer ? details.customLabel || null : null,
+      custom_answer: details.customAnswer || null,
+    })
+    if (error) console.error("[kiosk] saving check-in details failed", { tenantId, error })
+  } catch (error) {
+    console.error("[kiosk] saving check-in details failed", { tenantId, error })
+  }
+}
+
 // ============================================================================
 // READS
 // ============================================================================
@@ -254,8 +359,12 @@ export interface KioskBookingInput {
   dateISO: string
   dateLabel: string
   slot: BookingSlot
+  /** First name and surname joined ("Mziwonke Dlamini"). May be empty when the shop doesn't ask for a name. */
   name: string
   phone: string
+  /** Only used when the shop asks for them (Settings > Kiosk > Details screen); re-checked server-side. */
+  email?: string
+  customAnswer?: string
 }
 
 export interface KioskBookingTicket {
@@ -268,12 +377,14 @@ export interface KioskBookingTicket {
 }
 
 export async function submitKioskBooking(slug: string, input: KioskBookingInput): Promise<KioskActionResult<KioskBookingTicket>> {
-  const name = input.name.trim()
-  if (!name || name.length < 2) return { ok: false, error: "Please enter your name." }
   if (!isPlausiblePhoneNumber(input.phone)) return { ok: false, error: "Please enter a valid cellphone number." }
 
   try {
     const tenantId = await resolveKioskTenantId(slug)
+    const details = await checkSubmittedDetails(tenantId, input)
+    if (!details.ok) return { ok: false, error: details.error }
+    const name = details.name
+
     // Null serviceId = booked without a service. Only legal while the shop has that switched
     // on: createBooking re-reads the setting and throws BOOKING_SERVICE_REQUIRED otherwise.
     let service: CatalogService | null = null
@@ -303,7 +414,9 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     // already known when someone messages in. The kiosk collects it up
     // front instead, so save it right away via the same updateCustomer()
     // both channels already use — one write path either way.
-    await updateCustomer(tenantId, input.phone, { name })
+    if (name) await updateCustomer(tenantId, input.phone, { name })
+
+    await saveCheckinDetails(tenantId, { kind: "booking", ticketRef: result.bookingReference, phone: input.phone }, details)
 
     const ticket: KioskBookingTicket = {
       kind: "booking",
@@ -318,7 +431,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
-        `Hi ${name}! You're booked${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}. ` +
+        `Hi${name ? ` ${name}` : ""}! You're booked${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}. ` +
           `Your reference is ${result.bookingReference}. See you soon!`,
       )
     } catch (sendError) {
@@ -371,8 +484,12 @@ export interface KioskQueueInput {
   serviceId: string | null
   /** 2nd, 3rd... services. Optional, and ignored when serviceId is null. */
   extraServiceIds?: string[]
+  /** First name and surname joined. May be empty when the shop doesn't ask for a name. */
   name: string
   phone: string
+  /** Only used when the shop asks for them; re-checked server-side. */
+  email?: string
+  customAnswer?: string
 }
 
 export interface KioskQueueTicket {
@@ -387,12 +504,13 @@ export interface KioskQueueTicket {
 }
 
 export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput): Promise<KioskActionResult<KioskQueueTicket>> {
-  const name = input.name.trim()
-  if (!name || name.length < 2) return { ok: false, error: "Please enter your name." }
   if (!isPlausiblePhoneNumber(input.phone)) return { ok: false, error: "Please enter a valid cellphone number." }
 
   try {
     const tenantId = await resolveKioskTenantId(slug)
+    const details = await checkSubmittedDetails(tenantId, input)
+    if (!details.ok) return { ok: false, error: details.error }
+    const name = details.name
     const requireServiceSetting = await resolveRequireServiceSelection(tenantId)
     const catalog = await getBookableServices(tenantId)
     const services = Array.isArray(catalog) ? catalog : []
@@ -427,7 +545,7 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       extraServices,
       phone: input.phone,
     })
-    await updateCustomer(tenantId, input.phone, { name })
+    if (name) await updateCustomer(tenantId, input.phone, { name })
 
     // formatQueueTicketNumber() is the single source of truth for the
     // display format — printed slip, WhatsApp text, and (once built) any
@@ -439,12 +557,14 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
     // is safe to put on a piece of paper.
     const formattedTicketNumber = formatQueueTicketNumber(ticketNumber, ticketPrefix)
 
+    await saveCheckinDetails(tenantId, { kind: "queue", ticketRef: formattedTicketNumber, phone: input.phone }, details)
+
     try {
       const serviceClause = serviceNames ? ` for ${serviceNames}` : ""
       await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
-        `Hi ${name}! You're in the queue${serviceClause} — your ticket is ${formattedTicketNumber}, ` +
+        `Hi${name ? ` ${name}` : ""}! You're in the queue${serviceClause} — your ticket is ${formattedTicketNumber}, ` +
           `about ${etaMinutes} min wait. We'll see you soon!`,
       )
     } catch (sendError) {

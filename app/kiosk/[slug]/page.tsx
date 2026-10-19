@@ -88,6 +88,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
 import { isKioskEnabled, shouldShowPoweredBy, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import { KioskApp } from "@/components/kiosk/KioskApp"
+import { detailsFieldsFrom, type KioskDetailsFields } from "@/lib/kiosk/detailsFields"
 
 const manrope = Manrope({ subsets: ["latin"], weight: ["500", "600", "700", "800"] })
 
@@ -98,7 +99,10 @@ export const dynamic = "force-dynamic"
 
 export type KioskRegistrationType = "booking" | "queue" | "both"
 
-export interface KioskBranding {
+// Extends the details-screen field settings (showName, showEmail, customLabel...) as optional
+// props: this page always fills them in, but another page that builds a KioskBranding by hand
+// (e.g. the /web link) still compiles, and KioskApp falls back to the defaults for any it lacks.
+export interface KioskBranding extends Partial<KioskDetailsFields> {
   displayName: string
   logoUrl: string | null
   primaryColor: string
@@ -188,6 +192,14 @@ interface TenantBrandingRow {
   details_screen_title: string | null
   ticket_booking_eyebrow: string | null
   ticket_queue_eyebrow: string | null
+  kiosk_show_name: boolean | null
+  kiosk_show_surname: boolean | null
+  kiosk_show_phone: boolean | null
+  kiosk_show_email: boolean | null
+  kiosk_email_required: boolean | null
+  kiosk_show_custom: boolean | null
+  kiosk_custom_label: string | null
+  kiosk_custom_required: boolean | null
 }
 
 // Per-tenant queue behavior that KioskApp needs but that doesn't live on
@@ -267,7 +279,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -305,6 +317,18 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     detailsScreenTitle: branding?.details_screen_title?.trim() || DEFAULT_DETAILS_SCREEN_TITLE,
     ticketBookingEyebrow: branding?.ticket_booking_eyebrow?.trim() || DEFAULT_TICKET_BOOKING_EYEBROW,
     ticketQueueEyebrow: branding?.ticket_queue_eyebrow?.trim() || DEFAULT_TICKET_QUEUE_EYEBROW,
+    // Details-screen fields. NULL / no row = the defaults (name + cellphone), so a shop that never
+    // touched this behaves as before. The cellphone number is always asked for (see updateKioskSettings).
+    ...detailsFieldsFrom({
+      showName: branding?.kiosk_show_name,
+      showSurname: branding?.kiosk_show_surname,
+      showPhone: true,
+      showEmail: branding?.kiosk_show_email,
+      emailRequired: branding?.kiosk_email_required,
+      showCustom: branding?.kiosk_show_custom,
+      customLabel: branding?.kiosk_custom_label?.trim(),
+      customRequired: branding?.kiosk_custom_required,
+    }),
   }
 
   // The stored flag only counts while the tenant's CURRENT plan still
