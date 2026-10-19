@@ -104,6 +104,7 @@ import {
 } from "@/app/kiosk/[slug]/actions"
 import { isWhatsAppAvailable, recordWhatsAppOptIn } from "@/app/kiosk/[slug]/consent-actions"
 import { printKioskTicket } from "@/lib/kiosk/printTicket"
+import { detailsComplete, detailsFieldsFrom, type KioskDetailsFields } from "@/lib/kiosk/detailsFields"
 
 // Parses "#rgb" or "#rrggbb" into 0-255 channels. Returns null for
 // anything else (bad/legacy value in tenant_branding) so callers can fall
@@ -346,6 +347,9 @@ export function KioskApp({
 
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
+  const [surname, setSurname] = useState("")
+  const [email, setEmail] = useState("")
+  const [customAnswer, setCustomAnswer] = useState("")
   // "Send me WhatsApp updates": only offered when the shop has WhatsApp connected, never pre-ticked.
   const [whatsappAvailable, setWhatsappAvailable] = useState(false)
   const [whatsappOptIn, setWhatsappOptIn] = useState(false)
@@ -365,6 +369,9 @@ export function KioskApp({
     setSelectedSlot(null)
     setName("")
     setPhone("")
+    setSurname("")
+    setEmail("")
+    setCustomAnswer("")
     setWhatsappOptIn(false)
     setTicket(null)
     setError(null)
@@ -542,6 +549,9 @@ export function KioskApp({
     setStep("details")
   }
 
+  // The details-screen fields this shop turned on (Settings > Kiosk > Details screen).
+  const fields = useMemo(() => detailsFieldsFrom(branding), [branding])
+
   const submit = async () => {
     // Booking always needs a service (date/time availability is looked up
     // per-service). Queue only needs one when requireServiceSelection is
@@ -553,9 +563,19 @@ export function KioskApp({
     setError(null)
     setBusy(true)
 
+    // What the server gets: first name and surname travel together as the customer's name, and
+    // anything the shop switched off is sent empty.
+    const fullName = [name, fields.showSurname ? surname : ""].map((s) => s.trim()).filter(Boolean).join(" ")
+    const details = {
+      name: fullName,
+      phone: fields.showPhone ? phone : "",
+      email: fields.showEmail ? email.trim() : "",
+      customAnswer: fields.showCustom ? customAnswer.trim() : "",
+    }
+
     // Consent has to be on file BEFORE the queue insert: the insert fires the "joined" WhatsApp message
     // straight away. A failure here must never block a check-in.
-    if (whatsappAvailable && whatsappOptIn) {
+    if (fields.showPhone && whatsappAvailable && whatsappOptIn) {
       try {
         await recordWhatsAppOptIn(slug, phone)
       } catch {
@@ -574,8 +594,7 @@ export function KioskApp({
         dateISO: selectedDate.date,
         dateLabel: selectedDate.label,
         slot: selectedSlot,
-        name,
-        phone,
+        ...details,
       })
       setBusy(false)
       if (!result.ok) {
@@ -591,8 +610,7 @@ export function KioskApp({
     const result = await submitKioskQueueJoin(slug, {
       serviceId: selectedServices[0]?.id ?? null,
       extraServiceIds: selectedServices.slice(1).map((s) => s.id),
-      name,
-      phone,
+      ...details,
     })
     setBusy(false)
     if (!result.ok) {
@@ -604,10 +622,9 @@ export function KioskApp({
     void attemptPrint(result.data)
   }
 
-  // Count digits only, so spaces, dashes and a "+" don't count toward the 10 a SA number needs
-  // ("082 123 4567" is 10 digits; "+27 82 123 4567" is 11).
-  const phoneDigits = phone.replace(/\D/g, "").length
-  const canSubmit = name.trim().length >= 2 && phoneDigits >= 10
+  // Confirm only lights up once every field the shop switched on is filled in. The cellphone
+  // number counts digits only (10 needed), so spaces, dashes and a "+" don't count.
+  const canSubmit = detailsComplete(fields, { name, surname, phone, email, custom: customAnswer })
 
   const cssVars = useMemo(() => {
     const accentTokens = tileContrastTokens(branding.primaryColor)
@@ -692,9 +709,16 @@ export function KioskApp({
           title={branding.detailsScreenTitle}
           name={name}
           phone={phone}
+          surname={surname}
+          email={email}
+          customAnswer={customAnswer}
+          fields={fields}
           onNameChange={setName}
           onPhoneChange={setPhone}
-          showWhatsAppOptIn={whatsappAvailable && !isWeb}
+          onSurnameChange={setSurname}
+          onEmailChange={setEmail}
+          onCustomChange={setCustomAnswer}
+          showWhatsAppOptIn={whatsappAvailable && !isWeb && fields.showPhone}
           whatsAppOptIn={whatsappOptIn}
           onWhatsAppOptInChange={setWhatsappOptIn}
           onSubmit={submit}
@@ -710,6 +734,7 @@ export function KioskApp({
           bookingEyebrow={branding.ticketBookingEyebrow}
           queueEyebrow={branding.ticketQueueEyebrow}
           onDone={resetAll}
+          showTextNote={fields.showPhone}
           printStatus={printStatus}
           onRetryPrint={() => attemptPrint(ticket)}
         />
@@ -1452,8 +1477,15 @@ function DetailsScreen({
   title,
   name,
   phone,
+  surname,
+  email,
+  customAnswer,
+  fields,
   onNameChange,
   onPhoneChange,
+  onSurnameChange,
+  onEmailChange,
+  onCustomChange,
   showWhatsAppOptIn,
   whatsAppOptIn,
   onWhatsAppOptInChange,
@@ -1465,8 +1497,15 @@ function DetailsScreen({
   title: string
   name: string
   phone: string
+  surname: string
+  email: string
+  customAnswer: string
+  fields: KioskDetailsFields
   onNameChange: (v: string) => void
   onPhoneChange: (v: string) => void
+  onSurnameChange: (v: string) => void
+  onEmailChange: (v: string) => void
+  onCustomChange: (v: string) => void
   showWhatsAppOptIn: boolean
   whatsAppOptIn: boolean
   onWhatsAppOptInChange: (v: boolean) => void
@@ -1478,27 +1517,68 @@ function DetailsScreen({
   return (
     <Screen title={title} error={error} busy={busy}>
       <div className="form">
-        <label>
-          <span>Your name</span>
-          <input
-            value={name}
-            onChange={(e) => onNameChange(e.target.value)}
-            placeholder="e.g. Mziwonke"
-            autoComplete="off"
-            inputMode="text"
-          />
-        </label>
-        <label>
-          <span>Cellphone number</span>
-          <input
-            value={phone}
-            onChange={(e) => onPhoneChange(e.target.value)}
-            placeholder="082 123 4567"
-            autoComplete="off"
-            inputMode="tel"
-            type="tel"
-          />
-        </label>
+        {fields.showName && (
+          <label>
+            <span>{fields.showSurname ? "First name" : "Your name"}</span>
+            <input
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="e.g. Mziwonke"
+              autoComplete="off"
+              inputMode="text"
+            />
+          </label>
+        )}
+        {fields.showSurname && (
+          <label>
+            <span>Surname</span>
+            <input
+              value={surname}
+              onChange={(e) => onSurnameChange(e.target.value)}
+              placeholder="e.g. Dlamini"
+              autoComplete="off"
+              inputMode="text"
+            />
+          </label>
+        )}
+        {fields.showPhone && (
+          <label>
+            <span>Cellphone number</span>
+            <input
+              value={phone}
+              onChange={(e) => onPhoneChange(e.target.value)}
+              placeholder="082 123 4567"
+              autoComplete="off"
+              inputMode="tel"
+              type="tel"
+            />
+          </label>
+        )}
+        {fields.showEmail && (
+          <label>
+            <span>{fields.emailRequired ? "Email address" : "Email address (optional)"}</span>
+            <input
+              value={email}
+              onChange={(e) => onEmailChange(e.target.value)}
+              placeholder="name@example.com"
+              autoComplete="off"
+              inputMode="email"
+              type="email"
+            />
+          </label>
+        )}
+        {fields.showCustom && (
+          <label>
+            <span>{fields.customRequired ? fields.customLabel : `${fields.customLabel} (optional)`}</span>
+            <input
+              value={customAnswer}
+              onChange={(e) => onCustomChange(e.target.value)}
+              autoComplete="off"
+              inputMode="text"
+              maxLength={120}
+            />
+          </label>
+        )}
 
         {showWhatsAppOptIn && (
           <label className="optin">
@@ -1611,6 +1691,7 @@ function TicketScreen({
   bookingEyebrow,
   queueEyebrow,
   onDone,
+  showTextNote,
   printStatus,
   onRetryPrint,
 }: {
@@ -1618,6 +1699,8 @@ function TicketScreen({
   bookingEyebrow: string
   queueEyebrow: string
   onDone: () => void
+  /** False when the shop doesn't ask for a cellphone number, so there's nothing to text. */
+  showTextNote: boolean
   printStatus: "idle" | "printing" | "success" | "failed"
   onRetryPrint: () => void
 }) {
@@ -1634,7 +1717,7 @@ function TicketScreen({
         <div className="perf" aria-hidden="true" />
 
         <div className="bottom">
-          <Row label="Name" value={ticket.customerName} />
+          {ticket.customerName ? <Row label="Name" value={ticket.customerName} /> : null}
           {ticket.serviceName && <Row label="Service" value={ticket.serviceName} />}
           {isBooking ? (
             <>
@@ -1647,7 +1730,7 @@ function TicketScreen({
               <Row label="Est. wait" value={`${(ticket as KioskQueueTicket).etaMinutes} min`} />
             </>
           )}
-          <p className="sms">We'll text you a confirmation shortly.</p>
+          {showTextNote && <p className="sms">We'll text you a confirmation shortly.</p>}
         </div>
       </div>
 
