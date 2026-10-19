@@ -3,6 +3,7 @@ import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 
 import { getAiModelName } from "@/lib/ai/openai"
+import { detectShopFaq } from "@/lib/ai/shop-faq"
 
 /**
  * Intent router — the "brain" layer of the QLess WhatsApp assistant for
@@ -118,9 +119,6 @@ const FALLBACK: RoutedIntent = {
   confidence: 0,
 }
 
-/** Sentinel value used to detect that the timeout race finished first. */
-const TIMEOUT_SENTINEL = Symbol("intent-classification-timeout")
-
 // ── Confidence & Stability Thresholds ────────────────────────────────
 // These govern how much we trust a raw AI result versus falling back
 // to conversation context or a generic "unknown". Centralized here so the
@@ -167,7 +165,8 @@ const GREETINGS = new Set([
 const THANKS = new Set(["thanks", "thank you", "thx", "thank", "enkosi", "ngiyabonga", "baie dankie", "dankie", "ke a leboha"])
 
 function checkGreetingOrThanks(text: string): RoutedIntent | null {
-  const normalized = text.trim().toLowerCase()
+  // Punctuation/emoji-proof: "Hi!", "Thanks 🙏", "Hello 👋" all match the sets.
+  const normalized = normalizeForFastPath(text)
 
   if (GREETINGS.has(normalized)) {
     return { intent: "unknown", confidence: 1, reasoning: "Global: greeting" }
@@ -412,6 +411,13 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
     return { intent: "booking", confidence: 0.95, reasoning: "Fast-path: booking or queue request" }
   }
 
+  // Plain hours / address / price question → support, no classifier call.
+  // action-router then hands it to the concierge, which answers from the
+  // shop's data (see lib/ai/shop-faq.ts).
+  if (detectShopFaq(normalized)) {
+    return { intent: "support", confidence: 0.9, reasoning: "Fast-path: shop question" }
+  }
+
   // Affirmative/Negative → support (ambiguous without context, but if we got here
   // it means context couldn't resolve them, so treat as general support)
   if (AFFIRMATIVE.has(normalized) || NEGATIVE.has(normalized)) {
@@ -433,7 +439,7 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
 const intentSchema = z.object({
   intent: z.enum(INTENTS),
   confidence: z.number().min(0).max(1),
-  reasoning: z.string(),
+  // `reasoning` removed: nothing downstream uses it and it cost output tokens on every call.
 })
 
 const SYSTEM_PROMPT = `
@@ -801,7 +807,6 @@ Return ONLY:
 
 intent
 confidence
-reasoning
 
 Never return markdown.
 
@@ -846,7 +851,6 @@ when there genuinely isn't enough signal to choose another intent.
 Return:
 - intent: the single best-fitting category.
 - confidence: 0..1 reflecting how certain you are.
-- reasoning: one short sentence explaining the choice.
 `;
 
 /**
@@ -928,7 +932,7 @@ function buildClassificationText(message: {
  * before returning it.
  */
 function reconcileAiResult(
-  object: { intent: Intent; confidence: number; reasoning: string },
+  object: { intent: Intent; confidence: number },
   context: IntentRouterContext | undefined,
   isContinuation: boolean,
 ): RoutedIntent {
@@ -960,7 +964,7 @@ function reconcileAiResult(
   return {
     intent: object.intent,
     confidence: object.confidence,
-    reasoning: object.reasoning,
+    reasoning: "AI classification",
   }
 }
 
@@ -1028,6 +1032,10 @@ export async function routeIntent(
     } | null
   },
   context?: IntentRouterContext,
+  options?: {
+    /** false = never call the model (shop has AI off, over the hourly cap, etc.). Default true. */
+    allowAi?: boolean
+  },
 ): Promise<RoutedIntent> {
   const text = buildClassificationText(message)
 
@@ -1077,37 +1085,46 @@ export async function routeIntent(
     }
   }
 
+  // ── NO-TEXT SHORTCUT ────────────────────────────────────────────────
+  // Stickers, reactions and captionless media carry nothing the model can
+  // read; the prompt already says to answer "unknown" (or "support" for a
+  // voice note), so decide that here for free.
+  if (/no user text available$/.test(text) || text.startsWith("[reaction message]") || text.startsWith("reacted:")) {
+    const isVoice = message.type === "audio" || message.type === "voice"
+    return applyLowConfidenceFloor(
+      isVoice
+        ? { intent: "support", confidence: 0.6, reasoning: "Voice note, no text" }
+        : { intent: "unknown", confidence: 0.4, reasoning: "No text to classify" },
+    )
+  }
+
+  // ── AI OFF / SKIPPED ────────────────────────────────────────────────
+  if (options?.allowAi === false) {
+    return applyLowConfidenceFloor(buildAiFailureResult(context, "AI disabled or skipped"))
+  }
+
   // ── STEP 4: AI CLASSIFICATION ───────────────────────────────────
   // Catch-all for complex, non-obvious messages.
   const CLASSIFICATION_TIMEOUT_MS = 3000
 
+  // A real abort (not Promise.race): a timed-out request is cancelled
+  // instead of finishing and being billed in the background.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), CLASSIFICATION_TIMEOUT_MS)
+
   try {
     console.log("[IntentRouter] AI fallback used for:", text)
 
-    let timeoutId: ReturnType<typeof setTimeout>
-
-    const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
-      timeoutId = setTimeout(() => resolve(TIMEOUT_SENTINEL), CLASSIFICATION_TIMEOUT_MS)
-    })
-
-    const classificationPromise = generateObject({
-      model: openai(getAiModelName()),
+    const { object } = await generateObject({
+      // Optional cheaper model just for classification (six labels).
+      model: openai(process.env.OPENAI_CLASSIFIER_MODEL?.trim() || getAiModelName()),
       schema: intentSchema,
       system: SYSTEM_PROMPT,
       prompt: text,
+      temperature: 0,
+      maxOutputTokens: 40, // AI SDK v4: use `maxTokens`
+      abortSignal: controller.signal,
     })
-
-    const result = await Promise.race([classificationPromise, timeoutPromise])
-
-    clearTimeout(timeoutId!)
-
-    if (result === TIMEOUT_SENTINEL) {
-      const timeoutResult = buildAiFailureResult(context, "AI classification timed out")
-      console.log("[IntentRouter]", timeoutResult.reasoning)
-      return applyLowConfidenceFloor(timeoutResult)
-    }
-
-    const { object } = result
 
     const reconciled = reconcileAiResult(object, context, isContinuation)
     console.log(
@@ -1121,8 +1138,14 @@ export async function routeIntent(
     return applyLowConfidenceFloor(reconciled)
   } catch (error) {
     console.log("[IntentRouter] AI classification failed:", error)
-    const failureResult = buildAiFailureResult(context, "AI classification failed")
+    const timedOut = controller.signal.aborted
+    const failureResult = buildAiFailureResult(
+      context,
+      timedOut ? "AI classification timed out" : "AI classification failed",
+    )
     console.log("[IntentRouter]", failureResult.reasoning)
     return applyLowConfidenceFloor(failureResult)
+  } finally {
+    clearTimeout(timer)
   }
 }

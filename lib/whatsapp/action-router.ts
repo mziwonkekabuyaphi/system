@@ -69,6 +69,7 @@ import { REMINDER_TAP_PATTERN, handleReminderTap } from "@/lib/services/reminder
 import { WAITLIST_TAP_PATTERN, handleWaitlistTap } from "@/lib/services/waitlist-reply"
 import { profileService } from "@/lib/services/profile"
 import { conciergeService } from "@/lib/ai/concierge"
+import { detectShopFaq } from "@/lib/ai/shop-faq"
 
 import { stateService, type ConversationState } from "@/lib/services/state"
 import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
@@ -178,7 +179,19 @@ function resolveOwningIntent(stateName: string): Intent | null {
  * question. Keeps one-word noise ("thanks", "next") from costing an AI call.
  */
 function looksLikeShopQuestion(text: string): boolean {
-  return text.includes("?") || text.split(/\s+/).filter(Boolean).length >= 2
+  // A one-word "prices" / "hours" / "address" is answered from shop data for free.
+  return text.includes("?") || text.split(/\s+/).filter(Boolean).length >= 2 || detectShopFaq(text) !== null
+}
+
+/**
+ * "thanks" / "thank you" / "baie dankie" are classified as "support" by the
+ * intent router's global shortcut (reasoning "Global: thanks"). They are never
+ * a shop question, so skip the concierge: it would only answer HANDOFF and
+ * cost an AI call for nothing. The flow then falls through exactly as it did
+ * after a HANDOFF (mid-flow: the state's owner; no flow: greeting + menu).
+ */
+function isThanksIntent(intent: RoutedIntent | null | undefined): boolean {
+  return intent?.reasoning === "Global: thanks"
 }
 
 /** First name for the greeting, or "there" for a nameless/unknown customer. */
@@ -385,6 +398,7 @@ export async function routeAction(
     // classifier called "support"; if the AI can't answer, falls through.
     if (
       intent?.intent === "support" &&
+      !isThanksIntent(intent) &&
       !isButtonReply &&
       !PLAIN_ANSWER_PATTERN.test(text) &&
       looksLikeShopQuestion(text)
@@ -418,7 +432,7 @@ export async function routeAction(
   // "support" with a shop question in it: answer from the shop's data, in the
   // customer's language. null (AI off / failed / not in the data) means the
   // behaviour is exactly what it was before: greeting + menu.
-  if (intent?.intent === "support" && !message.interactiveId) {
+  if (intent?.intent === "support" && !isThanksIntent(intent) && !message.interactiveId) {
     const text = (message.contentSummary ?? message.text ?? "").trim()
     if (looksLikeShopQuestion(text)) {
       const answered = await conciergeService.answerShopQuestion(tenantId, message, null)

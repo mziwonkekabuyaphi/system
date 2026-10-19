@@ -26,6 +26,50 @@ import type { ConversationState } from "@/lib/services/state"
 import { stateService } from "@/lib/services/state"
 import { ensureCustomer } from "@/lib/services/tenant-customer"
 import { routeIntent } from "@/lib/whatsapp/intent-router"
+import { MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
+import { REMINDER_TAP_PATTERN } from "@/lib/services/reminder-reply"
+import { WAITLIST_TAP_PATTERN } from "@/lib/services/waitlist-reply"
+import { isAiEnabledForTenant } from "@/lib/ai/settings"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
+
+// ---------------------------------------------------------------------------
+// AI cost guards
+// ---------------------------------------------------------------------------
+// routeAction() ignores the classified intent for taps, plain answers and
+// state-owned replies, so paying for a classifier call there is pure waste.
+const PLAIN_ANSWER = /^(\d{1,3}|y|n|yes|no|yeah|yep|nope|ok|okay|sure|ewe|yebo|ja|hayi|cha|nee)[.!]*$/
+const MENU_IDS = new Set<string>(Object.values(MENU_ROW_IDS))
+const SKIPPED: RoutedIntent = { intent: "unknown", confidence: 1, reasoning: "Skipped: routed by id/state" }
+const MAX_INBOUND_PER_HOUR = 40 // tune
+
+/** True when routeAction will route by id or state and never read the intent. */
+function intentIsIrrelevant(message: IncomingMessage, state: ConversationState | null): boolean {
+  const id = message.interactiveId
+  if (id && (MENU_IDS.has(id) || REMINDER_TAP_PATTERN.test(id) || WAITLIST_TAP_PATTERN.test(id))) return true
+  if (id && state) return true // a button/list tap during a flow answers the flow
+  const text = (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
+  return Boolean(state && PLAIN_ANSWER.test(text))
+}
+
+/** Per-phone hourly cap, counted from stored inbound messages (works across serverless instances). */
+async function aiBudgetExceeded(tenantId: string, phone: string): Promise<boolean> {
+  try {
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return false
+    const since = new Date(Date.now() - 60 * 60_000).toISOString()
+    const { count } = await supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("sender_phone", phone)
+      .eq("direction", "incoming")
+      .gte("created_at", since)
+    return (count ?? 0) > MAX_INBOUND_PER_HOUR
+  } catch (error) {
+    console.error("[reply] AI budget check failed, allowing AI", error)
+    return false
+  }
+}
 
 const FALLBACK_REPLY: ActionResult = {
   reply: "Sorry, something went wrong on our end. Please try again in a moment.",
@@ -83,7 +127,19 @@ export async function processIncomingMessage(
     const state = await stateService.getState(tenantId, message.from)
 
     // STEP 3: Classify the user's intent from the message.
-    const intent = await routeIntent(toIntentRouterMessage(message))
+    // Skip the model entirely when the result would be ignored, when the shop
+    // has AI off, while the customer is typing their name, or over the hourly cap.
+    const skip = intentIsIrrelevant(message, state)
+    const inNameStep = state?.state === "booking_awaiting_name" && !(message.text ?? "").includes("?")
+    const allowAi =
+      !skip &&
+      !inNameStep &&
+      (await isAiEnabledForTenant(tenantId)) &&
+      !(await aiBudgetExceeded(tenantId, message.from))
+
+    const intent = skip
+      ? SKIPPED
+      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi })
 
     // STEP 4: Route the message to the appropriate handler.
     const result = await routeAction(tenantId, intent, state, message)
