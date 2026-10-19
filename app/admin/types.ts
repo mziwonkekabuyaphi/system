@@ -398,6 +398,15 @@ export interface AdminDisplaySettings {
   showQueueWaitEstimate: boolean
   showQueueDuration: boolean
   showQueueReference: boolean
+  /** Whether the customer's surname is shown. Off = first name only; the surname is then
+   *  never sent to the TV. Defaults to true (what the TV always showed before this existed). */
+  showQueueSurname: boolean
+  /** Masked email (e.g. m***@gmail.com), only for kiosk customers who gave one. Defaults to
+   *  false because the display route is public. */
+  showQueueEmail: boolean
+  /** The answer to the kiosk's custom question (e.g. "Car registration"), shown as typed.
+   *  Defaults to false: the tenant decides whether the waiting room may see it. */
+  showQueueCustom: boolean
 }
 
 /** tenant_branding's clock-in columns (clock_*), one row per tenant. Backs the

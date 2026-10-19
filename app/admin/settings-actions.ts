@@ -1085,6 +1085,11 @@ export async function updateDisplaySettings(input: {
   showQueueWaitEstimate: boolean
   showQueueDuration: boolean
   showQueueReference: boolean
+  // Customer details on the queue slide. Optional: OMITTING one leaves the stored value
+  // untouched, so a browser tab opened before these existed can't reset them.
+  showQueueSurname?: boolean
+  showQueueEmail?: boolean
+  showQueueCustom?: boolean
 }): Promise<ActionResult> {
   try {
     if (!["dark", "light", "custom"].includes(input.theme)) {
@@ -1244,6 +1249,9 @@ export async function updateDisplaySettings(input: {
         display_queue_show_wait_estimate: input.showQueueWaitEstimate,
         display_queue_show_duration: input.showQueueDuration,
         display_queue_show_reference: input.showQueueReference,
+        ...(input.showQueueSurname !== undefined ? { display_queue_show_surname: input.showQueueSurname === true } : {}),
+        ...(input.showQueueEmail !== undefined ? { display_queue_show_email: input.showQueueEmail === true } : {}),
+        ...(input.showQueueCustom !== undefined ? { display_queue_show_custom: input.showQueueCustom === true } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
