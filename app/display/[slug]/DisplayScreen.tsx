@@ -182,7 +182,9 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
       nowMs !== null && !isCalled ? Math.max(0, Math.floor((nowMs - new Date(q.joinedAt).getTime()) / 60000)) : null
     return (
       <tr key={q.id} className={isCalled ? "row called" : "row"}>
-        <td className="c-lead">{lead}</td>
+        <td className="c-lead" style={{ color: accent }}>
+          {lead}
+        </td>
         <td className="c-name">{q.customerName ?? "Guest"}</td>
         {cols.service && <td className="c-muted">{q.serviceName ?? "—"}</td>}
         {cols.phone && <td className="c-muted">{q.phoneMasked ?? "—"}</td>}
@@ -544,7 +546,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         .queue-table .c-lead {
           font-family: "Bricolage Grotesque", sans-serif;
           font-weight: 700;
-          color: var(--accent);
+          color: var(--accent) !important;
           width: 1%;
         }
         .queue-table .c-name {
