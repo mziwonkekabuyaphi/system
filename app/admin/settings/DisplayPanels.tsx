@@ -98,6 +98,9 @@ type DisplayDraft = {
   showQueueWaitEstimate: boolean
   showQueueDuration: boolean
   showQueueReference: boolean
+  showQueueSurname: boolean
+  showQueueEmail: boolean
+  showQueueCustom: boolean
   welcomeSeconds: number
   menuBookingsSeconds: number
   queueSeconds: number
@@ -130,6 +133,9 @@ function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
     showQueueWaitEstimate: s.showQueueWaitEstimate,
     showQueueDuration: s.showQueueDuration,
     showQueueReference: s.showQueueReference,
+    showQueueSurname: s.showQueueSurname,
+    showQueueEmail: s.showQueueEmail,
+    showQueueCustom: s.showQueueCustom,
     welcomeSeconds: s.welcomeSeconds,
     menuBookingsSeconds: s.menuBookingsSeconds,
     queueSeconds: s.queueSeconds,
@@ -178,6 +184,9 @@ function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySetti
     showQueueWaitEstimate: d.showQueueWaitEstimate,
     showQueueDuration: d.showQueueDuration,
     showQueueReference: d.showQueueReference,
+    showQueueSurname: d.showQueueSurname,
+    showQueueEmail: d.showQueueEmail,
+    showQueueCustom: d.showQueueCustom,
   }
 }
 
@@ -192,6 +201,9 @@ const DISPLAY_QUEUE_KEYS: Array<keyof DisplayDraft> = [
   "showQueueWaitEstimate",
   "showQueueDuration",
   "showQueueReference",
+  "showQueueSurname",
+  "showQueueEmail",
+  "showQueueCustom",
 ]
 const DISPLAY_TIMING_KEYS: Array<keyof DisplayDraft> = ["welcomeSeconds", "menuBookingsSeconds", "queueSeconds"]
 const DISPLAY_CALL_ALERT_KEYS: Array<keyof DisplayDraft> = ["callAlertEnabled", "callAlertSeconds"]
@@ -437,6 +449,27 @@ export function DisplayPanel({
           checked={draft.showQueuePhone}
           disabled={busy}
           onChange={(v) => set("showQueuePhone", v)}
+        />
+        <ToggleRow
+          title="Surname"
+          description="Show the surname after the first name. Turn it off to show first names only: the surname is then never sent to the TV."
+          checked={draft.showQueueSurname}
+          disabled={busy}
+          onChange={(v) => set("showQueueSurname", v)}
+        />
+        <ToggleRow
+          title="Email address"
+          description="Always partly hidden (e.g. m***@gmail.com). Only appears for customers who gave an email at the kiosk, so turn email on under Kiosk > Details screen too. Off by default because this screen is public."
+          checked={draft.showQueueEmail}
+          disabled={busy}
+          onChange={(v) => set("showQueueEmail", v)}
+        />
+        <ToggleRow
+          title="Custom question answer"
+          description="The answer to your own kiosk question (e.g. Car registration), shown exactly as typed. Everyone in the waiting area can read it, so only turn this on if that's fine. Only appears for customers who answered."
+          checked={draft.showQueueCustom}
+          disabled={busy}
+          onChange={(v) => set("showQueueCustom", v)}
         />
         <ToggleRow
           title="Estimated wait time"
