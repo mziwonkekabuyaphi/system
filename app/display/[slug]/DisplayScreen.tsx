@@ -61,6 +61,117 @@ function formatClockTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
+// Tenant logo in a rounded white tile with a slowly rotating ring + orbiting
+// dot (same look as the kiosk welcome screen). Ring, dot and glow use the
+// tenant's primary colour (`accent`). Sizes are CSS lengths (e.g. "22vh") so
+// it scales with the TV. Ring/glow colours are precomputed with hexToRgba
+// instead of CSS color-mix(), which older smart-TV browsers don't support.
+function BrandLogo({
+  url,
+  accent,
+  size,
+  ringWidth,
+  dotSize,
+}: {
+  url: string
+  accent: string
+  size: string
+  ringWidth: string
+  dotSize: string
+}) {
+  return (
+    <span
+      className="logoWrap"
+      aria-hidden="true"
+      style={
+        {
+          "--s": size,
+          "--bw": ringWidth,
+          "--dot": dotSize,
+          "--ring-color": hexToRgba(accent, 0.35),
+          "--glow-lo": hexToRgba(accent, 0.22),
+          "--glow-hi": hexToRgba(accent, 0.42),
+          "--dot-color": accent,
+        } as CSSProperties
+      }
+    >
+      <span className="logoTile">
+        {/* eslint-disable-next-line @next/next/no-img-element -- external Storage URL */}
+        <img src={url} alt="" className="logoImg" />
+      </span>
+      <span className="ring" />
+
+      <style jsx>{`
+        .logoWrap {
+          position: relative;
+          display: block;
+          flex: none;
+          width: var(--s);
+          height: var(--s);
+        }
+        .logoTile {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+          padding: calc(var(--s) * 0.107);
+          box-sizing: border-box;
+          background: #ffffff; /* keeps transparent / dark logos readable */
+          border-radius: calc(var(--s) * 0.238);
+          overflow: hidden;
+          box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12);
+          animation: logoPulse 2.4s ease-in-out infinite;
+        }
+        .logoImg {
+          max-width: 100%;
+          max-height: 100%;
+          object-fit: contain;
+        }
+        .ring {
+          position: absolute;
+          inset: calc(var(--s) * -0.095);
+          border-radius: calc(var(--s) * 0.333);
+          border: var(--bw) solid var(--ring-color);
+          animation: ringRotate 3s linear infinite;
+        }
+        .ring::before {
+          content: "";
+          position: absolute;
+          top: calc(var(--bw) * -0.5 - var(--dot) * 0.5);
+          left: 50%;
+          width: var(--dot);
+          height: var(--dot);
+          margin-left: calc(var(--dot) * -0.5);
+          border-radius: 50%;
+          background: var(--dot-color);
+          box-shadow: 0 0 var(--dot) var(--dot-color);
+        }
+        @keyframes ringRotate {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @keyframes logoPulse {
+          0%,
+          100% {
+            box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12), 0 0 calc(var(--s) * 0.17) var(--glow-lo);
+          }
+          50% {
+            box-shadow: 0 6px 24px rgba(23, 20, 18, 0.12), 0 0 calc(var(--s) * 0.33) var(--glow-hi);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ring,
+          .logoTile {
+            animation: none;
+          }
+        }
+      `}</style>
+    </span>
+  )
+}
+
 export function DisplayScreen({ slug, initialData }: { slug: string; initialData: DisplayData }) {
   const [data, setData] = useState<DisplayData>(initialData)
   // "welcome" is a one-time phase for this tab's lifetime -- once it flips
@@ -228,8 +339,9 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
       <section className={`slide welcome ${activeKey === "welcome" ? "active" : ""}`}>
         <div className="glow" aria-hidden="true" />
         {data.branding.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- external Storage URL
-          <img src={data.branding.logoUrl} alt={brandName} className="logo" />
+          <span className="logoSlot">
+            <BrandLogo url={data.branding.logoUrl} accent={accent} size="22vh" ringWidth="0.4vh" dotSize="1.6vh" />
+          </span>
         ) : (
           <div className="monogram">{brandName.charAt(0).toUpperCase()}</div>
         )}
@@ -390,11 +502,9 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
             opacity: 0.22;
           }
         }
-        .logo {
-          max-height: 18vh;
-          max-width: 60vw;
-          object-fit: contain;
-          margin-bottom: 4vh;
+        .logoSlot {
+          display: block;
+          margin-bottom: 6vh; /* the ring sits outside the tile, give it room */
           position: relative;
         }
         .monogram {
