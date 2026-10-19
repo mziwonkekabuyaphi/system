@@ -258,10 +258,17 @@ const TITLES: Record<IndustryId, [string, string, string]> = {
   clinic: ["Nurse", "Receptionist", "Phlebotomist"],
   workshop: ["Technician", "Tyre fitter", "Service advisor"],
   vet: ["Vet nurse", "Receptionist", "Groomer"],
+  retail: ["Store manager", "Sales assistant", "Stylist"],
+  events: ["Event coordinator", "Registration host", "Floor steward"],
+  restaurant: ["Head waiter", "Host", "Kitchen assistant"],
+  pharmacy: ["Pharmacist", "Dispensing assistant", "Cashier"],
 }
 
+/** Used if an industry is ever added without its own job titles, so the page can't crash. */
+const DEFAULT_TITLES: [string, string, string] = ["Manager", "Team member", "Trainee"]
+
 export function seedStaff(id: IndustryId): StaffMember[] {
-  const [t1, t2, t3] = TITLES[id]
+  const [t1, t2, t3] = TITLES[id] ?? DEFAULT_TITLES
   const base = { phone: "", email: "", active: true, taxNumber: "", bankBranchCode: "" }
   return [
     { ...base, id: "s1", name: "Thabo Mokoena", jobTitle: t1, employeeNumber: "001", startDate: "2023-02-01", hourlyRate: 135, pin: "1234", phone: "082 123 4567", idNumberLast4: "0083", bankName: "Capitec", bankAccountType: "savings", bankAccountLast4: "4821", bankBranchCode: "470010", taxNumber: "9876543210" },
