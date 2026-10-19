@@ -1,12 +1,16 @@
 // app/admin/StaffManager.tsx
 "use client"
 
-import { useEffect, useState, useTransition, type FormEvent } from "react"
-import { addStaff, deleteStaff, forceClockOutShift, toggleStaffActive, updateStaff } from "./actions"
+import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react"
+import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, toggleStaffActive, updateStaff } from "./actions"
 import { ConfirmDialog, NoticeModal, type Notice } from "./AdminModals"
 import type { AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
 import type {
   AdminBankAccountType,
+  AdminHybridMode,
+  AdminPayType,
+  AdminStaffPayProfile,
+  AdminStaffPayProfileInput,
   AdminStaffPayrollDetails,
   AdminStaffPayrollDetailsInput,
 } from "./payroll-types"
@@ -25,6 +29,12 @@ type StaffFormState = {
   clockInPin: string
   loginPassword: string
   hourlyRate: number | null
+  // How they are paid (payroll.manage only, like hourlyRate). commissionRate is
+  // kept as text so a half-typed number isn't fought by the input; it's
+  // validated in submit(). The server re-validates everything.
+  payType: AdminPayType
+  commissionRate: string
+  hybridMode: AdminHybridMode
   // Non-sensitive HR fields: shown to every staff.manage user.
   employeeNumber: string
   startDate: string
@@ -44,6 +54,9 @@ const EMPTY_FORM: StaffFormState = {
   name: "",
   jobTitle: "",
   hourlyRate: null,
+  payType: "hourly",
+  commissionRate: "",
+  hybridMode: "base_plus_commission",
   phone: "",
   email: "",
   clockInPin: "",
@@ -58,7 +71,7 @@ const EMPTY_FORM: StaffFormState = {
   bankAccountType: "",
 }
 
-function formFromStaff(member: AdminStaff): StaffFormState {
+function formFromStaff(member: AdminStaff, profile?: AdminStaffPayProfile): StaffFormState {
   return {
     name: member.name,
     jobTitle: member.jobTitle ?? "",
@@ -67,6 +80,9 @@ function formFromStaff(member: AdminStaff): StaffFormState {
     // to null here is fine either way: the field simply won't render for
     // someone without payrollManage, so this value is never shown or sent.
     hourlyRate: "hourlyRate" in member ? (member.hourlyRate ?? null) : null,
+    payType: profile?.payType ?? "hourly",
+    commissionRate: profile?.commissionRatePercent != null ? String(profile.commissionRatePercent) : "",
+    hybridMode: profile?.hybridMode ?? "base_plus_commission",
     phone: member.phone ?? "",
     email: member.email ?? "",
     clockInPin: member.clockInPin ?? "",
@@ -82,6 +98,50 @@ function formFromStaff(member: AdminStaff): StaffFormState {
     bankAccountNumber: "",
     bankBranchCode: member.payrollDetails?.bankBranchCode ?? "",
     bankAccountType: member.payrollDetails?.bankAccountType ?? "",
+  }
+}
+
+const PAY_TYPE_OPTIONS: Array<{ value: AdminPayType; label: string; help: string }> = [
+  { value: "hourly", label: "Hourly", help: "Paid for the hours they clock in." },
+  { value: "commission", label: "Commission", help: "Paid a percentage of the price of the services they do." },
+  { value: "hybrid", label: "Hybrid", help: "Paid by the hour and by commission." },
+]
+
+/** The pay profile to send, or null when it hasn't changed (so an unrelated edit
+ *  doesn't rewrite it or add a log line). A staff member with no saved profile is
+ *  hourly, so choosing hourly for them needs no write at all. */
+function changedPayProfile(form: StaffFormState, original: AdminStaffPayProfile | undefined): AdminStaffPayProfileInput | null {
+  const originalType = original?.payType ?? "hourly"
+  if (form.payType === "hourly") return originalType === "hourly" ? null : { payType: "hourly" }
+
+  const rate = Number(form.commissionRate)
+  const same =
+    originalType === form.payType &&
+    original?.commissionRatePercent === rate &&
+    (form.payType !== "hybrid" || original?.hybridMode === form.hybridMode)
+  if (same) return null
+  return {
+    payType: form.payType,
+    commissionRatePercent: rate,
+    hybridMode: form.payType === "hybrid" ? form.hybridMode : undefined,
+  }
+}
+
+/** "R120.00/hr", "40% commission", "R120.00/hr + 30% commission". Only for callers
+ *  with payroll.view (the hourlyRate key is absent for everyone else). */
+function paySummary(member: AdminStaff, profile: AdminStaffPayProfile | undefined): string | null {
+  if (!("hourlyRate" in member)) return null
+  const hourly = member.hourlyRate != null ? `R${member.hourlyRate.toFixed(2)}/hr` : null
+  const pct = profile?.commissionRatePercent != null ? `${profile.commissionRatePercent}%` : null
+  switch (profile?.payType ?? "hourly") {
+    case "commission":
+      return pct ? `${pct} commission` : "Commission (no rate set)"
+    case "hybrid":
+      return profile?.hybridMode === "higher_of"
+        ? `Higher of ${hourly ?? "hourly"} or ${pct ?? "commission"}`
+        : `${hourly ?? "No hourly rate"} + ${pct ?? "commission"}`
+    default:
+      return hourly
   }
 }
 
@@ -218,6 +278,17 @@ export function StaffManager({
 }) {
   const [form, setForm] = useState<StaffFormState>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
+  // Pay profiles come from their own payroll.view action rather than the staff list
+  // payload, so the staff loader doesn't need to change.
+  const [payProfiles, setPayProfiles] = useState<Record<string, AdminStaffPayProfile>>({})
+  const refreshPayProfiles = useCallback(async () => {
+    if (!permissions.payrollView) return
+    const res = await getStaffPayProfiles()
+    if (res.ok) setPayProfiles(res.profiles)
+  }, [permissions.payrollView])
+  useEffect(() => {
+    void refreshPayProfiles()
+  }, [refreshPayProfiles])
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, startSave] = useTransition()
 
@@ -235,7 +306,7 @@ export function StaffManager({
 
   function startEdit(member: AdminStaff) {
     setEditingId(member.id)
-    setForm(formFromStaff(member))
+    setForm(formFromStaff(member, payProfiles[member.id]))
     setFormError(null)
   }
 
@@ -256,6 +327,15 @@ export function StaffManager({
     // AdminStaffInput's doc comment. Sending it without the permission
     // would just get rejected server-side anyway, but there's no reason
     // to even try.
+    // Commission and hybrid need a rate; say so here rather than after a round trip.
+    if (permissions.payrollManage && form.payType !== "hourly") {
+      const pct = Number(form.commissionRate)
+      if (form.commissionRate.trim() === "" || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+        setFormError("Enter a commission rate between 0 and 100%.")
+        return
+      }
+    }
+
     const payload: AdminStaffInput = {
       name: form.name,
       jobTitle: form.jobTitle,
@@ -273,6 +353,8 @@ export function StaffManager({
       const original = editingId ? staff.find((m) => m.id === editingId)?.payrollDetails : undefined
       const details = changedPayrollDetails(form, original)
       if (details) payload.payrollDetails = details
+      const profile = changedPayProfile(form, editingId ? payProfiles[editingId] : undefined)
+      if (profile) payload.payProfile = profile
     }
 
     startSave(async () => {
@@ -280,6 +362,7 @@ export function StaffManager({
       if (result.ok) {
         setForm(EMPTY_FORM)
         setEditingId(null)
+        void refreshPayProfiles()
       } else {
         setFormError(result.error)
       }
@@ -381,7 +464,7 @@ export function StaffManager({
                       // AdminStaff's doc comment) — a staff.view-only
                       // caller's member objects never carry it, so there's
                       // nothing to accidentally leak here.
-                      "hourlyRate" in member && member.hourlyRate != null ? `R${member.hourlyRate.toFixed(2)}/hr` : null,
+                      paySummary(member, payProfiles[member.id]),
                     ]
                       .filter(Boolean)
                       .join(" · ") || "No job title or rate set"}
@@ -481,20 +564,100 @@ export function StaffManager({
           </div>
 
           {permissions.payrollManage && (
-          <div>
-            <label className="block text-sm text-[#8A8375]">Hourly rate (ZAR)</label>
-            <input
-              type="number"
-              step="0.5"
-              min="0"
-              value={form.hourlyRate ?? ""}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, hourlyRate: e.target.value === "" ? null : Number(e.target.value) }))
-              }
-              placeholder="120"
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
-            />
-          </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-[#8A8375]">How are they paid?</label>
+                <div role="radiogroup" aria-label="How are they paid?" className="mt-1 flex flex-wrap gap-2">
+                  {PAY_TYPE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={form.payType === opt.value}
+                      onClick={() => setForm((f) => ({ ...f, payType: opt.value }))}
+                      className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                        form.payType === opt.value
+                          ? "border-[#1C1A17] bg-[#1C1A17] text-[#FAF6EE]"
+                          : "border-[#D9D3C3] text-[#1C1A17] hover:bg-[#F1ECDF]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-[#8A8375]">{PAY_TYPE_OPTIONS.find((o) => o.value === form.payType)?.help}</p>
+              </div>
+
+              {form.payType !== "commission" && (
+                <div>
+                  <label className="block text-sm text-[#8A8375]">
+                    {form.payType === "hybrid" ? "Hourly rate (ZAR), the base part" : "Hourly rate (ZAR)"}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={form.hourlyRate ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, hourlyRate: e.target.value === "" ? null : Number(e.target.value) }))
+                    }
+                    placeholder="120"
+                    className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  />
+                </div>
+              )}
+
+              {form.payType !== "hourly" && (
+                <div>
+                  <label className="block text-sm text-[#8A8375]">Commission (% of the service price)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="100"
+                    value={form.commissionRate}
+                    onChange={(e) => setForm((f) => ({ ...f, commissionRate: e.target.value }))}
+                    placeholder="40"
+                    className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  />
+                  <p className="mt-1 text-xs text-[#8A8375]">
+                    Worked out on the price you list for each service, when the customer is marked as served. Tips and
+                    discounts aren&apos;t included. Walk-ins only count once a staff member is recorded as serving them.
+                  </p>
+                </div>
+              )}
+
+              {form.payType === "hybrid" && (
+                <fieldset>
+                  <legend className="text-sm text-[#8A8375]">How do hourly and commission combine?</legend>
+                  {(
+                    [
+                      ["base_plus_commission", "Both: hourly pay, plus commission on top"],
+                      ["higher_of", "Whichever is higher: hourly pay works as a guaranteed minimum"],
+                    ] as Array<[AdminHybridMode, string]>
+                  ).map(([value, label]) => (
+                    <label key={value} className="mt-1 flex items-start gap-2 text-sm text-[#1C1A17]">
+                      <input
+                        type="radio"
+                        name="hybridMode"
+                        checked={form.hybridMode === value}
+                        onChange={() => setForm((f) => ({ ...f, hybridMode: value }))}
+                        className="mt-1"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+
+              {form.payType === "commission" && (
+                <p className="rounded-lg bg-[#FBF3DC] px-3 py-2 text-xs text-[#5C4A12]">
+                  Employees paid only on commission must still receive at least the national minimum wage. To guarantee
+                  a floor, choose Hybrid with &ldquo;whichever is higher&rdquo; and set the hourly rate. Check the rules
+                  with your accountant.
+                </p>
+              )}
+            </div>
           )}
 
           <div>

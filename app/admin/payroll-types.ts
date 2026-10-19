@@ -59,6 +59,43 @@ export interface AdminEmployerDetails {
   sdlReference: string | null
 }
 
+
+// ---------------------------------------------------------------------------
+// Pay type: hourly (default), commission, or hybrid. Stored in
+// staff_pay_profiles; no row means hourly, so nobody changes until an admin
+// switches them.
+// ---------------------------------------------------------------------------
+
+export type AdminPayType = "hourly" | "commission" | "hybrid"
+
+/** hybrid only. base_plus_commission = hourly pay AND commission on top.
+ *  higher_of = whichever is bigger for the period (a guaranteed minimum). */
+export type AdminHybridMode = "base_plus_commission" | "higher_of"
+
+/** What a payroll.view caller sees. Commission is a percentage of the list
+ *  price of the services the person delivered (e.g. 40 = 40%). */
+export interface AdminStaffPayProfile {
+  payType: AdminPayType
+  /** 0-100, up to 2 decimals. null for hourly. */
+  commissionRatePercent: number | null
+  hybridMode: AdminHybridMode
+}
+
+/** Write shape; sent only with payroll.manage, and only when it changed. */
+export interface AdminStaffPayProfileInput {
+  payType: AdminPayType
+  /** Required (0-100) for commission and hybrid, ignored for hourly. */
+  commissionRatePercent?: number | null
+  /** Only used for hybrid. Defaults to base_plus_commission. */
+  hybridMode?: AdminHybridMode
+}
+
+/** Finished walk-ins nobody was credited for in the selected period. Only
+ *  counted once the shop has someone on commission or hybrid. */
+export interface AdminPayrollUnattributed {
+  count: number
+}
+
 declare module "./types" {
   interface AdminStaff {
     /** Non-sensitive HR fields (staff.view may read them). */
@@ -82,5 +119,28 @@ declare module "./types" {
      *  addition to staff.manage. Omit the key entirely when the signed-in user
      *  lacks payroll.manage. */
     payrollDetails?: AdminStaffPayrollDetailsInput
+    /** How this person is paid. Gated exactly like hourlyRate: setting it needs
+     *  payroll.manage in addition to staff.manage. Omit the key when unchanged. */
+    payProfile?: AdminStaffPayProfileInput
+  }
+
+  /** Commission fields on a payslip row. Optional so older rows and code that
+   *  builds an AdminPayrollRecord keep compiling; read with ?? defaults.
+   *  grossPay = basePay + commissionPay. */
+  interface AdminPayrollRecord {
+    payType?: AdminPayType
+    hybridMode?: AdminHybridMode | null
+    /** Hourly part (hours x rate). 0 for commission-only. */
+    basePay?: number
+    /** Commission earned in the period, before any higher-of comparison. */
+    commissionEarned?: number
+    /** The part of commission included in gross (for higher_of, only what
+     *  exceeds the hourly amount). */
+    commissionPay?: number
+    /** Sum of list prices of the services commission was calculated on. */
+    commissionSales?: number
+    /** Rate in force when this was calculated, as a percentage. */
+    commissionRatePercent?: number | null
+    servicesCount?: number
   }
 }

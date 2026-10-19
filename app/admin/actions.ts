@@ -61,7 +61,7 @@ import {
 import { loadDisplayContext, loadQueueEntries } from "./admin-data"
 import { addDaysKey, safeTimezone, startOfDayUtc } from "./tz"
 import type { AdminActivityCategory, AdminQueueEntry, AdminStaffInput } from "./types"
-import type { AdminPayrollOpenShift } from "./payroll-types"
+import type { AdminHybridMode, AdminPayType, AdminPayrollOpenShift, AdminStaffPayProfile } from "./payroll-types"
 
 type ActionResult = { ok: true } | { ok: false; error: string }
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
@@ -518,13 +518,55 @@ export async function deleteService(id: string): Promise<ActionResult> {
 const QUEUE_ENTRY_CHANGED =
   "This queue entry was already changed by someone else — the list has been refreshed."
 
-export async function callQueueEntry(id: string): Promise<ActionResult> {
+/** Who gets credit for serving a queue entry (this is what commission is paid on).
+ *  An explicit staff id wins (it must be an active member of this shop). Otherwise
+ *  it's the staff record linked to the signed-in login, if there is one. null means
+ *  nobody could be identified: the entry is still served, it just earns no
+ *  commission, and the Payroll tab warns about it. */
+async function resolveServedBy(
+  supabase: ServerClient,
+  tenantId: string,
+  explicitStaffId?: string | null,
+): Promise<{ ok: true; staffId: string | null; explicit: boolean } | { ok: false; error: string }> {
+  if (explicitStaffId) {
+    const { data, error } = await supabase
+      .from("staff")
+      .select("id")
+      .eq("id", explicitStaffId)
+      .eq("tenant_id", tenantId)
+      .eq("active", true)
+      .maybeSingle()
+    if (error) return { ok: false, error: error.message }
+    if (!data) return { ok: false, error: "That staff member isn't available." }
+    return { ok: true, staffId: data.id as string, explicit: true }
+  }
+
+  const { userId } = await requireTenantMember()
+  const { data, error } = await supabase
+    .from("staff")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", userId)
+    .eq("active", true)
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, staffId: (data?.id as string | undefined) ?? null, explicit: false }
+}
+
+/** @param servedByStaffId Optional. Who is serving this customer; see resolveServedBy(). */
+export async function callQueueEntry(id: string, servedByStaffId?: string | null): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
+  const servedBy = await resolveServedBy(supabase, tenantId!, servedByStaffId)
+  if (!servedBy.ok) return { ok: false, error: servedBy.error }
+
+  const patch: Record<string, unknown> = { status: "called", called_at: new Date().toISOString() }
+  if (servedBy.staffId) patch.staff_id = servedBy.staffId
+
   const { data: updated, error: updateError } = await supabase
     .from("queue_entries")
-    .update({ status: "called", called_at: new Date().toISOString() })
+    .update(patch)
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .eq("status", "waiting") // only a waiting customer can be called
@@ -539,9 +581,29 @@ export async function callQueueEntry(id: string): Promise<ActionResult> {
   return { ok: true }
 }
 
-export async function markQueueEntryDone(id: string): Promise<ActionResult> {
+/** @param servedByStaffId Optional. If given it replaces whoever was recorded when the
+ *  customer was called (e.g. the receptionist who called them isn't the barber who
+ *  cut). If omitted, an entry that has nobody yet gets the signed-in user's staff
+ *  record, and an entry that already has someone keeps them. Staff must be settled
+ *  BEFORE the status flips to done, because the commission trigger runs on that flip. */
+export async function markQueueEntryDone(id: string, servedByStaffId?: string | null): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
+
+  const servedBy = await resolveServedBy(supabase, tenantId!, servedByStaffId)
+  if (!servedBy.ok) return { ok: false, error: servedBy.error }
+
+  if (servedBy.staffId) {
+    let assign = supabase
+      .from("queue_entries")
+      .update({ staff_id: servedBy.staffId })
+      .eq("id", id)
+      .eq("tenant_id", tenantId)
+      .eq("status", "called")
+    if (!servedBy.explicit) assign = assign.is("staff_id", null)
+    const { error: assignError } = await assign
+    if (assignError) return { ok: false, error: assignError.message }
+  }
 
   const { data: updated, error: updateError } = await supabase
     .from("queue_entries")
@@ -732,6 +794,94 @@ function validateStaffInput(input: AdminStaffInput): string | null {
   return null
 }
 
+// ----------------------------------------------------------------------------
+// Pay profile (hourly / commission / hybrid). Lives in staff_pay_profiles; a
+// staff member with no row is hourly. Commission is a percentage of the LIST
+// price of the services someone delivered, written to staff_commission_entries
+// by database triggers when a booking is completed or a queue entry is done.
+// ----------------------------------------------------------------------------
+
+const PAY_TYPES: AdminPayType[] = ["hourly", "commission", "hybrid"]
+const HYBRID_MODES: AdminHybridMode[] = ["base_plus_commission", "higher_of"]
+
+type PayProfileRow = { pay_type: AdminPayType; commission_rate_bps: number | null; hybrid_mode: AdminHybridMode }
+type PayProfilePrep = { ok: true; row: PayProfileRow | null } | { ok: false; error: string }
+
+/** Server Action arguments are untrusted JSON, so everything is re-validated here.
+ *  row === null means "the input didn't carry a payProfile: leave it alone". */
+function preparePayProfile(input: AdminStaffInput): PayProfilePrep {
+  const p = input.payProfile
+  if (p === undefined) return { ok: true, row: null }
+  if (p === null || typeof p !== "object") return { ok: false, error: "Invalid input." }
+  if (!PAY_TYPES.includes(p.payType)) return { ok: false, error: "Choose how this person is paid." }
+
+  const hybridMode = p.hybridMode ?? "base_plus_commission"
+  if (!HYBRID_MODES.includes(hybridMode)) return { ok: false, error: "Choose how hybrid pay works." }
+
+  if (p.payType === "hourly") {
+    return { ok: true, row: { pay_type: "hourly", commission_rate_bps: null, hybrid_mode: "base_plus_commission" } }
+  }
+
+  const percent = p.commissionRatePercent
+  if (typeof percent !== "number" || !Number.isFinite(percent) || percent < 0 || percent > 100) {
+    return { ok: false, error: "Enter a commission rate between 0 and 100%." }
+  }
+  return {
+    ok: true,
+    row: {
+      pay_type: p.payType,
+      commission_rate_bps: Math.round(percent * 100),
+      hybrid_mode: p.payType === "hybrid" ? hybridMode : "base_plus_commission",
+    },
+  }
+}
+
+/** Upsert; staff_id/tenant_id are stamped from the already-scoped caller and the
+ *  composite FK (staff_id, tenant_id) rejects another tenant's staff id. */
+async function savePayProfile(
+  supabase: ServerClient,
+  tenantId: string,
+  staffId: string,
+  row: PayProfileRow | null,
+): Promise<string | null> {
+  if (!row) return null
+  const { error } = await supabase
+    .from("staff_pay_profiles")
+    .upsert([{ staff_id: staffId, tenant_id: tenantId, ...row }], { onConflict: "staff_id" })
+  return error ? error.message : null
+}
+
+function describePayType(row: PayProfileRow): string {
+  if (row.pay_type === "hourly") return "hourly"
+  if (row.pay_type === "commission") return "commission"
+  return row.hybrid_mode === "higher_of" ? "hybrid (higher of hourly or commission)" : "hybrid (hourly plus commission)"
+}
+
+/** Everyone's pay profile for the Staff screen. Needs payroll.view. Staff with
+ *  no row are simply absent from the result (the UI treats them as hourly). */
+export async function getStaffPayProfiles(): Promise<
+  { ok: true; profiles: Record<string, AdminStaffPayProfile> } | { ok: false; error: string }
+> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { data, error: fetchError } = await supabase
+    .from("staff_pay_profiles")
+    .select("staff_id, pay_type, commission_rate_bps, hybrid_mode")
+    .eq("tenant_id", tenantId)
+  if (fetchError) return { ok: false, error: fetchError.message }
+
+  const profiles: Record<string, AdminStaffPayProfile> = {}
+  for (const r of data ?? []) {
+    profiles[r.staff_id as string] = {
+      payType: r.pay_type as AdminPayType,
+      commissionRatePercent: r.commission_rate_bps === null ? null : Number(r.commission_rate_bps) / 100,
+      hybridMode: r.hybrid_mode as AdminHybridMode,
+    }
+  }
+  return { ok: true, profiles }
+}
+
 // Normalised, validated versions of the optional HR / payroll fields on
 // AdminStaffInput. Server Action arguments are untrusted JSON, so every value
 // is type-checked here rather than trusting the TypeScript signature.
@@ -896,7 +1046,7 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
   // setting either — even to null — always needs payroll.manage, independent
   // of the staff.manage check above. Checked against the same signed-in
   // session, not re-derived.
-  if ("hourlyRate" in input || "payrollDetails" in input) {
+  if ("hourlyRate" in input || "payrollDetails" in input || "payProfile" in input) {
     const payrollCheck = await requireTenantPermission("payroll.manage")
     if (!payrollCheck.ok) return { ok: false, error: payrollCheck.error }
   }
@@ -906,6 +1056,9 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
 
   const extras = prepareStaffExtras(input)
   if (!extras.ok) return { ok: false, error: extras.error }
+
+  const payProfile = preparePayProfile(input)
+  if (!payProfile.ok) return { ok: false, error: payProfile.error }
 
   if (input.clockInPin) {
     const pinError = await assertPinAvailable(supabase, tenantId!, input.clockInPin)
@@ -965,7 +1118,21 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
     return { ok: false, error: `Couldn't save payroll details: ${detailsError}` }
   }
 
+  const profileError = await savePayProfile(supabase, tenantId!, inserted.id, payProfile.row)
+  if (profileError) {
+    await supabase.from("staff").delete().eq("id", inserted.id).eq("tenant_id", tenantId)
+    if (profileId) await rollbackStaffLogin(supabase, profileId)
+    return { ok: false, error: `Couldn't save pay settings: ${profileError}` }
+  }
+
   await logActivity(supabase, tenantId!, { category: "staff", action: `Added staff member "${input.name.trim()}"`, staffId: inserted.id })
+  if (payProfile.row) {
+    await logActivity(supabase, tenantId!, {
+      category: "payroll",
+      action: `Set pay type for staff member "${input.name.trim()}" to ${describePayType(payProfile.row)}`,
+      staffId: inserted.id,
+    })
+  }
   // Never put the ID, tax or bank numbers in the log: only that they changed.
   if (Object.keys(extras.detailsPatch).length) {
     await logActivity(supabase, tenantId!, {
@@ -988,7 +1155,7 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
   // than writing it as null/unchanged, so a staff.manage-only caller
   // can't accidentally (or via a crafted request) wipe an existing rate.
   const canTouchRate = "hourlyRate" in input
-  if (canTouchRate || "payrollDetails" in input) {
+  if (canTouchRate || "payrollDetails" in input || "payProfile" in input) {
     const payrollCheck = await requireTenantPermission("payroll.manage")
     if (!payrollCheck.ok) return { ok: false, error: payrollCheck.error }
   }
@@ -998,6 +1165,9 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
 
   const extras = prepareStaffExtras(input)
   if (!extras.ok) return { ok: false, error: extras.error }
+
+  const payProfile = preparePayProfile(input)
+  if (!payProfile.ok) return { ok: false, error: payProfile.error }
 
   if (input.clockInPin) {
     const pinError = await assertPinAvailable(supabase, tenantId!, input.clockInPin, id)
@@ -1067,7 +1237,19 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
     return { ok: false, error: `Staff details were saved, but payroll details couldn't be: ${detailsError}` }
   }
 
+  const profileError = await savePayProfile(supabase, tenantId!, id, payProfile.row)
+  if (profileError) {
+    return { ok: false, error: `Staff details were saved, but pay settings couldn't be: ${profileError}` }
+  }
+
   await logActivity(supabase, tenantId!, { category: "staff", action: `Updated staff member "${input.name.trim()}"`, staffId: id })
+  if (payProfile.row) {
+    await logActivity(supabase, tenantId!, {
+      category: "payroll",
+      action: `Changed pay type for staff member "${input.name.trim()}" to ${describePayType(payProfile.row)}`,
+      staffId: id,
+    })
+  }
   // Never put the ID, tax or bank numbers in the log: only that they changed.
   if (Object.keys(extras.detailsPatch).length) {
     await logActivity(supabase, tenantId!, {
@@ -1346,6 +1528,7 @@ export async function getPayrollForPeriod(periodStart: string, periodEnd: string
     .select(
       `id, staff_id, period_start, period_end, hours_worked, hourly_rate, gross_pay, paye, uif, deductions,
        final_pay, payment_status, paid_at, paid_by,
+       pay_type, hybrid_mode, base_pay, commission_earned, commission_pay, commission_sales, commission_rate_bps, services_count,
        staff ( name, job_title ),
        paid_by_profile:profiles!staff_payroll_paid_by_fkey ( full_name )`,
     )
@@ -1375,6 +1558,14 @@ export async function getPayrollForPeriod(periodStart: string, periodEnd: string
       paymentStatus: r.payment_status,
       paidAt: r.paid_at,
       paidByName: r.paid_by_profile?.full_name ?? null,
+      payType: (r.pay_type ?? "hourly") as AdminPayType,
+      hybridMode: (r.hybrid_mode ?? null) as AdminHybridMode | null,
+      basePay: Number(r.base_pay ?? 0),
+      commissionEarned: Number(r.commission_earned ?? 0),
+      commissionPay: Number(r.commission_pay ?? 0),
+      commissionSales: Number(r.commission_sales ?? 0),
+      commissionRatePercent: r.commission_rate_bps == null ? null : Number(r.commission_rate_bps) / 100,
+      servicesCount: Number(r.services_count ?? 0),
     })),
   }
 }
@@ -1405,18 +1596,33 @@ export async function getPayrollPeriodWarnings(periodStart: string, periodEnd: s
     staffName: r.staff?.name ?? "Unknown staff",
     loginTime: r.login_time,
   }))
-  return { ok: true as const, openShifts }
+
+  // Finished walk-ins nobody was credited for. Best-effort: a failure here must not
+  // hide the open-shift warning or the table, so it just reports 0.
+  const { data: unattributed, error: unattributedError } = await supabase.rpc("staff_commission_unattributed", {
+    p_tenant: tenantId,
+    p_start: bounds.startIso,
+    p_end: bounds.endExclusiveIso,
+  })
+  const unattributedServices = unattributedError ? 0 : Number(unattributed ?? 0)
+
+  return { ok: true as const, openShifts, unattributedServices }
 }
 
-/** Recalculates payroll for every active staff member with completed
- *  shifts in [periodStart, periodEnd] (both inclusive), using each
- *  member's *current* hourly_rate — a rate change doesn't retroactively
- *  touch shifts already paid out, but does apply the next time this runs
- *  for a not-yet-paid period. Deletes and replaces any 'pending' rows for
- *  this exact period first, same as the old standalone app, so
- *  recalculating (e.g. after fixing a shift) doesn't duplicate rows;
- *  'paid' rows for the same period are left untouched — recalculating
- *  never un-pays something already marked paid. */
+/** Recalculates payroll for every staff member who has pay due in
+ *  [periodStart, periodEnd] (both inclusive). What "pay due" means depends on
+ *  how each person is paid (staff_pay_profiles; no row = hourly):
+ *    hourly      completed shift hours x their current hourly_rate (as before)
+ *    commission  commission on the services they delivered in the period
+ *                (staff_commission_entries; price and rate were snapshotted
+ *                when each service was completed)
+ *    hybrid      base_plus_commission: hourly pay AND commission on top
+ *                higher_of:            whichever of the two is bigger
+ *  Hourly pay uses the *current* hourly_rate. Commission uses each entry's own
+ *  snapshotted rate, so a later rate change never rewrites finished services.
+ *  Deletes and replaces any 'pending' rows for this exact period first, so
+ *  recalculating doesn't duplicate rows; 'paid' rows are left untouched and
+ *  recalculating never un-pays something already marked paid. */
 export async function calculatePayroll(periodStart: string, periodEnd: string): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient("payroll.manage")
   if (!supabase) return { ok: false, error: error! }
@@ -1447,6 +1653,34 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
 
   if (shiftError) return { ok: false, error: shiftError.message }
 
+  const { data: profileRows, error: profileError } = await supabase
+    .from("staff_pay_profiles")
+    .select("staff_id, pay_type, commission_rate_bps, hybrid_mode")
+    .eq("tenant_id", tenantId)
+  if (profileError) return { ok: false, error: profileError.message }
+  const profiles = new Map((profileRows ?? []).map((r) => [r.staff_id as string, r]))
+
+  // Aggregated in SQL: a busy month can have more entries than one API page returns.
+  const { data: commissionRows, error: commissionError } = await supabase.rpc("staff_commission_totals", {
+    p_tenant: tenantId,
+    p_start: bounds.startIso,
+    p_end: bounds.endExclusiveIso,
+  })
+  if (commissionError) return { ok: false, error: commissionError.message }
+  const commissionByStaff = new Map<string, { services: number; salesCents: number; commissionCents: number }>()
+  for (const r of (commissionRows ?? []) as Array<{
+    staff_id: string
+    services_count: number | string
+    sales_cents: number | string
+    commission_cents: number | string
+  }>) {
+    commissionByStaff.set(r.staff_id, {
+      services: Number(r.services_count),
+      salesCents: Number(r.sales_cents),
+      commissionCents: Number(r.commission_cents),
+    })
+  }
+
   // Staff already marked paid for this exact period keep their paid row. They
   // must not also get a fresh 'pending' row: the delete below only removes
   // 'pending' rows, so without this a recalculation after paying one person
@@ -1466,14 +1700,43 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
     hoursByStaff.set(shift.staff_id, (hoursByStaff.get(shift.staff_id) ?? 0) + (Number(shift.hours_worked) || 0))
   }
 
-  const rowsToInsert = staffRows
-    .map((staff) => payslipStaffRow(staff))
-    .filter((staff) => (hoursByStaff.get(staff.id) ?? 0) > 0)
+  const round2 = (n: number) => Number(n.toFixed(2))
+
+  // Who has pay due this period, given how they are paid.
+  const due = staffRows.filter((staff) => {
+    const payType = (profiles.get(staff.id)?.pay_type ?? "hourly") as AdminPayType
+    const hasHours = (hoursByStaff.get(staff.id) ?? 0) > 0
+    const hasServices = (commissionByStaff.get(staff.id)?.services ?? 0) > 0
+    if (payType === "hourly") return hasHours
+    if (payType === "commission") return hasServices
+    return hasHours || hasServices
+  })
+
+  const rowsToInsert = due
     .filter((staff) => !alreadyPaid.has(staff.id))
     .map((staff) => {
-      const hours = hoursByStaff.get(staff.id)!
-      const rate = staff.hourlyRate ?? 0
-      const gross = hours * rate
+      const member = payslipStaffRow(staff)
+      const profile = profiles.get(staff.id)
+      const payType = (profile?.pay_type ?? "hourly") as AdminPayType
+      const hybridMode = (profile?.hybrid_mode ?? "base_plus_commission") as AdminHybridMode
+      const hours = hoursByStaff.get(staff.id) ?? 0
+      const commission = payType === "hourly" ? undefined : commissionByStaff.get(staff.id)
+
+      // Commission-only staff have no hourly component, whatever hourly_rate says.
+      const rate = payType === "commission" ? 0 : (member.hourlyRate ?? 0)
+      const basePay = round2(payType === "commission" ? 0 : hours * rate)
+      const commissionEarned = round2((commission?.commissionCents ?? 0) / 100)
+
+      let gross: number
+      let commissionPay: number
+      if (payType === "hybrid" && hybridMode === "higher_of") {
+        gross = Math.max(basePay, commissionEarned)
+        commissionPay = round2(gross - basePay) // only the part above the hourly amount
+      } else {
+        commissionPay = commissionEarned
+        gross = round2(basePay + commissionPay)
+      }
+
       const deductions = calculatePeriodDeductions(gross, periodDays)
       const net = Math.max(gross - deductions.total, 0)
       return {
@@ -1481,24 +1744,33 @@ export async function calculatePayroll(periodStart: string, periodEnd: string): 
         staff_id: staff.id,
         period_start: periodStart,
         period_end: periodEnd,
-        hours_worked: Number(hours.toFixed(2)),
+        hours_worked: round2(hours),
         hourly_rate: rate,
-        gross_pay: Number(gross.toFixed(2)),
-        paye: Number(deductions.paye.toFixed(2)),
-        uif: Number(deductions.uif.toFixed(2)),
-        deductions: Number(deductions.total.toFixed(2)),
-        final_pay: Number(net.toFixed(2)),
+        gross_pay: round2(gross),
+        paye: round2(deductions.paye),
+        uif: round2(deductions.uif),
+        deductions: round2(deductions.total),
+        final_pay: round2(net),
         payment_status: "pending" as const,
+        pay_type: payType,
+        hybrid_mode: payType === "hybrid" ? hybridMode : null,
+        base_pay: basePay,
+        commission_earned: commissionEarned,
+        commission_pay: commissionPay,
+        commission_sales: round2((commission?.salesCents ?? 0) / 100),
+        commission_rate_bps: payType === "hourly" ? null : (profile?.commission_rate_bps ?? null),
+        services_count: commission?.services ?? 0,
       }
     })
 
   if (!rowsToInsert.length) {
-    const hadHours = staffRows.some((s) => (hoursByStaff.get(s.id) ?? 0) > 0)
     return {
       ok: false,
-      error: hadHours
-        ? "Everyone with completed shifts in that period has already been paid."
-        : "No completed shifts found in that period.",
+      error:
+        due.length > 0
+          ? "Everyone with pay due in that period has already been paid."
+          : // Keep the "No completed shifts" prefix: PayrollManager shows it as an info message, not an error.
+            "No completed shifts or commission services found in that period.",
     }
   }
 

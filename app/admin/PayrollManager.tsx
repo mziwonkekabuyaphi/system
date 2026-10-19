@@ -50,6 +50,21 @@ function fmtDay(key: string): string {
   })
 }
 
+/** One line under the staff name saying how this payslip was worked out. null = plain hourly. */
+function payBasisLine(r: AdminPayrollRecord): string | null {
+  const type = r.payType ?? "hourly"
+  if (type === "hourly") return null
+  const pct = r.commissionRatePercent != null ? `${r.commissionRatePercent}%` : "commission"
+  const count = r.servicesCount ?? 0
+  const services = `${count} ${count === 1 ? "service" : "services"} · ${rand.format(r.commissionSales ?? 0)} sales`
+  if (type === "commission") return `${pct} commission · ${services}`
+  if (r.hybridMode === "higher_of") {
+    const commissionWins = (r.commissionPay ?? 0) > 0
+    return `Higher of hourly or ${pct}: paid on ${commissionWins ? "commission" : "hourly"} (hourly ${rand.format(r.basePay ?? 0)}, commission ${rand.format(r.commissionEarned ?? 0)})`
+  }
+  return `Hourly + ${pct} commission · ${services}`
+}
+
 type Banner = { tone: "info" | "error"; text: string }
 type Confirm = { kind: "one"; record: AdminPayrollRecord } | { kind: "all" } | null
 
@@ -72,6 +87,7 @@ export function PayrollManager({
 
   const [records, setRecords] = useState<AdminPayrollRecord[] | null>(null)
   const [openShifts, setOpenShifts] = useState<AdminPayrollOpenShift[]>([])
+  const [unattributed, setUnattributed] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [banner, setBanner] = useState<Banner | null>(null)
@@ -91,6 +107,7 @@ export function PayrollManager({
     if (!rangeValid) {
       setRecords(null)
       setOpenShifts([])
+      setUnattributed(0)
       setLoading(false)
       setLoadError(end < start ? "The end date must be on or after the start date." : null)
       return
@@ -109,6 +126,7 @@ export function PayrollManager({
     setRecords(payroll.records as AdminPayrollRecord[])
     // A failed warnings lookup must not hide the table; just skip the warning.
     setOpenShifts(warnings.ok ? warnings.openShifts : [])
+    setUnattributed(warnings.ok ? warnings.unattributedServices : 0)
   }, [start, end, rangeValid])
 
   useEffect(() => {
@@ -187,13 +205,14 @@ export function PayrollManager({
   const totals = rows.reduce(
     (t, r) => ({
       hours: t.hours + r.hoursWorked,
+      commission: t.commission + (r.commissionPay ?? 0),
       gross: t.gross + r.grossPay,
       paye: t.paye + r.paye,
       uif: t.uif + r.uif,
       deductions: t.deductions + r.deductions,
       net: t.net + r.finalPay,
     }),
-    { hours: 0, gross: 0, paye: 0, uif: 0, deductions: 0, net: 0 },
+    { hours: 0, commission: 0, gross: 0, paye: 0, uif: 0, deductions: 0, net: 0 },
   )
 
   return (
@@ -255,8 +274,8 @@ export function PayrollManager({
         </div>
         <p className="mt-3 text-xs text-[#8A8375]">
           {rangeValid ? `${fmtDay(start)} to ${fmtDay(end)}` : "Choose a valid start and end date."} Hours are counted from
-          completed shifts whose clock-in falls in this period (shop time). Recalculating replaces unpaid rows; rows already
-          marked paid are kept.
+          completed shifts whose clock-in falls in this period (shop time). Commission is counted on services completed in
+          this period, at each service&apos;s list price. Recalculating replaces unpaid rows; rows already marked paid are kept.
         </p>
       </section>
 
@@ -272,6 +291,19 @@ export function PayrollManager({
               .map((s) => `${s.staffName} (in since ${fmtDay(dateKeyInTz(s.loginTime, timezone))} ${formatTime(s.loginTime, timezone)})`)
               .join(", ")}
             . Clock them out on the Staff tab, then recalculate.
+          </p>
+        </div>
+      )}
+
+      {unattributed > 0 && (
+        <div role="alert" className="rounded-lg border border-[#E3C98A] bg-[#FBF3DC] p-4 text-sm text-[#5C4A12]">
+          <p className="font-semibold">
+            {unattributed === 1 ? "1 walk-in has" : `${unattributed} walk-ins have`} no staff member recorded
+          </p>
+          <p className="mt-1">
+            Nobody earns commission on a walk-in until a staff member is recorded as serving it. This can&apos;t be
+            fixed after the customer is marked done, so make sure the person serving is chosen when you call the next
+            customer.
           </p>
         </div>
       )}
@@ -306,7 +338,7 @@ export function PayrollManager({
           <p className="text-[#1C1A17]">No payroll calculated for this period yet.</p>
           <p className="mt-1 text-sm text-[#8A8375]">
             {permissions.payrollManage
-              ? "Choose “Calculate payroll” to work it out from completed shifts. If nobody has a completed shift in these dates, you'll be told."
+              ? "Choose “Calculate payroll” to work it out from completed shifts and commission. If nobody has pay due in these dates, you'll be told."
               : "Someone with payroll management access needs to calculate it first."}
           </p>
         </div>
@@ -342,12 +374,13 @@ export function PayrollManager({
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-[#E6E1D4]">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[940px] text-sm">
               <thead className="bg-[#F1ECDF] text-left text-xs uppercase tracking-wide text-[#8A8375]">
                 <tr>
                   <th className="px-3 py-2.5 font-medium">Staff</th>
                   <th className="px-3 py-2.5 text-right font-medium">Hours</th>
                   <th className="px-3 py-2.5 text-right font-medium">Rate</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Commission</th>
                   <th className="px-3 py-2.5 text-right font-medium">Gross</th>
                   <th className="px-3 py-2.5 text-right font-medium">PAYE*</th>
                   <th className="px-3 py-2.5 text-right font-medium">UIF*</th>
@@ -363,10 +396,20 @@ export function PayrollManager({
                     <td className="px-3 py-2.5">
                       <p className="text-[#1C1A17]">{r.staffName}</p>
                       {r.jobTitle && <p className="text-xs text-[#8A8375]">{r.jobTitle}</p>}
-                      {r.hourlyRate === 0 && <p className="text-xs text-[#7A2E2E]">No hourly rate set</p>}
+                      {payBasisLine(r) && <p className="max-w-[260px] text-xs text-[#8A8375]">{payBasisLine(r)}</p>}
+                      {(r.payType ?? "hourly") !== "commission" && r.hourlyRate === 0 && (
+                        <p className="text-xs text-[#7A2E2E]">No hourly rate set</p>
+                      )}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{num.format(r.hoursWorked)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(r.hourlyRate)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {(r.payType ?? "hourly") === "commission" ? "—" : num.format(r.hoursWorked)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {(r.payType ?? "hourly") === "commission" ? "—" : rand.format(r.hourlyRate)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {(r.payType ?? "hourly") === "hourly" ? "—" : rand.format(r.commissionPay ?? 0)}
+                    </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(r.grossPay)}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(r.paye)}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(r.uif)}</td>
@@ -406,6 +449,7 @@ export function PayrollManager({
                   <td className="px-3 py-2.5">Total</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num.format(totals.hours)}</td>
                   <td />
+                  <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(totals.commission)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(totals.gross)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(totals.paye)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{rand.format(totals.uif)}</td>
@@ -418,7 +462,9 @@ export function PayrollManager({
           </div>
           <p className="mt-2 text-xs text-[#8A8375]">
             * PAYE and UIF are estimates (SARS tables, annualised method, single taxpayer under 65, no medical-aid or retirement
-            deductions), not official SARS figures. Confirm with your accountant before relying on them.
+            deductions), not official SARS figures. Commission makes pay vary from month to month, which this method
+            doesn&apos;t account for, so PAYE can be over- or under-estimated in unusual months. Confirm with your
+            accountant before relying on them.
           </p>
         </section>
       )}
