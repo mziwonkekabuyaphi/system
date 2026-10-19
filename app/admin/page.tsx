@@ -290,6 +290,8 @@ async function getSettingsData(
       .from("tenant_branding")
       .select(
         "display_name, logo_url, primary_color, secondary_color, remove_powered_by, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
+          "date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, " +
+          "kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, " +
           "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
           "display_theme, display_layout, display_background_color, display_tagline, " +
@@ -390,6 +392,23 @@ async function getSettingsData(
       queueCardTitle: brandingResult.data.queue_card_title,
       queueCardSubtitle: brandingResult.data.queue_card_subtitle,
       serviceScreenTitle: brandingResult.data.service_screen_title,
+      // The screens after "service" and the ticket labels. These were saved by
+      // updateKioskSettings() but never read back here, so the form came up empty.
+      dateScreenTitle: brandingResult.data.date_screen_title ?? null,
+      timeScreenTitle: brandingResult.data.time_screen_title ?? null,
+      detailsScreenTitle: brandingResult.data.details_screen_title ?? null,
+      ticketBookingEyebrow: brandingResult.data.ticket_booking_eyebrow ?? null,
+      ticketQueueEyebrow: brandingResult.data.ticket_queue_eyebrow ?? null,
+      // Details-screen fields. A null column is passed on as "not set" (undefined) so
+      // detailsFieldsFrom() in KioskPanels applies the default (name + cellphone only).
+      showName: brandingResult.data.kiosk_show_name ?? undefined,
+      showSurname: brandingResult.data.kiosk_show_surname ?? undefined,
+      showPhone: brandingResult.data.kiosk_show_phone ?? undefined,
+      showEmail: brandingResult.data.kiosk_show_email ?? undefined,
+      emailRequired: brandingResult.data.kiosk_email_required ?? undefined,
+      showCustom: brandingResult.data.kiosk_show_custom ?? undefined,
+      customLabel: brandingResult.data.kiosk_custom_label ?? null,
+      customRequired: brandingResult.data.kiosk_custom_required ?? undefined,
     },
     // Same clear-to-default posture as kioskSettings' wording fields
     // above: *Title/*Label kept raw/nullable so SettingsManager.tsx can
