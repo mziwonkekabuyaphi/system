@@ -50,6 +50,21 @@ export interface PayslipData {
   hoursWorked: number
   hourlyRate: number
   grossPay: number
+  /** How this payslip was worked out. Rows from before commission existed are 'hourly'. */
+  payType: "hourly" | "commission" | "hybrid"
+  /** hybrid only. */
+  hybridMode: "base_plus_commission" | "higher_of" | null
+  /** Hourly part (hours x rate). grossPay = basePay + commissionPay. */
+  basePay: number
+  /** Commission earned in the period, before any higher-of comparison. */
+  commissionEarned: number
+  /** The part of commission that is in grossPay (for higher_of: only what exceeds the hourly amount). */
+  commissionPay: number
+  /** Sum of the list prices commission was calculated on. */
+  commissionSales: number
+  /** Percentage, e.g. 40 or 12.5. null for hourly. */
+  commissionRatePercent: number | null
+  servicesCount: number
   paye: number
   uif: number
   totalDeductions: number
@@ -79,7 +94,7 @@ export async function loadPayslips(
   let query = supabase
     .from("staff_payroll")
     .select(
-      "id, staff_id, period_start, period_end, hours_worked, hourly_rate, gross_pay, paye, uif, deductions, final_pay, payment_status, paid_at",
+      "id, staff_id, period_start, period_end, hours_worked, hourly_rate, gross_pay, paye, uif, deductions, final_pay, payment_status, paid_at, pay_type, hybrid_mode, base_pay, commission_earned, commission_pay, commission_sales, commission_rate_bps, services_count",
     )
     .eq("tenant_id", tenantId)
 
@@ -177,6 +192,14 @@ export async function loadPayslips(
       hoursWorked: Number(r.hours_worked),
       hourlyRate: Number(r.hourly_rate),
       grossPay: Number(r.gross_pay),
+      payType: (r.pay_type ?? "hourly") as PayslipData["payType"],
+      hybridMode: (r.hybrid_mode ?? null) as PayslipData["hybridMode"],
+      basePay: Number(r.base_pay ?? 0),
+      commissionEarned: Number(r.commission_earned ?? 0),
+      commissionPay: Number(r.commission_pay ?? 0),
+      commissionSales: Number(r.commission_sales ?? 0),
+      commissionRatePercent: r.commission_rate_bps == null ? null : Number(r.commission_rate_bps) / 100,
+      servicesCount: Number(r.services_count ?? 0),
       paye: Number(r.paye),
       uif: Number(r.uif),
       totalDeductions: Number(r.deductions),

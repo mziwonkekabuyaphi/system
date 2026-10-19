@@ -93,6 +93,59 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number, maxLi
   return lines.slice(0, maxLines)
 }
 
+/** One row in the EARNINGS table. hours/rate are only set for hourly-style rows;
+ *  amount === null makes it an explanatory note with no figure. */
+type EarningsLine = { label: string; sub?: string; hours?: number; rate?: number; amount: number | null }
+
+/** The earnings rows for a payslip, by pay type. Hourly payslips are exactly one
+ *  "ordinary hours" row, as before. Commission is described as a percentage of the
+ *  list price of the services done in the period. */
+export function earningsLines(p: PayslipData): EarningsLine[] {
+  const pct = p.commissionRatePercent != null ? `${p.commissionRatePercent}%` : "commission rate"
+  const services = `${p.servicesCount} ${p.servicesCount === 1 ? "service" : "services"}`
+  const commissionBasis = `${pct} of ${formatRand(p.commissionSales)} service sales (${services})`
+  const hourlyRow = (label: string): EarningsLine => ({
+    label,
+    hours: p.hoursWorked,
+    rate: p.hourlyRate,
+    amount: p.basePay,
+  })
+
+  if (p.payType === "commission") {
+    return [{ label: "Commission", sub: commissionBasis, amount: p.commissionPay }]
+  }
+
+  if (p.payType === "hybrid") {
+    const hasHourly = p.hoursWorked > 0 || p.basePay > 0
+    if (p.hybridMode === "higher_of") {
+      if (p.commissionPay > 0) {
+        return [
+          ...(hasHourly ? [hourlyRow("Ordinary hours worked (guaranteed minimum)")] : []),
+          {
+            label: hasHourly ? "Commission above the guaranteed minimum" : "Commission",
+            sub: `${commissionBasis} = ${formatRand(p.commissionEarned)}${hasHourly ? `, less ${formatRand(p.basePay)} hourly pay` : ""}`,
+            amount: p.commissionPay,
+          },
+        ]
+      }
+      return [
+        hourlyRow("Ordinary hours worked (guaranteed minimum)"),
+        {
+          label: "Commission",
+          sub: `${commissionBasis} = ${formatRand(p.commissionEarned)}, which is not more than the hourly amount, so hourly pay applies`,
+          amount: null,
+        },
+      ]
+    }
+    return [
+      ...(hasHourly ? [hourlyRow("Ordinary hours worked")] : []),
+      { label: "Commission", sub: commissionBasis, amount: p.commissionPay },
+    ]
+  }
+
+  return [{ label: "Ordinary hours worked", hours: p.hoursWorked, rate: p.hourlyRate, amount: p.grossPay }]
+}
+
 type Fonts = { regular: PDFFont; bold: PDFFont; safeR: (s: string) => string; safeB: (s: string) => string }
 
 function drawPayslip(page: PDFPage, p: PayslipData, f: Fonts, pageNo: number, pageCount: number) {
@@ -201,12 +254,22 @@ function drawPayslip(page: PDFPage, p: PayslipData, f: Fonts, pageNo: number, pa
     y -= 24
   }
 
-  header("EARNINGS", true)
-  text("Ordinary hours worked", M + 8, y)
-  text(formatHours(p.hoursWorked), colHours, y, { align: "right" })
-  text(`${formatRand(p.hourlyRate)} / hr`, colRate, y, { align: "right" })
-  text(formatRand(p.grossPay), RIGHT - 8, y, { align: "right" })
-  y -= 12
+  const lines = earningsLines(p)
+  header("EARNINGS", lines.some((l) => l.hours !== undefined))
+  lines.forEach((l, i) => {
+    text(l.label, M + 8, y)
+    if (l.hours !== undefined) text(formatHours(l.hours), colHours, y, { align: "right" })
+    if (l.rate !== undefined) text(`${formatRand(l.rate)} / hr`, colRate, y, { align: "right" })
+    if (l.amount !== null) text(formatRand(l.amount), RIGHT - 8, y, { align: "right" })
+    y -= 12
+    if (l.sub) {
+      for (const sub of wrap(l.sub, f.regular, 8.5, RIGHT - M - 16, 3)) {
+        text(sub, M + 8, y, { size: 8.5, color: MUTED })
+        y -= 11.5
+      }
+    }
+    if (i < lines.length - 1) y -= 6
+  })
   rule(y, RULE)
   y -= 16
   text("Gross earnings", M + 8, y, { bold: true })
