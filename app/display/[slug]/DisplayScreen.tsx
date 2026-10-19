@@ -518,6 +518,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .queue-table {
           width: 100%;
+          table-layout: fixed;
           border-collapse: collapse;
           font-size: clamp(1rem, 1.9vw, 1.7rem);
           color: var(--fg);
@@ -536,12 +537,19 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           padding: 1.1vh 1.2vw;
           border-bottom: 1px solid var(--fg-28);
           white-space: nowrap;
-          max-width: 28vw;
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        /* Fixed column widths so every value sits directly under its heading.
+           Ticket column is narrow, wait/waited are medium, the rest share the space. */
+        .queue-table th:first-child {
+          width: 14%;
+        }
+        .queue-table th.c-num {
+          width: 17%;
+        }
         .queue-table .c-num {
-          text-align: right;
+          text-align: left !important;
         }
         .queue-table .c-lead {
           font-family: "Bricolage Grotesque", sans-serif;
