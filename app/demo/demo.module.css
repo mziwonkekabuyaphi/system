@@ -1371,7 +1371,23 @@
   color: #7a7466;
   background: #f4f1e8;
 }
-.dashTable td { padding: 12px; border-top: 1px solid #eee9dc; }
+.dashTable td { padding: 12px; border-top: 1px solid #eee9dc; vertical-align: top; }
+.dashTableWrap { overflow-x: auto; border-radius: 10px; }
+.dashTableWrap .dashTable { min-width: 620px; }
+.dashTable td .dashWho { max-width: 230px; }
+.dashTable td .dashWho .dashMuted { white-space: normal; overflow: visible; line-height: 1.35; }
+.dashPayTag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.payHourly { background: #e2e8f3; color: #1d3358; }
+.payCommission { background: #dcf6e4; color: #17653a; }
+.payHybrid { background: #fdebc8; color: #7a4d00; }
 
 /* Animations */
 

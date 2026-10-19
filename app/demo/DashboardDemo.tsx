@@ -44,7 +44,7 @@ const VIEWS: Array<{ id: DashView; tab: string; nav: string; caption: string }> 
     id: "payroll",
     tab: "Payroll",
     nav: "Payroll",
-    caption: "Staff clock in with a PIN. Clocked hours become gross pay, with PAYE and UIF estimated for you.",
+    caption: "Pay staff by the hour, by commission, or both. Clocked hours and the services each person delivers become gross pay, with PAYE and UIF estimated for you.",
   },
 ]
 
@@ -129,11 +129,46 @@ const DAYS = [
   { d: "Sun", v: 58 },
 ]
 
-const PAY = [
-  { name: "Sipho M.", hours: 38.5, rate: 45, paye: 0 },
-  { name: "Thandi N.", hours: 41, rate: 50, paye: 38 },
-  { name: "Lwazi K.", hours: 36, rate: 48, paye: 0 },
+// One example of each way of paying someone, matching the real Payroll tab:
+// hourly, hybrid (hourly + commission on top), commission only, and hybrid "higher of".
+// Commission is a % of the list price of the services the person delivered.
+type PayType = "hourly" | "commission" | "hybrid"
+type PayRow = {
+  name: string
+  type: PayType
+  hours: number
+  rate: number // hourly rate, 0 for commission-only
+  pct: number // commission %, 0 for hourly
+  sales: number // list price of services delivered
+  services: number
+  mode?: "base_plus_commission" | "higher_of"
+  paye: number // made-up estimate
+}
+const PAY: PayRow[] = [
+  { name: "Sipho M.", type: "hourly", hours: 38.5, rate: 45, pct: 0, sales: 0, services: 0, paye: 0 },
+  { name: "Thandi N.", type: "hybrid", mode: "base_plus_commission", hours: 41, rate: 50, pct: 30, sales: 3200, services: 21, paye: 210 },
+  { name: "Lwazi K.", type: "commission", hours: 0, rate: 0, pct: 40, sales: 5400, services: 29, paye: 57 },
+  { name: "Themba K.", type: "hybrid", mode: "higher_of", hours: 36, rate: 48, pct: 45, sales: 4800, services: 26, paye: 57 },
 ]
+
+// Whole cents throughout, same as the real calculation.
+function payFigures(p: PayRow) {
+  const baseCents = p.type === "commission" ? 0 : Math.round(p.hours * p.rate * 100)
+  const earned = p.type === "hourly" ? 0 : Math.round(p.sales * p.pct) // sales in rand × percent = cents
+  const commissionCents = p.type === "hourly" ? 0 : p.mode === "higher_of" ? Math.max(0, earned - baseCents) : earned
+  const grossCents = baseCents + commissionCents
+  return { baseCents, earned, commissionCents, grossCents, uifCents: Math.round(grossCents / 100) }
+}
+
+function payBasis(p: PayRow): string {
+  if (p.type === "hourly") return `${p.hours} h × ${rand(p.rate)}`
+  if (p.type === "commission") return `${p.pct}% commission · ${p.services} services · ${rand(p.sales)} sales`
+  if (p.mode === "higher_of") {
+    const f = payFigures(p)
+    return `Higher of hourly or ${p.pct}%: paid on ${f.commissionCents > 0 ? "commission" : "hourly"}`
+  }
+  return `Hourly + ${p.pct}% commission · ${p.services} services`
+}
 // Deterministic on purpose: toLocaleString() output differs between Node and browsers
 // (and en-ZA uses comma decimals), which would cause a hydration mismatch. "R1 732.50".
 const rand = (n: number) => {
@@ -315,42 +350,54 @@ function AnalyticsPanel() {
   )
 }
 
+const PAY_TAG_LABEL: Record<PayType, string> = { hourly: "Hourly", commission: "Commission", hybrid: "Hybrid" }
+const PAY_TAG_CLASS: Record<PayType, string> = { hourly: styles.payHourly, commission: styles.payCommission, hybrid: styles.payHybrid }
+
 function PayrollPanel() {
   return (
     <>
       <div className={styles.dashHeadRow}>
         <strong>This week</strong>
-        <span className={styles.dashClocked}>3 clocked in</span>
+        <span className={styles.dashClocked}>{PAY.length} clocked in</span>
       </div>
-      <table className={styles.dashTable}>
-        <thead>
-          <tr>
-            <th>Staff</th>
-            <th>Hours</th>
-            <th>Gross pay</th>
-            <th>Est. PAYE</th>
-            <th>Est. UIF</th>
-          </tr>
-        </thead>
-        <tbody>
-          {PAY.map((p) => {
-            // Whole cents, so 1% of R1 732.50 is R17.33 (half up) and not R17.32 from float error.
-            const grossCents = Math.round(p.hours * p.rate * 100)
-            const uifCents = Math.round(grossCents / 100)
-            return (
-              <tr key={p.name}>
-                <td>
-                  <strong>{p.name}</strong>
-                </td>
-                <td className={styles.dashMono}>{p.hours}</td>
-                <td className={styles.dashMono}>{rand(grossCents / 100)}</td>
-                <td className={styles.dashMono}>{rand(p.paye)}</td>
-                <td className={styles.dashMono}>{rand(uifCents / 100)}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      <div className={styles.dashTableWrap}>
+        <table className={styles.dashTable}>
+          <thead>
+            <tr>
+              <th>Staff</th>
+              <th>Hours</th>
+              <th>Commission</th>
+              <th>Gross pay</th>
+              <th>Est. PAYE</th>
+              <th>Est. UIF</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PAY.map((p) => {
+              // Whole cents, so 1% of R1 732.50 is R17.33 (half up) and not R17.32 from float error.
+              const f = payFigures(p)
+              return (
+                <tr key={p.name}>
+                  <td>
+                    <span className={styles.dashWho}>
+                      <strong>
+                        {p.name}
+                        <span className={`${styles.dashPayTag} ${PAY_TAG_CLASS[p.type]}`}>{PAY_TAG_LABEL[p.type]}</span>
+                      </strong>
+                      <span className={styles.dashMuted}>{payBasis(p)}</span>
+                    </span>
+                  </td>
+                  <td className={styles.dashMono}>{p.type === "commission" ? "—" : p.hours}</td>
+                  <td className={styles.dashMono}>{p.type === "hourly" ? "—" : rand(f.commissionCents / 100)}</td>
+                  <td className={styles.dashMono}>{rand(f.grossCents / 100)}</td>
+                  <td className={styles.dashMono}>{rand(p.paye)}</td>
+                  <td className={styles.dashMono}>{rand(f.uifCents / 100)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }
