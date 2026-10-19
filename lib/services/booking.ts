@@ -1169,6 +1169,8 @@ export async function rescheduleBooking(
 // recognised but "bookmark" or "queueing up the next song" are not.
 const QUEUE_REQUEST_PATTERN = /\b(queue|walk[\s-]?in|walkin)\b/
 const BOOK_REQUEST_PATTERN = /\b(book|booking|appointment|reserve|reservation)\b/
+/** Phrases handled by the "Same again?" offer; never worth an AI parse. */
+const NO_PARSE_PATTERN = /\b(same again|same as last time|the usual|my usual|usual|rebook|re-book)\b/
 
 /** "👤 With Sipho" + blank line, or "" when no staff member was requested. */
 function staffPrefix(requestedStaff: { name: string } | undefined): string {
@@ -1232,6 +1234,22 @@ async function trySmartBooking(
   try {
     const text = rawReplyText(message)
     if (message.interactiveId || !hasBookingDetail(text)) return null
+
+    // Cost guards: no detail to extract in these, so skip the AI parse.
+    const lower = text.toLowerCase()
+    // "same again" / "the usual" are handled by the one-tap offer, not the parser.
+    if (NO_PARSE_PATTERN.test(lower)) return null
+    // Bare queue phrases ("join the queue", "walk in please") carry no detail.
+    if (
+      QUEUE_REQUEST_PATTERN.test(lower) &&
+      !BOOK_REQUEST_PATTERN.test(lower) &&
+      !requestedStaff &&
+      text.split(/\s+/).filter(Boolean).length <= 4
+    ) {
+      return null
+    }
+    // No-service shop: the parse result would be thrown away (see below), so check before paying for it.
+    if (!(await getBookingServiceMode(tenantId)).requireService) return null
     if (!(await isAiEnabledForTenant(tenantId))) return null
 
     const [services, dateOptions] = await Promise.all([getBookableServices(tenantId), buildDateOptions(tenantId)])
@@ -1248,9 +1266,6 @@ async function trySmartBooking(
     // A queue ticket can't be for one staff member: don't drop the request, let the normal
     // flow below ask "Queue or Book?" with it still attached.
     if (parsed.wantsQueue) return requestedStaff ? null : queueService.startQueueFlow(tenantId, message.from)
-
-    // No-service shop: there is no service to pre-fill, the normal flow goes straight to the date.
-    if (!(await getBookingServiceMode(tenantId)).requireService) return null
 
     // Without a recognised service there is nothing to pre-fill.
     if (parsed.serviceIndex === null) return null
