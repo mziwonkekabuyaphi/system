@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useState, useTransition, type ReactNode } from "react"
+
+import { detailsFieldsFrom, detailsFieldsProblem } from "@/lib/kiosk/detailsFields"
 
 import {
   setKioskEnabled,
@@ -365,7 +367,18 @@ type KioskDraft = {
   detailsScreenTitle: string
   ticketBookingEyebrow: string
   ticketQueueEyebrow: string
+  // Which fields the details screen asks for (see lib/kiosk/detailsFields.ts).
+  showName: boolean
+  showSurname: boolean
+  showPhone: boolean
+  showEmail: boolean
+  emailRequired: boolean
+  showCustom: boolean
+  customLabel: string
+  customRequired: boolean
 }
+
+type DetailsToggleKey = "showName" | "showSurname" | "showPhone" | "showEmail" | "emailRequired" | "showCustom" | "customRequired"
 
 function toKioskDraft(s: AdminKioskSettings): KioskDraft {
   return {
@@ -384,6 +397,7 @@ function toKioskDraft(s: AdminKioskSettings): KioskDraft {
     detailsScreenTitle: s.detailsScreenTitle ?? "",
     ticketBookingEyebrow: s.ticketBookingEyebrow ?? "",
     ticketQueueEyebrow: s.ticketQueueEyebrow ?? "",
+    ...detailsFieldsFrom(s),
   }
 }
 
@@ -406,6 +420,14 @@ function toKioskPayload(d: KioskDraft) {
     detailsScreenTitle: d.detailsScreenTitle.trim() || null,
     ticketBookingEyebrow: d.ticketBookingEyebrow.trim() || null,
     ticketQueueEyebrow: d.ticketQueueEyebrow.trim() || null,
+    showName: d.showName,
+    showSurname: d.showSurname,
+    showPhone: d.showPhone,
+    showEmail: d.showEmail,
+    emailRequired: d.showEmail && d.emailRequired,
+    showCustom: d.showCustom,
+    customLabel: d.customLabel.trim(),
+    customRequired: d.showCustom && d.customRequired,
   }
 }
 
@@ -424,12 +446,25 @@ const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
   "detailsScreenTitle",
   "ticketBookingEyebrow",
   "ticketQueueEyebrow",
+  "showName",
+  "showSurname",
+  "showPhone",
+  "showEmail",
+  "emailRequired",
+  "showCustom",
+  "customLabel",
+  "customRequired",
 ]
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   const form = useCardForm<KioskDraft>({
     initial: toKioskDraft(initial),
-    persist: (full) => updateKioskSettings(toKioskPayload(full)),
+    persist: async (full) => {
+      // Refuse settings that would leave the customer nothing to fill in (or an unnamed question).
+      const problem = detailsFieldsProblem(detailsFieldsFrom(full))
+      if (problem) return { success: false as const, error: problem }
+      return updateKioskSettings(toKioskPayload(full))
+    },
   })
   const { draft, set } = form
   const busy = form.savingCard !== null
@@ -447,6 +482,38 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
       />
     )
   }
+
+  // One on/off row for the details screen, with optional extra controls shown while it is on.
+  function fieldToggle(key: DetailsToggleKey, label: string, hint: string, extra?: ReactNode, locked = false) {
+    return (
+      <div className="rounded-xl border border-stone-200 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-stone-800">{label}</p>
+            <p className="text-xs text-stone-500">{hint}</p>
+          </div>
+          <Toggle checked={locked ? true : draft[key]} disabled={busy || locked} onChange={(next) => set(key, next)} />
+        </div>
+        {draft[key] && extra && <div className="mt-3 space-y-3 border-t border-stone-100 pt-3">{extra}</div>}
+      </div>
+    )
+  }
+
+  function requiredCheckbox(key: "emailRequired" | "customRequired") {
+    return (
+      <label className="flex items-center gap-2 text-sm text-stone-700">
+        <input
+          type="checkbox"
+          checked={draft[key]}
+          disabled={busy}
+          onChange={(e) => set(key, e.target.checked)}
+        />
+        Customers must fill this in
+      </label>
+    )
+  }
+
+  const detailsProblem = detailsFieldsProblem(detailsFieldsFrom(draft))
 
   function textField(
     key: keyof KioskDraft,
@@ -556,8 +623,49 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
           </SubSection>
         )}
 
-        <SubSection title="Details screen" hint="Right before the customer submits.">
-          {textField("detailsScreenTitle", "Name & phone screen heading", DEFAULT_DETAILS_SCREEN_TITLE, 80)}
+        <SubSection title="Details screen" hint="Right before the customer submits. Choose what customers are asked for.">
+          {textField("detailsScreenTitle", "Screen heading", DEFAULT_DETAILS_SCREEN_TITLE, 80)}
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-stone-700">Fields to show</p>
+            {fieldToggle("showName", "Name", "The customer's first name. Needs at least 2 letters.")}
+            {fieldToggle("showSurname", "Surname", "Shown next to Name, and saved together with it as the customer's name.")}
+            {fieldToggle(
+              "showPhone",
+              "Cellphone number",
+              "Needs 10 digits. When this is on, customers also see a “Send me WhatsApp updates” tick box (if your WhatsApp is connected). It is never pre-ticked. Always on for now: bookings and the queue identify customers by their cellphone number.",
+              undefined,
+              true,
+            )}
+            {fieldToggle(
+              "showEmail",
+              "Email address",
+              "Checked to look like a real email address.",
+              requiredCheckbox("emailRequired"),
+            )}
+            {fieldToggle(
+              "showCustom",
+              "Custom question",
+              "Ask one thing of your own, e.g. “Car registration” or “Allergies”.",
+              <>
+                <FieldRow label="Question" hint="This is the label customers see above the box.">
+                  <input
+                    className={inputClass}
+                    value={draft.customLabel}
+                    onChange={(e) => set("customLabel", e.target.value)}
+                    placeholder="e.g. Car registration"
+                    maxLength={40}
+                  />
+                </FieldRow>
+                {requiredCheckbox("customRequired")}
+              </>,
+            )}
+            {detailsProblem && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {detailsProblem}
+              </p>
+            )}
+          </div>
         </SubSection>
 
         <SubSection title="Final ticket" hint="Small label above the ticket number on the last screen.">
