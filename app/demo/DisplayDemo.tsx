@@ -26,7 +26,7 @@ type Layout = "rotation" | "board"
 type Theme = "dark" | "light"
 type Screen = "menu" | "bookings" | "queue"
 type Slide = "welcome" | Screen
-type Details = { service: boolean; phone: boolean; wait: boolean; waited: boolean }
+type Details = { service: boolean; phone: boolean; surname: boolean; email: boolean; custom: boolean; wait: boolean; waited: boolean }
 
 const SCREEN_ORDER: Screen[] = ["menu", "bookings", "queue"]
 const BOARD_TICKS = 5
@@ -102,19 +102,33 @@ const DISPLAY: Record<IndustryId, ShopDisplay> = {
   },
 }
 
-/** Phones are always shown masked on the real TV; the full number is never sent to it. */
-const PEOPLE: Array<[name: string, phone: string]> = [
-  ["Sipho M.", "082 *** **21"],
-  ["Aiden K.", "071 *** **84"],
-  ["Naledi P.", "083 *** **07"],
-  ["Jaco V.", "084 *** **56"],
-  ["Zinhle D.", "072 *** **39"],
-  ["Mandla R.", "082 *** **90"],
-  ["Ayanda T.", "076 *** **12"],
-  ["Riaan B.", "081 *** **45"],
-  ["Lerato N.", "079 *** **63"],
-  ["Kabelo S.", "073 *** **28"],
+/** Phones and emails are always partly hidden on the real TV; the full values never reach it. */
+const PEOPLE: Array<[first: string, surname: string, phone: string]> = [
+  ["Sipho", "Mokoena", "082 *** **21"],
+  ["Aiden", "Kruger", "071 *** **84"],
+  ["Naledi", "Pillay", "083 *** **07"],
+  ["Jaco", "Venter", "084 *** **56"],
+  ["Zinhle", "Dube", "072 *** **39"],
+  ["Mandla", "Radebe", "082 *** **90"],
+  ["Ayanda", "Tshabalala", "076 *** **12"],
+  ["Riaan", "Botha", "081 *** **45"],
+  ["Lerato", "Naidoo", "079 *** **63"],
+  ["Kabelo", "Sithole", "073 *** **28"],
 ]
+const EMAIL_DOMAINS = ["gmail.com", "outlook.com", "yahoo.com"]
+
+/** Each shop's own kiosk question, and what customers typed. Shown exactly as typed on the real TV. */
+const CUSTOM: Record<IndustryId, { label: string; answers: [string, string, string] }> = {
+  barber: { label: "Preferred barber", answers: ["Thabo", "Lerato", "Any barber"] },
+  beauty: { label: "Preferred therapist", answers: ["Sisipho", "Any therapist", "Naledi"] },
+  clinic: { label: "Visit type", answers: ["First visit", "Follow-up", "Check-up"] },
+  workshop: { label: "Car registration", answers: ["CA 123-456", "CY 88 421", "CJ 55 902"] },
+  vet: { label: "Pet’s name", answers: ["Rex", "Bella", "Milo"] },
+  retail: { label: "Order number", answers: ["#48213", "#48307", "#48360"] },
+  events: { label: "Ticket type", answers: ["General", "VIP", "Speaker"] },
+  restaurant: { label: "Occasion", answers: ["Birthday", "Anniversary", "Business lunch"] },
+  pharmacy: { label: "Collection code", answers: ["C-4821", "C-4833", "C-4850"] },
+}
 const REFS = ["K7Q2XM", "P4N8RC", "T9W3HD", "M2X7BL", "V6J5QE"]
 
 // ---------------------------------------------------------------------------
@@ -130,12 +144,25 @@ const toMin = (t: string) => {
 const ticketLabel = (n: number) => `A${String(n).padStart(3, "0")}`
 const mins = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`)
 
-type Entry = { n: number; name: string; phone: string; service: string; walkIn: boolean; ref: string; at: number }
+type Entry = {
+  n: number
+  first: string
+  surname: string
+  phone: string
+  email: string
+  custom: string
+  service: string
+  walkIn: boolean
+  ref: string
+  at: number
+}
 type Sim = { id: IndustryId; serving: Entry; waiting: Entry[]; next: number; clock: number }
 
 function makeEntry(x: Industry, n: number, at: number): Entry {
-  const [name, phone] = PEOPLE[n % PEOPLE.length]
-  return { n, name, phone, service: x.services[n % x.services.length], walkIn: n % 3 !== 1, ref: REFS[n % REFS.length], at }
+  const [first, surname, phone] = PEOPLE[n % PEOPLE.length]
+  const email = `${first[0].toLowerCase()}***@${EMAIL_DOMAINS[n % EMAIL_DOMAINS.length]}`
+  const custom = CUSTOM[x.id].answers[n % 3]
+  return { n, first, surname, phone, email, custom, service: x.services[n % x.services.length], walkIn: n % 3 !== 1, ref: REFS[n % REFS.length], at }
 }
 
 function initialSim(x: Industry): Sim {
@@ -178,8 +205,11 @@ export function DisplayDemo() {
   const [layout, setLayout] = useState<Layout>("rotation")
   const [theme, setTheme] = useState<Theme>("dark")
   const [show, setShow] = useState<Record<Screen, boolean>>({ menu: true, bookings: true, queue: true })
-  const [det, setDet] = useState<Details>({ service: true, phone: false, wait: true, waited: true })
+  const [det, setDet] = useState<Details>({ service: true, phone: false, surname: true, email: false, custom: false, wait: true, waited: true })
   const [step, setStep] = useState(0)
+  // Surname off = first name only, like the real TV (where the surname is never sent at all).
+  const who = (e: Entry) => (det.surname ? `${e.first} ${e.surname}` : e.first)
+  const customLabel = CUSTOM[x.id].label
   const [ticks, setTicks] = useState(0)
   const [sim, setSim] = useState<Sim>(() => initialSim(x))
   const [onScreen, setOnScreen] = useState(false)
@@ -282,9 +312,11 @@ export function DisplayDemo() {
     return (
       <tr key={e.n} className={serving ? `${styles.dRow} ${styles.dRowCalled}` : styles.dRow}>
         <td className={styles.dLead}>{ticketLabel(e.n)}</td>
-        <td className={styles.dName}>{e.name}</td>
+        <td className={styles.dName}>{who(e)}</td>
         {det.service && <td className={styles.dMuted}>{e.service}</td>}
         {det.phone && <td className={styles.dMuted}>{e.phone}</td>}
+        {det.email && <td className={styles.dMuted}>{e.email}</td>}
+        {det.custom && <td className={styles.dMuted}>{e.custom}</td>}
         {det.wait && <td className={styles.dNum}>{serving ? "—" : i === 0 ? "Next up" : `~${mins(i * per)}`}</td>}
         {det.waited && <td className={styles.dNum}>{serving ? "—" : waited < 1 ? "Just now" : mins(waited)}</td>}
       </tr>
@@ -337,7 +369,7 @@ export function DisplayDemo() {
         </div>
       )
     }
-    const cols = 2 + [det.service, det.phone, det.wait, det.waited].filter(Boolean).length
+    const cols = 2 + [det.service, det.phone, det.email, det.custom, det.wait, det.waited].filter(Boolean).length
     return (
       <div key="queue" className={styles.dSlide}>
         <span className={styles.dCorner}>{x.shop}</span>
@@ -349,6 +381,8 @@ export function DisplayDemo() {
               <th>Name</th>
               {det.service && <th>Service</th>}
               {det.phone && <th>Phone</th>}
+              {det.email && <th>Email</th>}
+              {det.custom && <th>{customLabel}</th>}
               {det.wait && <th className={styles.dNum}>Est. wait</th>}
               {det.waited && <th className={styles.dNum}>Waited</th>}
             </tr>
@@ -382,10 +416,16 @@ export function DisplayDemo() {
           <span className={styles.bBadge}>{badge(e.walkIn)}</span>
         </span>
         <span className={styles.bCustomer}>
-          {e.name}
+          {who(e)}
           {det.phone && <span className={styles.bSub}> · {e.phone}</span>}
         </span>
         {det.service && <span className={styles.bItem}>{e.service}</span>}
+        {det.email && <span className={styles.bItem}>{e.email}</span>}
+        {det.custom && (
+          <span className={styles.bItem}>
+            {customLabel}: {e.custom}
+          </span>
+        )}
         {(det.waited || showEst) && (
           <span className={styles.bFoot}>
             {det.waited ? (
@@ -512,6 +552,9 @@ export function DisplayDemo() {
   const detailRows: Array<{ id: keyof Details; title: string; text: string }> = [
     { id: "service", title: "Service", text: "Turn this off if you don’t want services shown here." },
     { id: "phone", title: "Cellphone number", text: "Always masked. The full number never reaches the TV. Off by default, because this screen is public." },
+    { id: "surname", title: "Surname", text: "Show the surname after the first name. Off shows first names only: the surname is then never sent to the TV." },
+    { id: "email", title: "Email address", text: "Always partly hidden (m***@gmail.com). Only for customers who gave an email at the kiosk. Off by default, because this screen is public." },
+    { id: "custom", title: "Custom question answer", text: "The answer to your own kiosk question, shown as typed. Everyone in the waiting area can read it, so only turn it on if that’s fine." },
     { id: "wait", title: "Estimated wait time", text: "How much longer each waiting customer is likely to wait." },
     { id: "waited", title: "Time waited so far", text: "How long each customer has already been in the queue." },
   ]
