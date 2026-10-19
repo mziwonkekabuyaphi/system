@@ -176,8 +176,11 @@ export default async function PricingPage() {
           <div className={styles.sectionHead}>
             <h2>Simple pricing that grows with your shop.</h2>
           </div>
-          <p style={{ maxWidth: 640, margin: "0 0 32px" }}>
+          <p style={{ maxWidth: 640, margin: "0 0 12px" }}>
             Start free. Pay by the size of your team. All prices are in South African Rand and are per month.
+          </p>
+          <p style={{ maxWidth: 640, margin: "0 0 32px", opacity: 0.8 }}>
+            WhatsApp fees are not part of these prices. If you connect your own WhatsApp number, Meta bills you directly for its WhatsApp messaging fees.
           </p>
 
           {pricing ? (
@@ -318,6 +321,10 @@ export default async function PricingPage() {
                 <Faq
                   q="What if I add a new staff member?"
                   a="We count your active staff when your monthly invoice is made. Only keep people switched on if they work for you. Staff you switch off are not counted."
+                />
+                <Faq
+                  q="Can I use my own WhatsApp number?"
+                  a="Yes. In your admin, open WhatsApp settings and connect your own WhatsApp number. Meta charges its own WhatsApp messaging fees for that number, and you pay Meta directly. Those fees are separate from your ZozoQueue plan and never appear on your ZozoQueue invoice."
                 />
                 <Faq
                   q="How do I upgrade?"
