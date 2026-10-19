@@ -14,13 +14,14 @@ export default async function PlatformHome() {
   const supabase = getSupabaseServerClient()
   if (!supabase) redirect("/login")
 
-  const [all, active, people, pending, recent, upgrades] = await Promise.all([
+  const [all, active, people, pending, recent, upgrades, enquiries] = await Promise.all([
     supabase.from("tenants").select("id", { count: "exact", head: true }),
     supabase.from("tenants").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("salespeople").select("id", { count: "exact", head: true }).neq("status", "terminated"),
     supabase.from("referral_signups").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("tenants").select("*").limit(200),
     supabase.from("plan_upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    supabase.from("contact_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
   ])
 
   const newest = ((recent.data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at?: string }>)
@@ -33,12 +34,13 @@ export default async function PlatformHome() {
     ["Salespeople", people.count ?? 0, "/platform/sales"],
     ["Sign-up requests waiting", pending.count ?? 0, "/platform/sales"],
     ["Upgrade requests waiting", upgrades.count ?? 0, "/platform/upgrades"],
+    ["New website enquiries", enquiries.count ?? 0, "/platform/leads"],
   ]
 
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-6 py-10">
       <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Overview</h1>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {stats.map(([label, value, href]) => (
           <Link key={label} href={href ?? "#"} className={card}>
             <p className="text-xs uppercase text-stone-400">{label}</p>
