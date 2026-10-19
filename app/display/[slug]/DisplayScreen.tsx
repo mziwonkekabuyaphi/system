@@ -219,13 +219,22 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
 
   // Rotation content only -- welcome is handled as its own phase, not a
   // member of this array, so it's never cycled back into once left.
-  const slides = useMemo<SlideKey[]>(() => {
-    const s: SlideKey[] = []
-    if (settings.showServices && data.services.length > 0) s.push("services")
-    if (settings.showBookings && data.bookings.length > 0) s.push("bookings")
-    if (settings.showQueue && data.queue.length > 0) s.push("queue")
-    return s
-  }, [data, settings])
+  // Stable key: only changes when the set of eligible slides actually
+  // changes, not on every poll (each poll hands back a brand-new `data`
+  // object, which used to rebuild `slides` and restart the slide timer
+  // before it could ever fire).
+  const slidesKey = [
+    settings.showServices && data.services.length > 0 ? "services" : "",
+    settings.showBookings && data.bookings.length > 0 ? "bookings" : "",
+    settings.showQueue && data.queue.length > 0 ? "queue" : "",
+  ]
+    .filter(Boolean)
+    .join(",")
+
+  const slides = useMemo<SlideKey[]>(
+    () => (slidesKey ? (slidesKey.split(",") as SlideKey[]) : []),
+    [slidesKey],
+  )
 
   // Phase 1 -> 2: leave the welcome slide after welcomeSeconds, but only
   // once there's actually something to rotate to -- otherwise stay on
