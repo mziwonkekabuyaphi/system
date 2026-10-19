@@ -1957,3 +1957,137 @@
 @media (min-width: 760px) {
   .footerGrid { grid-template-columns: 1.6fr 1fr 1fr 1.4fr; gap: 40px; }
 }
+
+/* =====================================================================
+   CONTACT FORM ("Book a demo" / "Ask a question") in the closing section.
+   Appended; nothing above was edited by this block.
+   ===================================================================== */
+
+.contactCard {
+  max-width: 600px;
+  margin: 36px auto 0;
+  padding: 28px;
+  border-radius: 16px;
+  background: var(--qless-paper);
+  color: var(--qless-ink);
+  text-align: left;
+  box-shadow: 0 30px 60px -28px rgba(0, 0, 0, 0.55);
+}
+
+.contactKinds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  background: var(--qless-paper-dim);
+}
+
+.contactKind {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--qless-ink-soft);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.contactKind:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
+.contactKindOn {
+  background: var(--qless-navy);
+  color: var(--qless-paper);
+}
+
+.contactGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+@media (min-width: 560px) {
+  .contactGrid { grid-template-columns: 1fr 1fr; }
+}
+
+.contactField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--qless-ink);
+}
+.contactField input,
+.contactField textarea {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--qless-line);
+  border-radius: 9px;
+  background: #ffffff;
+  color: var(--qless-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+}
+.contactField textarea { resize: vertical; min-height: 84px; }
+.contactField input:focus-visible,
+.contactField textarea:focus-visible {
+  outline: 2px solid var(--qless-amber-dim);
+  outline-offset: 1px;
+  border-color: var(--qless-amber-dim);
+}
+
+.contactHint {
+  margin: 8px 0 16px;
+  font-size: 12.5px;
+  color: var(--qless-ink-soft);
+}
+
+/* Honeypot: off-screen, not display:none (some bots skip hidden fields). */
+.contactTrap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.contactError {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #fde8e6;
+  color: #8a1f14;
+  font-size: 14px;
+}
+
+.contactSubmit {
+  width: 100%;
+  margin-top: 18px;
+  text-align: center;
+  cursor: pointer;
+  font-family: inherit;
+}
+.contactSubmit:disabled { opacity: 0.65; cursor: progress; }
+
+.contactFine {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  text-align: center;
+  color: var(--qless-ink-soft);
+}
+.contactFine a, .contactDoneText a { font-weight: 700; text-underline-offset: 3px; }
+
+.contactDoneTitle { font-size: 22px; color: var(--qless-ink); }
+.contactDoneText { margin: 12px 0 0; color: var(--qless-ink-soft); font-size: 15.5px; }
+
+/* The closing section's own rules turn paragraphs light-on-navy; inside the white card
+   they must stay dark. */
+.closing .contactCard p { color: var(--qless-ink-soft); max-width: none; margin-top: 0; font-size: inherit; }
+.closing .contactCard .contactHint { margin: 8px 0 16px; font-size: 12.5px; }
+.closing .contactCard .contactFine { margin: 14px 0 0; font-size: 12.5px; }
+.closing .contactCard .contactDoneText { margin: 12px 0 0; font-size: 15.5px; }
+.closing .contactCard .contactError { margin: 14px 0 0; font-size: 14px; color: #8a1f14; }
+.closing .contactCard h3 { color: var(--qless-ink); }
