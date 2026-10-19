@@ -604,7 +604,10 @@ export function KioskApp({
     void attemptPrint(result.data)
   }
 
-  const canSubmit = name.trim().length >= 2 && phone.trim().length >= 9
+  // Count digits only, so spaces, dashes and a "+" don't count toward the 10 a SA number needs
+  // ("082 123 4567" is 10 digits; "+27 82 123 4567" is 11).
+  const phoneDigits = phone.replace(/\D/g, "").length
+  const canSubmit = name.trim().length >= 2 && phoneDigits >= 10
 
   const cssVars = useMemo(() => {
     const accentTokens = tileContrastTokens(branding.primaryColor)
