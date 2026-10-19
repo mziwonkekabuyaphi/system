@@ -60,6 +60,10 @@ export interface DisplaySettings {
   /** Rotation duration for the live queue slide -- usually longer, since
    *  there's more to read than a menu or booking row. */
   queueSeconds: number
+  /** Full-screen takeover when an admin calls a customer. Both layouts. */
+  callAlertEnabled: boolean
+  /** How long each called ticket stays full screen. 3-60. */
+  callAlertSeconds: number
   menuTitle: string | null
   bookingsTitle: string | null
   queueTitle: string | null
@@ -104,6 +108,8 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   welcomeSeconds: 6,
   menuBookingsSeconds: 9,
   queueSeconds: 20,
+  callAlertEnabled: true,
+  callAlertSeconds: 10,
   menuTitle: null,
   bookingsTitle: null,
   queueTitle: null,
@@ -261,6 +267,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           "display_name, logo_url, primary_color, secondary_color, " +
             "display_show_services, display_show_bookings, display_show_queue, " +
             "display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, " +
+            "display_call_alert_enabled, display_call_alert_seconds, " +
             "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, display_waiting_label, " +
             "display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
             "display_theme, display_layout, display_background_color, display_tagline, " +
@@ -340,6 +347,10 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           menuBookingsSeconds:
             brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_SETTINGS.menuBookingsSeconds,
           queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_SETTINGS.queueSeconds,
+          callAlertEnabled:
+            brandingResult.data.display_call_alert_enabled ?? DEFAULT_DISPLAY_SETTINGS.callAlertEnabled,
+          callAlertSeconds:
+            brandingResult.data.display_call_alert_seconds ?? DEFAULT_DISPLAY_SETTINGS.callAlertSeconds,
           menuTitle: brandingResult.data.display_menu_title ?? null,
           bookingsTitle: brandingResult.data.display_bookings_title ?? null,
           queueTitle: brandingResult.data.display_queue_title ?? null,

@@ -36,10 +36,11 @@
  * takes effect on the next poll -- no need to touch the TV.
  */
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties } from "react"
 import { fetchDisplayData, type DisplayData } from "./actions"
 import { BoardScreen } from "./BoardScreen"
+import { CallAlertOverlay, type CallAlertEntry } from "./CallAlertOverlay"
 import {
   DEFAULT_ACCENT,
   DEFAULT_SECONDARY,
@@ -51,6 +52,8 @@ import {
 
 // 20s: a live queue shouldn't take 5 minutes to show that someone was called.
 const POLL_MS = 20 * 1000
+// With the call alert on, a call should pop up within a few seconds, not 20.
+const ALERT_POLL_MS = 5 * 1000
 
 type SlideKey = "welcome" | "services" | "bookings" | "queue"
 
@@ -184,6 +187,8 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   // Drives the board layout's Live / Reconnecting pill.
   const [online, setOnline] = useState(true)
 
+  const callAlertEnabled = data.settings.callAlertEnabled
+  const pollMs = callAlertEnabled ? ALERT_POLL_MS : POLL_MS
   useEffect(() => {
     const id = setInterval(async () => {
       try {
@@ -195,9 +200,9 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
       } catch {
         setOnline(false)
       }
-    }, POLL_MS)
+    }, pollMs)
     return () => clearInterval(id)
-  }, [slug])
+  }, [slug, pollMs])
 
   const settings = data.settings
 
@@ -256,6 +261,59 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   // next" (waiting) list -- they read as different things on a TV.
   const calledEntries = useMemo(() => data.queue.filter((q) => q.status === "called"), [data.queue])
   const waitingEntries = useMemo(() => data.queue.filter((q) => q.status === "waiting"), [data.queue])
+
+  // ---- Full-screen "customer called" alert --------------------------------
+  // A call is detected by diffing which entries are "called" between polls:
+  // anything called that we haven't seen before gets queued for the overlay.
+  // The first data this tab sees is only recorded, never alerted -- so
+  // reloading the TV doesn't replay customers who were called earlier.
+  // Several calls close together show one after another, each for the full
+  // configured time.
+  const callAlertSeconds = settings.callAlertSeconds
+  const seenCalledRef = useRef<Set<string> | null>(null)
+  const [alertQueue, setAlertQueue] = useState<CallAlertEntry[]>([])
+
+  useEffect(() => {
+    const currentIds = new Set(calledEntries.map((e) => e.id))
+    if (seenCalledRef.current === null) {
+      seenCalledRef.current = currentIds
+      return
+    }
+    const seen = seenCalledRef.current
+    const fresh = calledEntries.filter((e) => !seen.has(e.id))
+    seenCalledRef.current = currentIds
+    if (callAlertEnabled && fresh.length > 0) {
+      setAlertQueue((q) => [
+        ...q,
+        ...fresh.map((e) => ({
+          id: e.id,
+          ticketNumber: e.ticketNumber ?? null,
+          customerName: e.customerName ?? null,
+          serviceName: e.serviceName ?? null,
+        })),
+      ])
+    }
+  }, [calledEntries, callAlertEnabled])
+
+  // Drop alerts that no longer apply: admin switched the feature off, or the
+  // customer was marked done / removed before their alert came up.
+  useEffect(() => {
+    setAlertQueue((q) => {
+      if (!callAlertEnabled) return q.length === 0 ? q : []
+      const stillCalled = new Set(calledEntries.map((e) => e.id))
+      const kept = q.filter((a) => stillCalled.has(a.id))
+      return kept.length === q.length ? q : kept
+    })
+  }, [callAlertEnabled, calledEntries])
+
+  // The head of the queue stays up for callAlertSeconds, then the next one.
+  const activeAlert = alertQueue[0] ?? null
+  const activeAlertId = activeAlert?.id ?? null
+  useEffect(() => {
+    if (!activeAlertId) return
+    const id = setTimeout(() => setAlertQueue((q) => q.slice(1)), callAlertSeconds * 1000)
+    return () => clearTimeout(id)
+  }, [activeAlertId, callAlertSeconds])
 
   const brandName = data.branding.displayName?.trim() || "Welcome"
   const theme = resolveThemeTokens(settings.theme, settings.backgroundColor)
@@ -318,9 +376,30 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
 
   // Live board: same data + polling, different presentation. All hooks above
   // have already run, so branching here is safe.
-  if (settings.layout === "board") return <BoardScreen data={data} online={online} />
+  const alertOverlay = activeAlert ? (
+    <CallAlertOverlay
+      key={activeAlert.id}
+      entry={activeAlert}
+      label={nowServingLabel}
+      seconds={callAlertSeconds}
+      accent={accent}
+      bg={theme.bgCss}
+      fg={theme.fg}
+    />
+  ) : null
+
+  if (settings.layout === "board") {
+    return (
+      <>
+        <BoardScreen data={data} online={online} />
+        {alertOverlay}
+      </>
+    )
+  }
 
   return (
+    <>
+    {alertOverlay}
     <div
       className="stage"
       style={
@@ -731,5 +810,6 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
       `}</style>
     </div>
+    </>
   )
 }
