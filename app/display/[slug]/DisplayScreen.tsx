@@ -335,10 +335,14 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   const cols = {
     service: settings.showQueueService && data.queue.some((q) => q.serviceName),
     phone: settings.showQueuePhone && data.queue.some((q) => q.phoneMasked),
+    email: settings.showQueueEmail && data.queue.some((q) => q.emailMasked),
+    custom: settings.showQueueCustom && data.queue.some((q) => q.customAnswer),
     reference: settings.showQueueReference && data.queue.some((q) => q.bookingReference),
     wait: settings.showQueueWaitEstimate && waitingEntries.some((q) => q.estimatedWaitMinutes !== null),
     waited: settings.showQueueDuration,
   }
+  // The custom column is headed with the shop's own question (e.g. "Car registration").
+  const customHeading = data.queue.find((q) => q.customLabel)?.customLabel ?? "Details"
   const colCount = 2 + Object.values(cols).filter(Boolean).length
 
   function renderQueueRow(q: DisplayData["queue"][number]) {
@@ -357,6 +361,8 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         <td className="c-name">{q.customerName ?? "Guest"}</td>
         {cols.service && <td className="c-muted">{q.serviceName ?? "—"}</td>}
         {cols.phone && <td className="c-muted">{q.phoneMasked ?? "—"}</td>}
+        {cols.email && <td className="c-muted">{q.emailMasked ?? "—"}</td>}
+        {cols.custom && <td className="c-muted">{q.customAnswer ?? "—"}</td>}
         {cols.reference && <td className="c-muted">{q.bookingReference ?? "—"}</td>}
         {cols.wait && (
           <td className="c-num">
@@ -476,6 +482,8 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                       <th>Name</th>
                       {cols.service && <th>Service</th>}
                       {cols.phone && <th>Phone</th>}
+                      {cols.email && <th>Email</th>}
+                      {cols.custom && <th>{customHeading}</th>}
                       {cols.reference && <th>Booking ref</th>}
                       {cols.wait && <th className="c-num">Est. wait</th>}
                       {cols.waited && <th className="c-num">Waited</th>}

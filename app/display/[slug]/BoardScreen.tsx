@@ -180,9 +180,16 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
           {q.customerName ?? "Guest"}
           {q.phoneMasked && <span className="bd-sub"> · {q.phoneMasked}</span>}
         </div>
-        {((settings.showQueueService && q.serviceName) || q.bookingReference) && (
+        {((settings.showQueueService && q.serviceName) || q.bookingReference || q.emailMasked || q.customAnswer) && (
           <ul className="bd-items">
             {settings.showQueueService && q.serviceName && <li>{q.serviceName}</li>}
+            {q.emailMasked && <li>{q.emailMasked}</li>}
+            {q.customAnswer && (
+              <li>
+                {q.customLabel ? `${q.customLabel}: ` : ""}
+                {q.customAnswer}
+              </li>
+            )}
             {q.bookingReference && <li className="bd-ref">Ref {q.bookingReference}</li>}
           </ul>
         )}

@@ -92,6 +92,12 @@ export interface DisplaySettings {
   showQueueWaitEstimate: boolean
   showQueueDuration: boolean
   showQueueReference: boolean
+  /** false = first name only (the surname is dropped on the server, never sent). */
+  showQueueSurname: boolean
+  /** Masked email, only for kiosk customers who gave one. */
+  showQueueEmail: boolean
+  /** The custom kiosk question's answer, as typed. */
+  showQueueCustom: boolean
 }
 
 export type DisplayTheme = "dark" | "light" | "custom"
@@ -129,6 +135,9 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   showQueueWaitEstimate: true,
   showQueueDuration: false,
   showQueueReference: true,
+  showQueueSurname: true,
+  showQueueEmail: false,
+  showQueueCustom: false,
 }
 
 export interface DisplayBooking {
@@ -166,6 +175,13 @@ export interface DisplayQueueEntry {
   /** Rough minutes until this *waiting* entry is called. Null for "called"
    *  entries or when showQueueWaitEstimate is off. */
   estimatedWaitMinutes: number | null
+  /** Partly hidden (e.g. "m***@gmail.com"). Null unless showQueueEmail is on and the customer
+   *  gave an email at the kiosk. The full address is never sent to this public screen. */
+  emailMasked: string | null
+  /** The kiosk's custom question (e.g. "Car registration") and the customer's answer. Null
+   *  unless showQueueCustom is on and they answered. */
+  customLabel: string | null
+  customAnswer: string | null
 }
 
 export interface DisplayData {
@@ -230,6 +246,25 @@ function maskPhone(raw: string | null | undefined): string | null {
   return `${digits.slice(0, 3)} *** **${digits.slice(-2)}`
 }
 
+/** "mziwonke@gmail.com" -> "m***@gmail.com". Keeps the first letter and the domain only. */
+function maskEmail(raw: string | null | undefined): string | null {
+  const email = (raw ?? "").trim()
+  const at = email.lastIndexOf("@")
+  if (at < 1) return null
+  return `${email[0]}***${email.slice(at)}`
+}
+
+/** "Mziwonke Dlamini" -> "Mziwonke". */
+function firstNameOf(full: string | null | undefined): string | null {
+  const first = (full ?? "").trim().split(/\s+/)[0]
+  return first || null
+}
+
+/** Last 9 digits of a phone number, so "082 123 4567" and "+27821234567" compare equal. */
+function phoneKey(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/\D/g, "").slice(-9)
+}
+
 // Simple serial estimate: everyone ahead in line takes their service's
 // duration (or the tenant default), minus time already spent on anyone
 // currently being served. It does NOT know how many staff are working in
@@ -272,7 +307,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
             "display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
             "display_theme, display_layout, display_background_color, display_tagline, " +
             "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, " +
-            "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference",
+            "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
+            "display_queue_show_surname, display_queue_show_email, display_queue_show_custom",
         )
         .eq("tenant_id", tenantId)
         .maybeSingle(),
@@ -375,6 +411,9 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
             brandingResult.data.display_queue_show_duration ?? DEFAULT_DISPLAY_SETTINGS.showQueueDuration,
           showQueueReference:
             brandingResult.data.display_queue_show_reference ?? DEFAULT_DISPLAY_SETTINGS.showQueueReference,
+          showQueueSurname: brandingResult.data.display_queue_show_surname ?? DEFAULT_DISPLAY_SETTINGS.showQueueSurname,
+          showQueueEmail: brandingResult.data.display_queue_show_email ?? DEFAULT_DISPLAY_SETTINGS.showQueueEmail,
+          showQueueCustom: brandingResult.data.display_queue_show_custom ?? DEFAULT_DISPLAY_SETTINGS.showQueueCustom,
         }
       : DEFAULT_DISPLAY_SETTINGS
 
@@ -422,6 +461,50 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       })
     const aheadDurations: number[] = []
 
+    // Email and custom answer come from the kiosk's check-in details (kiosk_checkin_details, one row
+    // per ticket). Only fetched when one of those toggles is on, and best-effort: if the lookup
+    // fails the TV still shows everything else.
+    type CheckinRow = { phoneKey: string; email: string | null; customLabel: string | null; customAnswer: string | null; createdAt: string }
+    const checkinByTicket = new Map<string, CheckinRow[]>()
+    if (settings.showQueueEmail || settings.showQueueCustom) {
+      const tickets = queueRows
+        .filter((row) => row.ticket_number != null)
+        .map((row) => formatQueueTicketNumber(row.ticket_number as number, ticketNumberPrefix))
+      if (tickets.length > 0) {
+        const { data: detailRows, error: detailError } = await supabase
+          .from("kiosk_checkin_details")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .eq("kind", "queue")
+          .in("ticket_ref", tickets)
+        if (detailError) {
+          console.error("[display] loading check-in details failed", { slug, error: detailError })
+        } else {
+          for (const r of (detailRows ?? []) as Array<Record<string, unknown>>) {
+            const ref = String(r.ticket_ref ?? "")
+            const list = checkinByTicket.get(ref) ?? []
+            list.push({
+              phoneKey: phoneKey(r.customer_phone as string | null),
+              email: (r.email as string | null) ?? null,
+              customLabel: (r.custom_label as string | null) ?? null,
+              customAnswer: (r.custom_answer as string | null) ?? null,
+              createdAt: String(r.created_at ?? ""),
+            })
+            checkinByTicket.set(ref, list)
+          }
+        }
+      }
+    }
+    // A ticket number can come round again, so a row only counts when the phone number matches
+    // too: that way one customer's email can never show up on someone else's ticket.
+    const checkinFor = (ticket: string | null, phone: string | null | undefined): CheckinRow | null => {
+      const key = phoneKey(phone)
+      if (!ticket || !key) return null
+      const matches = (checkinByTicket.get(ticket) ?? []).filter((r) => r.phoneKey === key)
+      matches.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+      return matches[0] ?? null
+    }
+
     let waitingPosition = 0
     const queue: DisplayQueueEntry[] = queueRows.map((row) => {
       const customer = unwrapJoin<{ full_name: string | null; phone: string | null }>(row.customer as never)
@@ -430,6 +513,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       const status = row.status as "waiting" | "called"
       if (status === "waiting") waitingPosition += 1
       const rawTicketNumber = row.ticket_number as number | null
+      const ticketNumber = rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null
+      const checkin = settings.showQueueEmail || settings.showQueueCustom ? checkinFor(ticketNumber, customer?.phone) : null
 
       let estimatedWaitMinutes: number | null = null
       if (status === "waiting" && settings.showQueueWaitEstimate) {
@@ -442,14 +527,17 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         status,
         joinedAt: row.joined_at as string,
         calledAt: (row.called_at as string | null) ?? null,
-        customerName: customer?.full_name ?? null,
+        customerName: settings.showQueueSurname ? (customer?.full_name ?? null) : firstNameOf(customer?.full_name),
         serviceName: joinNames(service?.name, row.queue_entry_services as never),
         position: status === "waiting" ? waitingPosition : 0,
-        ticketNumber: rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null,
+        ticketNumber,
         source: (row.source as string | null) ?? null,
         phoneMasked: settings.showQueuePhone ? maskPhone(customer?.phone) : null,
         bookingReference: settings.showQueueReference ? (booking?.booking_reference ?? null) : null,
         estimatedWaitMinutes,
+        emailMasked: settings.showQueueEmail ? maskEmail(checkin?.email) : null,
+        customLabel: settings.showQueueCustom && checkin?.customAnswer ? checkin.customLabel : null,
+        customAnswer: settings.showQueueCustom ? (checkin?.customAnswer ?? null) : null,
       }
     })
 
