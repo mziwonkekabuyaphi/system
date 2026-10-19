@@ -250,6 +250,7 @@ const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
 const DEFAULT_DISPLAY_WELCOME_SECONDS = 6
 const DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS = 9
 const DEFAULT_DISPLAY_QUEUE_SECONDS = 20
+const DEFAULT_DISPLAY_CALL_ALERT_SECONDS = 10
 
 async function getSettingsData(
   supabase: ServerClient,
@@ -289,7 +290,7 @@ async function getSettingsData(
       .from("tenant_branding")
       .select(
         "display_name, logo_url, primary_color, secondary_color, remove_powered_by, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
-          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
+          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
           "display_theme, display_layout, display_background_color, display_tagline, " +
           "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
@@ -404,6 +405,8 @@ async function getSettingsData(
       menuBookingsSeconds:
         brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS,
       queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_QUEUE_SECONDS,
+      callAlertEnabled: brandingResult.data.display_call_alert_enabled ?? true,
+      callAlertSeconds: brandingResult.data.display_call_alert_seconds ?? DEFAULT_DISPLAY_CALL_ALERT_SECONDS,
       menuTitle: brandingResult.data.display_menu_title,
       bookingsTitle: brandingResult.data.display_bookings_title,
       queueTitle: brandingResult.data.display_queue_title,
