@@ -101,6 +101,8 @@ type DisplayDraft = {
   welcomeSeconds: number
   menuBookingsSeconds: number
   queueSeconds: number
+  callAlertEnabled: boolean
+  callAlertSeconds: number
   menuTitle: string
   bookingsTitle: string
   queueTitle: string
@@ -131,6 +133,8 @@ function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
     welcomeSeconds: s.welcomeSeconds,
     menuBookingsSeconds: s.menuBookingsSeconds,
     queueSeconds: s.queueSeconds,
+    callAlertEnabled: s.callAlertEnabled,
+    callAlertSeconds: s.callAlertSeconds,
     menuTitle: s.menuTitle ?? "",
     bookingsTitle: s.bookingsTitle ?? "",
     queueTitle: s.queueTitle ?? "",
@@ -156,6 +160,8 @@ function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySetti
     welcomeSeconds: d.welcomeSeconds,
     menuBookingsSeconds: d.menuBookingsSeconds,
     queueSeconds: d.queueSeconds,
+    callAlertEnabled: d.callAlertEnabled,
+    callAlertSeconds: d.callAlertSeconds,
     menuTitle: d.menuTitle.trim() || null,
     bookingsTitle: d.bookingsTitle.trim() || null,
     queueTitle: d.queueTitle.trim() || null,
@@ -188,6 +194,7 @@ const DISPLAY_QUEUE_KEYS: Array<keyof DisplayDraft> = [
   "showQueueReference",
 ]
 const DISPLAY_TIMING_KEYS: Array<keyof DisplayDraft> = ["welcomeSeconds", "menuBookingsSeconds", "queueSeconds"]
+const DISPLAY_CALL_ALERT_KEYS: Array<keyof DisplayDraft> = ["callAlertEnabled", "callAlertSeconds"]
 const DISPLAY_WORDING_KEYS: Array<keyof DisplayDraft> = [
   "menuTitle",
   "bookingsTitle",
@@ -497,6 +504,35 @@ export function DisplayPanel({
           </div>
         </SettingsCard>
       )}
+
+      <SettingsCard
+        title="Call alert"
+        description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to both layouts."
+        footer={footer("callAlert", DISPLAY_CALL_ALERT_KEYS)}
+      >
+        <ToggleRow
+          title="Full-screen call alert"
+          description="Show the called ticket full screen. If several customers are called close together, they show one after another."
+          checked={draft.callAlertEnabled}
+          disabled={busy}
+          onChange={(v) => set("callAlertEnabled", v)}
+        />
+        {draft.callAlertEnabled && (
+          <FieldRow
+            label="Alert duration (seconds)"
+            hint="How long each called ticket stays on screen. Between 3 and 60."
+          >
+            <input
+              type="number"
+              min={3}
+              max={60}
+              className={inputClass}
+              value={draft.callAlertSeconds}
+              onChange={(e) => set("callAlertSeconds", Number(e.target.value))}
+            />
+          </FieldRow>
+        )}
+      </SettingsCard>
 
       <SettingsCard
         title="Local terms"
