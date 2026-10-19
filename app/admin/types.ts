@@ -324,6 +324,11 @@ export interface AdminDisplaySettings {
   menuBookingsSeconds: number
   /** Seconds the live queue slide shows during rotation. 3–300. */
   queueSeconds: number
+  /** Full-screen takeover on the TV when a customer is called (both
+   *  layouts). Independent of the rotation timings above. */
+  callAlertEnabled: boolean
+  /** Seconds each called ticket stays full screen. 3–60. */
+  callAlertSeconds: number
 
   // -- Look -----------------------------------------------------------------
   // "dark"/"light" are built-in looks; "custom" uses backgroundColor.

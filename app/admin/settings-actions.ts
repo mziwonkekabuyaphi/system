@@ -190,6 +190,8 @@ const MIN_DISPLAY_MENU_BOOKINGS_SECONDS = 3
 const MAX_DISPLAY_MENU_BOOKINGS_SECONDS = 120
 const MIN_DISPLAY_QUEUE_SECONDS = 3
 const MAX_DISPLAY_QUEUE_SECONDS = 300
+const MIN_DISPLAY_CALL_ALERT_SECONDS = 3
+const MAX_DISPLAY_CALL_ALERT_SECONDS = 60
 const MAX_DISPLAY_TITLE_LENGTH = 60
 const MAX_DISPLAY_LABEL_LENGTH = 40
 const MAX_DISPLAY_TAGLINE_LENGTH = 80
@@ -1022,6 +1024,9 @@ export async function updateDisplaySettings(input: {
   welcomeSeconds: number
   menuBookingsSeconds: number
   queueSeconds: number
+  /** Full-screen "customer called" takeover. Applies to both layouts. */
+  callAlertEnabled: boolean
+  callAlertSeconds: number
   menuTitle?: string | null
   bookingsTitle?: string | null
   queueTitle?: string | null
@@ -1089,6 +1094,17 @@ export async function updateDisplaySettings(input: {
       return {
         success: false,
         error: `Live queue duration must be between ${MIN_DISPLAY_QUEUE_SECONDS} and ${MAX_DISPLAY_QUEUE_SECONDS} seconds.`,
+      }
+    }
+
+    if (
+      !Number.isFinite(input.callAlertSeconds) ||
+      input.callAlertSeconds < MIN_DISPLAY_CALL_ALERT_SECONDS ||
+      input.callAlertSeconds > MAX_DISPLAY_CALL_ALERT_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Call alert duration must be between ${MIN_DISPLAY_CALL_ALERT_SECONDS} and ${MAX_DISPLAY_CALL_ALERT_SECONDS} seconds.`,
       }
     }
 
@@ -1170,6 +1186,8 @@ export async function updateDisplaySettings(input: {
         display_welcome_seconds: input.welcomeSeconds,
         display_menu_bookings_seconds: input.menuBookingsSeconds,
         display_queue_seconds: input.queueSeconds,
+        display_call_alert_enabled: input.callAlertEnabled,
+        display_call_alert_seconds: input.callAlertSeconds,
         display_theme: input.theme,
         display_layout: input.layout,
         ...(canCustomizeBranding ? { display_background_color: input.backgroundColor } : {}),
