@@ -531,6 +531,14 @@ function PlanComparisonSection({
           )
         })}
       </div>
+      <div className="mt-4 rounded-xl border border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm text-[#1C1A17]">
+        <p className="font-semibold">Using your own WhatsApp number?</p>
+        <p className="mt-0.5 text-[#8A8375]">
+          You can connect your own WhatsApp number from WhatsApp settings in your admin. Meta charges its own WhatsApp
+          messaging fees for that number, and you pay Meta directly. Those fees are separate from your plan and never
+          appear on your ZozoQueue invoices.
+        </p>
+      </div>
     </section>
   )
 }
