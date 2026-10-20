@@ -293,7 +293,7 @@ async function getSettingsData(
           "date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, " +
           "kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, " +
           "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
-          "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, display_queue_show_surname, display_queue_show_email, display_queue_show_custom, " +
+          "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, display_queue_show_surname, display_queue_show_email, display_queue_show_custom, display_queue_wait_range_minutes, " +
           "display_theme, display_layout, display_background_color, display_tagline, " +
           "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
           "clock_theme, clock_background_color, clock_tagline, clock_title, clock_prompt, clock_clocked_in_label, clock_clocked_out_label, clock_invalid_pin_text",
@@ -434,6 +434,7 @@ async function getSettingsData(
       showQueueService: brandingResult.data.display_queue_show_service ?? true,
       showQueuePhone: brandingResult.data.display_queue_show_phone ?? false,
       showQueueWaitEstimate: brandingResult.data.display_queue_show_wait_estimate ?? true,
+      waitRangeMinutes: brandingResult.data.display_queue_wait_range_minutes ?? 0,
       showQueueDuration: brandingResult.data.display_queue_show_duration ?? false,
       showQueueReference: brandingResult.data.display_queue_show_reference ?? true,
       showQueueSurname: brandingResult.data.display_queue_show_surname ?? true,

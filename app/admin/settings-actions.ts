@@ -195,6 +195,9 @@ const MIN_DISPLAY_QUEUE_SECONDS = 3
 const MAX_DISPLAY_QUEUE_SECONDS = 300
 const MIN_DISPLAY_CALL_ALERT_SECONDS = 3
 const MAX_DISPLAY_CALL_ALERT_SECONDS = 60
+// Wait-estimate range on the TV (tenant_branding.display_queue_wait_range_minutes).
+const MIN_DISPLAY_WAIT_RANGE_MINUTES = 0
+const MAX_DISPLAY_WAIT_RANGE_MINUTES = 30
 const MAX_DISPLAY_TITLE_LENGTH = 60
 const MAX_DISPLAY_LABEL_LENGTH = 40
 const MAX_DISPLAY_TAGLINE_LENGTH = 80
@@ -1090,6 +1093,9 @@ export async function updateDisplaySettings(input: {
   showQueueSurname?: boolean
   showQueueEmail?: boolean
   showQueueCustom?: boolean
+  /** 0 = one estimate ("~19 min"); 2-30 = a window of that many minutes ending at the
+   *  estimate. OMITTING it leaves the stored value untouched. */
+  waitRangeMinutes?: number
 }): Promise<ActionResult> {
   try {
     if (!["dark", "light", "custom"].includes(input.theme)) {
@@ -1146,6 +1152,18 @@ export async function updateDisplaySettings(input: {
       return {
         success: false,
         error: `Call alert duration must be between ${MIN_DISPLAY_CALL_ALERT_SECONDS} and ${MAX_DISPLAY_CALL_ALERT_SECONDS} seconds.`,
+      }
+    }
+
+    if (
+      input.waitRangeMinutes !== undefined &&
+      (!Number.isInteger(input.waitRangeMinutes) ||
+        input.waitRangeMinutes < MIN_DISPLAY_WAIT_RANGE_MINUTES ||
+        input.waitRangeMinutes > MAX_DISPLAY_WAIT_RANGE_MINUTES)
+    ) {
+      return {
+        success: false,
+        error: `Wait range must be a whole number between ${MIN_DISPLAY_WAIT_RANGE_MINUTES} and ${MAX_DISPLAY_WAIT_RANGE_MINUTES} minutes.`,
       }
     }
 
@@ -1252,6 +1270,7 @@ export async function updateDisplaySettings(input: {
         ...(input.showQueueSurname !== undefined ? { display_queue_show_surname: input.showQueueSurname === true } : {}),
         ...(input.showQueueEmail !== undefined ? { display_queue_show_email: input.showQueueEmail === true } : {}),
         ...(input.showQueueCustom !== undefined ? { display_queue_show_custom: input.showQueueCustom === true } : {}),
+        ...(input.waitRangeMinutes !== undefined ? { display_queue_wait_range_minutes: input.waitRangeMinutes } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

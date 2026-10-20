@@ -396,6 +396,11 @@ export interface AdminDisplaySettings {
   showQueueService: boolean
   showQueuePhone: boolean
   showQueueWaitEstimate: boolean
+  /** Show the estimated wait as a range. 0 = one figure ("~19 min"); 2-30 = a window of that
+   *  many minutes ending at the estimate (5 -> "15-19 min"). Only used when
+   *  showQueueWaitEstimate is on. Optional so a loader that doesn't send it still compiles;
+   *  a missing value means 0. */
+  waitRangeMinutes?: number
   showQueueDuration: boolean
   showQueueReference: boolean
   /** Whether the customer's surname is shown. Off = first name only; the surname is then
