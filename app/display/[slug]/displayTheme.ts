@@ -91,3 +91,16 @@ export function formatMinutes(total: number): string {
   return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, "0")} min`
 }
 
+/** Estimated wait for a waiting customer (call it only for minutes > 0).
+ *  rangeMinutes 0 (or 1) = one figure, "~19 min". rangeMinutes 5 = a window of
+ *  that many minutes ending at the estimate, "15–19 min". The window ends at
+ *  the estimate because the estimate errs on the long side. Estimates of an
+ *  hour or more stay a single figure. */
+export function formatWaitEstimate(minutes: number, rangeMinutes: number): string {
+  const range = Math.floor(rangeMinutes || 0)
+  if (range < 2 || minutes >= 60) return `~${formatMinutes(minutes)}`
+  const low = Math.max(1, minutes - range + 1)
+  if (low >= minutes) return `~${formatMinutes(minutes)}`
+  return `${low}–${minutes} min`
+}
+

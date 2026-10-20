@@ -90,6 +90,9 @@ export interface DisplaySettings {
   showQueueService: boolean
   showQueuePhone: boolean
   showQueueWaitEstimate: boolean
+  /** 0 = show one estimate ("~19 min"). 2-30 = show a window of that many minutes
+   *  ending at the estimate (5 -> "15-19 min"). Only matters when showQueueWaitEstimate is on. */
+  waitRangeMinutes: number
   showQueueDuration: boolean
   showQueueReference: boolean
   /** false = first name only (the surname is dropped on the server, never sent). */
@@ -133,6 +136,7 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   showQueueService: true,
   showQueuePhone: false,
   showQueueWaitEstimate: true,
+  waitRangeMinutes: 0,
   showQueueDuration: false,
   showQueueReference: true,
   showQueueSurname: true,
@@ -308,7 +312,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
             "display_theme, display_layout, display_background_color, display_tagline, " +
             "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, " +
             "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
-            "display_queue_show_surname, display_queue_show_email, display_queue_show_custom",
+            "display_queue_show_surname, display_queue_show_email, display_queue_show_custom, display_queue_wait_range_minutes",
         )
         .eq("tenant_id", tenantId)
         .maybeSingle(),
@@ -407,6 +411,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           showQueuePhone: brandingResult.data.display_queue_show_phone ?? DEFAULT_DISPLAY_SETTINGS.showQueuePhone,
           showQueueWaitEstimate:
             brandingResult.data.display_queue_show_wait_estimate ?? DEFAULT_DISPLAY_SETTINGS.showQueueWaitEstimate,
+          waitRangeMinutes:
+            brandingResult.data.display_queue_wait_range_minutes ?? DEFAULT_DISPLAY_SETTINGS.waitRangeMinutes,
           showQueueDuration:
             brandingResult.data.display_queue_show_duration ?? DEFAULT_DISPLAY_SETTINGS.showQueueDuration,
           showQueueReference:

@@ -34,6 +34,7 @@ import {
   DEFAULT_SECONDARY,
   ensureContrast,
   formatMinutes,
+  formatWaitEstimate,
   hexToRgba,
   luminance,
   resolveThemeTokens,
@@ -202,7 +203,7 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
             )}
             {showEst && (
               <span className="bd-action">
-                {q.estimatedWaitMinutes === 0 ? "Next up" : `Est. ~${formatMinutes(q.estimatedWaitMinutes as number)}`}
+                {q.estimatedWaitMinutes === 0 ? "Next up" : `Est. ${formatWaitEstimate(q.estimatedWaitMinutes as number, settings.waitRangeMinutes)}`}
               </span>
             )}
           </div>

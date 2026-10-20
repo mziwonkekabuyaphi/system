@@ -46,6 +46,7 @@ import {
   DEFAULT_SECONDARY,
   ensureContrast,
   formatMinutes,
+  formatWaitEstimate,
   hexToRgba,
   resolveThemeTokens,
 } from "./displayTheme"
@@ -383,7 +384,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                 ? "—"
                 : q.estimatedWaitMinutes === 0
                   ? "Next up"
-                  : `~${formatMinutes(q.estimatedWaitMinutes)}`}
+                  : formatWaitEstimate(q.estimatedWaitMinutes, settings.waitRangeMinutes)}
           </td>
         )}
         {cols.waited && (
