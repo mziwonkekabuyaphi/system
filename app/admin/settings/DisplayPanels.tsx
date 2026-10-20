@@ -96,6 +96,7 @@ type DisplayDraft = {
   showQueueService: boolean
   showQueuePhone: boolean
   showQueueWaitEstimate: boolean
+  waitRangeMinutes: number
   showQueueDuration: boolean
   showQueueReference: boolean
   showQueueSurname: boolean
@@ -131,6 +132,7 @@ function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
     showQueueService: s.showQueueService,
     showQueuePhone: s.showQueuePhone,
     showQueueWaitEstimate: s.showQueueWaitEstimate,
+    waitRangeMinutes: s.waitRangeMinutes ?? 0,
     showQueueDuration: s.showQueueDuration,
     showQueueReference: s.showQueueReference,
     showQueueSurname: s.showQueueSurname,
@@ -182,6 +184,7 @@ function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySetti
     showQueueService: d.showQueueService,
     showQueuePhone: d.showQueuePhone,
     showQueueWaitEstimate: d.showQueueWaitEstimate,
+    waitRangeMinutes: d.waitRangeMinutes,
     showQueueDuration: d.showQueueDuration,
     showQueueReference: d.showQueueReference,
     showQueueSurname: d.showQueueSurname,
@@ -199,6 +202,7 @@ const DISPLAY_QUEUE_KEYS: Array<keyof DisplayDraft> = [
   "showQueueService",
   "showQueuePhone",
   "showQueueWaitEstimate",
+  "waitRangeMinutes",
   "showQueueDuration",
   "showQueueReference",
   "showQueueSurname",
@@ -478,6 +482,21 @@ export function DisplayPanel({
           disabled={busy}
           onChange={(v) => set("showQueueWaitEstimate", v)}
         />
+        {draft.showQueueWaitEstimate && (
+          <FieldRow
+            label="Wait range (minutes)"
+            hint="0 shows one number, like ~19 min. Set 5 to show a range ending at the estimate, like 15–19 min. Between 0 and 30."
+          >
+            <input
+              type="number"
+              min={0}
+              max={30}
+              className={inputClass}
+              value={draft.waitRangeMinutes}
+              onChange={(e) => set("waitRangeMinutes", Number(e.target.value))}
+            />
+          </FieldRow>
+        )}
         <ToggleRow
           title="Time waited so far"
           description="How long each customer has already been in the queue."
