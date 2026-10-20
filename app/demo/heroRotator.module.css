@@ -1,0 +1,277 @@
+/* app/demo/heroRotator.module.css
+   Styles for HeroRotator.tsx only. Colours come from CSS variables set on .rot from the chosen
+   industry (--hr-main / --hr-deep / --hr-accent / --hr-on-accent), with the site's own
+   --qless-* tokens as fallbacks. Nothing here touches demo.module.css. */
+
+.rot { min-width: 0; }
+
+/* All four slides sit in the same grid cell, so the stage is as tall as the tallest one and
+   switching slides never makes the page jump. */
+.stage { display: grid; }
+
+.slide {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition: opacity 0.45s ease, transform 0.45s ease, visibility 0s linear 0.45s;
+}
+.slideOn {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+.slideWide > * { width: 100%; }
+
+/* ---------- Tabs ---------- */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+.tab {
+  position: relative;
+  overflow: hidden;
+  padding: 9px 16px;
+  border: 1px solid var(--qless-line, #d9d3c3);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--qless-ink, #1c2430);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.tab:hover { border-color: var(--qless-navy, #14325c); }
+.tab:focus-visible { outline: 3px solid var(--qless-amber, #f5a524); outline-offset: 2px; }
+.tabOn {
+  background: var(--qless-navy, #14325c);
+  border-color: var(--qless-navy, #14325c);
+  color: #ffffff;
+}
+.tabBar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--qless-amber, #f5a524);
+  transform-origin: left;
+  animation: hrFill var(--hr-ms, 8000ms) linear forwards;
+}
+.rotIdle .tabBar { animation-play-state: paused; }
+
+@keyframes hrFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes hrIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes hrBubble { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes hrTap { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 0.45em color-mix(in srgb, var(--hr-accent) 45%, transparent); } }
+@keyframes hrPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ---------- Waiting-room TV (light theme) ---------- */
+
+.tv {
+  width: 100%;
+  max-width: 760px;
+  padding: 10px;
+  border-radius: 16px;
+  background: #1f2329;
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.5);
+}
+.tvScreen {
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f7f5ef;
+  color: #1d2430;
+  font-size: clamp(11px, 1.15vw, 15px);
+  line-height: 1.3;
+  text-align: left;
+}
+.tvBar {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.7em 1em;
+  background: var(--hr-main);
+  color: #ffffff;
+}
+.tvLogo {
+  display: grid;
+  place-items: center;
+  width: 2em;
+  height: 2em;
+  border-radius: 0.5em;
+  background: var(--hr-accent);
+  color: var(--hr-on-accent);
+  font-weight: 800;
+}
+.tvShop { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.tvTag {
+  padding: 0.2em 0.8em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.tvBody {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 1em;
+  min-height: 0;
+  padding: 1em;
+  animation: hrIn 0.4s ease-out;
+}
+.tvNow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2em;
+  border-radius: 0.8em;
+  background: #ffffff;
+  border: 1px solid #e8e3d6;
+}
+.tvLabel { font-size: 0.8em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7a7466; }
+.tvBig { font-size: 4.4em; font-weight: 800; line-height: 1; color: var(--hr-main); font-variant-numeric: tabular-nums; }
+.tvWho { font-weight: 600; }
+.tvList { display: flex; flex-direction: column; gap: 0.45em; min-width: 0; }
+.tvWide { grid-column: 1 / -1; max-width: 80%; width: 80%; margin: auto; gap: 0.7em; }
+.tvRow {
+  display: grid;
+  grid-template-columns: 3.4em minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.5em 0.8em;
+  border-radius: 0.6em;
+  background: #ffffff;
+  border: 1px solid #e8e3d6;
+}
+.tvRow b { font-variant-numeric: tabular-nums; color: var(--hr-main); }
+.tvRow i { font-style: normal; color: #7a7466; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvRow em { font-style: normal; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tvRow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvPrice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.7em 1em;
+  border-radius: 0.6em;
+  background: #ffffff;
+  border: 1px solid #e8e3d6;
+  font-size: 1.15em;
+}
+.tvPrice b { color: var(--hr-main); font-variant-numeric: tabular-nums; }
+
+/* ---------- Kiosk ---------- */
+
+.kiosk {
+  width: 100%;
+  max-width: 560px;
+  padding: 14px;
+  border-radius: 26px;
+  background: #16191f;
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.5);
+}
+.kioskScreen {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  padding: 1.2em;
+  border-radius: 14px;
+  background: #faf7f0;
+  color: #1d2430;
+  font-size: clamp(11px, 1.1vw, 14.5px);
+  line-height: 1.3;
+  text-align: left;
+  animation: hrIn 0.4s ease-out;
+}
+.kCenter { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5em; text-align: center; }
+.kLogo {
+  display: grid;
+  place-items: center;
+  width: 4em;
+  height: 4em;
+  border-radius: 50%;
+  background: var(--hr-main);
+  color: #ffffff;
+  font-size: 1.4em;
+  font-weight: 800;
+}
+.kShop { font-size: 1.5em; font-weight: 800; }
+.kTap { margin-top: 0.4em; padding: 0.5em 1.2em; border-radius: 999px; background: var(--hr-accent); color: var(--hr-on-accent); font-weight: 700; animation: hrPulse 1.6s ease-in-out infinite; }
+.kTitle { font-size: 1.5em; font-weight: 800; }
+.kTiles { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em; }
+.kTile { display: flex; flex-direction: column; justify-content: center; gap: 0.4em; padding: 1em; border-radius: 0.9em; }
+.kTile b { font-size: 1.25em; }
+.kTile span { opacity: 0.85; }
+.kTileA { background: var(--hr-main); color: #ffffff; }
+.kTileB { background: var(--hr-accent); color: var(--hr-on-accent); }
+.kGrid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 0.7em; }
+.kChoice { display: grid; place-items: center; padding: 0.6em; border-radius: 0.8em; border: 2px solid #e3ded2; background: #ffffff; font-weight: 700; text-align: center; }
+.kTapped { animation: hrTap 1.4s ease-in-out infinite; }
+.kChoice.kTapped { border-color: var(--hr-main); background: color-mix(in srgb, var(--hr-main) 8%, #ffffff); }
+.kEyebrow { font-size: 0.85em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7a7466; }
+.kNumber { font-size: 4.2em; font-weight: 800; line-height: 1; color: var(--hr-main); font-variant-numeric: tabular-nums; }
+.kFacts { font-weight: 600; }
+
+/* ---------- WhatsApp ---------- */
+
+.phone {
+  width: min(300px, 100%);
+  padding: 10px;
+  border-radius: 28px;
+  background: #16191f;
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.5);
+}
+.phoneScreen {
+  display: flex;
+  flex-direction: column;
+  height: 380px;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #efeae2;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+.phoneHead { display: flex; align-items: center; gap: 0.7em; padding: 0.7em 0.9em; background: #075e54; color: #ffffff; }
+.phoneAvatar { display: grid; place-items: center; width: 2.2em; height: 2.2em; border-radius: 50%; background: var(--hr-accent); color: var(--hr-on-accent); font-weight: 800; }
+.phoneName { display: flex; flex-direction: column; min-width: 0; }
+.phoneName b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phoneName i { font-style: normal; font-size: 0.85em; opacity: 0.8; }
+.phoneBody { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.5em; padding: 0.7em; overflow: hidden; }
+.rowMe, .rowBot { display: flex; flex-direction: column; gap: 0.35em; animation: hrBubble 0.3s ease-out; }
+.rowMe { align-items: flex-end; }
+.rowBot { align-items: flex-start; }
+.bubble { max-width: 85%; padding: 0.5em 0.75em; border-radius: 0.7em; white-space: pre-line; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12); }
+.bubbleMe { background: #d9fdd3; border-top-right-radius: 0.15em; }
+.bubbleBot { background: #ffffff; border-top-left-radius: 0.15em; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.chip { padding: 0.3em 0.8em; border-radius: 999px; border: 1px solid #cfe3d4; background: #ffffff; color: #075e54; font-weight: 600; }
+
+/* ---------- Small / reduced motion ---------- */
+
+@media (max-width: 1100px) {
+  .tvBig { font-size: 3.6em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide { transition: none; }
+  .tabBar { display: none; }
+  .tvBody, .kioskScreen, .rowMe, .rowBot, .kTap, .kTapped { animation: none; }
+}

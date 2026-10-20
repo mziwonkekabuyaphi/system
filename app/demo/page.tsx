@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
-import { DashboardDemo } from "./DashboardDemo";
+import { HeroRotator } from "./HeroRotator";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
@@ -336,7 +336,7 @@ export default async function DemoPage() {
         </aside>
         <div className={styles.heroMain}>
           <div className={styles.heroPreview}>
-            <DashboardDemo compact />
+            <HeroRotator />
           </div>
           <div>
             <h1>Whether they message or walk in, they’re already in line.</h1>
