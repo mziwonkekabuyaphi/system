@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
+import type { Metadata, Viewport } from "next"
 import { Inter, IBM_Plex_Mono } from "next/font/google"
+import SwRegister from "./sw-register"
 import "./globals.css"
 
 const inter = Inter({
@@ -16,10 +18,34 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: "swap",
 })
 
+export const metadata: Metadata = {
+  title: "ZozoQueue",
+  description: "ZozoQueue booking and queue management",
+  applicationName: "ZozoQueue",
+  appleWebApp: {
+    capable: true,
+    title: "ZozoQueue",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
+  width: "device-width",
+  initialScale: 1,
+}
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${ibmPlexMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <SwRegister />
+        {children}
+      </body>
     </html>
   )
 }
