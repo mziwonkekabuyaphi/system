@@ -360,8 +360,10 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
     // Entries with no ticket (old rows, promoted bookings) show a dash
     // rather than a position, so one column never mixes two meanings.
     const lead = settings.showQueueTicketNumber ? (q.ticketNumber ?? "—") : isCalled ? "Now" : String(q.position)
-    const waitedMin =
-      nowMs !== null && !isCalled ? Math.max(0, Math.floor((nowMs - new Date(q.joinedAt).getTime()) / 60000)) : null
+    // Waiting: minutes since they joined. Called: minutes since they were
+    // called (time at the counter), so the figure keeps counting up.
+    const waitedFrom = isCalled ? (q.calledAt ?? q.joinedAt) : q.joinedAt
+    const waitedMin = nowMs !== null ? Math.max(0, Math.floor((nowMs - new Date(waitedFrom).getTime()) / 60000)) : null
     return (
       <tr key={q.id} className={isCalled ? "row called" : "row"}>
         <td className="c-lead" style={{ color: accent }}>
@@ -375,11 +377,13 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         {cols.reference && <td className="c-muted">{q.bookingReference ?? "—"}</td>}
         {cols.wait && (
           <td className="c-num">
-            {isCalled || q.estimatedWaitMinutes === null
-              ? "—"
-              : q.estimatedWaitMinutes === 0
-                ? "Next up"
-                : `~${formatMinutes(q.estimatedWaitMinutes)}`}
+            {isCalled
+              ? "Now"
+              : q.estimatedWaitMinutes === null
+                ? "—"
+                : q.estimatedWaitMinutes === 0
+                  ? "Next up"
+                  : `~${formatMinutes(q.estimatedWaitMinutes)}`}
           </td>
         )}
         {cols.waited && (
