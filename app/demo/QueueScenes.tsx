@@ -182,10 +182,14 @@ function Board({ s, active, still }: { s: Scenario; active: boolean; still: bool
   const tick = useTick(active && !still, EVENT_MS)
   const b = board(s, still ? 0 : tick)
   const longest = b.waiting.length ? b.waiting[b.waiting.length - 1].mins : 0
+  const mins = 14 * 60 + 32 + Math.floor((still ? 0 : tick) / 2)
+  const clock = `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, "0")}`
 
   return (
+    <div className={styles.tvWrap}>
     <div className={styles.board}>
       <div className={styles.screen}>
+        <span className={styles.glare} aria-hidden="true" />
         <div className={styles.bar}>
           <span className={styles.logo}>{s.initial}</span>
           <span className={styles.shop}>{s.shop}</span>
@@ -193,6 +197,12 @@ function Board({ s, active, still }: { s: Scenario; active: boolean; still: bool
           <span className={styles.live}>
             <span className={styles.liveDot} aria-hidden="true" />
             Live
+          </span>
+          <span className={styles.clock} aria-hidden="true">
+            <svg viewBox="0 0 20 14" width="15" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M2 5.2a11 11 0 0 1 16 0M5 8.4a6.6 6.6 0 0 1 10 0" /><circle cx="10" cy="11.6" r="1.2" fill="currentColor" stroke="none" />
+            </svg>
+            {clock}
           </span>
         </div>
 
@@ -249,6 +259,12 @@ function Board({ s, active, still }: { s: Scenario; active: boolean; still: bool
           ))}
         </div>
       </div>
+      <span className={styles.led} aria-hidden="true" />
+    </div>
+    <div className={styles.stand} aria-hidden="true">
+      <span className={styles.neck} />
+      <span className={styles.foot} />
+    </div>
     </div>
   )
 }

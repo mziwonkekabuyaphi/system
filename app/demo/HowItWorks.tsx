@@ -33,14 +33,23 @@ function Phone({ children, name = "Mzansi Cuts" }: { children: ReactNode; name?:
   return (
     <div className={m.phone}>
       <div className={m.phoneScreen}>
+        <span className={m.notch} aria-hidden="true" />
+        <div className={m.status} aria-hidden="true">
+          <span>14:31</span>
+          <span className={m.statusIcons}>
+            <svg viewBox="0 0 18 12" width="15" height="10" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="0.8" /><rect x="5" y="5" width="3" height="7" rx="0.8" /><rect x="10" y="2.5" width="3" height="9.5" rx="0.8" /><rect x="15" y="0" width="3" height="12" rx="0.8" /></svg>
+            <svg viewBox="0 0 26 12" width="22" height="10" fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="0.6" y="0.6" width="21" height="10.8" rx="3" /><rect x="2.4" y="2.4" width="14" height="7.2" rx="1.6" fill="currentColor" stroke="none" /><rect x="23" y="4" width="2" height="4" rx="1" fill="currentColor" stroke="none" /></svg>
+          </span>
+        </div>
         <div className={m.phoneHead}>
           <span className={m.avatar}>M</span>
           <span className={m.phoneName}>
             <b>{name}</b>
-            <i>WhatsApp Business</i>
+            <i>online</i>
           </span>
         </div>
         <div className={m.phoneBody}>{children}</div>
+        <span className={m.homeBar} aria-hidden="true" />
       </div>
     </div>
   )
