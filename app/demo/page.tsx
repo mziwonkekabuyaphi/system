@@ -3,6 +3,7 @@ import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { QueueScenes } from "./QueueScenes";
+import { HowItWorks } from "./HowItWorks";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
@@ -428,17 +429,7 @@ export default async function DemoPage() {
           <div className={styles.sectionHead}>
             <h2>From a WhatsApp message to a confirmed spot, with nobody at the till.</h2>
           </div>
-          <div className={styles.flowSteps}>
-            {STEPS.map((step, i) => (
-              <div key={step.title} className={styles.flowStep}>
-                <span className={styles.flowNum}>{i + 1}</span>
-                <div>
-                  <h3>{step.title}</h3>
-                  <p>{step.text}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <HowItWorks steps={STEPS} />
         </div>
       </section>
 

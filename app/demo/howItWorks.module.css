@@ -1,0 +1,220 @@
+/* app/demo/howItWorks.module.css
+   Styles for HowItWorks.tsx only: the mockup stage above the "How it works" steps, and the
+   small additions to the step list (active state, progress bar, number button). The step
+   list itself still uses flowSteps / flowStep / flowNum from demo.module.css. */
+
+.root { min-width: 0; }
+
+/* ---------- Stage ---------- */
+
+.stage {
+  margin-top: 40px;
+  padding: 18px 20px 22px;
+  border: 1px solid var(--qless-line, #e3ded2);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 50px -30px rgba(11, 28, 54, 0.35);
+  font-size: clamp(12px, 1.25vw, 14.5px);
+  line-height: 1.35;
+  text-align: left;
+}
+.stageHead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.stageStep {
+  font-family: var(--qless-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--qless-amber-dim, #b9791a);
+}
+.stageTitle { font-size: 15px; font-weight: 700; color: var(--qless-ink, #1c2430); }
+
+/* Every scene sits in one grid cell, so the stage is as tall as the tallest and never jumps. */
+.scenes { display: grid; }
+.scene {
+  grid-area: 1 / 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+  min-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+}
+.sceneOn { opacity: 1; visibility: visible; transition-delay: 0s; }
+
+.pane { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+.paneWide { grid-column: 1 / -1; }
+.paneBody { display: flex; justify-content: center; width: 100%; }
+.cap { max-width: 34ch; text-align: center; font-size: 0.95em; color: var(--qless-ink-soft, #4a5260); }
+.paneWide .cap { max-width: 60ch; }
+
+/* Things that appear one after another when their scene becomes active */
+.seq { opacity: 0; }
+.sceneOn .seq { animation: hwIn 0.45s ease-out both; animation-delay: var(--d, 0s); }
+@keyframes hwIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes hwDot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@keyframes hwPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes hwFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- Phone (WhatsApp) ---------- */
+
+.phone {
+  width: min(280px, 100%);
+  padding: 9px;
+  border-radius: 26px;
+  background: #16191f;
+}
+.phoneScreen {
+  display: flex;
+  flex-direction: column;
+  height: 250px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #efeae2;
+  font-size: 13px;
+}
+.phoneHead { display: flex; align-items: center; gap: 0.7em; padding: 0.7em 0.9em; background: #075e54; color: #ffffff; }
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
+  background: var(--qless-amber, #f5a524);
+  color: #0b1c36;
+  font-weight: 800;
+}
+.phoneName { display: flex; flex-direction: column; min-width: 0; }
+.phoneName b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phoneName i { font-style: normal; font-size: 0.85em; opacity: 0.8; }
+.phoneBody { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.5em; padding: 0.7em; overflow: hidden; }
+.bubble { max-width: 88%; padding: 0.5em 0.75em; border-radius: 0.7em; white-space: pre-line; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12); }
+.me { align-self: flex-end; background: #d9fdd3; border-top-right-radius: 0.15em; }
+.bot { align-self: flex-start; background: #ffffff; border-top-left-radius: 0.15em; }
+.typing { display: inline-flex; gap: 4px; padding: 0.7em 0.9em; }
+.typing i { width: 6px; height: 6px; border-radius: 50%; background: #9aa0a6; animation: hwDot 1.2s infinite; }
+.typing i:nth-child(2) { animation-delay: 0.15s; }
+.typing i:nth-child(3) { animation-delay: 0.3s; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35em; align-self: flex-start; }
+.chip { padding: 0.3em 0.8em; border-radius: 999px; border: 1px solid #cfe3d4; background: #ffffff; color: #075e54; font-weight: 600; }
+
+/* ---------- Kiosk ---------- */
+
+.kiosk { width: min(360px, 100%); padding: 11px; border-radius: 20px; background: #16191f; }
+.kioskScreen {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  height: 228px;
+  overflow: hidden;
+  padding: 1em;
+  border-radius: 11px;
+  background: #faf7f0;
+  color: #1d2430;
+  font-size: 13px;
+}
+.center { align-items: center; justify-content: center; text-align: center; }
+.kLogo { display: grid; place-items: center; width: 3.6em; height: 3.6em; border-radius: 50%; background: var(--qless-navy, #14325c); color: #ffffff; font-size: 1.3em; font-weight: 800; }
+.kShop { font-size: 1.4em; font-weight: 800; }
+.kTap { margin-top: 0.4em; padding: 0.5em 1.2em; border-radius: 999px; background: var(--qless-amber, #f5a524); color: #0b1c36; font-weight: 700; animation: hwPulse 1.6s ease-in-out infinite; }
+.kEyebrow { font-size: 0.85em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7a7466; }
+.kNumber { font-size: 4em; font-weight: 800; line-height: 1; color: var(--qless-navy, #14325c); font-variant-numeric: tabular-nums; }
+.kFacts { font-weight: 600; }
+
+/* ---------- Small cards (step 2) ---------- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  width: min(360px, 100%);
+  min-height: 250px;
+  padding: 1em 1.1em;
+  border: 1px solid var(--qless-line, #e3ded2);
+  border-radius: 14px;
+  background: #faf7f0;
+}
+.cardTitle { font-size: 0.8em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7a7466; }
+.check { display: grid; grid-template-columns: 1.6em 4.2em 1fr; align-items: center; gap: 0.4em; padding: 0.55em 0.6em; border-radius: 0.6em; background: #ffffff; border: 1px solid #e8e3d6; }
+.tick { display: grid; place-items: center; width: 1.4em; height: 1.4em; border-radius: 50%; background: #dcf5e3; color: #137a3a; font-size: 0.85em; font-weight: 800; }
+.check b { color: var(--qless-navy, #14325c); }
+.slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5em; }
+.slot { padding: 0.7em 0; border-radius: 0.6em; border: 1px solid #d9d3c3; background: #ffffff; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.slotTaken { background: #f1eee6; color: #a39d8c; text-decoration: line-through; border-style: dashed; }
+.slotPick { background: var(--qless-navy, #14325c); border-color: var(--qless-navy, #14325c); color: #ffffff; }
+.note { font-size: 0.9em; color: #7a7466; }
+
+/* ---------- Mini dashboard (step 4) ---------- */
+
+.dash { width: min(720px, 100%); border: 1px solid var(--qless-line, #e3ded2); border-radius: 14px; overflow: hidden; background: #faf7f0; }
+.dashBar { display: flex; align-items: center; gap: 0.7em; padding: 0.7em 1em; background: var(--qless-navy, #14325c); color: #ffffff; }
+.dashBar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashLogo { display: grid; place-items: center; width: 2em; height: 2em; border-radius: 0.5em; background: var(--qless-amber, #f5a524); color: #0b1c36; font-weight: 800; }
+.live { display: inline-flex; align-items: center; gap: 0.4em; font-size: 0.85em; font-weight: 700; }
+.liveDot { width: 0.6em; height: 0.6em; border-radius: 50%; background: #4ade80; animation: hwPulse 1.6s ease-in-out infinite; }
+.dashRows { display: flex; flex-direction: column; gap: 0.4em; padding: 0.8em; }
+.dRow {
+  display: grid;
+  grid-template-columns: 3.6em minmax(0, 1fr) minmax(0, 1fr) auto 6.5em;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.6em 0.8em;
+  border-radius: 0.6em;
+  background: #ffffff;
+  border: 1px solid #e8e3d6;
+}
+.dRow b { color: var(--qless-navy, #14325c); font-variant-numeric: tabular-nums; }
+.dRow span, .dRow i { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dRow i { font-style: normal; color: #7a7466; }
+.dRow em { font-style: normal; font-weight: 600; font-size: 0.9em; text-align: right; }
+.dNew { border-color: var(--qless-amber, #f5a524); box-shadow: 0 0 0 3px color-mix(in srgb, var(--qless-amber, #f5a524) 25%, transparent); }
+.dActions { display: flex; flex-wrap: wrap; gap: 0.5em; padding: 0 0.8em 0.9em; }
+.dBtn, .dBtnGhost { padding: 0.5em 1.1em; border-radius: 999px; font-weight: 700; font-size: 0.95em; }
+.dBtn { background: var(--qless-navy, #14325c); color: #ffffff; }
+.dBtnGhost { border: 1px solid #d9d3c3; background: #ffffff; color: var(--qless-ink, #1c2430); }
+
+.src { padding: 0.15em 0.6em; border-radius: 999px; font-size: 0.8em; font-weight: 700; white-space: nowrap; }
+.srcWhatsapp { background: #e1f5ee; color: #0b6b5e; }
+.srcKiosk { background: #e6eeff; color: #1d4ed8; }
+.srcBooked { background: #fdf0d5; color: #8a4b08; }
+
+/* ---------- The step list (additions to flowStep) ---------- */
+
+.step { position: relative; cursor: pointer; }
+.step h3, .step p { transition: opacity 0.25s ease; }
+.step:not(.stepOn) h3, .step:not(.stepOn) p { opacity: 0.62; }
+.step:hover h3, .step:hover p { opacity: 1; }
+.stepBar {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--qless-navy, #14325c);
+  transform-origin: left;
+  animation: hwFill var(--hw-ms, 6500ms) linear forwards;
+  z-index: 1;
+}
+.rootIdle .stepBar { animation-play-state: paused; }
+.numBtn { justify-self: start; align-self: start; padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+.numBtn:focus-visible { outline: 3px solid var(--qless-amber, #f5a524); outline-offset: 3px; border-radius: 4px; }
+.stepOn .numBtn { color: var(--qless-navy, #14325c); }
+
+/* ---------- Small screens / reduced motion ---------- */
+
+@media (max-width: 760px) {
+  .stage { padding: 14px 14px 18px; }
+  .scene { grid-template-columns: 1fr; gap: 20px; }
+  .dRow { grid-template-columns: 3.2em minmax(0, 1fr) auto; }
+  .dRow i, .dRow em { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene { transition: none; }
+  .seq { opacity: 1; }
+  .sceneOn .seq { animation: none; }
+  .typing i, .kTap, .liveDot { animation: none; }
+  .stepBar { display: none; }
+}
