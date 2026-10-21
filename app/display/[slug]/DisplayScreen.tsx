@@ -297,7 +297,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         ...q,
         ...fresh.map((e) => ({
           id: e.id,
-          ticketNumber: e.ticketNumber ?? null,
+          ticketNumber: e.displayTicket ?? e.ticketNumber ?? null,
           customerName: e.customerName ?? null,
           serviceName: e.serviceName ?? null,
         })),
@@ -358,9 +358,10 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   function renderQueueRow(q: DisplayData["queue"][number]) {
     const isCalled = q.status === "called"
     // First column: the ticket when that field is on, else the position.
-    // Entries with no ticket (old rows, promoted bookings) show a dash
-    // rather than a position, so one column never mixes two meanings.
-    const lead = settings.showQueueTicketNumber ? (q.ticketNumber ?? "—") : isCalled ? "Now" : String(q.position)
+    // displayTicket is the queue ticket, or the booking reference for promoted
+    // bookings (which get no ticket number). Only entries with neither show a
+    // dash rather than a position, so one column never mixes two meanings.
+    const lead = settings.showQueueTicketNumber ? (q.displayTicket ?? "—") : isCalled ? "Now" : String(q.position)
     // Waiting: minutes since they joined. Called: minutes since they were
     // called (time at the counter), so the figure keeps counting up.
     const waitedFrom = isCalled ? (q.calledAt ?? q.joinedAt) : q.joinedAt

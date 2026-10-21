@@ -169,6 +169,12 @@ export interface DisplayQueueEntry {
    *  that column existed, or (currently) any promoted-booking entry from
    *  the unify-with-queue pg_cron job, which doesn't assign one yet. */
   ticketNumber: string | null
+  /** What the Ticket column / call alert shows: the queue ticket number when there is one,
+   *  otherwise (promoted bookings, which get no ticket_number) the booking's real
+   *  booking_reference. Null when neither exists, or when the reference would be the fallback
+   *  but showQueueTicketNumber is off. Independent of showQueueReference, which only controls
+   *  the separate "Booking ref" column. Never an empty string. */
+  displayTicket: string | null
   /** queue_entries.source: "walk_in" | "booking" (shown as a badge on the board). */
   source: string | null
   /** Masked (e.g. "071 *** **34"). Null unless showQueuePhone is on -- the
@@ -521,6 +527,9 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       const rawTicketNumber = row.ticket_number as number | null
       const ticketNumber = rawTicketNumber != null ? formatQueueTicketNumber(rawTicketNumber, ticketNumberPrefix) : null
       const checkin = settings.showQueueEmail || settings.showQueueCustom ? checkinFor(ticketNumber, customer?.phone) : null
+      // Trimmed so a blank/whitespace reference counts as missing, not as an empty cell.
+      const bookingRef = booking?.booking_reference?.trim() || null
+      const displayTicket = ticketNumber ?? (settings.showQueueTicketNumber ? bookingRef : null)
 
       let estimatedWaitMinutes: number | null = null
       if (status === "waiting" && settings.showQueueWaitEstimate) {
@@ -537,9 +546,10 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         serviceName: joinNames(service?.name, row.queue_entry_services as never),
         position: status === "waiting" ? waitingPosition : 0,
         ticketNumber,
+        displayTicket,
         source: (row.source as string | null) ?? null,
         phoneMasked: settings.showQueuePhone ? maskPhone(customer?.phone) : null,
-        bookingReference: settings.showQueueReference ? (booking?.booking_reference ?? null) : null,
+        bookingReference: settings.showQueueReference ? bookingRef : null,
         estimatedWaitMinutes,
         emailMasked: settings.showQueueEmail ? maskEmail(checkin?.email) : null,
         customLabel: settings.showQueueCustom && checkin?.customAnswer ? checkin.customLabel : null,

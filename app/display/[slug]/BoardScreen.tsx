@@ -163,7 +163,7 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
 
   function queueTicket(q: DisplayQueueEntry) {
     const isServing = q.status === "called"
-    const lead = settings.showQueueTicketNumber && q.ticketNumber ? q.ticketNumber : isServing ? "Now" : `#${q.position}`
+    const lead = settings.showQueueTicketNumber && q.displayTicket ? q.displayTicket : isServing ? "Now" : `#${q.position}`
     const mins = minsSince(isServing ? (q.calledAt ?? q.joinedAt) : q.joinedAt)
     const tone = toneFor(mins, isServing ? SERVING_TONE : WAITING_TONE)
     const showEst = !isServing && settings.showQueueWaitEstimate && q.estimatedWaitMinutes !== null
