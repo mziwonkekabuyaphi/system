@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import "../../auth/theme.css"; // same --qless-* tokens as the landing page
 import styles from "../demo.module.css";
 import { Logo } from "@/components/Logo";
+import { SiteNav } from "../SiteNav";
 import { HowItWorks } from "../HowItWorks";
 import { FeatureShowcase } from "../FeatureShowcase";
 
@@ -182,29 +183,7 @@ const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: bo
 export default function HowItWorksPage() {
   return (
     <div className={styles.page}>
-      <nav className={styles.siteNav}>
-        <div className={styles.siteNavInner}>
-          <div className={styles.siteNavLinks}>
-            <a className={styles.navLink} href={PRICING_URL}>
-              Pricing
-            </a>
-            <a className={styles.navLink} href={DEMO_URL}>
-              Demo
-            </a>
-            <a className={styles.navLink} href={HOW_URL} aria-current="page">
-              How it works
-            </a>
-          </div>
-          <div className={styles.siteNavActions}>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
-              Sign in
-            </a>
-            <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
-              Try for free
-            </a>
-          </div>
-        </div>
-      </nav>
+      <SiteNav current="how" />
 
       <section id="how">
         <div className={styles.wrapWide}>
