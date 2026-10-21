@@ -10,8 +10,14 @@
 //   4. WhatsApp
 // The TV, kiosk and WhatsApp slides are short, lean previews (the full, playable versions
 // are DisplayDemo / KioskDemo / ChatDemo further down the page). Shop name, services,
-// tickets and colours come from industries.ts through useIndustry(), so the hero follows
-// the visitor's chosen industry; outside an <IndustryProvider> it shows the first one.
+// tickets and colours come from industries.ts, and the dashboard slide gets the same shop
+// name and service names, so all four slides show one consistent example shop.
+//
+// Industries: by default (standalone) the hero runs its OWN <IndustryProvider> and moves to
+// the next industry after every INDUSTRY_EVERY slides, so a visitor sees barbers, a clinic,
+// a restaurant, and so on, without scrolling. Pass standalone={false} to make the hero share
+// the page's provider instead (it then follows the page's IndustryPicker and does not
+// rotate on its own: the demos further down do that).
 //
 // It only moves while on screen, pauses on hover / keyboard focus, and never auto-plays for
 // visitors who prefer reduced motion (they get still frames and the tab buttons).
@@ -20,7 +26,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react"
 import styles from "./heroRotator.module.css"
 import { DashboardDemo } from "./DashboardDemo"
-import { useIndustry } from "./IndustryContext"
+import { IndustryProvider, useIndustry } from "./IndustryContext"
 import type { Industry } from "./industries"
 
 type SlideId = "dashboard" | "tv" | "kiosk" | "whatsapp"
@@ -33,6 +39,8 @@ const SLIDES: Array<{ id: SlideId; tab: string }> = [
 ]
 
 const ROTATE_MS = 8000
+/** Slides shown per industry before the next industry comes up (4 = one full lap). Use 1 to change shop on every slide. */
+const INDUSTRY_EVERY = 4
 const NAMES = ["Sipho M.", "Naledi P.", "Jaco V.", "Zinhle D.", "Mandla R.", "Ayanda T.", "Riaan B.", "Lerato N."]
 
 function brandVars(x: Industry): CSSProperties {
@@ -263,8 +271,20 @@ function PhonePreview({ x, active, still }: { x: Industry; active: boolean; stil
 // The rotator
 // ---------------------------------------------------------------------------
 
-export function HeroRotator() {
-  const { industry } = useIndustry()
+export function HeroRotator({ standalone = true }: { standalone?: boolean }) {
+  if (standalone) {
+    return (
+      <IndustryProvider>
+        <Rotator rotateIndustry />
+      </IndustryProvider>
+    )
+  }
+  return <Rotator rotateIndustry={false} />
+}
+
+function Rotator({ rotateIndustry }: { rotateIndustry: boolean }) {
+  const { industry, advance } = useIndustry()
+  const laps = useRef(0) // auto-advanced slides so far
   const [slide, setSlide] = useState(0)
   const [epoch, setEpoch] = useState(0) // bumped to restart the timer and the progress bar
   const [onScreen, setOnScreen] = useState(false)
@@ -299,9 +319,13 @@ export function HeroRotator() {
 
   useEffect(() => {
     if (!running) return
-    const timer = setTimeout(() => setSlide((s) => (s + 1) % SLIDES.length), ROTATE_MS)
+    const timer = setTimeout(() => {
+      setSlide((s) => (s + 1) % SLIDES.length)
+      laps.current += 1
+      if (rotateIndustry && laps.current % INDUSTRY_EVERY === 0) advance()
+    }, ROTATE_MS)
     return () => clearTimeout(timer)
-  }, [running, slide, epoch])
+  }, [running, slide, epoch, rotateIndustry, advance])
 
   function go(i: number) {
     setSlide((i + SLIDES.length) % SLIDES.length)
@@ -337,7 +361,7 @@ export function HeroRotator() {
               aria-hidden={!on}
               className={`${styles.slide} ${on ? styles.slideOn : ""} ${s.id === "dashboard" ? styles.slideWide : ""}`}
             >
-              {s.id === "dashboard" && <DashboardDemo compact />}
+              {s.id === "dashboard" && <DashboardDemo compact shop={industry.shop} services={industry.services} />}
               {s.id === "tv" && <TvPreview x={industry} active={on && running} still={reduced} />}
               {s.id === "kiosk" && <KioskPreview x={industry} active={on && running} still={reduced} />}
               {s.id === "whatsapp" && <PhonePreview x={industry} active={on && running} still={reduced} />}

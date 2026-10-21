@@ -191,7 +191,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 const SRC_CLASS: Record<Source, string> = { WhatsApp: styles.srcWhatsApp, Kiosk: styles.srcKiosk, Booked: styles.srcBooked }
 
-function QueuePanel({ q }: { q: QueueState }) {
+function QueuePanel({ q, label }: { q: QueueState; label: (service: string) => string }) {
   return (
     <>
       <div className={styles.dashStats}>
@@ -206,7 +206,7 @@ function QueuePanel({ q }: { q: QueueState }) {
             {q.serving.ticket}
           </span>
           <strong>{q.serving.name}</strong>
-          <span className={styles.dashLabelOnDark}>{q.serving.service}</span>
+          <span className={styles.dashLabelOnDark}>{label(q.serving.service)}</span>
           <span className={styles.dashCall}>Call next →</span>
         </div>
         <div className={styles.dashList}>
@@ -215,7 +215,7 @@ function QueuePanel({ q }: { q: QueueState }) {
               <span className={styles.dashMono}>{e.ticket}</span>
               <span className={styles.dashWho}>
                 <strong>{e.name}</strong>
-                <span className={styles.dashMuted}>{e.service}</span>
+                <span className={styles.dashMuted}>{label(e.service)}</span>
               </span>
               <span className={`${styles.dashSrc} ${SRC_CLASS[e.src]}`}>{e.src}</span>
               <span className={styles.dashMono}>~{(i + 1) * 8} min</span>
@@ -406,7 +406,26 @@ function PayrollPanel() {
 // Component
 // ---------------------------------------------------------------------------
 
-export function DashboardDemo({ compact = false, initialView = "queue" }: { compact?: boolean; initialView?: DashView }) {
+/** The six service names the example queue uses, in order of first appearance. */
+const BASE_SERVICES = Array.from(new Set(POOL.map((p) => p.service)))
+
+export function DashboardDemo({
+  compact = false,
+  initialView = "queue",
+  shop = SHOP,
+  services,
+}: {
+  compact?: boolean
+  initialView?: DashView
+  /** Shop name shown in the window. Defaults to the example barbershop. */
+  shop?: string
+  /** Service names to show on the live queue instead of the barbershop ones (mapped by position). */
+  services?: readonly string[]
+}) {
+  const label = (service: string) => {
+    const at = BASE_SERVICES.indexOf(service)
+    return services && services.length > 0 && at >= 0 ? services[at % services.length] : service
+  }
   const [view, setView] = useState<DashView>(compact ? "queue" : initialView)
   const [step, setStep] = useState(0)
   const [q, setQ] = useState<QueueState>(initialQueue)
@@ -441,15 +460,15 @@ export function DashboardDemo({ compact = false, initialView = "queue" }: { comp
           <i />
           <i />
         </span>
-        <span className={styles.dashUrl}>{SHOP} · {compact ? "Live Queue" : current.nav}</span>
+        <span className={styles.dashUrl}>{shop} · {compact ? "Live Queue" : current.nav}</span>
         <span className={styles.dashLive}>Live</span>
       </div>
       <div className={styles.dashBody}>
         {!compact && (
           <div className={styles.dashSide}>
             <span className={styles.dashBrand}>
-              <span className={styles.dashBrandMark}>T</span>
-              {SHOP}
+              <span className={styles.dashBrandMark}>{shop.charAt(0).toUpperCase()}</span>
+              {shop}
             </span>
             {NAV.map((n) => (
               <span key={n} className={n === current.nav ? `${styles.dashNav} ${styles.dashNavActive}` : styles.dashNav}>
@@ -459,7 +478,7 @@ export function DashboardDemo({ compact = false, initialView = "queue" }: { comp
           </div>
         )}
         <div className={styles.dashMain} key={view}>
-          {view === "queue" && <QueuePanel q={q} />}
+          {view === "queue" && <QueuePanel q={q} label={label} />}
           {view === "bookings" && <BookingsPanel step={step} />}
           {view === "inbox" && <InboxPanel step={step} />}
           {view === "analytics" && <AnalyticsPanel />}
