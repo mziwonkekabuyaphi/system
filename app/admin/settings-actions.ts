@@ -1049,7 +1049,7 @@ export async function updateQueueSettings(input: {
 // ---------------------------------------------------------------------------
 export async function updateDisplaySettings(input: {
   theme: "dark" | "light" | "custom"
-  layout: "rotation" | "board"
+  layout: "rotation" | "board" | "split"
   /** Hex (#RRGGBB), or null. Only meaningful when theme === "custom", but
    *  accepted regardless -- same "store whatever was sent, resolve at
    *  read-time" posture as the rest of this action. */
@@ -1101,7 +1101,7 @@ export async function updateDisplaySettings(input: {
     if (!["dark", "light", "custom"].includes(input.theme)) {
       return { success: false, error: "Invalid theme." }
     }
-    if (!["rotation", "board"].includes(input.layout)) {
+    if (!["rotation", "board", "split"].includes(input.layout)) {
       return { success: false, error: "Invalid layout." }
     }
     if (input.backgroundColor !== null && !/^#[0-9A-Fa-f]{6}$/.test(input.backgroundColor)) {

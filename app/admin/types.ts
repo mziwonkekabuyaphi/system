@@ -350,9 +350,10 @@ export interface AdminDisplaySettings {
   // "dark"/"light" are built-in looks; "custom" uses backgroundColor.
   // "rotation" is the classic welcome -> services -> bookings -> queue
   // slideshow; "board" is BoardScreen.tsx's always-on columns-of-tickets
-  // layout (no rotation timing applies when layout is "board").
+  // layout; "split" is SplitScreen.tsx's Now serving (left) / still to come
+  // (right) layout. No rotation timing applies to board or split.
   theme: "dark" | "light" | "custom"
-  layout: "rotation" | "board"
+  layout: "rotation" | "board" | "split"
   /** Hex (#RRGGBB). Only meaningful when theme === "custom". */
   backgroundColor: string | null
   /** Shown under the business name on the welcome slide. Deliberately its
