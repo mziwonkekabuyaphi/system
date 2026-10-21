@@ -80,7 +80,8 @@ export interface DisplaySettings {
   bookingBadgeLabel: string | null
   /** "dark" / "light" are built-in looks; "custom" uses backgroundColor. */
   theme: DisplayTheme
-  /** "rotation" = classic slides; "board" = always-on columns of tickets. */
+  /** "rotation" = classic slides; "board" = always-on columns of tickets;
+   *  "split" = Now serving on the left, still-to-come on the right (SplitScreen.tsx). */
   layout: DisplayLayout
   /** Hex (#RRGGBB). Only used when theme === "custom". */
   backgroundColor: string | null
@@ -104,7 +105,7 @@ export interface DisplaySettings {
 }
 
 export type DisplayTheme = "dark" | "light" | "custom"
-export type DisplayLayout = "rotation" | "board"
+export type DisplayLayout = "rotation" | "board" | "split"
 
 // Fallbacks when a tenant_branding row hasn't been created yet (brand-new
 // tenant, row insert lagging the trigger) -- mirrors the DB column
@@ -203,6 +204,10 @@ export interface DisplayData {
 }
 
 export type DisplayResult = { ok: true; data: DisplayData } | { ok: false; error: string }
+
+function resolveLayout(value: unknown): DisplayLayout {
+  return value === "board" || value === "split" ? value : "rotation"
+}
 
 function resolveTheme(value: unknown): DisplayTheme {
   return value === "light" || value === "custom" ? value : "dark"
@@ -408,7 +413,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
           bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
           theme: resolveTheme(brandingResult.data.display_theme),
-          layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
+          layout: resolveLayout(brandingResult.data.display_layout),
           backgroundColor: brandingResult.data.display_background_color ?? null,
           showQueueTicketNumber:
             brandingResult.data.display_queue_show_ticket_number ?? DEFAULT_DISPLAY_SETTINGS.showQueueTicketNumber,

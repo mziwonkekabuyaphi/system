@@ -41,6 +41,7 @@ import type { CSSProperties } from "react"
 import { fetchDisplayData, type DisplayData } from "./actions"
 import { BoardScreen } from "./BoardScreen"
 import { CallAlertOverlay, type CallAlertEntry } from "./CallAlertOverlay"
+import { SplitScreen } from "./SplitScreen"
 import {
   DEFAULT_ACCENT,
   DEFAULT_SECONDARY,
@@ -408,6 +409,15 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
       fg={theme.fg}
     />
   ) : null
+
+  if (settings.layout === "split") {
+    return (
+      <>
+        <SplitScreen data={data} online={online} />
+        {alertOverlay}
+      </>
+    )
+  }
 
   if (settings.layout === "board") {
     return (

@@ -74,7 +74,7 @@ function formatClockTime(iso: string): string {
 
 /** Slowly scrolls a rail when its tickets overflow the screen (a TV can't
  *  be scrolled by hand): pause, glide to the bottom, pause, jump back up. */
-function useAutoScroll(ref: RefObject<HTMLDivElement | null>) {
+export function useAutoScroll(ref: RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const el = ref.current
     if (!el) return
