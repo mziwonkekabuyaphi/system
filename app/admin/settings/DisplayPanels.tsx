@@ -39,6 +39,12 @@ const DEFAULT_DISPLAY_MENU_TITLE = "On the menu"
 const DEFAULT_DISPLAY_BOOKINGS_TITLE = "Upcoming bookings"
 const DEFAULT_DISPLAY_QUEUE_TITLE = "Live queue"
 const DEFAULT_DISPLAY_SPLIT_WAITING_LABEL = "Still to come"
+const DEFAULT_DISPLAY_LIVE_LABEL = "Live"
+const DEFAULT_DISPLAY_OFFLINE_LABEL = "Reconnecting…"
+const DEFAULT_DISPLAY_NEXT_UP_LABEL = "Next up"
+const DEFAULT_DISPLAY_GUEST_LABEL = "Guest"
+const DEFAULT_DISPLAY_SERVING_TIMER_LABEL = "Serving"
+const DEFAULT_DISPLAY_WAITING_TIMER_LABEL = "Waiting"
 const DEFAULT_DISPLAY_NOW_SERVING_LABEL = "Now serving"
 const DEFAULT_DISPLAY_WAITING_LABEL = "Waiting"
 const DEFAULT_DISPLAY_WAITING_EMPTY = "Nobody waiting right now."
@@ -111,6 +117,8 @@ type DisplayDraft = {
   welcomeSeconds: number
   menuBookingsSeconds: number
   queueSeconds: number
+  showSplit: boolean
+  splitSeconds: number
   callAlertEnabled: boolean
   callAlertSeconds: number
   menuTitle: string
@@ -123,6 +131,12 @@ type DisplayDraft = {
   bookingsEmptyText: string
   walkInBadgeLabel: string
   bookingBadgeLabel: string
+  liveLabel: string
+  offlineLabel: string
+  nextUpLabel: string
+  guestLabel: string
+  servingTimerLabel: string
+  waitingTimerLabel: string
 }
 
 function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
@@ -147,6 +161,8 @@ function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
     welcomeSeconds: s.welcomeSeconds,
     menuBookingsSeconds: s.menuBookingsSeconds,
     queueSeconds: s.queueSeconds,
+    showSplit: s.showSplit,
+    splitSeconds: s.splitSeconds,
     callAlertEnabled: s.callAlertEnabled,
     callAlertSeconds: s.callAlertSeconds,
     menuTitle: s.menuTitle ?? "",
@@ -159,6 +175,12 @@ function toDisplayDraft(s: AdminDisplaySettings): DisplayDraft {
     bookingsEmptyText: s.bookingsEmptyText ?? "",
     walkInBadgeLabel: s.walkInBadgeLabel ?? "",
     bookingBadgeLabel: s.bookingBadgeLabel ?? "",
+    liveLabel: s.liveLabel ?? "",
+    offlineLabel: s.offlineLabel ?? "",
+    nextUpLabel: s.nextUpLabel ?? "",
+    guestLabel: s.guestLabel ?? "",
+    servingTimerLabel: s.servingTimerLabel ?? "",
+    waitingTimerLabel: s.waitingTimerLabel ?? "",
   }
 }
 
@@ -174,6 +196,8 @@ function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySetti
     welcomeSeconds: d.welcomeSeconds,
     menuBookingsSeconds: d.menuBookingsSeconds,
     queueSeconds: d.queueSeconds,
+    showSplit: d.showSplit,
+    splitSeconds: d.splitSeconds,
     callAlertEnabled: d.callAlertEnabled,
     callAlertSeconds: d.callAlertSeconds,
     menuTitle: d.menuTitle.trim() || null,
@@ -186,6 +210,12 @@ function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySetti
     bookingsEmptyText: d.bookingsEmptyText.trim() || null,
     walkInBadgeLabel: d.walkInBadgeLabel.trim() || null,
     bookingBadgeLabel: d.bookingBadgeLabel.trim() || null,
+    liveLabel: d.liveLabel.trim() || null,
+    offlineLabel: d.offlineLabel.trim() || null,
+    nextUpLabel: d.nextUpLabel.trim() || null,
+    guestLabel: d.guestLabel.trim() || null,
+    servingTimerLabel: d.servingTimerLabel.trim() || null,
+    waitingTimerLabel: d.waitingTimerLabel.trim() || null,
     showQueueTicketNumber: d.showQueueTicketNumber,
     showQueueService: d.showQueueService,
     showQueuePhone: d.showQueuePhone,
@@ -202,7 +232,7 @@ function toDisplayPayload(d: DisplayDraft): Parameters<typeof updateDisplaySetti
 // Which draft fields belong to which card. A card saves (and shows
 // "Unsaved changes" for) only its own keys.
 const DISPLAY_LOOK_KEYS: Array<keyof DisplayDraft> = ["layout", "theme", "backgroundColor", "tagline"]
-const DISPLAY_SCREEN_KEYS: Array<keyof DisplayDraft> = ["showServices", "showBookings", "showQueue"]
+const DISPLAY_SCREEN_KEYS: Array<keyof DisplayDraft> = ["showServices", "showBookings", "showQueue", "showSplit"]
 const DISPLAY_QUEUE_KEYS: Array<keyof DisplayDraft> = [
   "showQueueTicketNumber",
   "showQueueService",
@@ -215,7 +245,7 @@ const DISPLAY_QUEUE_KEYS: Array<keyof DisplayDraft> = [
   "showQueueEmail",
   "showQueueCustom",
 ]
-const DISPLAY_TIMING_KEYS: Array<keyof DisplayDraft> = ["welcomeSeconds", "menuBookingsSeconds", "queueSeconds"]
+const DISPLAY_TIMING_KEYS: Array<keyof DisplayDraft> = ["welcomeSeconds", "menuBookingsSeconds", "queueSeconds", "splitSeconds"]
 const DISPLAY_CALL_ALERT_KEYS: Array<keyof DisplayDraft> = ["callAlertEnabled", "callAlertSeconds"]
 const DISPLAY_WORDING_KEYS: Array<keyof DisplayDraft> = [
   "menuTitle",
@@ -228,6 +258,12 @@ const DISPLAY_WORDING_KEYS: Array<keyof DisplayDraft> = [
   "bookingsEmptyText",
   "walkInBadgeLabel",
   "bookingBadgeLabel",
+  "liveLabel",
+  "offlineLabel",
+  "nextUpLabel",
+  "guestLabel",
+  "servingTimerLabel",
+  "waitingTimerLabel",
 ]
 
 export function DisplayPanel({
@@ -437,6 +473,15 @@ export function DisplayPanel({
           disabled={busy}
           onChange={(v) => set("showQueue", v)}
         />
+        {isRotation && (
+          <ToggleRow
+            title="Split screen"
+            description="Full-screen view with Now serving on the left and who's still to come on the right."
+            checked={draft.showSplit}
+            disabled={busy}
+            onChange={(v) => set("showSplit", v)}
+          />
+        )}
       </SettingsCard>
 
       <SettingsCard
@@ -543,7 +588,7 @@ export function DisplayPanel({
               onChange={(e) => set("welcomeSeconds", Number(e.target.value))}
             />
           </FieldRow>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <FieldRow label="Menu & bookings (seconds)" hint="How long each of these screens shows before moving on.">
               <input
                 type="number"
@@ -562,6 +607,16 @@ export function DisplayPanel({
                 className={inputClass}
                 value={draft.queueSeconds}
                 onChange={(e) => set("queueSeconds", Number(e.target.value))}
+              />
+            </FieldRow>
+            <FieldRow label="Split screen (seconds)" hint="Only used when Split screen is switched on above.">
+              <input
+                type="number"
+                min={3}
+                max={300}
+                className={inputClass}
+                value={draft.splitSeconds}
+                onChange={(e) => set("splitSeconds", Number(e.target.value))}
               />
             </FieldRow>
           </div>
@@ -612,7 +667,7 @@ export function DisplayPanel({
         </SubSection>
 
         {isSplit ? (
-          <SubSection title="Split screen" hint='Right-hand heading and empty-column messages. The left heading is the "Now serving" label above.'>
+          <SubSection title="Split screen" hint='Column heading, empty messages and status wording. The left heading is the "Now serving" label above.'>
             <div className="grid gap-4 sm:grid-cols-2">
               {textField("waitingLabel", "Right-hand column heading", DEFAULT_DISPLAY_SPLIT_WAITING_LABEL, 40)}
               <div className="hidden sm:block" />
@@ -629,6 +684,48 @@ export function DisplayPanel({
                 DEFAULT_DISPLAY_WAITING_EMPTY,
                 100,
                 "Shown on the right when nobody is waiting.",
+              )}
+              {textField(
+                "nextUpLabel",
+                "First in line label",
+                DEFAULT_DISPLAY_NEXT_UP_LABEL,
+                20,
+                "Shown instead of a wait time when the customer is next.",
+              )}
+              {textField(
+                "guestLabel",
+                "Customer with no name",
+                DEFAULT_DISPLAY_GUEST_LABEL,
+                20,
+                "Shown when a customer has no name on file.",
+              )}
+              {textField(
+                "liveLabel",
+                "Live status text",
+                DEFAULT_DISPLAY_LIVE_LABEL,
+                20,
+                "Header pill while the screen is connected.",
+              )}
+              {textField(
+                "offlineLabel",
+                "Offline status text",
+                DEFAULT_DISPLAY_OFFLINE_LABEL,
+                20,
+                "Header pill when the connection drops.",
+              )}
+              {textField(
+                "servingTimerLabel",
+                "Serving timer prefix",
+                DEFAULT_DISPLAY_SERVING_TIMER_LABEL,
+                20,
+                'Shown before the time, e.g. "Serving 4 min". Needs "Time waited" switched on.',
+              )}
+              {textField(
+                "waitingTimerLabel",
+                "Waiting timer prefix",
+                DEFAULT_DISPLAY_WAITING_TIMER_LABEL,
+                20,
+                'Shown before the time, e.g. "Waiting 4 min". Needs "Time waited" switched on.',
               )}
             </div>
           </SubSection>
