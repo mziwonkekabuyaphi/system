@@ -9,6 +9,8 @@ import { IndustryProvider, IndustryPicker } from "../IndustryContext";
 import { DashboardDemo } from "../DashboardDemo";
 import { DisplayDemo } from "../DisplayDemo";
 import { SetupDemo } from "../SetupDemo";
+import { HeroRotator } from "../HeroRotator";
+import hero from "../liveHero.module.css";
 
 // app/demo/live/page.tsx
 //
@@ -17,6 +19,10 @@ import { SetupDemo } from "../SetupDemo";
 // Two ways in, WhatsApp, WhatsApp messages (admin), the kiosk, the waiting-area screen and
 // the dashboard, plus the new "Set it up yourself" workspace (SetupDemo.tsx: branding, staff,
 // clock-in and payroll).
+//
+// The top of the page is a light hero that gives the rotating preview (HeroRotator.tsx: dashboard,
+// waiting-room TV, kiosk, WhatsApp) the whole top area. It sits inside the same <IndustryProvider>
+// as the demos below, so the industry picker under it changes the hero and every demo together.
 
 export const metadata: Metadata = {
   title: "ZozoQueue demo — WhatsApp, kiosk, waiting-area screen and dashboard",
@@ -56,6 +62,32 @@ export default function DemoLivePage() {
           </div>
         </div>
       </nav>
+
+      <IndustryProvider>
+      <section className={`${styles.flow} ${hero.hero}`} id="top">
+        <div className={hero.inner}>
+          <span className={hero.eyebrow}>Live demo</span>
+          <h1 className={hero.title}>See every screen of ZozoQueue, working.</h1>
+          <p className={hero.lead}>
+            Your dashboard, the kiosk at your door, the TV in your waiting area and the WhatsApp chat your customers use,
+            all updating as you watch. Pick your kind of business to see it with that wording and those colours.
+          </p>
+          <div className={hero.stage}>
+            <HeroRotator standalone={false} />
+          </div>
+          <div className={hero.pick}>
+            <IndustryPicker />
+          </div>
+          <div className={hero.jump}>
+            <span className={hero.jumpLabel}>Jump to</span>
+            <a className={hero.jumpLink} href="#demo">WhatsApp</a>
+            <a className={hero.jumpLink} href="#kiosk">Kiosk</a>
+            <a className={hero.jumpLink} href="#display">Waiting-room TV</a>
+            <a className={hero.jumpLink} href="#dashboard">Dashboard</a>
+            <a className={hero.jumpLink} href="#setup">Set it up yourself</a>
+          </div>
+        </div>
+      </section>
 
       <section id="channels">
         <div className={styles.wrapWide}>
@@ -101,7 +133,6 @@ export default function DemoLivePage() {
         </div>
       </section>
 
-      <IndustryProvider>
       <section id="demo" className={styles.flow}>
         <div className={styles.wrapWide}>
           <p className={styles.sectionLabel}>Channel one: WhatsApp</p>
