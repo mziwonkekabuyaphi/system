@@ -571,6 +571,7 @@ export function DisplayDemo() {
           <div key={`${x.id}-${layout}-${current}`} className={styles.dFade}>
             {layout === "board" ? renderBoard() : renderSlide(current as Slide)}
           </div>
+          <span className={styles.dGlare} aria-hidden="true" />
           {layout === "rotation" && seqLen > 1 && (
             <div className={styles.dDots} aria-hidden="true">
               {seq.map((k, i) => (
@@ -579,6 +580,7 @@ export function DisplayDemo() {
             </div>
           )}
         </div>
+        <span className={styles.tvLed} aria-hidden="true" />
       </div>
 
       <div className={styles.dActions}>

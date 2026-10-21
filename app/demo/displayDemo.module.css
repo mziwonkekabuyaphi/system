@@ -20,24 +20,57 @@
   align-self: center;
   width: 100%;
   max-width: 880px;
-  margin-bottom: 22px;
-  padding: 1.5%;
-  border-radius: 16px;
-  background: var(--qless-navy-deep);
-  box-shadow: 0 30px 60px -24px rgba(11, 22, 40, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+  margin-bottom: 38px; /* room for the stand */
+  padding: 0.9% 0.9% 1.7%; /* thin bezel, slightly deeper chin */
+  border-radius: 12px;
+  background: linear-gradient(160deg, #2b3038 0%, #0e1115 55%, #1c2027 100%);
+  box-shadow: 0 30px 60px -24px rgba(11, 22, 40, 0.55), inset 0 0 0 1.5px rgba(255, 255, 255, 0.1);
 }
 
-/* a thin stand, so it reads as a wall/stand TV and not a monitor */
+/* A smart TV on its stand: a tapered neck (::after) over a flat foot (::before). */
+.tv::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -38px;
+  width: 26%;
+  height: 9px;
+  transform: translateX(-50%);
+  border-radius: 999px 999px 4px 4px;
+  background: linear-gradient(180deg, #2b3038, #12151a);
+  box-shadow: 0 8px 14px -6px rgba(0, 0, 0, 0.45);
+}
 .tv::after {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -22px;
-  width: 24%;
-  height: 22px;
+  bottom: -30px;
+  width: 9%;
+  height: 30px;
   transform: translateX(-50%);
-  border-radius: 0 0 10px 10px;
-  background: var(--qless-navy-deep);
+  background: linear-gradient(90deg, #14171c, #2f343d 50%, #14171c);
+  clip-path: polygon(14% 0, 86% 0, 100% 100%, 0 100%);
+}
+
+/* standby light on the chin */
+.tvLed {
+  position: absolute;
+  right: 3%;
+  bottom: 0.55%;
+  width: 0.5%;
+  min-width: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #5b6370;
+}
+
+/* soft diagonal reflection across the glass; never blocks clicks */
+.dGlare {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0) 32%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.06) 100%);
 }
 
 .dScreen {
@@ -604,7 +637,7 @@
 }
 @media (max-width: 640px) {
   .dScreen { aspect-ratio: 4 / 3; }
-  .tv { padding: 2.2%; border-radius: 12px; }
+  .tv { padding: 1.6% 1.6% 3%; border-radius: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
