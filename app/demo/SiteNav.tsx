@@ -28,7 +28,7 @@ export function SiteNav({ current }: { current: SiteNavPage }) {
           ZozoQueue
         </a>
         <div className={styles.siteNavActions}>
-          {LINKS.map((l) => (
+          {LINKS.filter((l) => !(current === "home" && l.key === "home")).map((l) => (
             <a
               key={l.key}
               className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`}
