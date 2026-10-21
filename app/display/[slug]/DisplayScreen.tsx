@@ -57,7 +57,7 @@ const POLL_MS = 20 * 1000
 // With the call alert on, a call should pop up within a few seconds, not 20.
 const ALERT_POLL_MS = 5 * 1000
 
-type SlideKey = "welcome" | "services" | "bookings" | "queue"
+type SlideKey = "welcome" | "services" | "bookings" | "queue" | "split"
 
 /** "14:30" for a booking's start_time. Rendered in the TV's local time,
  *  same as the browser clock on the wall -- no server-side tenant
@@ -229,6 +229,9 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
     settings.showServices && data.services.length > 0 ? "services" : "",
     settings.showBookings && data.bookings.length > 0 ? "bookings" : "",
     settings.showQueue && data.queue.length > 0 ? "queue" : "",
+    // Split screen is a full-screen slide of its own (SplitScreen.tsx). Skipped on
+    // an empty queue, like the others -- it would just be two "nobody here" panels.
+    settings.showSplit && data.queue.length > 0 ? "split" : "",
   ]
     .filter(Boolean)
     .join(",")
@@ -263,10 +266,15 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   useEffect(() => {
     if (phase !== "rotation" || slides.length === 0) return
     const currentKey = slides[index % slides.length]
-    const durationMs = (currentKey === "queue" ? settings.queueSeconds : settings.menuBookingsSeconds) * 1000
+    const durationMs =
+      (currentKey === "queue"
+        ? settings.queueSeconds
+        : currentKey === "split"
+          ? settings.splitSeconds
+          : settings.menuBookingsSeconds) * 1000
     const id = setTimeout(() => setIndex((i) => (i + 1) % slides.length), durationMs)
     return () => clearTimeout(id)
-  }, [phase, index, slides, settings.queueSeconds, settings.menuBookingsSeconds])
+  }, [phase, index, slides, settings.queueSeconds, settings.splitSeconds, settings.menuBookingsSeconds])
 
   // "Now serving" (called) surfaces separately from the numbered "up
   // next" (waiting) list -- they read as different things on a TV.
@@ -459,7 +467,11 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         {data.branding.tagline && <p className="tagline">{data.branding.tagline}</p>}
       </section>
 
-      {slides.map((key) => (
+      {/* "split" has no <section>: SplitScreen is position:fixed and draws its own
+          full-screen stage, so it's mounted below only while it's the active slide. */}
+      {slides
+        .filter((key) => key !== "split")
+        .map((key) => (
         <section key={key} className={`slide ${key} ${activeKey === key ? "active" : ""}`}>
           {key === "services" && (
             <>
@@ -535,7 +547,14 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         </section>
       ))}
 
-      {phase === "rotation" && slides.length > 1 && (
+      {activeKey === "split" && (
+        <div className="splitSlide">
+          <SplitScreen data={data} online={online} />
+        </div>
+      )}
+
+      {/* Dots would sit on top of the split screen's own footer, so hide them there. */}
+      {phase === "rotation" && slides.length > 1 && activeKey !== "split" && (
         <div className="dots" role="presentation">
           {slides.map((key, i) => (
             <span key={key} className={`dot ${i === index ? "on" : ""}`} />
@@ -577,6 +596,17 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         .slide.active {
           opacity: 1;
           pointer-events: auto;
+        }
+        .splitSlide {
+          animation: splitIn 1.2s ease both;
+        }
+        @keyframes splitIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
         }
 
         .corner-mark {
