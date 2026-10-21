@@ -36,8 +36,10 @@ import {
   formatMinutes,
   formatWaitEstimate,
   hexToRgba,
+  contrastRatio,
   luminance,
   resolveThemeTokens,
+  toRgb,
 } from "./displayTheme"
 
 const PAPER = "#F4ECDC"
@@ -146,6 +148,13 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
   // screen background.
   const ticketAccent = ensureContrast(branding.primaryColor || DEFAULT_ACCENT, PAPER, INK, 3.5)
   const ticketSecondary = ensureContrast(branding.secondaryColor || DEFAULT_SECONDARY, PAPER, INK, 3.5)
+
+  // Solid header bar in the tenant's primary colour. The fill is the raw brand
+  // colour (it is a surface, not text), and its text is black or white,
+  // whichever contrasts more. No valid primary colour = the original
+  // translucent header, so tenants without brand colours look as before.
+  const headerBg = toRgb(branding.primaryColor) ? (branding.primaryColor as string) : null
+  const headerFg = headerBg ? (contrastRatio(headerBg, "#FFFFFF") >= contrastRatio(headerBg, INK) ? "#FFFFFF" : INK) : null
 
   const queueTitle = settings.queueTitle?.trim() || "Live queue"
   const bookingsTitle = settings.bookingsTitle?.trim() || "Upcoming bookings"
@@ -260,6 +269,15 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
     "--bd-ink": INK,
     "--bd-solid": theme.bgSolid,
     "--bd-cols": columnCount || 1,
+    ...(headerBg && headerFg
+      ? {
+          "--bd-hdr-bg": headerBg,
+          "--bd-hdr-fg": headerFg,
+          "--bd-hdr-fg-80": hexToRgba(headerFg, 0.8),
+          "--bd-hdr-fg-16": hexToRgba(headerFg, 0.16),
+          "--bd-hdr-fg-40": hexToRgba(headerFg, 0.4),
+        }
+      : {}),
   } as CSSProperties
 
   const clockTime = now?.toLocaleTimeString([], { hour12: false }) ?? "--:--:--"
@@ -270,7 +288,7 @@ export function BoardScreen({ data, online }: { data: DisplayData; online: boole
     <div className="bd-stage" style={rootStyle}>
       <style>{CSS}</style>
 
-      <header className="bd-header">
+      <header className={`bd-header ${headerBg ? "bd-header-brand" : ""}`}>
         <div className="bd-brand">
           <div className="bd-logo">
             {branding.logoUrl ? (
@@ -379,6 +397,14 @@ html, body { margin: 0; padding: 0; background: var(--bd-solid, #0c0907); }
   display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
   padding: 1rem 2.25rem; background: var(--bd-fg-06);
   border-bottom: 3px solid var(--bd-accent); box-shadow: 0 0.5rem 1.75rem var(--bd-accent-glow);
+}
+/* Solid tenant-colour header (only when the tenant has a primary colour). */
+.bd-header-brand { background: var(--bd-hdr-bg); color: var(--bd-hdr-fg); border-bottom-color: var(--bd-secondary); }
+.bd-header-brand .bd-logo { box-shadow: 0 0 0 2px var(--bd-hdr-fg-40), 0 0.5rem 1.1rem rgba(0,0,0,.35); }
+.bd-header-brand .bd-eyebrow { color: var(--bd-hdr-fg-80); }
+.bd-header-brand .bd-date { color: var(--bd-hdr-fg-80); }
+.bd-header-brand .bd-pill, .bd-header-brand .bd-pill.offline {
+  background: var(--bd-hdr-fg-16); border-color: var(--bd-hdr-fg-40); color: var(--bd-hdr-fg);
 }
 .bd-brand { display: flex; align-items: center; gap: 1.1rem; min-width: 0; }
 .bd-logo {
