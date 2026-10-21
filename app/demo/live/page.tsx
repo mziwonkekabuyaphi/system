@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "../../auth/theme.css"; // same --qless-* tokens as the landing page
 import styles from "../demo.module.css";
-import { Logo } from "@/components/Logo";
+import { SiteNav } from "../SiteNav";
 import { ChatDemo } from "../ChatDemo";
 import { KioskDemo } from "../KioskDemo";
 import { WhatsAppAdminDemo } from "../WhatsAppAdminDemo";
@@ -30,38 +30,13 @@ export const metadata: Metadata = {
     "Try ZozoQueue yourself: a customer books on WhatsApp, a walk-in checks in at the kiosk, the TV shows the queue, and your dashboard updates live.",
 };
 
-const SIGN_IN_URL = "https://system-eta-azure.vercel.app/login";
-const SIGN_UP_URL = "https://system-eta-azure.vercel.app/signup";
-const LANDING_URL = "/demo";
-const PRICING_URL = "/demo/pricing";
 
 const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
 export default function DemoLivePage() {
   return (
     <div className={styles.page}>
-      <nav className={`${styles.siteNav} ${styles.siteNavBar}`}>
-        <div className={`${styles.siteNavInner} ${styles.siteNavInnerBar}`}>
-          <a className={styles.siteNavBrand} href={LANDING_URL}>
-            <Logo size={40} />
-            ZozoQueue
-          </a>
-          <div className={styles.siteNavActions}>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={LANDING_URL}>
-              Overview
-            </a>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={PRICING_URL}>
-              Pricing
-            </a>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
-              Sign in
-            </a>
-            <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
-              Try for free
-            </a>
-          </div>
-        </div>
-      </nav>
+      <SiteNav current="demo" />
 
       <IndustryProvider>
       <section className={`${styles.flow} ${hero.hero}`} id="top">
