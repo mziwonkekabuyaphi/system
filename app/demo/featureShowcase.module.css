@@ -1,0 +1,151 @@
+/* app/demo/featureShowcase.module.css
+   Styles for FeatureShowcase.tsx only (the "What's included" section). The stage, smartphone,
+   bubbles, panes, cards and mini dashboard come from howItWorks.module.css; this file holds the
+   feature-specific scenes and the clickable cards. The grid keeps the page's own `features`
+   (columns) and `feature` classes from demo.module.css. */
+
+.root { min-width: 0; }
+.stage { margin-bottom: 18px; }
+
+@keyframes fsFill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes fsPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes fsTap { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 0.4em color-mix(in srgb, var(--qless-amber, #f5a524) 45%, transparent); } }
+
+/* ---------- The feature cards ---------- */
+
+.root .grid { margin-top: 0; gap: 12px; }
+
+.card {
+  position: relative;
+  padding: 16px 16px 18px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover { border-color: var(--qless-line, #e3ded2); }
+.cardOn {
+  background: #ffffff;
+  border-color: var(--qless-line, #e3ded2);
+  box-shadow: 0 14px 30px -22px rgba(11, 28, 54, 0.4);
+}
+.card h3, .card p { transition: opacity 0.25s ease; }
+.card:not(.cardOn) h3, .card:not(.cardOn) p { opacity: 0.7; }
+.card:hover h3, .card:hover p { opacity: 1; }
+.bar {
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  right: 14px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--qless-navy, #14325c);
+  transform-origin: left;
+  animation: fsFill var(--fs-ms, 6500ms) linear forwards;
+}
+.rootIdle .bar { animation-play-state: paused; }
+.iconBtn { display: block; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; }
+.iconBtn:focus-visible { outline: 3px solid var(--qless-amber, #f5a524); outline-offset: 3px; border-radius: 6px; }
+.cardOn .iconBtn { color: var(--qless-navy, #14325c); }
+
+/* ---------- Shared bits inside scenes ---------- */
+
+.li { display: grid; grid-template-columns: 1.6em 1fr; align-items: center; gap: 0.4em; padding: 0.55em 0.6em; border-radius: 0.6em; background: #ffffff; border: 1px solid #e8e3d6; font-weight: 600; }
+.takeover { align-self: flex-start; margin-top: 0.3em; }
+.result { padding: 0.55em 0.8em; border-radius: 0.6em; font-weight: 700; text-align: center; }
+.resOk { background: #dcf5e3; color: #137a3a; }
+.resNo { background: #fdf0d5; color: #8a4b08; }
+
+/* ---------- Kiosk ---------- */
+
+.kTitle { font-size: 1.4em; font-weight: 800; }
+.tiles { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em; }
+.tile { display: flex; flex-direction: column; justify-content: center; gap: 0.4em; padding: 0.9em; border-radius: 0.9em; }
+.tile b { font-size: 1.15em; }
+.tile span { opacity: 0.85; }
+.tileA { background: var(--qless-navy, #14325c); color: #ffffff; }
+.tileB { background: var(--qless-amber, #f5a524); color: #0b1c36; }
+.tapped { animation: fsTap 1.4s ease-in-out 1s infinite; }
+.ready { margin-top: 0.3em; padding: 0.6em; border-radius: 0.6em; background: var(--qless-navy, #14325c); color: #ffffff; font-weight: 700; text-align: center; animation: fsPulse 1.8s ease-in-out infinite; }
+
+/* ---------- Bookings that can't clash ---------- */
+
+.duel { align-items: center; justify-content: center; text-align: center; gap: 0.9em; }
+.slotBig { padding: 0.5em 1.4em; border-radius: 0.8em; background: var(--qless-navy, #14325c); color: #ffffff; font-size: 2.4em; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.slotGone { background: #f1eee6; color: #a39d8c; text-decoration: line-through; }
+
+/* ---------- Live queue ---------- */
+
+.serving { border-color: var(--qless-amber, #f5a524); background: color-mix(in srgb, var(--qless-amber, #f5a524) 10%, #ffffff); }
+
+/* ---------- Waitlist ---------- */
+
+.tl { position: relative; display: flex; flex-direction: column; gap: 0.1em; padding: 0.6em 0.8em 0.6em 1.2em; border-radius: 0.6em; background: #ffffff; border: 1px solid #e8e3d6; border-left: 4px solid #cfc8b6; }
+.tl b { font-size: 0.8em; letter-spacing: 0.06em; text-transform: uppercase; color: #7a7466; }
+.tlWarn { border-left-color: #f59e0b; }
+.tlOk { border-left-color: #22a35a; }
+
+/* ---------- Branded ticket ---------- */
+
+.ticket {
+  display: grid;
+  grid-template-columns: 9em minmax(0, 1fr) auto;
+  align-items: stretch;
+  width: min(560px, 100%);
+  border-radius: 0.9em;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e3ded2;
+  box-shadow: 0 18px 36px -24px rgba(11, 28, 54, 0.45);
+  text-align: left;
+}
+.stub { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6em; padding: 1em; background: var(--qless-navy, #14325c); color: #ffffff; font-weight: 700; text-align: center; border-right: 2px dashed rgba(255, 255, 255, 0.45); }
+.stubLogo { display: grid; place-items: center; width: 2.6em; height: 2.6em; border-radius: 0.6em; background: var(--qless-amber, #f5a524); color: #0b1c36; font-size: 1.2em; font-weight: 800; }
+.ticketMain { display: flex; flex-direction: column; justify-content: center; gap: 0.25em; padding: 1em 1.2em; min-width: 0; }
+.tEyebrow { font-size: 0.8em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7a7466; }
+.tName { font-size: 1.5em; font-weight: 800; color: var(--qless-navy, #14325c); }
+.tLine { color: #4a5260; }
+.qr { display: grid; grid-template-columns: repeat(7, 1fr); align-self: center; width: 6.4em; height: 6.4em; margin: 1em 1.2em 1em 0; padding: 0.35em; border: 1px solid #e3ded2; border-radius: 0.4em; }
+.qr i { background: transparent; }
+.qr i.qrOn { background: #14181f; }
+
+/* ---------- Payroll ---------- */
+
+.pad { align-items: center; text-align: center; }
+.dots { display: flex; gap: 0.6em; }
+.dots i { width: 0.9em; height: 0.9em; border-radius: 50%; border: 2px solid var(--qless-navy, #14325c); }
+.dots i.dotOn { background: var(--qless-navy, #14325c); }
+.keys { display: grid; grid-template-columns: repeat(3, 3em); gap: 0.4em; }
+.keys i { display: grid; place-items: center; height: 2.1em; border-radius: 0.6em; background: #ffffff; border: 1px solid #e3ded2; font-style: normal; font-weight: 700; }
+.keys i.keyGhost { visibility: hidden; }
+.keys i.keyGo { background: var(--qless-navy, #14325c); border-color: var(--qless-navy, #14325c); color: #ffffff; }
+.pay { display: flex; justify-content: space-between; gap: 1em; padding: 0.55em 0.8em; border-radius: 0.6em; background: #ffffff; border: 1px solid #e8e3d6; }
+.pay b { font-variant-numeric: tabular-nums; }
+.payNet { background: var(--qless-navy, #14325c); border-color: var(--qless-navy, #14325c); color: #ffffff; font-size: 1.05em; }
+
+/* ---------- Business hours ---------- */
+
+.hours { display: flex; justify-content: space-between; gap: 1em; padding: 0.7em 0.9em; border-radius: 0.6em; background: #ffffff; border: 1px solid #e8e3d6; font-variant-numeric: tabular-nums; }
+.hours b { color: var(--qless-navy, #14325c); }
+.hoursOff { background: #f1eee6; color: #a39d8c; }
+.hoursOff b { color: #a39d8c; }
+
+/* ---------- Your brand ---------- */
+
+.brand { background: color-mix(in srgb, var(--b-main) 7%, #ffffff); }
+.bLogo { display: grid; place-items: center; width: 3.6em; height: 3.6em; border-radius: 50%; background: var(--b-main); color: #ffffff; font-size: 1.3em; font-weight: 800; }
+.bTap { margin-top: 0.4em; padding: 0.5em 1.2em; border-radius: 999px; background: var(--b-accent); color: var(--b-on); font-weight: 700; animation: fsPulse 1.6s ease-in-out infinite; }
+.powered { margin-top: auto; font-size: 0.8em; color: #7a7466; }
+
+/* ---------- Small screens / reduced motion ---------- */
+
+@media (max-width: 760px) {
+  .ticket { grid-template-columns: 1fr; }
+  .stub { flex-direction: row; border-right: 0; border-bottom: 2px dashed rgba(255, 255, 255, 0.45); }
+  .qr { margin: 0 1.2em 1em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tapped, .ready, .bTap { animation: none; }
+  .bar { display: none; }
+}

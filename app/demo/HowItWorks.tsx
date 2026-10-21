@@ -29,7 +29,7 @@ const SHORT = ["A customer arrives", "Checked live", "Confirmed on the spot", "L
 // Small building blocks
 // ---------------------------------------------------------------------------
 
-function Phone({ children, name = "Mzansi Cuts" }: { children: ReactNode; name?: string }) {
+export function Phone({ children, name = "Mzansi Cuts" }: { children: ReactNode; name?: string }) {
   return (
     <div className={m.phone}>
       <div className={m.phoneScreen}>
@@ -55,7 +55,7 @@ function Phone({ children, name = "Mzansi Cuts" }: { children: ReactNode; name?:
   )
 }
 
-function Bubble({ me, d, children }: { me?: boolean; d: number; children: ReactNode }) {
+export function Bubble({ me, d, children }: { me?: boolean; d: number; children: ReactNode }) {
   return (
     <span className={`${m.bubble} ${me ? m.me : m.bot} ${m.seq}`} style={{ "--d": `${d}s` } as CSSProperties}>
       {children}
@@ -63,7 +63,7 @@ function Bubble({ me, d, children }: { me?: boolean; d: number; children: ReactN
   )
 }
 
-function Pane({ cap, wide, children }: { cap: string; wide?: boolean; children: ReactNode }) {
+export function Pane({ cap, wide, children }: { cap: string; wide?: boolean; children: ReactNode }) {
   return (
     <div className={wide ? `${m.pane} ${m.paneWide}` : m.pane}>
       <div className={m.paneBody}>{children}</div>
@@ -72,7 +72,7 @@ function Pane({ cap, wide, children }: { cap: string; wide?: boolean; children: 
   )
 }
 
-const delay = (d: number) => ({ "--d": `${d}s` }) as CSSProperties
+export const delay = (d: number) => ({ "--d": `${d}s` }) as CSSProperties
 
 // ---------------------------------------------------------------------------
 // Scenes

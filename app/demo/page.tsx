@@ -4,6 +4,7 @@ import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { QueueScenes } from "./QueueScenes";
 import { HowItWorks } from "./HowItWorks";
+import { FeatureShowcase } from "./FeatureShowcase";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
@@ -439,20 +440,7 @@ export default async function DemoPage() {
           <div className={styles.sectionHead}>
             <h2>Everything the front of your shop needs, in one system.</h2>
           </div>
-          <div className={styles.features}>
-            {FEATURES.map((f) => (
-              <div key={f.title} className={styles.feature}>
-                <svg className={styles.featureIcon} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
-                  {f.icon}
-                </svg>
-                <h3>
-                  {f.title}
-                  {f.isNew && <span className={styles.badgeNew}>New</span>}
-                </h3>
-                <p>{f.text}</p>
-              </div>
-            ))}
-          </div>
+          <FeatureShowcase features={FEATURES} />
           <p style={{ marginTop: 32 }}>
             Which plan includes what? <a href={PRICING_URL}>See the full comparison</a>.
           </p>
