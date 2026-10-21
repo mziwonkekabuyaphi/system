@@ -60,6 +60,10 @@ export interface DisplaySettings {
   /** Rotation duration for the live queue slide -- usually longer, since
    *  there's more to read than a menu or booking row. */
   queueSeconds: number
+  /** Rotation only: show SplitScreen.tsx as its own slide. */
+  showSplit: boolean
+  /** Rotation duration for the split screen slide. */
+  splitSeconds: number
   /** Full-screen takeover when an admin calls a customer. Both layouts. */
   callAlertEnabled: boolean
   /** How long each called ticket stays full screen. 3-60. */
@@ -78,6 +82,13 @@ export interface DisplaySettings {
   bookingsEmptyText: string | null
   walkInBadgeLabel: string | null
   bookingBadgeLabel: string | null
+  /** Split-screen wording; null = built-in default in SplitScreen.tsx. */
+  liveLabel: string | null
+  offlineLabel: string | null
+  nextUpLabel: string | null
+  guestLabel: string | null
+  servingTimerLabel: string | null
+  waitingTimerLabel: string | null
   /** "dark" / "light" are built-in looks; "custom" uses backgroundColor. */
   theme: DisplayTheme
   /** "rotation" = classic slides; "board" = always-on columns of tickets;
@@ -118,6 +129,8 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   welcomeSeconds: 6,
   menuBookingsSeconds: 9,
   queueSeconds: 20,
+  showSplit: false,
+  splitSeconds: 20,
   callAlertEnabled: true,
   callAlertSeconds: 10,
   menuTitle: null,
@@ -130,6 +143,12 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   bookingsEmptyText: null,
   walkInBadgeLabel: null,
   bookingBadgeLabel: null,
+  liveLabel: null,
+  offlineLabel: null,
+  nextUpLabel: null,
+  guestLabel: null,
+  servingTimerLabel: null,
+  waitingTimerLabel: null,
   theme: "dark",
   layout: "rotation",
   backgroundColor: null,
@@ -317,9 +336,11 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           "display_name, logo_url, primary_color, secondary_color, " +
             "display_show_services, display_show_bookings, display_show_queue, " +
             "display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, " +
+            "display_show_split, display_split_seconds, " +
             "display_call_alert_enabled, display_call_alert_seconds, " +
             "display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, display_waiting_label, " +
             "display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
+            "display_live_label, display_offline_label, display_next_up_label, display_guest_label, display_serving_timer_label, display_waiting_timer_label, " +
             "display_theme, display_layout, display_background_color, display_tagline, " +
             "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, " +
             "display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, " +
@@ -398,6 +419,8 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           menuBookingsSeconds:
             brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_SETTINGS.menuBookingsSeconds,
           queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_SETTINGS.queueSeconds,
+          showSplit: brandingResult.data.display_show_split ?? DEFAULT_DISPLAY_SETTINGS.showSplit,
+          splitSeconds: brandingResult.data.display_split_seconds ?? DEFAULT_DISPLAY_SETTINGS.splitSeconds,
           callAlertEnabled:
             brandingResult.data.display_call_alert_enabled ?? DEFAULT_DISPLAY_SETTINGS.callAlertEnabled,
           callAlertSeconds:
@@ -412,6 +435,12 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
           bookingsEmptyText: brandingResult.data.display_bookings_empty_text ?? null,
           walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
           bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
+          liveLabel: brandingResult.data.display_live_label ?? null,
+          offlineLabel: brandingResult.data.display_offline_label ?? null,
+          nextUpLabel: brandingResult.data.display_next_up_label ?? null,
+          guestLabel: brandingResult.data.display_guest_label ?? null,
+          servingTimerLabel: brandingResult.data.display_serving_timer_label ?? null,
+          waitingTimerLabel: brandingResult.data.display_waiting_timer_label ?? null,
           theme: resolveTheme(brandingResult.data.display_theme),
           layout: resolveLayout(brandingResult.data.display_layout),
           backgroundColor: brandingResult.data.display_background_color ?? null,

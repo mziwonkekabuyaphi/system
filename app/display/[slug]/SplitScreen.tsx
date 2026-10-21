@@ -11,10 +11,13 @@
  * Everything is driven by the existing Display settings, nothing new is
  * stored:
  *   - header: solid tenant primary colour (text black/white by contrast),
- *     tagline or queue heading as the eyebrow, Live / Reconnecting pill.
+ *     tagline or queue heading as the eyebrow, Live / Reconnecting pill
+ *     (wording: liveLabel / offlineLabel).
  *   - left heading = nowServingLabel, right heading = waitingLabel
  *     (default "Still to come"), empty messages = servingEmptyText /
  *     waitingEmptyText.
+ *   - other wording: nextUpLabel, guestLabel, servingTimerLabel,
+ *     waitingTimerLabel (all null = built-in English default).
  *   - per-entry fields follow the showQueue* toggles (ticket, service, phone,
  *     wait estimate, time waited, booking reference, email, custom answer).
  *   - showQueue off = brand-only screen; showServices = menu ticker along the
@@ -93,6 +96,12 @@ export function SplitScreen({ data, online }: { data: DisplayData; online: boole
   const servingEmpty = settings.servingEmptyText?.trim() || "No one is being served right now."
   const waitingEmpty = settings.waitingEmptyText?.trim() || "Nobody waiting right now."
   const menuTitle = settings.menuTitle?.trim() || "On the menu"
+  const nextUpLabel = settings.nextUpLabel?.trim() || "Next up"
+  const guestLabel = settings.guestLabel?.trim() || "Guest"
+  const liveLabel = settings.liveLabel?.trim() || "Live"
+  const offlineLabel = settings.offlineLabel?.trim() || "Reconnecting…"
+  const servingTimerLabel = settings.servingTimerLabel?.trim() || "Serving"
+  const waitingTimerLabel = settings.waitingTimerLabel?.trim() || "Waiting"
 
   const showMenu = settings.showServices && data.services.length > 0
   const tickerSeconds = Math.max(30, data.services.length * 5)
@@ -112,7 +121,7 @@ export function SplitScreen({ data, online }: { data: DisplayData; online: boole
 
   function servingTile(q: DisplayQueueEntry) {
     const ticket = settings.showQueueTicketNumber && q.displayTicket ? q.displayTicket : null
-    const name = q.customerName?.trim() || "Guest"
+    const name = q.customerName?.trim() || guestLabel
     const hero = ticket ?? name
     const details = detailsOf(q, ticket ?? undefined)
     const mins = minsSince(q.calledAt ?? q.joinedAt)
@@ -122,7 +131,7 @@ export function SplitScreen({ data, online }: { data: DisplayData; online: boole
         {ticket && <div className="sp-tile-name">{name}</div>}
         {details.length > 0 && <div className="sp-tile-sub">{details.join(" · ")}</div>}
         {settings.showQueueDuration && nowMs !== null && (
-          <div className="sp-tile-time">{mins < 1 ? "Just called" : `Serving ${formatMinutes(mins)}`}</div>
+          <div className="sp-tile-time">{mins < 1 ? "Just called" : `${servingTimerLabel} ${formatMinutes(mins)}`}</div>
         )}
       </div>
     )
@@ -139,17 +148,17 @@ export function SplitScreen({ data, online }: { data: DisplayData; online: boole
       <div key={q.id} className={`sp-row ${index === 0 ? "next" : ""}`}>
         <div className="sp-lead">{lead}</div>
         <div className="sp-main">
-          <div className="sp-name">{q.customerName?.trim() || "Guest"}</div>
+          <div className="sp-name">{q.customerName?.trim() || guestLabel}</div>
           {details.length > 0 && <div className="sp-sub">{details.join(" · ")}</div>}
         </div>
         {(showEst || showTimer) && (
           <div className="sp-side">
             {showEst && (
               <div className="sp-est">
-                {q.estimatedWaitMinutes === 0 ? "Next up" : formatWaitEstimate(q.estimatedWaitMinutes as number, settings.waitRangeMinutes ?? 0)}
+                {q.estimatedWaitMinutes === 0 ? nextUpLabel : formatWaitEstimate(q.estimatedWaitMinutes as number, settings.waitRangeMinutes ?? 0)}
               </div>
             )}
-            {showTimer && <div className="sp-waited">{mins < 1 ? "Just joined" : `Waiting ${formatMinutes(mins)}`}</div>}
+            {showTimer && <div className="sp-waited">{mins < 1 ? "Just joined" : `${waitingTimerLabel} ${formatMinutes(mins)}`}</div>}
           </div>
         )}
       </div>
@@ -204,7 +213,7 @@ export function SplitScreen({ data, online }: { data: DisplayData; online: boole
         <div className="sp-header-right">
           <div className={`sp-pill ${online ? "" : "offline"}`}>
             <span className="sp-dot" />
-            {online ? "Live" : "Reconnecting…"}
+            {online ? liveLabel : offlineLabel}
           </div>
           <div className="sp-clock">{formatClockTime(now)}</div>
         </div>
