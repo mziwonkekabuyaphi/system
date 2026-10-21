@@ -206,11 +206,21 @@ export default function HowItWorksPage() {
         </div>
       </nav>
 
-      <section>
+      <section id="how">
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>How it works</p>
+          <div className={styles.sectionHead}>
+            <h1>From a WhatsApp message to a confirmed spot, with nobody at the till.</h1>
+          </div>
+          <HowItWorks steps={STEPS} />
+        </div>
+      </section>
+
+      <section className={styles.flow} id="day">
         <div className={styles.wrap}>
           <p className={styles.sectionLabel}>A day in the shop</p>
           <div className={styles.sectionHead}>
-            <h1>One ordinary Saturday, with ZozoQueue running the front desk.</h1>
+            <h2>One ordinary Saturday, with ZozoQueue running the front desk.</h2>
           </div>
           <ol className={styles.timeline}>
             {DAY.map((item) => (
@@ -223,16 +233,6 @@ export default function HowItWorksPage() {
               </li>
             ))}
           </ol>
-        </div>
-      </section>
-
-      <section className={styles.flow} id="how">
-        <div className={styles.wrapWide}>
-          <p className={styles.sectionLabel}>How it works</p>
-          <div className={styles.sectionHead}>
-            <h2>From a WhatsApp message to a confirmed spot, with nobody at the till.</h2>
-          </div>
-          <HowItWorks steps={STEPS} />
         </div>
       </section>
 
