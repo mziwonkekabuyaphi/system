@@ -443,7 +443,10 @@ async function getSettingsData(
       theme: brandingResult.data.display_theme === "light" || brandingResult.data.display_theme === "custom"
         ? brandingResult.data.display_theme
         : "dark",
-      layout: brandingResult.data.display_layout === "board" ? "board" : "rotation",
+      layout:
+        brandingResult.data.display_layout === "board" || brandingResult.data.display_layout === "split"
+          ? brandingResult.data.display_layout
+          : "rotation",
       backgroundColor: brandingResult.data.display_background_color ?? null,
       tagline: brandingResult.data.display_tagline ?? null,
       waitingLabel: brandingResult.data.display_waiting_label ?? null,
