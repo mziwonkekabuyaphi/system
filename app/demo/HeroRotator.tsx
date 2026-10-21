@@ -15,9 +15,10 @@
 //
 // Industries: by default (standalone) the hero runs its OWN <IndustryProvider> and moves to
 // the next industry after every INDUSTRY_EVERY slides, so a visitor sees barbers, a clinic,
-// a restaurant, and so on, without scrolling. Pass standalone={false} to make the hero share
-// the page's provider instead (it then follows the page's IndustryPicker and does not
-// rotate on its own: the demos further down do that).
+// a restaurant, and so on, without scrolling.
+// Pass standalone={false} to share the page's <IndustryProvider> instead, so the hero follows
+// the page's IndustryPicker. A shared hero still rotates the industry on its own (the provider
+// stops that as soon as the visitor picks one) unless you also pass rotateIndustry={false}.
 //
 // It only moves while on screen, pauses on hover / keyboard focus, and never auto-plays for
 // visitors who prefer reduced motion (they get still frames and the tab buttons).
@@ -271,15 +272,16 @@ function PhonePreview({ x, active, still }: { x: Industry; active: boolean; stil
 // The rotator
 // ---------------------------------------------------------------------------
 
-export function HeroRotator({ standalone = true }: { standalone?: boolean }) {
+export function HeroRotator({ standalone = true, rotateIndustry }: { standalone?: boolean; rotateIndustry?: boolean }) {
+  const rotate = rotateIndustry ?? true
   if (standalone) {
     return (
       <IndustryProvider>
-        <Rotator rotateIndustry />
+        <Rotator rotateIndustry={rotate} />
       </IndustryProvider>
     )
   }
-  return <Rotator rotateIndustry={false} />
+  return <Rotator rotateIndustry={rotate} />
 }
 
 function Rotator({ rotateIndustry }: { rotateIndustry: boolean }) {

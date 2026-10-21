@@ -1,0 +1,84 @@
+/* app/demo/liveHero.module.css
+   The top section of the /demo/live page: a light, full-width hero that gives the rotating
+   preview the whole top area. Kept in its own file so demo.module.css is untouched. The
+   page's global rules (.page h1 margin/weight/colour, .page section padding) still apply, so
+   spacing is done with flex gaps here rather than margins. */
+
+.hero {
+  background: linear-gradient(180deg, var(--qless-paper-dim, #f3efe4) 0%, var(--qless-paper, #faf7f0) 100%);
+  border-bottom: 1px solid var(--qless-line, #e3ded2);
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.eyebrow {
+  font-family: var(--qless-font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--qless-amber-dim, #b9791a);
+}
+
+.title {
+  max-width: 22ch;
+  font-size: clamp(30px, 4.4vw, 54px);
+}
+
+.lead {
+  max-width: 64ch;
+  font-size: clamp(16px, 1.5vw, 19px);
+  color: var(--qless-ink-soft, #4a5260);
+}
+
+.stage {
+  width: 100%;
+  max-width: 980px;
+  margin-top: 14px;
+  text-align: left;
+}
+
+.pick {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.jumpLabel {
+  font-size: 14px;
+  color: var(--qless-ink-soft, #4a5260);
+}
+
+.jumpLink {
+  padding: 8px 16px;
+  border: 1px solid var(--qless-line, #d9d3c3);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--qless-ink, #1c2430);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.jumpLink:hover { border-color: var(--qless-navy, #14325c); }
+.jumpLink:focus-visible { outline: 3px solid var(--qless-amber, #f5a524); outline-offset: 2px; }
+
+@media (max-width: 860px) {
+  .stage { margin-top: 4px; }
+}
