@@ -1,840 +1,636 @@
-// app/admin/page.tsx
-//
-// Access protection lives in layout.tsx (requireTenantMember) — every
-// query below additionally filters by .eq("tenant_id", tenantId) as a
-// second, independent guard: even if a bug ever let this Server
-// Component render without the layout's check, it still couldn't return
-// another shop's data. Belt and suspenders on purpose, since this reads
-// through the service-role client and bypasses RLS entirely.
-//
-// Schema fix vs the previous version: bookings.customer_id and
-// queue_entries.customer_id point at tenant_customers, not profiles —
-// profiles is the platform-wide identity (1:1 with auth.users);
-// tenant_customers is the per-shop customer record (name/phone/email as
-// given to *this* shop). The two can diverge, and a booking may not even
-// have a linked profiles row. This now joins tenant_customers, which
-// also means no more splitting a nonexistent name/surname pair — it's
-// one full_name column.
-//
-// Settings tab: plan lives on tenants (manually flipped in Supabase until
-// billing is wired up), general info on tenant_settings, and branding
-// (incl. remove_powered_by, gated to plan = 'business', plus the kiosk
-// config fields — tagline / idle+confirmation refresh / registration
-// type) on tenant_branding. The kiosk toggle reads/writes tenant_modules
-// for the 'kiosk' module row. Booking / Queue / Messages tabs read
-// booking_settings / queue_settings / message_settings — one row per
-// tenant, same shape as tenant_settings. booking_settings.unify_with_queue
-// is what the promote_bookings_to_queue() pg_cron job (runs every minute
-// in Postgres) checks per tenant before promoting a confirmed booking
-// into queue_entries.
-//
-// DISPLAY TAB: the TV screen's own tenant_branding columns (display_*)
-// are read in the SAME query as the rest of branding/kiosk below, not a
-// separate round trip — same reasoning as kioskSettings already sharing
-// brandingResult. See AdminDisplaySettings in ./types and
-// app/display/[slug]/actions.ts's DisplaySettings, which mirrors this
-// shape field-for-field (that route re-derives its own copy server-side
-// rather than importing this admin-only file).
-//
-// business_hours (Settings > Business Info) is one row per day_of_week
-// (0=Sunday..6=Saturday). These aren't just displayed — DB triggers on
-// bookings and queue_entries enforce them (see the business_hours_
-// enforcement migration), so this is the actual gate on what the kiosk and
-// WhatsApp bot are allowed to accept, not only a label shown to customers.
-//
-// tenants.slug is now also fetched here (alongside plan) purely so the
-// Settings > Kiosk tab can render the public Kiosk URL and its QR code —
-// it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
+import type { ReactNode } from "react";
+import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
+import styles from "./demo.module.css";
+import { Logo } from "@/components/Logo";
+import { DashboardDemo } from "./DashboardDemo";
+import { ContactForm } from "./ContactForm";
+import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
-import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
-import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
-import { last4 } from "@/lib/payroll/staff-details"
-import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+export const metadata = {
+  title: "ZozoQueue — WhatsApp & kiosk booking and queueing for real shops",
+  description:
+    "Give your shop two front doors: a WhatsApp number that books and queues customers, and a self-serve kiosk for walk-ins. Bookings that can’t clash, one live board, and payroll.",
+};
 
-import { AdminView } from "./AdminView"
-import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
-import { BOOKING_WINDOW_DAYS_AHEAD, BOOKING_WINDOW_DAYS_BACK, addDaysKey, dateKeyInTz, startOfDayUtc } from "./tz"
-import type {
-  AdminBooking,
-  AdminBookingSettings,
-  AdminBranding,
-  AdminBusinessHours,
-  AdminClockSettings,
-  AdminConversationSummary,
-  AdminDisplaySettings,
-  AdminInboxStats,
-  AdminKioskSettings,
-  AdminMessageSettings,
-  AdminPlan,
-  AdminQueueSettings,
-  AdminService,
-  AdminStaff,
-  AdminStaffPermissions,
-  AdminStaffShift,
-  AdminTenantSettings,
-} from "./types"
+// Pricing is still read from the database (it feeds the FAQ answers below), so
+// re-generate every 5 minutes to pick up price changes. The Plans section itself
+// was moved out of this page: see PlansSection.tsx.
+export const revalidate = 300;
 
-type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
+const SIGN_IN_URL = "https://system-eta-azure.vercel.app/login";
+const SIGN_UP_URL = "https://system-eta-azure.vercel.app/signup";
+/** The full pricing page. Change this if your landing page doesn't live at /demo. */
+const PRICING_URL = "/demo/pricing";
+/** The interactive demo page (WhatsApp, kiosk, waiting-area screen, dashboard). */
+const DEMO_URL = "/demo/live";
+const CONTACT_EMAIL = "hello@ndithini.com";
+/** Legal pages. Leave empty until the pages exist: the footer only shows a link when it is set. */
+const PRIVACY_URL = "";
+const TERMS_URL = "";
 
-// Appointments window: the shop's own calendar days (tenant_settings.timezone,
-// NOT UTC days) from BOOKING_WINDOW_DAYS_BACK ago to BOOKING_WINDOW_DAYS_AHEAD
-// ahead. TodayBookings.tsx does day/week navigation, search and filtering
-// client-side inside this window; the date picker is clamped to it. Tenant
-// isolation is still enforced here, server-side, by .eq("tenant_id", ...).
-async function getBookingsWindow(
-  supabase: ServerClient,
-  tenantId: string,
-  timezone: string,
-): Promise<AdminBooking[]> {
-  const todayKey = dateKeyInTz(new Date(), timezone)
-  const start = startOfDayUtc(addDaysKey(todayKey, -BOOKING_WINDOW_DAYS_BACK), timezone).toISOString()
-  // exclusive upper bound: the start of the day after the last loaded day
-  const end = startOfDayUtc(addDaysKey(todayKey, BOOKING_WINDOW_DAYS_AHEAD + 1), timezone).toISOString()
+// ---------------------------------------------------------------------------
+// Copy lives in these lists so it can be edited without touching the layout.
+// Only claim what is live: reminders are NOT listed because none have been
+// sent yet (see the notes that came with this file).
+// ---------------------------------------------------------------------------
 
-  const { data, error } = await supabase
-    .from("bookings")
-    .select(
-      `id, service_id, staff_id, start_time, end_time, status, booking_reference,
-       services!bookings_service_id_fkey ( name ),
-       booking_services ( position, services ( name ) ),
-       staff ( name ),
-       tenant_customers ( full_name, phone )`,
-    )
-    .eq("tenant_id", tenantId)
-    .gte("start_time", start)
-    .lt("start_time", end)
-    .order("start_time", { ascending: true })
-    .limit(2000)
+/** "A day in the shop": the use case, told as it happens. */
+const DAY: Array<{ time: string; title: string; text: string }> = [
+  {
+    time: "22:48",
+    title: "A customer books while the shop is closed",
+    text: "Sipho messages after hours. The assistant shows real open times and confirms Saturday at 10:30. Nobody picked up a phone.",
+  },
+  {
+    time: "08:55",
+    title: "Staff clock in at the door",
+    text: "Each person taps their PIN on the shared tablet. Hours are recorded for payroll, with no timesheets.",
+  },
+  {
+    time: "09:10",
+    title: "A walk-in checks themselves in",
+    text: "The kiosk gives them a ticket and an estimated wait. If they shared a WhatsApp number, they’re messaged when it’s nearly their turn.",
+  },
+  {
+    time: "11:30",
+    title: "Appointments and walk-ins share one list",
+    text: "Booked customers are pulled into the live queue shortly before their time, so your staff call names from one board.",
+  },
+  {
+    time: "16:12",
+    title: "A cancellation fills itself",
+    text: "A customer cancels on WhatsApp. Whoever is on the waitlist for that day is messaged and can take the slot in a few taps.",
+  },
+  {
+    time: "18:00",
+    title: "Close up",
+    text: "Visits are counted for your plan, and clocked hours become gross pay with PAYE and UIF estimated for you.",
+  },
+];
 
-  if (error) throw new Error(`Failed to load bookings: ${error.message}`)
+const STEPS: Array<{ title: string; text: string }> = [
+  {
+    title: "A customer arrives through either door",
+    text: "They message your WhatsApp number (or scan the QR code at the door), or tap the kiosk as they walk in. No app to download, no account to create.",
+  },
+  {
+    title: "Services, staff and hours are checked live",
+    text: "The AI and the kiosk work from the same list of what you offer, who’s working and when you’re open, so neither offers a slot that doesn’t exist.",
+  },
+  {
+    title: "A booking or queue spot is confirmed on the spot",
+    text: "No back-and-forth. On WhatsApp they get a reference and a time. At the kiosk they get a ticket with their number, place in line and estimated wait.",
+  },
+  {
+    title: "You see it land on your dashboard, live",
+    text: "Chats, kiosk check-ins and bookings sit on one board, tagged by where they came from. Call the next customer, reschedule, or jump into a chat yourself.",
+  },
+  {
+    title: "Customers are kept in the loop",
+    text: "A WhatsApp heads-up when it’s nearly their turn (kiosk customers just opt in), and a message when it’s time. If the day is full, a waitlist message the moment a slot opens.",
+  },
+];
 
-  return (data ?? []).map((b: any) => ({
-    id: b.id,
-    serviceId: b.service_id,
-    staffId: b.staff_id,
-    startTime: b.start_time,
-    endTime: b.end_time,
-    status: b.status,
-    bookingReference: b.booking_reference,
-    serviceName: joinServiceLabels(b.services?.name, b.booking_services) ?? "Unknown service",
-    staffName: b.staff?.name ?? "Unassigned",
-    customerName: b.tenant_customers?.full_name ?? null,
-    customerPhone: b.tenant_customers?.phone ?? "",
-  }))
-}
+const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
-async function getAllServices(supabase: ServerClient, tenantId: string): Promise<AdminService[]> {
-  const { data, error } = await supabase
-    .from("services")
-    .select("id, name, price, duration_minutes, active")
-    .eq("tenant_id", tenantId)
-    .order("name", { ascending: true })
+const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: boolean }> = [
+  {
+    title: "WhatsApp AI receptionist",
+    text: "Books appointments, joins the queue, and answers “are you open?” without anyone touching a phone.",
+    icon: <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />,
+  },
+  {
+    title: "Self-service kiosk",
+    text: "A tablet by the door where walk-ins book a time or join the queue in a few taps, in your name, logo and colours. It resets itself after every customer.",
+    icon: (
+      <>
+        <rect x="4" y="3" width="16" height="18" rx="2" />
+        <path d="M9 8h6M9 12h6M9 16h3" />
+      </>
+    ),
+  },
+  {
+    title: "Bookings that can’t clash",
+    text: "Two customers can’t get the same staff member at the same time, even if they confirm in the same second.",
+    icon: (
+      <>
+        <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" />
+        <path d="M9 12l2 2 4-4" />
+      </>
+    ),
+  },
+  {
+    title: "Live queue with wait estimates",
+    text: "Customers get a ticket, a place in line and an estimated wait. Appointments and the walk-in line sit on one screen that updates as it happens.",
+    icon: (
+      <>
+        <path d="M8 6h12M8 12h12M8 18h12" />
+        <path d="M4 6h.01M4 12h.01M4 18h.01" />
+      </>
+    ),
+  },
+  {
+    title: "Waitlist for full days",
+    text: "When a day is full, customers ask to be told if a time opens up. When someone cancels, the next person is messaged.",
+    isNew: true,
+    icon: (
+      <>
+        <path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z" />
+        <path d="M10 19a2 2 0 0 0 4 0" />
+      </>
+    ),
+  },
+  {
+    title: "Branded booking ticket",
+    text: "Confirmations can carry a ticket with a QR code, in your colours, sent straight to the customer on WhatsApp.",
+    icon: (
+      <>
+        <path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Z" />
+        <path d="M9 11h2v2H9zM14 9v6" />
+      </>
+    ),
+  },
+  {
+    title: "Staff, shifts and payroll",
+    text: "Staff clock in with a PIN. Clocked hours turn into gross pay, with PAYE and UIF estimated for you. No spreadsheet.",
+    icon: (
+      <>
+        <circle cx="9" cy="8.2" r="3.1" />
+        <path d="M3.3 20c0-3.4 2.6-6.1 5.7-6.1s5.7 2.7 5.7 6.1" />
+        <circle cx="17.2" cy="8.4" r="2.5" />
+        <path d="M15.6 14.3c2.4.5 4.2 2.9 4.2 5.7" />
+      </>
+    ),
+  },
+  {
+    title: "Business hours, enforced",
+    text: "Set your hours once. The WhatsApp bot and kiosk simply can’t accept a booking outside them.",
+    icon: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3.2 1.9" />
+      </>
+    ),
+  },
+  {
+    title: "Your brand, not ours",
+    text: "Your logo and colours on every screen customers see, with the option to remove “Powered by ZozoQueue” entirely.",
+    icon: (
+      <>
+        <path d="M12.4 3H5.8A1.8 1.8 0 0 0 4 4.8v6.6c0 .48.19.93.53 1.27l8.4 8.4a1.8 1.8 0 0 0 2.54 0l6.6-6.6a1.8 1.8 0 0 0 0-2.54l-8.4-8.4A1.8 1.8 0 0 0 12.4 3Z" />
+        <circle cx="8.4" cy="8.4" r="1.3" />
+      </>
+    ),
+  },
+];
 
-  if (error) throw new Error(`Failed to load services: ${error.message}`)
-
-  return (data ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    price: Number(s.price),
-    durationMinutes: s.duration_minutes,
-    active: s.active,
-  }))
-}
-
-// AdminStaff requires jobTitle/phone/email/clockInPin always, and
-// hourlyRate + payrollDetails ONLY as present-or-absent keys gated on
-// payroll.view (see those fields' doc comments in types.ts) — never sent as
-// `null` to signal "no permission", since a real value can legitimately be
-// null too. employeeNumber/startDate are ordinary staff.view fields.
-//
-// payrollDetails comes from staff_payroll_details (a separate table, because
-// RLS is row-level and a column on `staff` would be readable by every
-// staff.view user). The query is only issued when includeHourlyRate
-// (payroll.view) is true, and ID / bank account numbers are cut down to their
-// last 4 characters HERE, so the full values never reach the browser.
-async function getAllStaff(
-  supabase: ServerClient,
-  tenantId: string,
-  includeHourlyRate: boolean,
-  includeClockInPin: boolean,
-): Promise<AdminStaff[]> {
-  const baseColumns = "id, name, active, job_title, phone, email, clock_in_pin, profile_id, employee_number, start_date"
-  const columns = includeHourlyRate ? `${baseColumns}, hourly_rate` : baseColumns
-
-  const [staffResult, detailsResult] = await Promise.all([
-    supabase.from("staff").select(columns).eq("tenant_id", tenantId).order("name", { ascending: true }),
-    includeHourlyRate
-      ? supabase
-          .from("staff_payroll_details")
-          .select("staff_id, id_number, tax_number, bank_name, bank_account_number, bank_branch_code, bank_account_type")
-          .eq("tenant_id", tenantId)
-      : Promise.resolve({ data: null, error: null }),
-  ])
-
-  if (staffResult.error) throw new Error(`Failed to load staff: ${staffResult.error.message}`)
-  if (detailsResult.error) throw new Error(`Failed to load staff payroll details: ${detailsResult.error.message}`)
-
-  const detailsByStaff = new Map<string, any>((detailsResult.data ?? []).map((d: any) => [d.staff_id, d]))
-
-  return (staffResult.data ?? []).map((s: any) => {
-    const base = {
-      id: s.id,
-      name: s.name,
-      active: s.active,
-      jobTitle: s.job_title,
-      phone: s.phone,
-      email: s.email,
-      // A colleague's PIN lets you clock in as them at /clock/[slug], so
-      // only staff.manage callers (who can edit it) ever receive it.
-      clockInPin: includeClockInPin ? s.clock_in_pin : null,
-      hasLogin: !!s.profile_id,
-      employeeNumber: s.employee_number ?? null,
-      startDate: s.start_date ?? null,
-    }
-    // Spreading conditionally, rather than always setting hourlyRate (even
-    // to null), is what keeps the key itself absent for a non-payroll.view
-    // caller — StaffManager.tsx checks `"hourlyRate" in member`, not
-    // `!= null`, specifically because of this. payrollDetails follows the
-    // same rule.
-    if (!includeHourlyRate) return base
-    const d = detailsByStaff.get(s.id)
-    return {
-      ...base,
-      hourlyRate: s.hourly_rate,
-      payrollDetails: {
-        idNumberLast4: last4(d?.id_number),
-        taxNumber: d?.tax_number ?? null,
-        bankName: d?.bank_name ?? null,
-        bankAccountLast4: last4(d?.bank_account_number),
-        bankBranchCode: d?.bank_branch_code ?? null,
-        bankAccountType: d?.bank_account_type ?? null,
-      },
-    }
-  })
-}
-
-// staff_shifts rows with status='active' -- the same set forceClockOutShift()
-// in actions.ts operates on, joined with the staff member's name for
-// display in StaffManager's "Currently clocked in" panel.
-async function getActiveShifts(supabase: ServerClient, tenantId: string): Promise<AdminStaffShift[]> {
-  const { data, error } = await supabase
-    .from("staff_shifts")
-    .select("id, staff_id, login_time, staff ( name )")
-    .eq("tenant_id", tenantId)
-    .eq("status", "active")
-    .order("login_time", { ascending: true })
-
-  if (error) throw new Error(`Failed to load active shifts: ${error.message}`)
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    staffId: row.staff_id,
-    staffName: row.staff?.name ?? "Unknown staff",
-    loginTime: row.login_time,
-  }))
-}
-
-// ============================================================================
-// SETTINGS
-// ============================================================================
-
-const DEFAULT_IDLE_REFRESH_SECONDS = 75
-const DEFAULT_CONFIRMATION_REFRESH_SECONDS = 12
-const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
-
-// Mirrors tenant_branding's own display_* column DEFAULTs (see
-// migration_display_settings.sql) — used only if a tenant's branding row
-// is somehow missing entirely, same "don't crash, degrade" posture as
-// DEFAULT_IDLE_REFRESH_SECONDS above.
-const DEFAULT_DISPLAY_WELCOME_SECONDS = 6
-const DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS = 9
-const DEFAULT_DISPLAY_QUEUE_SECONDS = 20
-const DEFAULT_DISPLAY_SPLIT_SECONDS = 20
-const DEFAULT_DISPLAY_CALL_ALERT_SECONDS = 10
-
-async function getSettingsData(
-  supabase: ServerClient,
-  tenantId: string,
-): Promise<{
-  plan: AdminPlan
-  slug: string
-  name: string
-  settings: AdminTenantSettings
-  branding: AdminBranding
-  kioskEnabled: boolean
-  kioskSettings: AdminKioskSettings
-  displaySettings: AdminDisplaySettings
-  clockSettings: AdminClockSettings
-  bookingSettings: AdminBookingSettings
-  queueSettings: AdminQueueSettings
-  messageSettings: AdminMessageSettings
-  businessHours: AdminBusinessHours
-}> {
-  const [
-    tenantResult,
-    settingsResult,
-    brandingResult,
-    kioskResult,
-    bookingSettingsResult,
-    queueSettingsResult,
-    messageSettingsResult,
-    businessHoursResult,
-  ] = await Promise.all([
-    supabase.from("tenants").select("plan, slug, name").eq("id", tenantId).single(),
-    supabase
-      .from("tenant_settings")
-      .select("timezone, currency, contact_email, contact_phone, address")
-      .eq("tenant_id", tenantId)
-      .single(),
-    supabase
-      .from("tenant_branding")
-      .select(
-        "display_name, logo_url, primary_color, secondary_color, remove_powered_by, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
-          "date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, " +
-          "kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, " +
-          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_show_split, display_split_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
-          "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, display_queue_show_surname, display_queue_show_email, display_queue_show_custom, display_queue_wait_range_minutes, " +
-          "display_theme, display_layout, display_background_color, display_tagline, " +
-          "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
-          "display_live_label, display_offline_label, display_next_up_label, display_guest_label, display_serving_timer_label, display_waiting_timer_label, " +
-          "clock_theme, clock_background_color, clock_tagline, clock_title, clock_prompt, clock_clocked_in_label, clock_clocked_out_label, clock_invalid_pin_text",
-      )
-      .eq("tenant_id", tenantId)
-      .single(),
-    // tenant_modules has no direct tenant_id -> modules.key path, so this
-    // joins through modules and filters both sides — same "don't trust a
-    // single filter" posture as everything else on this service-role client.
-    supabase
-      .from("tenant_modules")
-      .select("enabled, modules!inner(key)")
-      .eq("tenant_id", tenantId)
-      .eq("modules.key", "kiosk")
-      .maybeSingle(),
-    supabase
-      .from("booking_settings")
-      .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice",
-      )
-      .eq("tenant_id", tenantId)
-      .single(),
-    supabase
-      .from("queue_settings")
-      .select(
-        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix, max_services_per_queue_entry",
-      )
-      .eq("tenant_id", tenantId)
-      .single(),
-    supabase
-      .from("message_settings")
-      .select(
-        "ai_enabled_default, booking_confirmation_template, booking_reminder_template, queue_joined_template, queue_almost_turn_template, queue_called_template",
-      )
-      .eq("tenant_id", tenantId)
-      .single(),
-    supabase
-      .from("business_hours")
-      .select("day_of_week, is_closed, open_time, close_time")
-      .eq("tenant_id", tenantId)
-      .order("day_of_week", { ascending: true }),
-  ])
-
-  if (tenantResult.error) throw new Error(`Failed to load plan: ${tenantResult.error.message}`)
-  if (settingsResult.error) throw new Error(`Failed to load tenant settings: ${settingsResult.error.message}`)
-  if (brandingResult.error) throw new Error(`Failed to load branding: ${brandingResult.error.message}`)
-  if (kioskResult.error) throw new Error(`Failed to load kiosk module: ${kioskResult.error.message}`)
-  if (bookingSettingsResult.error)
-    throw new Error(`Failed to load booking settings: ${bookingSettingsResult.error.message}`)
-  if (queueSettingsResult.error) throw new Error(`Failed to load queue settings: ${queueSettingsResult.error.message}`)
-  if (messageSettingsResult.error)
-    throw new Error(`Failed to load message settings: ${messageSettingsResult.error.message}`)
-  if (businessHoursResult.error)
-    throw new Error(`Failed to load business hours: ${businessHoursResult.error.message}`)
-
-  const registrationType = ["booking", "queue", "both"].includes(brandingResult.data.registration_type)
-    ? (brandingResult.data.registration_type as AdminKioskSettings["registrationType"])
-    : DEFAULT_REGISTRATION_TYPE
-
-  return {
-    plan: tenantResult.data.plan as AdminPlan,
-    slug: tenantResult.data.slug as string,
-    name: tenantResult.data.name as string,
-    settings: {
-      timezone: settingsResult.data.timezone,
-      currency: settingsResult.data.currency,
-      contactEmail: settingsResult.data.contact_email,
-      contactPhone: settingsResult.data.contact_phone,
-      address: settingsResult.data.address,
-    },
-    branding: {
-      displayName: brandingResult.data.display_name,
-      logoUrl: brandingResult.data.logo_url,
-      primaryColor: brandingResult.data.primary_color,
-      secondaryColor: brandingResult.data.secondary_color,
-      removePoweredBy: brandingResult.data.remove_powered_by,
-      sidebarColor: brandingResult.data.admin_sidebar_color ?? null,
-      sidebarTextColor: brandingResult.data.admin_sidebar_text_color ?? null,
-      accentColor: brandingResult.data.admin_accent_color ?? null,
-    },
-    kioskEnabled: kioskResult.data?.enabled ?? false,
-    kioskSettings: {
-      tagline: brandingResult.data.tagline,
-      idleRefreshSeconds: brandingResult.data.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
-      confirmationRefreshSeconds:
-        brandingResult.data.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
-      registrationType,
-      // Kept raw/nullable here (not defaulted) same as tagline above —
-      // SettingsManager.tsx shows an empty field with the default as
-      // placeholder text, so it's visually obvious the tenant hasn't
-      // overridden it yet. The kiosk route (app/kiosk/[slug]/page.tsx) is
-      // where null actually resolves to the default string that renders.
-      choiceTitle: brandingResult.data.choice_title,
-      bookingCardTitle: brandingResult.data.booking_card_title,
-      bookingCardSubtitle: brandingResult.data.booking_card_subtitle,
-      queueCardTitle: brandingResult.data.queue_card_title,
-      queueCardSubtitle: brandingResult.data.queue_card_subtitle,
-      serviceScreenTitle: brandingResult.data.service_screen_title,
-      // The screens after "service" and the ticket labels. These were saved by
-      // updateKioskSettings() but never read back here, so the form came up empty.
-      dateScreenTitle: brandingResult.data.date_screen_title ?? null,
-      timeScreenTitle: brandingResult.data.time_screen_title ?? null,
-      detailsScreenTitle: brandingResult.data.details_screen_title ?? null,
-      ticketBookingEyebrow: brandingResult.data.ticket_booking_eyebrow ?? null,
-      ticketQueueEyebrow: brandingResult.data.ticket_queue_eyebrow ?? null,
-      // Details-screen fields. A null column is passed on as "not set" (undefined) so
-      // detailsFieldsFrom() in KioskPanels applies the default (name + cellphone only).
-      showName: brandingResult.data.kiosk_show_name ?? undefined,
-      showSurname: brandingResult.data.kiosk_show_surname ?? undefined,
-      showPhone: brandingResult.data.kiosk_show_phone ?? undefined,
-      showEmail: brandingResult.data.kiosk_show_email ?? undefined,
-      emailRequired: brandingResult.data.kiosk_email_required ?? undefined,
-      showCustom: brandingResult.data.kiosk_show_custom ?? undefined,
-      customLabel: brandingResult.data.kiosk_custom_label ?? null,
-      customRequired: brandingResult.data.kiosk_custom_required ?? undefined,
-    },
-    // Same clear-to-default posture as kioskSettings' wording fields
-    // above: *Title/*Label kept raw/nullable so SettingsManager.tsx can
-    // show the hardcoded default as placeholder text rather than baking
-    // it into the saved value. app/display/[slug]/actions.ts is where
-    // null actually resolves to the default string DisplayScreen.tsx
-    // renders — this admin-only object is never read by that route.
-    displaySettings: {
-      showServices: brandingResult.data.display_show_services ?? true,
-      showBookings: brandingResult.data.display_show_bookings ?? true,
-      showQueue: brandingResult.data.display_show_queue ?? true,
-      welcomeSeconds: brandingResult.data.display_welcome_seconds ?? DEFAULT_DISPLAY_WELCOME_SECONDS,
-      menuBookingsSeconds:
-        brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS,
-      queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_QUEUE_SECONDS,
-      showSplit: brandingResult.data.display_show_split ?? false,
-      splitSeconds: brandingResult.data.display_split_seconds ?? DEFAULT_DISPLAY_SPLIT_SECONDS,
-      callAlertEnabled: brandingResult.data.display_call_alert_enabled ?? true,
-      callAlertSeconds: brandingResult.data.display_call_alert_seconds ?? DEFAULT_DISPLAY_CALL_ALERT_SECONDS,
-      menuTitle: brandingResult.data.display_menu_title,
-      bookingsTitle: brandingResult.data.display_bookings_title,
-      queueTitle: brandingResult.data.display_queue_title,
-      nowServingLabel: brandingResult.data.display_now_serving_label,
-      showQueueTicketNumber: brandingResult.data.display_queue_show_ticket_number ?? true,
-      showQueueService: brandingResult.data.display_queue_show_service ?? true,
-      showQueuePhone: brandingResult.data.display_queue_show_phone ?? false,
-      showQueueWaitEstimate: brandingResult.data.display_queue_show_wait_estimate ?? true,
-      waitRangeMinutes: brandingResult.data.display_queue_wait_range_minutes ?? 0,
-      showQueueDuration: brandingResult.data.display_queue_show_duration ?? false,
-      showQueueReference: brandingResult.data.display_queue_show_reference ?? true,
-      showQueueSurname: brandingResult.data.display_queue_show_surname ?? true,
-      showQueueEmail: brandingResult.data.display_queue_show_email ?? false,
-      showQueueCustom: brandingResult.data.display_queue_show_custom ?? false,
-      theme: brandingResult.data.display_theme === "light" || brandingResult.data.display_theme === "custom"
-        ? brandingResult.data.display_theme
-        : "dark",
-      layout:
-        brandingResult.data.display_layout === "board" || brandingResult.data.display_layout === "split"
-          ? brandingResult.data.display_layout
-          : "rotation",
-      backgroundColor: brandingResult.data.display_background_color ?? null,
-      tagline: brandingResult.data.display_tagline ?? null,
-      waitingLabel: brandingResult.data.display_waiting_label ?? null,
-      waitingEmptyText: brandingResult.data.display_waiting_empty_text ?? null,
-      servingEmptyText: brandingResult.data.display_serving_empty_text ?? null,
-      bookingsEmptyText: brandingResult.data.display_bookings_empty_text ?? null,
-      walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
-      bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
-      liveLabel: brandingResult.data.display_live_label ?? null,
-      offlineLabel: brandingResult.data.display_offline_label ?? null,
-      nextUpLabel: brandingResult.data.display_next_up_label ?? null,
-      guestLabel: brandingResult.data.display_guest_label ?? null,
-      servingTimerLabel: brandingResult.data.display_serving_timer_label ?? null,
-      waitingTimerLabel: brandingResult.data.display_waiting_timer_label ?? null,
-    },
-    clockSettings: {
-      theme:
-        brandingResult.data.clock_theme === "light" || brandingResult.data.clock_theme === "custom"
-          ? brandingResult.data.clock_theme
-          : "dark",
-      backgroundColor: brandingResult.data.clock_background_color ?? null,
-      tagline: brandingResult.data.clock_tagline ?? null,
-      title: brandingResult.data.clock_title ?? null,
-      prompt: brandingResult.data.clock_prompt ?? null,
-      clockedInLabel: brandingResult.data.clock_clocked_in_label ?? null,
-      clockedOutLabel: brandingResult.data.clock_clocked_out_label ?? null,
-      invalidPinText: brandingResult.data.clock_invalid_pin_text ?? null,
-    },
-    bookingSettings: {
-      unifyWithQueue: bookingSettingsResult.data.unify_with_queue,
-      queueLeadTimeMinutes: bookingSettingsResult.data.queue_lead_time_minutes,
-      minNoticeMinutes: bookingSettingsResult.data.min_notice_minutes,
-      maxAdvanceDays: bookingSettingsResult.data.max_advance_days,
-      cancellationWindowMinutes: bookingSettingsResult.data.cancellation_window_minutes,
-      maxServicesPerBooking: bookingSettingsResult.data.max_services_per_booking ?? 1,
-      maxDatesOffered: bookingSettingsResult.data.max_dates_offered ?? 7,
-      allowCustomerStaffChoice: bookingSettingsResult.data.allow_customer_staff_choice === true,
-      queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)
-        ? (bookingSettingsResult.data.queue_priority_mode as AdminBookingSettings["queuePriorityMode"])
-        : "fifo",
-    },
-    queueSettings: {
-      autoCallNext: queueSettingsResult.data.auto_call_next,
-      maxQueueSize: queueSettingsResult.data.max_queue_size,
-      notifyBeforeTurnPosition: queueSettingsResult.data.notify_before_turn_position,
-      allowWalkinWhatsapp: queueSettingsResult.data.allow_walkin_whatsapp,
-      allowWalkinKiosk: queueSettingsResult.data.allow_walkin_kiosk,
-      // When false, walk-ins (WhatsApp/kiosk/manual) can join this
-      // tenant's queue without picking a service first — some business
-      // models (e.g. a single-line clinic) have nothing to choose
-      // between. See queue_entries.service_id (nullable) and
-      // submitKioskQueueJoin/the WhatsApp state machine, which both check
-      // this flag before deciding whether to prompt for a service.
-      requireServiceSelection: queueSettingsResult.data.require_service_selection,
-      defaultServiceDurationMinutes: queueSettingsResult.data.default_service_duration_minutes,
-      ticketNumberPrefix: queueSettingsResult.data.ticket_number_prefix,
-      maxServicesPerQueueEntry: queueSettingsResult.data.max_services_per_queue_entry ?? 1,
-    },
-    messageSettings: {
-      aiEnabledDefault: messageSettingsResult.data.ai_enabled_default,
-      bookingConfirmationTemplate: messageSettingsResult.data.booking_confirmation_template,
-      bookingReminderTemplate: messageSettingsResult.data.booking_reminder_template,
-      queueJoinedTemplate: messageSettingsResult.data.queue_joined_template,
-      queueAlmostTurnTemplate: messageSettingsResult.data.queue_almost_turn_template,
-      queueCalledTemplate: messageSettingsResult.data.queue_called_template,
-    },
-    businessHours: (businessHoursResult.data ?? []).map((d) => ({
-      dayOfWeek: d.day_of_week,
-      isClosed: d.is_closed,
-      openTime: d.open_time,
-      closeTime: d.close_time,
-    })),
-  }
-}
-
-/** Reduced-column fallback for callers without settings.manage. Exists
- *  only so AdminView's header chrome (shop name/logo) and StaffManager's
- *  clock-in link (tenant slug) keep working for tenant_staff — nothing
- *  else in the settings/branding-config/kiosk/display/booking/queue/
- *  message/business-hours columns is ever queried here. displayName/
- *  logoUrl aren't treated as sensitive: both are already public on
- *  /kiosk/[slug], the same surface any customer sees.
+/**
+ * Trust copy. Every line here restates something this page or the product already
+ * does. Do not add certifications (ISO, SOC 2, POPIA "compliant"), customer logos or
+ * testimonials until they are real and you can show them.
  */
-async function getTenantIdentity(
-  supabase: ServerClient,
-  tenantId: string,
-): Promise<{
-  plan: AdminPlan
-  slug: string
-  name: string
-  settings: AdminTenantSettings | null
-  branding: AdminBranding
-  kioskEnabled: boolean
-  kioskSettings: AdminKioskSettings | null
-  displaySettings: AdminDisplaySettings | null
-  clockSettings: AdminClockSettings | null
-  bookingSettings: AdminBookingSettings | null
-  queueSettings: AdminQueueSettings | null
-  messageSettings: AdminMessageSettings | null
-  businessHours: AdminBusinessHours | null
-}> {
-  const [tenantResult, brandingResult] = await Promise.all([
-    supabase.from("tenants").select("plan, slug, name").eq("id", tenantId).single(),
-    supabase
-      .from("tenant_branding")
-      .select("display_name, logo_url, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color")
-      .eq("tenant_id", tenantId)
-      .single(),
-  ])
+const TRUST_STRIP: Array<{ title: string; text: string; icon: ReactNode }> = [
+  {
+    title: "Official WhatsApp API",
+    text: "Connected through Meta’s Cloud API, on your own business number.",
+    icon: <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />,
+  },
+  {
+    title: "Your data stays yours",
+    text: "Every business is walled off from the others at the database level.",
+    icon: (
+      <>
+        <rect x="5" y="11" width="14" height="9" rx="2" />
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+  },
+  {
+    title: "No double-bookings",
+    text: "The database itself refuses two bookings for one person at one time.",
+    icon: (
+      <>
+        <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Z" />
+        <path d="M9 12l2 2 4-4" />
+      </>
+    ),
+  },
+  {
+    title: "Customers choose",
+    text: "Kiosk WhatsApp updates are opt-in, never pre-ticked.",
+    icon: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+        <path d="M8.5 12l2.5 2.5 4.5-5" />
+      </>
+    ),
+  },
+];
 
-  if (tenantResult.error) throw new Error(`Failed to load tenant identity: ${tenantResult.error.message}`)
-  if (brandingResult.error) throw new Error(`Failed to load branding identity: ${brandingResult.error.message}`)
+const SECURITY: Array<{ title: string; text: string }> = [
+  {
+    title: "Separate by design",
+    text: "Each business’s bookings, queue, customers and messages are isolated at the database level. There is no view or export path that crosses into another business’s data.",
+  },
+  {
+    title: "Official WhatsApp connection",
+    text: "Messages run through Meta’s official Cloud API on a WhatsApp number that belongs to your business, not a workaround or a scraped account.",
+  },
+  {
+    title: "Bookings enforced by the database",
+    text: "Overlapping bookings and bookings outside your business hours are refused by the database, so the rules hold even when two people tap at the same second.",
+  },
+  {
+    title: "Phone numbers masked in public",
+    text: "The waiting-area screen only ever shows a customer’s number masked, so nobody in the room sees someone else’s details.",
+  },
+  {
+    title: "Consent comes first",
+    text: "On the kiosk, WhatsApp updates are a tick box that is never pre-ticked. Customers without WhatsApp can still book or queue with just a name and number.",
+  },
+  {
+    title: "A person can always step in",
+    text: "Any conversation can be handed to a human with one tap. The AI steps back and nothing is locked to the bot.",
+  },
+];
 
-  return {
-    plan: tenantResult.data.plan as AdminPlan,
-    slug: tenantResult.data.slug as string,
-    name: tenantResult.data.name as string,
-    settings: null,
-    branding: {
-      displayName: brandingResult.data.display_name,
-      logoUrl: brandingResult.data.logo_url,
-      primaryColor: null,
-      secondaryColor: null,
-      removePoweredBy: false,
-      // Everyone who opens the admin sees the tenant's sidebar colours, not just owners.
-      sidebarColor: brandingResult.data.admin_sidebar_color ?? null,
-      sidebarTextColor: brandingResult.data.admin_sidebar_text_color ?? null,
-      accentColor: brandingResult.data.admin_accent_color ?? null,
-    },
-    kioskEnabled: false,
-    kioskSettings: null,
-    displaySettings: null,
-    clockSettings: null,
-    bookingSettings: null,
-    queueSettings: null,
-    messageSettings: null,
-    businessHours: null,
-  }
+const FIT: Array<{ who: string; text: string }> = [
+  {
+    who: "Barbershops & hair salons",
+    text: "Regulars book Saturday slots on WhatsApp while walk-ins take a ticket at the door. One list, one set of staff, no clashes.",
+  },
+  {
+    who: "Beauty & nail studios",
+    text: "A gel set takes longer than a brow tint. The assistant only offers times that fit the treatment, and a full Saturday goes on the waitlist.",
+  },
+  {
+    who: "Clinics & aesthetic practices",
+    text: "Appointment-led, but a missed message can mean a missed patient. After-hours messages get a booking, not silence until morning.",
+  },
+  {
+    who: "Auto workshops & tyre centres",
+    text: "Drop-ins for a quick job, bookings for a full service. Customers get a message when it’s their turn instead of hovering in the shop.",
+  },
+  {
+    who: "Veterinary practices",
+    text: "Check-ups booked ahead, same-day walk-ins in the same queue, and a human can take over any chat with one tap.",
+  },
+  {
+    who: "Device & phone repair shops",
+    text: "A drop-off queue that tells customers when it’s their turn, instead of “is it done yet?” at the counter.",
+  },
+];
+
+function Faq({ q, children }: { q: string; children: ReactNode }) {
+  return (
+    <details className={styles.faqItem}>
+      <summary>
+        {q}
+        <svg className={styles.faqIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </summary>
+      <p className={styles.faqAnswer}>{children}</p>
+    </details>
+  );
 }
 
-// ============================================================================
-// INBOX
-// ============================================================================
-
-type ConversationRow = {
-  id: string
-  phone: string
-  customer_name: string | null
-  last_message_at: string | null
-}
-
-function bucketAiState(state: string | null | undefined): AdminConversationSummary["aiState"] {
-  const s = (state ?? "").toLowerCase()
-  if (s === "resolved" || s === "closed") return "resolved"
-  if (s === "paused") return "paused"
-  if (s === "handoff" || s === "human" || s === "manual") return "handoff"
-  return "active"
-}
-
-async function getInboxData(
-  supabase: ServerClient,
-  tenantId: string,
-): Promise<{ conversations: AdminConversationSummary[]; stats: AdminInboxStats }> {
-  const [conversationsResult, statesResult, messagesResult] = await Promise.all([
-    supabase
-      .from("conversations")
-      .select("id, phone, customer_name, last_message_at")
-      .eq("tenant_id", tenantId)
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .limit(100),
-    // conversation_states is keyed on (tenant_id, phone) precisely because
-    // phone numbers repeat across tenants — this filter isn't optional.
-    supabase.from("conversation_states").select("phone, state").eq("tenant_id", tenantId),
-    supabase
-      .from("messages")
-      .select("id, conversation_id, direction, message_text, created_at")
-      .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false })
-      .limit(1000),
-  ])
-
-  if (conversationsResult.error) throw new Error(`Failed to load conversations: ${conversationsResult.error.message}`)
-  if (statesResult.error) throw new Error(`Failed to load conversation states: ${statesResult.error.message}`)
-  if (messagesResult.error) throw new Error(`Failed to load messages: ${messagesResult.error.message}`)
-
-  const conversationRows = (conversationsResult.data ?? []) as ConversationRow[]
-  const stateByPhone = new Map((statesResult.data ?? []).map((s) => [s.phone, s.state as string | null]))
-  const messages = messagesResult.data ?? []
-
-  const previewByConversation = new Map<string, { text: string | null; at: string }>()
-  const countByConversation = new Map<string, number>()
-  for (const m of messages) {
-    countByConversation.set(m.conversation_id, (countByConversation.get(m.conversation_id) ?? 0) + 1)
-    if (!previewByConversation.has(m.conversation_id)) {
-      previewByConversation.set(m.conversation_id, { text: m.message_text, at: m.created_at })
-    }
-  }
-
-  const conversations: AdminConversationSummary[] = conversationRows.map((c) => ({
-    id: c.id,
-    phone: c.phone,
-    customerName: c.customer_name,
-    lastMessagePreview: previewByConversation.get(c.id)?.text ?? null,
-    lastMessageAt: c.last_message_at ?? previewByConversation.get(c.id)?.at ?? null,
-    aiState: bucketAiState(stateByPhone.get(c.phone)),
-    messageCount: countByConversation.get(c.id) ?? 0,
-  }))
-
-  const dayBuckets = new Map<string, { incoming: number; outgoing: number }>()
-  const days: string[] = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setUTCDate(d.getUTCDate() - i)
-    const key = d.toISOString().slice(0, 10)
-    days.push(key)
-    dayBuckets.set(key, { incoming: 0, outgoing: 0 })
-  }
-  for (const m of messages) {
-    const key = m.created_at.slice(0, 10)
-    const bucket = dayBuckets.get(key)
-    if (!bucket) continue
-    if (m.direction === "incoming") bucket.incoming += 1
-    else bucket.outgoing += 1
-  }
-  const volumeByDay = days.map((date) => ({ date, ...dayBuckets.get(date)! }))
-
-  const topCustomers = [...conversations]
-    .sort((a, b) => b.messageCount - a.messageCount)
-    .slice(0, 5)
-    .filter((c) => c.messageCount > 0)
-    .map((c) => ({ name: c.customerName ?? c.phone, phone: c.phone, messageCount: c.messageCount }))
-
-  const stats: AdminInboxStats = {
-    totalConversations: conversations.length,
-    aiActiveCount: conversations.filter((c) => c.aiState === "active").length,
-    needsHumanCount: conversations.filter((c) => c.aiState === "handoff").length,
-    volumeByDay,
-    topCustomers,
-  }
-
-  return { conversations, stats }
-}
-
-const EMPTY_INBOX: { conversations: AdminConversationSummary[]; stats: AdminInboxStats } = {
-  conversations: [],
-  stats: { totalConversations: 0, aiActiveCount: 0, needsHumanCount: 0, volumeByDay: [], topCustomers: [] },
-}
-
-export default async function AdminPage() {
-  // Redirects to /login if there's no session or no active tenant
-  // membership — see layout.tsx, which already calls this once per
-  // request; React's cache() means this call is free.
-  const { tenantId } = await requireTenantMember()
-
-  const supabase = getSupabaseServerClient()
-
-  if (!supabase) {
-    return (
-      <main className="mx-auto max-w-lg px-6 py-16 text-center">
-        <h1 className="text-2xl text-stone-900">Admin isn&apos;t configured</h1>
-        <p className="mt-3 text-stone-600">
-          Set <code className="rounded bg-stone-100 px-1.5 py-0.5 text-sm">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code className="rounded bg-stone-100 px-1.5 py-0.5 text-sm">SUPABASE_SERVICE_ROLE_KEY</code> to use this
-          page.
-        </p>
-      </main>
-    )
-  }
-
-  // Resolved once per request, same cache() pattern as requireTenantMember
-  // — see AdminStaffPermissions' doc comment in types.ts. Staff/payroll
-  // data fetched below is shaped around this: hourlyRate is only
-  // requested from the DB at all when payrollView is true.
-  //
-  // getTenantPermissions() takes the specific permission keys to check
-  // (batched into one round trip internally) and returns a Set of the
-  // ones granted — it does NOT return flat booleans, so that Set is
-  // converted into AdminStaffPermissions' shape here. The try/catch is
-  // kept as a safety net (a transient RPC failure degrades to "no staff/
-  // payroll/settings/services access" for this one request rather than
-  // 500ing the whole page) now that the call itself is actually correct.
-  const ADMIN_PERMISSION_KEYS: PermissionKey[] = [
-    "staff.view",
-    "staff.manage",
-    "payroll.view",
-    "payroll.manage",
-    "settings.manage",
-    "services.manage",
-    "analytics.view",
-  ]
-
-  let permissions: AdminStaffPermissions
-  try {
-    const { granted } = await getTenantPermissions(ADMIN_PERMISSION_KEYS)
-    permissions = {
-      staffView: granted.has("staff.view"),
-      staffManage: granted.has("staff.manage"),
-      payrollView: granted.has("payroll.view"),
-      payrollManage: granted.has("payroll.manage"),
-      settingsManage: granted.has("settings.manage"),
-      servicesManage: granted.has("services.manage"),
-      analyticsView: granted.has("analytics.view"),
-    }
-  } catch (err) {
-    console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
-    permissions = {
-      staffView: false,
-      staffManage: false,
-      payrollView: false,
-      payrollManage: false,
-      settingsManage: false,
-      servicesManage: false,
-      analyticsView: false,
-    }
-  }
-
-  // Services and full Settings data are owner-only. A tenant_staff caller
-  // never triggers getAllServices()/getSettingsData() at all for this
-  // request — not just "doesn't receive the data" but "the data is never
-  // fetched" — getTenantIdentity() is the only thing a non-
-  // settings.manage caller pays for.
-  // Timezone + ticket prefix first (cheap, non-sensitive, never throws): the
-  // bookings window and the "done today" queue boundary are both defined in
-  // the shop's own timezone, not UTC.
-  const displayContext = await loadDisplayContext(supabase, tenantId)
-  const { timezone } = displayContext
-
-  const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
-    getBookingsWindow(supabase, tenantId, timezone),
-    loadQueueEntries(supabase, tenantId, displayContext),
-    permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
-    getAllStaff(supabase, tenantId, permissions.payrollView, permissions.staffManage),
-    // Inbox = customer phone numbers, message previews and volume
-    // analytics. Owner-only for now (settings.manage is the closest
-    // existing owner-only key); swap for a dedicated inbox.view key if
-    // you add one.
-    permissions.settingsManage ? getInboxData(supabase, tenantId) : Promise.resolve(EMPTY_INBOX),
-    permissions.settingsManage ? getSettingsData(supabase, tenantId) : getTenantIdentity(supabase, tenantId),
-  ])
-
-  // Same hotfix posture as permissions above — staff_shifts is another
-  // brand-new query I added without confirming against your actual
-  // schema. Falling back to "nobody's clocked in" rather than crashing
-  // the whole page if this table/join doesn't match what's really there.
-  let activeShifts: AdminStaffShift[] = []
-  try {
-    // Who's clocked in right now is a staff.manage view (it sits next to
-    // the Force clock out button) — never fetched for anyone else.
-    if (permissions.staffManage) activeShifts = await getActiveShifts(supabase, tenantId)
-  } catch (err) {
-    console.error("[admin] getActiveShifts failed — falling back to empty list", err)
-  }
-
-  // Custom sidebar colours need the 'branding' plan module, same as the kiosk's
-  // brand colours: stored values are ignored (not deleted) without it.
-  const brandingEntitled = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding).catch(() => false)
-  const adminBranding: AdminBranding = brandingEntitled
-    ? settingsData.branding
-    : { ...settingsData.branding, sidebarColor: null, sidebarTextColor: null, accentColor: null }
+export default async function DemoPage() {
+  const pricing = await getPublicPricing();
 
   return (
-    <AdminView
-      initialBookings={bookings}
-      initialQueue={queue}
-      timezone={timezone}
-      initialServices={services}
-      initialStaff={staff}
-      initialActiveShifts={activeShifts}
-      staffPermissions={permissions}
-      initialConversations={inbox.conversations}
-      initialInboxStats={inbox.stats}
-      initialPlan={settingsData.plan}
-      tenantSlug={settingsData.slug}
-      tenantName={settingsData.name}
-      initialTenantSettings={settingsData.settings}
-      initialBranding={adminBranding}
-      initialKioskEnabled={settingsData.kioskEnabled}
-      initialKioskSettings={settingsData.kioskSettings}
-      initialDisplaySettings={settingsData.displaySettings}
-      initialClockSettings={settingsData.clockSettings}
-      initialBookingSettings={settingsData.bookingSettings}
-      initialQueueSettings={settingsData.queueSettings}
-      initialMessageSettings={settingsData.messageSettings}
-      initialBusinessHours={settingsData.businessHours}
-    />
-  )
+    <div className={styles.page}>
+      <nav className={styles.siteNav}>
+        <div className={styles.siteNavInner}>
+          <div className={styles.siteNavLinks}>
+            <a className={styles.navLink} href={PRICING_URL}>
+              Pricing
+            </a>
+            <a className={styles.navLink} href={DEMO_URL}>
+              Demo
+            </a>
+          </div>
+          <div className={styles.siteNavActions}>
+            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
+              Sign in
+            </a>
+            <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
+              Try for free
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      <section className={styles.heroSplit}>
+        <aside className={styles.heroStub}>
+          <span className={styles.heroStubBrand}>
+            <Logo size={44} />
+            ZozoQueue
+          </span>
+          <div className={styles.heroStubTicket}>
+            <span className={styles.heroStubLabel}>Now serving</span>
+            <span className={styles.heroStubNumber}>001</span>
+            <p className={styles.heroStubTagline}>Every business you manage, one held place in line.</p>
+          </div>
+          <span className={styles.heroStubLabel}>A Ndithini product</span>
+        </aside>
+        <div className={styles.heroMain}>
+          <div className={styles.heroPreview}>
+            <DashboardDemo compact />
+          </div>
+          <div>
+            <h1>Whether they message or walk in, they’re already in line.</h1>
+            <p>
+              ZozoQueue gives your shop two front doors: a WhatsApp number that books and queues customers around the
+              clock, and a self-serve kiosk for walk-ins. Both feed one live board, so nobody waits on a reply and
+              nobody gets lost between them.
+            </p>
+            <div className={styles.heroCtas}>
+              <a className={`${styles.btn} ${styles.btnPrimary}`} href={`${DEMO_URL}#channels`}>
+                See both ways in
+              </a>
+              <a className={`${styles.btn} ${styles.btnSecondary}`} href="#contact">
+                Book a demo
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.trustStrip} aria-label="Why shops trust ZozoQueue">
+        <ul className={styles.trustList}>
+          {TRUST_STRIP.map((t) => (
+            <li key={t.title} className={styles.trustItem}>
+              <svg className={styles.trustIcon} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                {t.icon}
+              </svg>
+              <div>
+                <strong>{t.title}</strong>
+                <span>{t.text}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className={styles.flow}>
+        <div className={styles.wrap}>
+          <p className={styles.sectionLabel}>The problem</p>
+          <div className={styles.sectionHead}>
+            <h2>Bookings and walk-ins live in two different worlds, until now.</h2>
+          </div>
+          <div className={styles.split}>
+            <div className={`${styles.splitCol} ${styles.problem}`}>
+              <h3>Today, without ZozoQueue</h3>
+              <ul>
+                <li>Customers message after hours and never hear back</li>
+                <li>A walk-in queue on paper, a diary for appointments, never checked against each other</li>
+                <li>Double-bookings because two staff members took the same slot</li>
+                <li>A full day means a lost customer</li>
+              </ul>
+            </div>
+            <div className={`${styles.splitCol} ${styles.solution}`}>
+              <h3>With ZozoQueue</h3>
+              <ul>
+                <li>An AI receptionist replies on WhatsApp instantly, any hour</li>
+                <li>Bookings and the walk-in queue sit on one live board, fed by WhatsApp and the kiosk</li>
+                <li>A staff member can’t be booked twice for the same time</li>
+                <li>A full day becomes a waitlist, and a cancellation fills itself</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className={styles.wrap}>
+          <p className={styles.sectionLabel}>A day in the shop</p>
+          <div className={styles.sectionHead}>
+            <h2>One ordinary Saturday, with ZozoQueue running the front desk.</h2>
+          </div>
+          <ol className={styles.timeline}>
+            {DAY.map((item) => (
+              <li key={item.time} className={styles.tlItem}>
+                <span className={styles.tlTime}>{item.time}</span>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className={styles.flow} id="how">
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>How it works</p>
+          <div className={styles.sectionHead}>
+            <h2>From a WhatsApp message to a confirmed spot, with nobody at the till.</h2>
+          </div>
+          <div className={styles.flowSteps}>
+            {STEPS.map((step, i) => (
+              <div key={step.title} className={styles.flowStep}>
+                <span className={styles.flowNum}>{i + 1}</span>
+                <div>
+                  <h3>{step.title}</h3>
+                  <p>{step.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>What&rsquo;s included</p>
+          <div className={styles.sectionHead}>
+            <h2>Everything the front of your shop needs, in one system.</h2>
+          </div>
+          <div className={styles.features}>
+            {FEATURES.map((f) => (
+              <div key={f.title} className={styles.feature}>
+                <svg className={styles.featureIcon} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                  {f.icon}
+                </svg>
+                <h3>
+                  {f.title}
+                  {f.isNew && <span className={styles.badgeNew}>New</span>}
+                </h3>
+                <p>{f.text}</p>
+              </div>
+            ))}
+          </div>
+          <p style={{ marginTop: 32 }}>
+            Which plan includes what? <a href={PRICING_URL}>See the full comparison</a>.
+          </p>
+        </div>
+      </section>
+
+      <section className={styles.flow}>
+        <div className={styles.wrap}>
+          <p className={styles.sectionLabel}>Who it&rsquo;s built for</p>
+          <div className={styles.sectionHead}>
+            <h2>Any business that lives on both a calendar and a doorway.</h2>
+          </div>
+          <div className={styles.fitList}>
+            {FIT.map((row) => (
+              <div key={row.who} className={styles.fitRow}>
+                <h3>{row.who}</h3>
+                <p>{row.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.security} id="security">
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Security &amp; privacy</p>
+          <div className={styles.sectionHead}>
+            <h2>Your customers’ details are handled like they matter.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            You are trusting us with your customer list and your front door. Here is what that looks like in practice.
+          </p>
+          <div className={styles.securityGrid}>
+            {SECURITY.map((s) => (
+              <div key={s.title} className={styles.securityItem}>
+                <svg className={styles.securityTick} viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M8.5 12.2l2.4 2.4 4.6-5" />
+                </svg>
+                <div>
+                  <h3>{s.title}</h3>
+                  <p>{s.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className={styles.securityNote}>
+            Questions about security or how your data is handled? Email{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and a person will answer.
+          </p>
+        </div>
+      </section>
+
+      <section id="faq">
+        <div className={styles.wrap}>
+          <p className={styles.sectionLabel}>FAQ</p>
+          <div className={styles.sectionHead}>
+            <h2>Questions we get on every demo call.</h2>
+          </div>
+          <div className={styles.faqList}>
+            <Faq q="Do I need a new WhatsApp number?">
+              You use a WhatsApp number that belongs to your business, connected through Meta&rsquo;s official Cloud API.
+              If your number is currently used in the regular WhatsApp app, we&rsquo;ll walk you through your options
+              before anything changes.
+            </Faq>
+            <Faq q="Do my customers need WhatsApp to use ZozoQueue?">
+              No. The kiosk works with just a name and a phone number. If your shop has WhatsApp connected, the kiosk
+              also offers a tick box for WhatsApp updates about their visit. It&rsquo;s never pre-ticked, so customers
+              choose.
+            </Faq>
+            <Faq q="What do I need to run the kiosk?">
+              A tablet or screen with a web browser, opened on your shop&rsquo;s kiosk link. You decide whether it
+              offers bookings, the walk-in queue or both, and what each button says. Which plans include it is on the{" "}
+              <a href={PRICING_URL}>pricing page</a>.
+            </Faq>
+            <Faq q="What do I need for the waiting-area TV?">
+              Any TV or screen with a web browser, opened on your shop&rsquo;s display link and left on. You choose rotating
+              slides or a live board, which screens to show, and which queue details appear. A customer&rsquo;s phone number is
+              only ever shown masked, and changes you make in settings reach the TV by themselves within seconds. Which plans
+              include it is on the <a href={PRICING_URL}>pricing page</a>.
+            </Faq>
+            <Faq q="Can two customers book the same barber at the same time?">
+              No. The database itself refuses two overlapping bookings for one staff member, so even two people tapping
+              &ldquo;confirm&rdquo; in the same second can&rsquo;t both get the slot. The second one is offered another time.
+            </Faq>
+            <Faq q="What happens when a day is fully booked?">
+              The customer can ask to be told if a time opens up. When someone cancels, the people on that day&rsquo;s
+              waitlist are messaged in the order they joined, and they book the slot themselves in WhatsApp.
+            </Faq>
+            <Faq q="Can customers cancel or move a booking themselves?">
+              Yes, on WhatsApp, up to the cancellation cut-off you set. Inside the cut-off they&rsquo;re told politely that
+              it&rsquo;s too late, so your day doesn&rsquo;t change under you.
+            </Faq>
+            <Faq q="What if the AI gets something wrong, or a customer just wants a person?">
+              Any conversation can be handed to a human with one tap from the dashboard. The AI steps back and you type as
+              yourself. Nothing is locked to the bot.
+            </Faq>
+            <Faq q="Do walk-ins and appointments really share one queue?">
+              Yes, if you turn it on. A confirmed booking is automatically pulled into the live queue shortly before its
+              start time, so your staff are calling names off one list, not checking a diary and a queue separately.
+            </Faq>
+            <Faq q="What exactly counts as a “visit” against my plan limit?">
+              One completed queue entry or one completed booking, whichever actually happened. A booking that gets pulled
+              into the queue and served is counted once, not twice.
+            </Faq>
+            <Faq q="What happens if I go over my monthly visit limit?">{overageFaq(pricing?.plans)}</Faq>
+            <Faq q="Is my customer data kept separate from other businesses on ZozoQueue?">
+              Completely. Every business&rsquo;s bookings, queue, customers and messages are walled off at the database
+              level. There&rsquo;s no view or export path that can cross into another business&rsquo;s data.
+            </Faq>
+            <Faq q="How does the payroll number get calculated?">
+              From real clock-in and clock-out times at the PIN pad. Hours worked become gross pay, with a South African
+              PAYE and UIF estimate calculated alongside it automatically.
+            </Faq>
+            <Faq q="Can I try it before paying anything?">{freePlanFaq(pricing?.plans)}</Faq>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.closing} id="contact">
+        <div className={styles.wrap} style={{ textAlign: "center" }}>
+          <h2 style={{ margin: "0 auto" }}>Stop losing customers in the inbox and at the door.</h2>
+          <p style={{ marginLeft: "auto", marginRight: "auto" }}>
+            See ZozoQueue running on your own WhatsApp number and kiosk, with your own services and hours, in a
+            20-minute walkthrough.
+          </p>
+          <ContactForm email={CONTACT_EMAIL} />
+        </div>
+      </section>
+
+      <footer className={styles.siteFooter}>
+        <div className={styles.wrapWide}>
+          <div className={styles.footerGrid}>
+            <div className={styles.footerBrandCol}>
+              <span className={styles.footerBrand}>
+                <Logo size={32} />
+                ZozoQueue
+              </span>
+              <p>WhatsApp &amp; kiosk booking and queueing for shops that never close their door.</p>
+            </div>
+            <nav aria-label="Product" className={styles.footerCol}>
+              <h4>Product</h4>
+              <a href={DEMO_URL}>Live demo</a>
+              <a href={PRICING_URL}>Pricing</a>
+              <a href="#security">Security &amp; privacy</a>
+              <a href="#faq">FAQ</a>
+            </nav>
+            <nav aria-label="Account" className={styles.footerCol}>
+              <h4>Account</h4>
+              <a href={SIGN_IN_URL}>Sign in</a>
+              <a href={SIGN_UP_URL}>Try for free</a>
+            </nav>
+            <div className={styles.footerCol}>
+              <h4>Contact</h4>
+              <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+              <span>A Ndithini product</span>
+            </div>
+          </div>
+          <div className={styles.footerBase}>
+            <span>© {new Date().getFullYear()} Ndithini. All rights reserved.</span>
+            {(PRIVACY_URL || TERMS_URL) && (
+              <span className={styles.footerLegal}>
+                {PRIVACY_URL && <a href={PRIVACY_URL}>Privacy policy</a>}
+                {TERMS_URL && <a href={TERMS_URL}>Terms of service</a>}
+              </span>
+            )}
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
 }
