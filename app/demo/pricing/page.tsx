@@ -14,7 +14,7 @@
 
 import "../../auth/theme.css"
 import styles from "../demo.module.css"
-import { Logo } from "@/components/Logo"
+import { SiteNav } from "../SiteNav"
 import { PlanCards } from "../PlanCards"
 import { PriceCalculator } from "./PriceCalculator"
 import {
@@ -36,10 +36,6 @@ export const metadata = {
 /** Re-generate from the database every 5 minutes. */
 export const revalidate = 300
 
-const SIGN_IN_URL = "https://system-eta-azure.vercel.app/login"
-const SIGN_UP_URL = "https://system-eta-azure.vercel.app/signup"
-/** The landing page. Change this if the landing page lives somewhere else. */
-const LANDING_URL = "/demo"
 
 // ---------------------------------------------------------------------------
 // Example shops. Only the story is written here; every number is computed.
@@ -150,25 +146,7 @@ export default async function PricingPage() {
 
   return (
     <div className={styles.page}>
-      <nav className={`${styles.siteNav} ${styles.siteNavBar}`}>
-        <div className={`${styles.siteNavInner} ${styles.siteNavInnerBar}`}>
-          <span className={styles.siteNavBrand}>
-            <Logo size={40} />
-            ZozoQueue
-          </span>
-          <div className={styles.siteNavActions}>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={LANDING_URL}>
-              Overview
-            </a>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
-              Sign in
-            </a>
-            <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
-              Try for free
-            </a>
-          </div>
-        </div>
-      </nav>
+      <SiteNav current="pricing" />
 
       <section>
         <div className={styles.wrapWide}>
