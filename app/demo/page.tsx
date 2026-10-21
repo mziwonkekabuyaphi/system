@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
+import { SiteNav } from "./SiteNav";
 import { QueueScenes } from "./QueueScenes";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
@@ -154,29 +155,7 @@ export default async function DemoPage() {
 
   return (
     <div className={styles.page}>
-      <nav className={styles.siteNav}>
-        <div className={styles.siteNavInner}>
-          <div className={styles.siteNavLinks}>
-            <a className={styles.navLink} href={PRICING_URL}>
-              Pricing
-            </a>
-            <a className={styles.navLink} href={DEMO_URL}>
-              Demo
-            </a>
-            <a className={styles.navLink} href={HOW_URL}>
-              How it works
-            </a>
-          </div>
-          <div className={styles.siteNavActions}>
-            <a className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`} href={SIGN_IN_URL}>
-              Sign in
-            </a>
-            <a className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`} href={SIGN_UP_URL}>
-              Try for free
-            </a>
-          </div>
-        </div>
-      </nav>
+      <SiteNav current="home" />
 
       <section className={styles.heroSplit}>
         <aside className={styles.heroStub}>
