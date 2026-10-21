@@ -250,6 +250,7 @@ const DEFAULT_REGISTRATION_TYPE: AdminKioskSettings["registrationType"] = "both"
 const DEFAULT_DISPLAY_WELCOME_SECONDS = 6
 const DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS = 9
 const DEFAULT_DISPLAY_QUEUE_SECONDS = 20
+const DEFAULT_DISPLAY_SPLIT_SECONDS = 20
 const DEFAULT_DISPLAY_CALL_ALERT_SECONDS = 10
 
 async function getSettingsData(
@@ -292,10 +293,11 @@ async function getSettingsData(
         "display_name, logo_url, primary_color, secondary_color, remove_powered_by, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
           "date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, " +
           "kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, " +
-          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
+          "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_show_split, display_split_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, display_queue_show_surname, display_queue_show_email, display_queue_show_custom, display_queue_wait_range_minutes, " +
           "display_theme, display_layout, display_background_color, display_tagline, " +
           "display_waiting_label, display_waiting_empty_text, display_serving_empty_text, display_bookings_empty_text, display_walkin_badge_label, display_booking_badge_label, " +
+          "display_live_label, display_offline_label, display_next_up_label, display_guest_label, display_serving_timer_label, display_waiting_timer_label, " +
           "clock_theme, clock_background_color, clock_tagline, clock_title, clock_prompt, clock_clocked_in_label, clock_clocked_out_label, clock_invalid_pin_text",
       )
       .eq("tenant_id", tenantId)
@@ -424,6 +426,8 @@ async function getSettingsData(
       menuBookingsSeconds:
         brandingResult.data.display_menu_bookings_seconds ?? DEFAULT_DISPLAY_MENU_BOOKINGS_SECONDS,
       queueSeconds: brandingResult.data.display_queue_seconds ?? DEFAULT_DISPLAY_QUEUE_SECONDS,
+      showSplit: brandingResult.data.display_show_split ?? false,
+      splitSeconds: brandingResult.data.display_split_seconds ?? DEFAULT_DISPLAY_SPLIT_SECONDS,
       callAlertEnabled: brandingResult.data.display_call_alert_enabled ?? true,
       callAlertSeconds: brandingResult.data.display_call_alert_seconds ?? DEFAULT_DISPLAY_CALL_ALERT_SECONDS,
       menuTitle: brandingResult.data.display_menu_title,
@@ -455,6 +459,12 @@ async function getSettingsData(
       bookingsEmptyText: brandingResult.data.display_bookings_empty_text ?? null,
       walkInBadgeLabel: brandingResult.data.display_walkin_badge_label ?? null,
       bookingBadgeLabel: brandingResult.data.display_booking_badge_label ?? null,
+      liveLabel: brandingResult.data.display_live_label ?? null,
+      offlineLabel: brandingResult.data.display_offline_label ?? null,
+      nextUpLabel: brandingResult.data.display_next_up_label ?? null,
+      guestLabel: brandingResult.data.display_guest_label ?? null,
+      servingTimerLabel: brandingResult.data.display_serving_timer_label ?? null,
+      waitingTimerLabel: brandingResult.data.display_waiting_timer_label ?? null,
     },
     clockSettings: {
       theme:

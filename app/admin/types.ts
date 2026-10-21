@@ -340,6 +340,11 @@ export interface AdminDisplaySettings {
   menuBookingsSeconds: number
   /** Seconds the live queue slide shows during rotation. 3–300. */
   queueSeconds: number
+  /** Rotation only: include the Split screen (Now serving | still to come) as
+   *  a slide. Off by default so existing rotations don't change. */
+  showSplit: boolean
+  /** Seconds the Split screen slide shows during rotation. 3–300. */
+  splitSeconds: number
   /** Full-screen takeover on the TV when a customer is called (both
    *  layouts). Independent of the rotation timings above. */
   callAlertEnabled: boolean
@@ -386,6 +391,13 @@ export interface AdminDisplaySettings {
   bookingsEmptyText: string | null
   walkInBadgeLabel: string | null
   bookingBadgeLabel: string | null
+  // Split screen wording (null = built-in default)
+  liveLabel: string | null
+  offlineLabel: string | null
+  nextUpLabel: string | null
+  guestLabel: string | null
+  servingTimerLabel: string | null
+  waitingTimerLabel: string | null
 
   // -- Queue slide, per-entry fields ---------------------------------------
   // Independent of showQueue above (whole-screen on/off). showQueuePhone

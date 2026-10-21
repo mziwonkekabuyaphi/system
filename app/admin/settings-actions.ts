@@ -193,6 +193,8 @@ const MIN_DISPLAY_MENU_BOOKINGS_SECONDS = 3
 const MAX_DISPLAY_MENU_BOOKINGS_SECONDS = 120
 const MIN_DISPLAY_QUEUE_SECONDS = 3
 const MAX_DISPLAY_QUEUE_SECONDS = 300
+const MIN_DISPLAY_SPLIT_SECONDS = 3
+const MAX_DISPLAY_SPLIT_SECONDS = 300
 const MIN_DISPLAY_CALL_ALERT_SECONDS = 3
 const MAX_DISPLAY_CALL_ALERT_SECONDS = 60
 // Wait-estimate range on the TV (tenant_branding.display_queue_wait_range_minutes).
@@ -1063,6 +1065,9 @@ export async function updateDisplaySettings(input: {
   welcomeSeconds: number
   menuBookingsSeconds: number
   queueSeconds: number
+  /** Rotation only: Split screen as a slide, and how long it stays up. */
+  showSplit: boolean
+  splitSeconds: number
   /** Full-screen "customer called" takeover. Applies to both layouts. */
   callAlertEnabled: boolean
   callAlertSeconds: number
@@ -1076,6 +1081,12 @@ export async function updateDisplaySettings(input: {
   bookingsEmptyText?: string | null
   walkInBadgeLabel?: string | null
   bookingBadgeLabel?: string | null
+  liveLabel?: string | null
+  offlineLabel?: string | null
+  nextUpLabel?: string | null
+  guestLabel?: string | null
+  servingTimerLabel?: string | null
+  waitingTimerLabel?: string | null
   // Per-field toggles for the queue slide specifically -- independent of
   // showQueue above. showQueuePhone is the one worth flagging: the
   // display route is public and unauthenticated, so app/display/[slug]/
@@ -1145,6 +1156,17 @@ export async function updateDisplaySettings(input: {
     }
 
     if (
+      !Number.isFinite(input.splitSeconds) ||
+      input.splitSeconds < MIN_DISPLAY_SPLIT_SECONDS ||
+      input.splitSeconds > MAX_DISPLAY_SPLIT_SECONDS
+    ) {
+      return {
+        success: false,
+        error: `Split screen duration must be between ${MIN_DISPLAY_SPLIT_SECONDS} and ${MAX_DISPLAY_SPLIT_SECONDS} seconds.`,
+      }
+    }
+
+    if (
       !Number.isFinite(input.callAlertSeconds) ||
       input.callAlertSeconds < MIN_DISPLAY_CALL_ALERT_SECONDS ||
       input.callAlertSeconds > MAX_DISPLAY_CALL_ALERT_SECONDS
@@ -1203,6 +1225,20 @@ export async function updateDisplaySettings(input: {
       }
     }
 
+    const splitWordingFields: Array<{ label: string; value: string | null | undefined }> = [
+      { label: "Live label", value: input.liveLabel },
+      { label: "Offline label", value: input.offlineLabel },
+      { label: "Next-up label", value: input.nextUpLabel },
+      { label: "Guest label", value: input.guestLabel },
+      { label: "Serving timer label", value: input.servingTimerLabel },
+      { label: "Waiting timer label", value: input.waitingTimerLabel },
+    ]
+    for (const field of splitWordingFields) {
+      if (field.value && field.value.trim().length > MAX_DISPLAY_BADGE_LENGTH) {
+        return { success: false, error: `${field.label} must be ${MAX_DISPLAY_BADGE_LENGTH} characters or fewer.` }
+      }
+    }
+
     const { supabase, tenantId } = await tenantContext()
 
     // The "custom" theme (your own background colour) is part of the
@@ -1245,6 +1281,8 @@ export async function updateDisplaySettings(input: {
         display_welcome_seconds: input.welcomeSeconds,
         display_menu_bookings_seconds: input.menuBookingsSeconds,
         display_queue_seconds: input.queueSeconds,
+        display_show_split: input.showSplit,
+        display_split_seconds: input.splitSeconds,
         display_call_alert_enabled: input.callAlertEnabled,
         display_call_alert_seconds: input.callAlertSeconds,
         display_theme: input.theme,
@@ -1257,6 +1295,12 @@ export async function updateDisplaySettings(input: {
         display_bookings_empty_text: input.bookingsEmptyText?.trim() || null,
         display_walkin_badge_label: input.walkInBadgeLabel?.trim() || null,
         display_booking_badge_label: input.bookingBadgeLabel?.trim() || null,
+        display_live_label: input.liveLabel?.trim() || null,
+        display_offline_label: input.offlineLabel?.trim() || null,
+        display_next_up_label: input.nextUpLabel?.trim() || null,
+        display_guest_label: input.guestLabel?.trim() || null,
+        display_serving_timer_label: input.servingTimerLabel?.trim() || null,
+        display_waiting_timer_label: input.waitingTimerLabel?.trim() || null,
         display_menu_title: input.menuTitle?.trim() || null,
         display_bookings_title: input.bookingsTitle?.trim() || null,
         display_queue_title: input.queueTitle?.trim() || null,
