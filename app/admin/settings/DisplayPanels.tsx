@@ -38,6 +38,7 @@ import { ModuleToggleCard } from "./ModuleToggleCard"
 const DEFAULT_DISPLAY_MENU_TITLE = "On the menu"
 const DEFAULT_DISPLAY_BOOKINGS_TITLE = "Upcoming bookings"
 const DEFAULT_DISPLAY_QUEUE_TITLE = "Live queue"
+const DEFAULT_DISPLAY_SPLIT_WAITING_LABEL = "Still to come"
 const DEFAULT_DISPLAY_NOW_SERVING_LABEL = "Now serving"
 const DEFAULT_DISPLAY_WAITING_LABEL = "Waiting"
 const DEFAULT_DISPLAY_WAITING_EMPTY = "Nobody waiting right now."
@@ -68,6 +69,11 @@ const DISPLAY_LAYOUT_OPTIONS: Array<{
     value: "board",
     title: "Live board",
     description: "Everything at once: Waiting, Now serving and Upcoming bookings as ticket columns, with your menu scrolling along the bottom.",
+  },
+  {
+    value: "split",
+    title: "Split screen",
+    description: "Now serving big on the left, the people still to come on the right. Best for a simple call-and-wait queue.",
   },
 ]
 
@@ -240,6 +246,9 @@ export function DisplayPanel({
   const { draft, set } = form
   const busy = form.savingCard !== null
   const isBoard = draft.layout === "board"
+  const isSplit = draft.layout === "split"
+  // Board and split both show everything at once, so neither uses rotation timing.
+  const isRotation = !isBoard && !isSplit
 
   // ColorField keeps its own text while you type, so "Discard" has to nudge
   // it to re-read the value.
@@ -293,14 +302,14 @@ export function DisplayPanel({
 
       <SettingsCard
         title="Layout & look"
-        description="How the TV is arranged and what it looks like. These apply to both layouts."
+        description="How the TV is arranged and what it looks like. These apply to every layout."
         footer={footer("look", DISPLAY_LOOK_KEYS, () => setColorResetKey((k) => k + 1))}
       >
         <SubSection
           title="Layout"
-          hint="Rotating slides shows one big screen at a time. Live board shows everything at once."
+          hint="Rotating slides shows one big screen at a time. Live board shows everything at once. Split screen shows Now serving on the left and who is still to come on the right."
         >
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             {DISPLAY_LAYOUT_OPTIONS.map((option) => {
               const selected = draft.layout === option.value
               return (
@@ -399,9 +408,11 @@ export function DisplayPanel({
       <SettingsCard
         title="Screens to show"
         description={
-          isBoard
-            ? "Choose which sections appear on the board. A section with nothing to show is left out automatically."
-            : "Choose which screens are in the rotation. A screen with nothing to show is skipped automatically."
+          isSplit
+            ? "Split screen shows the queue (Now serving and still to come) and, if switched on, your menu scrolling along the bottom. Upcoming bookings aren't shown in this layout."
+            : isBoard
+              ? "Choose which sections appear on the board. A section with nothing to show is left out automatically."
+              : "Choose which screens are in the rotation. A screen with nothing to show is skipped automatically."
         }
         footer={footer("screens", DISPLAY_SCREEN_KEYS)}
       >
@@ -513,7 +524,7 @@ export function DisplayPanel({
         />
       </SettingsCard>
 
-      {!isBoard && (
+      {isRotation && (
         <SettingsCard
           title="Timing"
           description="How long each screen stays up. Only applies to the rotating-slides layout."
@@ -559,7 +570,7 @@ export function DisplayPanel({
 
       <SettingsCard
         title="Call alert"
-        description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to both layouts."
+        description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to every layout."
         footer={footer("callAlert", DISPLAY_CALL_ALERT_KEYS)}
       >
         <ToggleRow
@@ -600,7 +611,28 @@ export function DisplayPanel({
           </div>
         </SubSection>
 
-        {isBoard ? (
+        {isSplit ? (
+          <SubSection title="Split screen" hint='Right-hand heading and empty-column messages. The left heading is the "Now serving" label above.'>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {textField("waitingLabel", "Right-hand column heading", DEFAULT_DISPLAY_SPLIT_WAITING_LABEL, 40)}
+              <div className="hidden sm:block" />
+              {textField(
+                "servingEmptyText",
+                "Now serving — empty message",
+                DEFAULT_DISPLAY_SERVING_EMPTY,
+                100,
+                "Shown on the left when nobody is being served.",
+              )}
+              {textField(
+                "waitingEmptyText",
+                "Still to come — empty message",
+                DEFAULT_DISPLAY_WAITING_EMPTY,
+                100,
+                "Shown on the right when nobody is waiting.",
+              )}
+            </div>
+          </SubSection>
+        ) : isBoard ? (
           <SubSection title="Live board" hint="Column heading, empty-column messages and ticket badges.">
             <div className="grid gap-4 sm:grid-cols-2">
               {textField("waitingLabel", '"Waiting" column heading', DEFAULT_DISPLAY_WAITING_LABEL, 40)}
@@ -646,7 +678,7 @@ export function DisplayPanel({
         ) : (
           <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
             More local terms (column heading, empty messages, ticket badges) appear here when you choose the Live
-            board layout.
+            board or Split screen layout.
           </p>
         )}
       </SettingsCard>
