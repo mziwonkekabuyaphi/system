@@ -1,0 +1,41 @@
+/* app/demo/storyScene.module.css
+   Layout for StoryScene.tsx: the cartoon on one side, three numbered points on the other.
+   The section scaffolding (label, heading) comes from demo.module.css. */
+
+.story {
+  display: grid;
+  grid-template-columns: minmax(0, 460px) minmax(0, 1fr);
+  gap: 64px;
+  align-items: center;
+  margin-top: 44px;
+}
+
+.art { margin: 0; }
+.art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 18px;
+  box-shadow: 0 30px 60px -30px rgba(11, 28, 54, 0.55);
+}
+
+.points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 30px; }
+.point { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 18px; align-items: start; }
+.num {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--qless-navy-deep, #0b1c36);
+  background: var(--qless-amber, #f5a524);
+  color: var(--qless-navy-deep, #0b1c36);
+  font-weight: 800;
+}
+.point h3 { font-size: 19px; margin-bottom: 6px; }
+.point p { margin: 0; max-width: 46ch; color: var(--qless-ink-soft, #4a5260); font-size: 16px; }
+
+@media (max-width: 860px) {
+  .story { grid-template-columns: 1fr; gap: 36px; }
+  .art { max-width: 460px; margin: 0 auto; }
+}
