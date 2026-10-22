@@ -422,7 +422,7 @@ export function QueueSettingsPanel({
             <p className="text-sm font-medium text-stone-800">Require a service to join the queue</p>
             <p className="text-sm text-stone-500">
               Turn this off if walk-ins don&apos;t choose between services — they&apos;ll skip straight to giving
-              their name and number on the kiosk, WhatsApp, and admin. You can also change this under Kiosk.
+              their name and number on the kiosk, WhatsApp, and admin.
             </p>
           </div>
           <Toggle

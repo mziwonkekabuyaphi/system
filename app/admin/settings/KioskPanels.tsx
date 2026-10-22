@@ -7,7 +7,6 @@ import { detailsFieldsFrom, detailsFieldsProblem } from "@/lib/kiosk/detailsFiel
 import {
   setKioskEnabled,
   updateKioskSettings,
-  updateQueueSettings,
 } from "../settings-actions"
 import type {
   AdminKioskSettings,
@@ -45,15 +44,14 @@ export function KioskPanel({
   includedInPlan,
   tenantSlug,
   initialKioskSettings,
-  queueSettings,
-  onQueueSettingsSaved,
 }: {
   initialEnabled: boolean
   includedInPlan: boolean
   tenantSlug: string
   initialKioskSettings: AdminKioskSettings
-  queueSettings: AdminQueueSettings
-  onQueueSettingsSaved: (next: AdminQueueSettings) => void
+  /** No longer used here (the Services card moved to Queue rules); kept so existing callers still compile. */
+  queueSettings?: AdminQueueSettings
+  onQueueSettingsSaved?: (next: AdminQueueSettings) => void
 }) {
   const [enabled, setEnabled] = useState(initialEnabled)
   const [isTogglePending, startToggleTransition] = useTransition()
@@ -108,143 +106,8 @@ export function KioskPanel({
 
       <KioskUrlPanel tenantSlug={tenantSlug} />
 
-      <KioskServicesPanel queueSettings={queueSettings} onSaved={onQueueSettingsSaved} />
-
       <KioskBehaviorPanel initial={initialKioskSettings} />
     </div>
-  )
-}
-
-// ---- Services: with or without --------------------------------------------
-//
-// Same underlying setting as "Require a service to join the queue" under
-// Queue rules (queue_settings.require_service_selection) -- surfaced here
-// because this is where an owner thinks about what customers see at the
-// kiosk. Both places read/write the same value via the shared state in
-// SettingsManager, so they can't disagree.
-
-const SERVICE_MODE_OPTIONS: Array<{ value: boolean; title: string; description: string }> = [
-  {
-    value: true,
-    title: "Customers pick a service",
-    description: "Each customer chooses what they're here for. Best when services take different amounts of time.",
-  },
-  {
-    value: false,
-    title: "No services — one line",
-    description:
-      "Customers skip the service screen and just give their name and number. Everyone joins one shared line.",
-  },
-]
-
-function KioskServicesPanel({
-  queueSettings,
-  onSaved,
-}: {
-  queueSettings: AdminQueueSettings
-  onSaved: (next: AdminQueueSettings) => void
-}) {
-  const [requireService, setRequireService] = useState(queueSettings.requireServiceSelection)
-  const [minutes, setMinutes] = useState(queueSettings.defaultServiceDurationMinutes)
-  const [isPending, startTransition] = useTransition()
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
-
-  const dirty =
-    requireService !== queueSettings.requireServiceSelection ||
-    minutes !== queueSettings.defaultServiceDurationMinutes
-
-  function save() {
-    if (!requireService && !(minutes >= 1)) {
-      setMessage({ ok: false, text: "Enter at least 1 minute." })
-      return
-    }
-    setMessage(null)
-    const next = {
-      ...queueSettings,
-      requireServiceSelection: requireService,
-      defaultServiceDurationMinutes: minutes,
-    }
-    startTransition(async () => {
-      const result = await updateQueueSettings(next)
-      if (result.success) {
-        onSaved(next)
-        setMessage({ ok: true, text: "Saved." })
-      } else {
-        setMessage({ ok: false, text: result.error })
-      }
-    })
-  }
-
-  function discard() {
-    setRequireService(queueSettings.requireServiceSelection)
-    setMinutes(queueSettings.defaultServiceDurationMinutes)
-    setMessage(null)
-  }
-
-  return (
-    <SettingsCard
-      title="Services"
-      description="Does your shop need customers to choose a service before they join?"
-      footer={
-        <CardSaveRow dirty={dirty} isPending={isPending} onSave={save} onDiscard={discard} message={message} />
-      }
-    >
-      <div className="grid gap-2 sm:grid-cols-2">
-        {SERVICE_MODE_OPTIONS.map((option) => {
-          const selected = requireService === option.value
-          return (
-            <button
-              key={String(option.value)}
-              type="button"
-              disabled={isPending}
-              onClick={() => {
-                setRequireService(option.value)
-                setMessage(null)
-              }}
-              aria-pressed={selected}
-              className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
-                selected
-                  ? "border-[color:var(--sb-bg,#7A2E3A)] bg-[color-mix(in_srgb,var(--sb-bg,#7A2E3A)_6%,transparent)] ring-1 ring-[color:var(--sb-bg,#7A2E3A)]"
-                  : "border-stone-300 bg-stone-50 hover:bg-stone-100"
-              }`}
-            >
-              <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-800"}`}>
-                {option.title}
-              </span>
-              <span className="text-xs text-stone-500">{option.description}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {!requireService && (
-        <div className="max-w-xs">
-          <FieldRow
-            label="Estimated minutes per customer"
-            hint="Used to work out wait times when there's no service to take the length from."
-          >
-            <input
-              type="number"
-              min={1}
-              className={inputClass}
-              value={minutes}
-              onChange={(e) => {
-                setMinutes(Number(e.target.value))
-                setMessage(null)
-              }}
-            />
-          </FieldRow>
-        </div>
-      )}
-
-      <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
-        This setting covers the walk-in queue on the kiosk, WhatsApp and admin. Appointments have their own
-        switch, <strong>Require a service to book</strong> on the Booking tab: turn that off too if appointments
-        should also skip the service screen (they then use the appointment length set there). If you haven&apos;t
-        added any services yet and appointments still need one, the kiosk skips the service screen and shows only
-        the walk-in queue.
-      </p>
-    </SettingsCard>
   )
 }
 
