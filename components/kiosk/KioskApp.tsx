@@ -553,6 +553,7 @@ export function KioskApp({
   const fields = useMemo(() => detailsFieldsFrom(branding), [branding])
   // The shop can hide the WhatsApp tick box in Settings > Kiosk. Missing counts as shown.
   const showOptInBox = branding.showWhatsAppOptIn !== false
+  const optInLabel = branding.whatsAppOptInLabel?.trim() || "Send me WhatsApp updates about my visit"
 
   const submit = async () => {
     // Booking always needs a service (date/time availability is looked up
@@ -721,6 +722,7 @@ export function KioskApp({
           onEmailChange={setEmail}
           onCustomChange={setCustomAnswer}
           showWhatsAppOptIn={whatsappAvailable && !isWeb && fields.showPhone && showOptInBox}
+          whatsAppOptInLabel={optInLabel}
           whatsAppOptIn={whatsappOptIn}
           onWhatsAppOptInChange={setWhatsappOptIn}
           onSubmit={submit}
@@ -1489,6 +1491,7 @@ function DetailsScreen({
   onEmailChange,
   onCustomChange,
   showWhatsAppOptIn,
+  whatsAppOptInLabel,
   whatsAppOptIn,
   onWhatsAppOptInChange,
   onSubmit,
@@ -1509,6 +1512,7 @@ function DetailsScreen({
   onEmailChange: (v: string) => void
   onCustomChange: (v: string) => void
   showWhatsAppOptIn: boolean
+  whatsAppOptInLabel: string
   whatsAppOptIn: boolean
   onWhatsAppOptInChange: (v: boolean) => void
   onSubmit: () => void
@@ -1590,7 +1594,7 @@ function DetailsScreen({
               onChange={(e) => onWhatsAppOptInChange(e.target.checked)}
             />
             <span>
-              Send me WhatsApp updates about my visit
+              {whatsAppOptInLabel}
             </span>
           </label>
         )}
