@@ -158,17 +158,17 @@ export default async function DemoPage() {
       <SiteNav current="home" />
 
       <section className={styles.heroSplit}>
-        <aside className={styles.heroStub}>
+        <aside className={styles.heroStub} style={{ justifyContent: "flex-start", gap: 40 }}>
           <span className={styles.heroStubBrand}>
             <Logo size={44} />
             ZozoQueue
           </span>
           <div className={styles.heroStubTicket}>
             <span className={styles.heroStubLabel}>Now serving</span>
-            <span className={styles.heroStubNumber}>001</span>
+            <span className={styles.heroStubNumber}>Q001</span>
             <p className={styles.heroStubTagline}>Every business you manage, one held place in line.</p>
           </div>
-          <span className={styles.heroStubLabel}>A Ndithini product</span>
+          <span className={styles.heroStubLabel} style={{ marginTop: "auto" }}>A Ndithini product</span>
         </aside>
         <div className={styles.heroMain}>
           <div className={styles.heroPreview}>
