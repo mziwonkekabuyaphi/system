@@ -31,9 +31,13 @@ export async function printKioskTicket(ticket: Ticket, shopName: string): Promis
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ticket, shopName }),
-      // Short timeout — an unreachable agent (not running, printer PC
-      // off) should fail fast rather than hang the kiosk UI.
-      signal: AbortSignal.timeout(4000),
+      // An agent that isn't running is refused instantly by the browser, so this
+      // timeout never delays that case. It only applies when the agent IS reachable
+      // but slow. The first print after a restart can take well over 4 seconds
+      // (PowerShell and the print spooler start cold), and giving up early shows
+      // "Couldn't print" even though the ticket then prints. The agent's own limit
+      // is 30 seconds, so wait a little less than that.
+      signal: AbortSignal.timeout(25000),
     })
     return res.ok
   } catch (error) {
