@@ -133,6 +133,8 @@ const MAX_DATE_SCREEN_TITLE_LENGTH = 80
 const MAX_TIME_SCREEN_TITLE_LENGTH = 40
 const MAX_DETAILS_SCREEN_TITLE_LENGTH = 80
 const MAX_TICKET_EYEBROW_LENGTH = 30
+// The kiosk WhatsApp tick box wording (kiosk_whatsapp_optin_label). Same limit as the DB check.
+const MAX_WHATSAPP_OPTIN_LABEL_LENGTH = 80
 // The custom question on the details screen (kiosk_custom_label). Same limit as the DB check.
 const MAX_CUSTOM_FIELD_LABEL_LENGTH = 40
 const VALID_REGISTRATION_TYPES: AdminKioskRegistrationType[] = ["booking", "queue", "both"]
@@ -653,6 +655,8 @@ export async function updateKioskSettings(input: {
   customRequired?: boolean
   /** Show the "Send me WhatsApp updates" tick box on the kiosk. OMITTING leaves it untouched. */
   showWhatsAppOptIn?: boolean
+  /** Wording next to the tick box. OMITTING leaves it untouched; null/"" resets it to the default. */
+  whatsAppOptInLabel?: string | null
 }): Promise<ActionResult> {
   try {
     // Bookings and the queue identify every customer by their cellphone number (and the
@@ -705,6 +709,7 @@ export async function updateKioskSettings(input: {
       { label: "Date screen title", value: input.dateScreenTitle, max: MAX_DATE_SCREEN_TITLE_LENGTH },
       { label: "Time screen title", value: input.timeScreenTitle, max: MAX_TIME_SCREEN_TITLE_LENGTH },
       { label: "Details screen title", value: input.detailsScreenTitle, max: MAX_DETAILS_SCREEN_TITLE_LENGTH },
+      { label: "WhatsApp tick box wording", value: input.whatsAppOptInLabel, max: MAX_WHATSAPP_OPTIN_LABEL_LENGTH },
       { label: "Booking ticket label", value: input.ticketBookingEyebrow, max: MAX_TICKET_EYEBROW_LENGTH },
       { label: "Queue ticket label", value: input.ticketQueueEyebrow, max: MAX_TICKET_EYEBROW_LENGTH },
     ]
@@ -750,6 +755,7 @@ export async function updateKioskSettings(input: {
         ...(input.customLabel !== undefined ? { kiosk_custom_label: input.customLabel?.trim() || null } : {}),
         ...(input.customRequired !== undefined ? { kiosk_custom_required: input.customRequired === true } : {}),
         ...(input.showWhatsAppOptIn !== undefined ? { kiosk_show_whatsapp_optin: input.showWhatsAppOptIn === true } : {}),
+        ...(input.whatsAppOptInLabel !== undefined ? { kiosk_whatsapp_optin_label: input.whatsAppOptInLabel?.trim() || null } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
