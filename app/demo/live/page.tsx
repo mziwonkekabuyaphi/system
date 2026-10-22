@@ -9,6 +9,7 @@ import { IndustryProvider, IndustryPicker } from "../IndustryContext";
 import { DashboardDemo } from "../DashboardDemo";
 import { DisplayDemo } from "../DisplayDemo";
 import { SetupDemo } from "../SetupDemo";
+import { KioskPrinter } from "../KioskPrinter";
 import { HeroRotator } from "../HeroRotator";
 import hero from "../liveHero.module.css";
 
@@ -94,7 +95,7 @@ export default function DemoLivePage() {
               <h3>Self-serve kiosk</h3>
               <p>
                 A tablet by your door where walk-ins book a time or join the queue themselves, with big buttons and
-                a ticket at the end. No one has to stop what they&rsquo;re doing at the till.
+                a printed ticket at the end. No one has to stop what they&rsquo;re doing at the till.
               </p>
               <a className={styles.channelLink} href="#kiosk">
                 See the kiosk in action
@@ -144,6 +145,10 @@ export default function DemoLivePage() {
           </p>
           <IndustryPicker />
           <KioskDemo />
+
+          <div style={{ marginTop: 56 }}>
+            <KioskPrinter />
+          </div>
         </div>
       </section>
 
