@@ -17,7 +17,7 @@ const BEFORE: string[] = [
   "Your business name, exactly as you want customers to see it.",
   "Your opening hours for each day of the week, including which days you are closed.",
   "A list of your services, each with a price and how many minutes it takes.",
-  "Your staff: names, job titles, hourly rates, and a clock-in PIN for each person (every PIN different).",
+  "Your staff: names, job titles, how each person is paid (hourly, commission or hybrid) with the rate or percentage, and a clock-in PIN of 4 to 6 digits for each person (every PIN different).",
   "If you want WhatsApp: a number that isn’t already used in the WhatsApp or WhatsApp Business app, and a Meta (Facebook) login. Meta bills you directly for WhatsApp messages, and you add a payment method in WhatsApp Manager.",
   "A tablet for the kiosk and clock-in page, and a TV with a web browser for the waiting-area screen. A ticket printer is optional.",
   "A decision on who needs a dashboard login, and whether each person should be Owner / Admin or Staff.",
@@ -51,10 +51,12 @@ const STEPS: Array<{
     title: "Set your opening hours",
     text: "In Settings, set an open and close time for each weekday and mark closed days. Also check your time zone and currency (ZAR by default).",
     items: ["Kiosk walk-ins and WhatsApp bookings are only accepted inside these hours."],
-    where: "Settings.",
+    where: "Settings. The Opening Hours page has the times, and Business Info has the time zone and currency.",
+    detail:
+      "Each weekday has a Closed tick box and an open and close time. Times are read in the time zone set in Business Info, and that time zone is also used for booking availability, cancellation cut-offs and confirmations. It is a text field, so type it carefully.",
     check: "Each weekday shows the times you expect, and closed days are marked closed.",
     mistake:
-      "Leaving a wrong closing time, such as Saturday. Slots are only offered inside your opening hours, so a wrong time shows up as missing slots.",
+      "Leaving a wrong closing time, such as Saturday, or a wrong time zone. Slots are only offered inside your opening hours, so a wrong time shows up as missing or shifted slots.",
   },
   {
     title: "Add your services",
@@ -63,17 +65,21 @@ const STEPS: Array<{
       "Don’t need services? Turn off “require service selection” for bookings or for the queue and set a default duration instead.",
     ],
     detail:
-      "A slot is only offered when a staff member is free for the full duration of the service, so enter how long the job really takes.",
+      "A slot is only offered when a staff member is free for the full duration of the service, so enter how long the job really takes. The two switches are separate. On the Booking page, turn off “Require a service to book” and set “Appointment length with no service” (5 to 480 minutes). On the Queue page, turn off “Require a service to join the queue” and set the estimated minutes to serve a walk-in. Bookings made without a service show as “No service” in Today and Bookings.",
     check: "Every service you sell is listed, switched on, and has the right duration.",
     mistake:
       "Skipping services when appointments still need one. The kiosk then skips the service screen and offers only the walk-in queue.",
   },
   {
     title: "Add your staff",
-    text: "Add each person with a name, job title and hourly rate. Give them a clock-in PIN (unique within your shop). Phone, email, employee number and start date are optional.",
+    text: "Add each person with a name, job title and how they are paid: hourly, commission or hybrid. Give them a clock-in PIN (unique within your shop). Phone, email, employee number and start date are optional.",
     items: [
       "Link a staff member to a sign-in only if they need to open the dashboard.",
       "How many active staff you can have depends on your plan.",
+      "Hourly: paid for the hours they clock in. Commission: paid a percentage of the price of the services they do. Hybrid: hourly and commission together, either with commission on top of the hourly pay, or whichever of the two is higher, which works as a guaranteed minimum.",
+      "Commission is worked out on the price you list for each service, when the customer is marked as served. Tips and discounts aren’t included, and walk-ins only count once a staff member is recorded as serving them.",
+      "The pay fields, and ID, SARS tax number and bank details, only show for Owner / Admin logins. After saving, only the last four characters of an ID or bank account number are shown.",
+      "To give someone a sign-in, enter their email and a password of at least 8 characters on the staff form. A person created this way gets the Staff role. To choose Owner / Admin, invite them instead (step 12).",
     ],
     detail: (
       <>
@@ -81,9 +87,10 @@ const STEPS: Array<{
         ZozoQueue itself. Read <a href="/demo/docs/team">Roles &amp; access</a> for the difference.
       </>
     ),
-    check: "Everyone appears in your staff list as active, with a PIN set.",
+    check:
+      "Everyone appears in your staff list as active, with a PIN set. If you are Owner / Admin, each line also shows how they are paid, for example an hourly rate or a commission percentage.",
     mistake:
-      "Giving two people the same PIN. A PIN must be unique in your shop, or one of them can’t clock in. Also check hourly rates before your first payroll.",
+      "Giving two people the same PIN, or one that isn’t 4 to 6 digits. A PIN must be unique in your shop, or one of them can’t clock in. Also leaving the pay type or rate wrong: commission and hybrid need a commission rate between 0 and 100%, and an employee paid only on commission must still receive at least the national minimum wage. To guarantee a floor, choose hybrid with “whichever is higher” and set an hourly rate, and check the rules with your accountant.",
   },
   {
     title: "Choose your booking rules",
@@ -93,15 +100,32 @@ const STEPS: Array<{
         <a href="/demo/docs/reference">settings reference</a> for every option.
       </>
     ),
+    items: [
+      "Minimum notice to book, in minutes, and how far ahead customers can book, in days. Set days ahead to 0 for same-day booking only.",
+      "Dates shown to customers (1 to 14) is how many date buttons the kiosk and WhatsApp list. The smaller of that and the days-ahead limit applies.",
+      "Services per booking (1 to 5). The kiosk lets customers tick up to that many, and WhatsApp keeps offering one.",
+      "Allow customers to choose staff is off by default. When it is on, customers can ask for a person on WhatsApp, for example “book with Sipho”, and are only offered times that person is free.",
+      "Booking reminders are on by default. They go out a set time before the appointment (30 to 1440 minutes, 120 by default) with buttons to confirm or say they can’t make it.",
+      "Link bookings to the queue puts confirmed bookings into the walk-in queue shortly before they start, so your team sees one line. It is checked about once a minute. Queue priority then sets the order: first come first served, honour the appointment time, or first come but flag it.",
+    ],
+    where: "Settings, on the Booking page.",
     detail:
       "Four choices matter most: how far ahead customers can book, the minimum notice before a slot, how many services fit in one booking, and the cancellation cut-off. The cut-off is 60 minutes before the start by default. Booking reminders go out a set time before the appointment, two hours by default.",
     check: "Try a booking on your own number: a slot inside your window is offered, and one outside it isn’t.",
     mistake:
-      "Setting a long minimum notice and then wondering why today’s slots are gone. Slots only appear after the minimum notice.",
+      "Setting a long minimum notice and then wondering why today’s slots are gone. Slots only appear after the minimum notice. Also keep the free cancellation window shorter than the reminder time: otherwise a customer who taps “Can’t make it” is told it is too late to cancel, and the page shows a warning.",
   },
   {
     title: "Choose your queue rules",
     text: "Pick a ticket prefix (Q gives Q001, Q002…), an optional maximum queue size, and which doors can join: WhatsApp, kiosk or both. Turn on auto-call if you want the next person called automatically.",
+    items: [
+      "Auto-call next calls the next customer when a slot frees up.",
+      "“Notify a customer this many people before their turn” decides when the “nearly their turn” message is sent.",
+      "Allow walk-ins via WhatsApp and via the kiosk are two separate switches.",
+      "Require a service to join the queue: if on, you also set how many services one ticket can have (1 to 5). If off, you set the estimated minutes to serve a walk-in.",
+      "The ticket prefix is 1 to 4 characters and is shown in capitals on printed kiosk tickets and WhatsApp confirmations.",
+    ],
+    where: "Settings, on the Queue page (the card is called “Walk-in line”).",
     detail:
       "Ticket numbers start again at 001 each day, with the prefix you chose. Leave the maximum queue size empty for no limit.",
     check: "Join the queue from a door you enabled: you get a ticket with your prefix and a number.",
@@ -117,10 +141,10 @@ const STEPS: Array<{
       "If you don’t see WhatsApp under Modules, it isn’t part of your plan yet.",
     ],
     where:
-      "If your plan includes WhatsApp and you are the owner, you are offered it right after you create your business, and you can press “Skip for now”. You can connect any time later in Settings, under WhatsApp messages.",
+      "Settings, on the WhatsApp messages page: the WhatsApp connection card is at the top. If your plan includes WhatsApp and you are the owner, you are also offered it right after you create your business, and you can press “Skip for now”.",
     detail:
-      "Only the business owner can connect WhatsApp. The guided sign-up opens a Meta (Facebook) pop-up where you sign in and choose or create your WhatsApp Business account. We never see your Meta password. A shop has one WhatsApp number at a time.",
-    check: "The connection badge changes from pending to active once Meta has verified the number.",
+      "Only the business owner can connect WhatsApp. The guided sign-up opens a Meta (Facebook) pop-up where you sign in and choose or create your WhatsApp Business account. We never see your Meta password. A shop has one WhatsApp number at a time. The button reads “Connect WhatsApp” at first, “Finish connecting” if setup was started but not finished, “Try again” after an error, and “Reconnect or change number” once connected. If you connect a different number, your current one stops receiving customer messages, and you are asked to confirm first. If we set the connection up for you, the card says “Set up for you by ZozoQueue”. If the button is missing, the card says why: only the owner can connect, WhatsApp isn’t in your plan, or it isn’t available on the platform yet.",
+    check: "The badge changes from “Setting up” to “Connected”, and your number appears next to it.",
     mistake: (
       <>
         Closing the pop-up half-way. The badge then says “Setting up”: press Finish connecting. If it says “Needs
@@ -136,12 +160,13 @@ const STEPS: Array<{
       "Each message has an on/off switch of its own.",
       "Reminders default to two hours before the appointment; you can change the lead time.",
     ],
-    where: "Settings, under WhatsApp messages.",
+    where:
+      "Settings, on the WhatsApp messages page, under the connection card, in “Messages to customers who haven’t messaged you”.",
     detail:
-      "If you change the wording of a message Meta has already approved, it goes back to Meta for review. Until it is approved again, customers who haven’t messaged you in the last 24 hours won’t receive it.",
-    check: "Each message you want to use shows as approved and switched on. Press Refresh status if one is still in review.",
+      "Each message shows a status: Not submitted, In review at Meta, Approved, Rejected, Paused by Meta or Disabled. You can edit the wording (up to 1,024 characters) and see a preview. Press Save wording, then Submit to Meta, and press Refresh status to check on it. You can’t edit a message while it is in review. If the page says no templates are set up yet, press Set up default templates. If you change the wording of a message Meta has already approved, it goes back to Meta for review. Until it is approved again, customers who haven’t messaged you in the last 24 hours won’t receive it.",
+    check: "Each message you want to use shows as Approved and switched on. Press Refresh status if one is still in review.",
     mistake:
-      "Writing promotional wording. Keep each message plain and about the visit itself, or Meta re-labels it “Marketing”, which costs more. If a wording is rejected, the reason is shown under the message: edit it and submit it again.",
+      "Writing promotional wording. Keep each message plain and about the visit itself, or Meta re-labels it “Marketing”, which costs more. If a wording is rejected, the reason is shown under the message: edit it and submit it again. Also, don’t switch off the “It’s their turn” message unless you tell customers another way.",
   },
   {
     title: "Set up the kiosk",
@@ -150,6 +175,9 @@ const STEPS: Array<{
       "The WhatsApp updates tick box is never pre-ticked. Customers without WhatsApp can still join.",
       "Add your logo, colours and a short tagline. Removing “Powered by ZozoQueue” is a Business-plan option.",
     ],
+    where: "Settings, on the Kiosk page, which also shows your kiosk link.",
+    detail:
+      "Your display name, logo and colours are set once under Private Label and are used on the kiosk, the TV screen and the clock-in pad. A logo can be PNG, JPEG, WebP or SVG, up to 2 MB. A custom logo and brand colours are a Business-plan feature, but your display name can be changed on any plan.",
     check: "Join the queue from the tablet as a test customer. The screens ask only for the details you chose.",
     mistake: (
       <>
@@ -162,26 +190,37 @@ const STEPS: Array<{
   {
     title: "Set up the waiting-area screen",
     text: "Open your display link on a TV and leave it on. Choose rotating slides, a live board or a split view, a dark, light or custom colour theme, and which queue details appear. Changes reach the screen by themselves within seconds.",
+    items: [
+      "Rotating slides shows one big screen at a time. Live board shows everything at once. Split screen shows who is being served on the left and who is still to come on the right.",
+      "You choose which screens appear: your menu, upcoming bookings and the live queue. A screen with nothing to show is skipped automatically.",
+      "Queue ticket details are separate switches: ticket number, service, cellphone number, surname, email, the answer to your custom kiosk question, estimated wait, time waited and booking reference.",
+      "When you call a customer, the TV can take over the whole screen to show their ticket for a few seconds (3 to 60, you choose), then go back to what it was showing.",
+      "Every piece of text on the TV can be reworded under Local terms.",
+    ],
+    where:
+      "Settings, on the Display page. It shows your screen address with a Copy button, a QR code and an “Open the screen” link.",
     detail:
-      "Customers’ phone numbers are always shown masked on this screen, so nobody’s number is read out to the room.",
+      "Switch on “Public display module” first, or the screen shows nothing. The screen is public, so cellphone number and email are off by default. A cellphone number is always shown masked, and an email partly hidden. The answer to your custom question is shown exactly as typed, so only turn it on if everyone in the waiting area may read it. For an email to appear, you also need to ask for email on the kiosk.",
     check: "Join the queue from the kiosk and watch the TV: the new ticket appears within seconds.",
     mistake:
-      "Leaving the TV offline or on the wrong page. It must be online and open on your shop’s display link. If it looks stuck, reload the page.",
+      "Leaving the TV offline or on the wrong page, or the display module switched off. The TV must be online and open on your shop’s display link. If it looks stuck, reload the page.",
   },
   {
     title: "Turn on clock-in and payroll",
     text: "Put the clock-in page on a shared tablet. Staff enter their PIN to clock in and out. In payroll, choose hourly, commission or hybrid pay, add your employer details, then calculate a period and mark it paid.",
+    where:
+      "Settings, on the staff clock-in page: switch on “Staff clock-in module”, then open the clock-in address on the shared tablet. It has a Copy button and a QR code, and you can also change the theme and reword what staff see. The staff screen in the dashboard shows the same link, so you can print it by the staff entrance or bookmark it.",
     detail:
-      "Payroll, including hours, pay and payslips, is only visible to Owner / Admin logins. PAYE and UIF figures are estimates: check them with your accountant before you pay anyone.",
+      "No login is needed on the clock-in pad, only the PIN. Payroll, including hours, pay and payslips, is only visible to Owner / Admin logins. PAYE and UIF figures are estimates: check them with your accountant before you pay anyone. If someone forgets to clock out, an Owner / Admin can force a clock-out from “Currently clocked in” on the staff screen.",
     check: "Clock one person in and out with their PIN, and see the time appear for them.",
     mistake:
-      "A person who can’t clock in. Check that they are active, that their PIN is set, and that nobody else in your shop has the same PIN.",
+      "Leaving the clock-in module switched off: staff then can’t clock in or out. Also a person who can’t clock in: check that they are active, that their PIN is set, and that nobody else in your shop has the same PIN.",
   },
   {
     title: "Invite your team",
     text: "Send an invite code to each person who needs the dashboard. Codes expire after 7 days. Pick Owner/Admin or Staff for each.",
     detail:
-      "Each code works once. You can add the person’s email address when you create it, and then only that email can use it. The person signs up, chooses “Join with a code” on the “One more step” page, and enters the code. They then see only your business.",
+      "Each code works once. You can add the person’s email address when you create it, and then only that email can use it. The person signs up, chooses “Join with a code” on the “One more step” page, and enters the code. They then see only your business. If you instead create someone on the staff screen with an email and password (step 4), they get the Staff role and need no code.",
     check: "The person appears in your team with the role you chose, and can open the dashboard.",
     mistake: (
       <>
@@ -211,22 +250,23 @@ const CHECKLIST: Array<{ title: string; items: string[] }> = [
   {
     title: "Your shop",
     items: [
-      "Opening hours and closed days are right.",
+      "Opening hours and closed days are right, and the time zone in Business Info is correct.",
       "Every service is active with the right duration.",
-      "Every staff member is active with a unique PIN.",
+      "Every staff member is active with a unique PIN and the right pay type.",
     ],
   },
   {
     title: "Rules",
     items: [
       "Booking window, minimum notice and cancellation cut-off match how you really work.",
+      "The cancellation window is shorter than the reminder time.",
       "Ticket prefix is set, and the maximum queue size is what you want (or empty).",
     ],
   },
   {
     title: "WhatsApp",
     items: [
-      "The number shows as active.",
+      "The badge says Connected, with the right number.",
       "Each message you use is approved and switched on.",
       "A test booking, a test cancellation and a test queue message all arrived.",
     ],
@@ -236,14 +276,14 @@ const CHECKLIST: Array<{ title: string; items: string[] }> = [
     items: [
       "The kiosk tablet shows the buttons you expect and asks only for the details you chose.",
       "If you use a ticket printer, a test ticket printed once.",
-      "The TV shows a new ticket within seconds.",
-      "Staff clocked in and out with their own PINs.",
+      "The Public display module is on, and the TV shows a new ticket within seconds.",
+      "The Staff clock-in module is on, and staff clocked in and out with their own PINs.",
     ],
   },
   {
     title: "People",
     items: [
-      "Everyone who needs the dashboard joined with the right role.",
+      "Everyone who needs the dashboard has the right role.",
       "Only Owner / Admin logins can see payroll, and you are happy with who they are.",
     ],
   },
