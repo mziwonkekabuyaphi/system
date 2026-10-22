@@ -27,6 +27,8 @@ const PRICING_URL = "/demo/pricing";
 const HOW_URL = "/demo/how-it-works";
 /** The interactive demo page (WhatsApp, kiosk, waiting-area screen, dashboard). */
 const DEMO_URL = "/demo/live";
+/** The documentation page: what ZozoQueue solves and how to set it up. */
+const DOCS_URL = "/demo/docs";
 const CONTACT_EMAIL = "hello@ndithini.com";
 /** Legal pages. Leave empty until the pages exist: the footer only shows a link when it is set. */
 const PRIVACY_URL = "";
@@ -450,6 +452,7 @@ export default async function DemoPage() {
               <a href={HOW_URL}>How it works</a>
               <a href={DEMO_URL}>Live demo</a>
               <a href={PRICING_URL}>Pricing</a>
+              <a href={DOCS_URL}>Docs</a>
               <a href="#security">Security &amp; privacy</a>
               <a href="#faq">FAQ</a>
             </nav>
