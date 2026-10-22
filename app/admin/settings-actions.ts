@@ -651,6 +651,8 @@ export async function updateKioskSettings(input: {
   showCustom?: boolean
   customLabel?: string | null
   customRequired?: boolean
+  /** Show the "Send me WhatsApp updates" tick box on the kiosk. OMITTING leaves it untouched. */
+  showWhatsAppOptIn?: boolean
 }): Promise<ActionResult> {
   try {
     // Bookings and the queue identify every customer by their cellphone number (and the
@@ -747,6 +749,7 @@ export async function updateKioskSettings(input: {
         ...(input.showCustom !== undefined ? { kiosk_show_custom: input.showCustom === true } : {}),
         ...(input.customLabel !== undefined ? { kiosk_custom_label: input.customLabel?.trim() || null } : {}),
         ...(input.customRequired !== undefined ? { kiosk_custom_required: input.customRequired === true } : {}),
+        ...(input.showWhatsAppOptIn !== undefined ? { kiosk_show_whatsapp_optin: input.showWhatsAppOptIn === true } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
