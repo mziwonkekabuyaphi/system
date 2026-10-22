@@ -104,6 +104,8 @@ export type KioskRegistrationType = "booking" | "queue" | "both"
 // (e.g. the /web link) still compiles, and KioskApp falls back to the defaults for any it lacks.
 export interface KioskBranding extends Partial<KioskDetailsFields> {
   displayName: string
+  /** Show the WhatsApp updates tick box. Missing/undefined counts as true (see KioskApp). */
+  showWhatsAppOptIn?: boolean
   logoUrl: string | null
   primaryColor: string
   secondaryColor: string
@@ -198,6 +200,7 @@ interface TenantBrandingRow {
   kiosk_show_email: boolean | null
   kiosk_email_required: boolean | null
   kiosk_show_custom: boolean | null
+  kiosk_show_whatsapp_optin: boolean | null
   kiosk_custom_label: string | null
   kiosk_custom_required: boolean | null
 }
@@ -279,7 +282,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, kiosk_show_whatsapp_optin",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -317,6 +320,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     detailsScreenTitle: branding?.details_screen_title?.trim() || DEFAULT_DETAILS_SCREEN_TITLE,
     ticketBookingEyebrow: branding?.ticket_booking_eyebrow?.trim() || DEFAULT_TICKET_BOOKING_EYEBROW,
     ticketQueueEyebrow: branding?.ticket_queue_eyebrow?.trim() || DEFAULT_TICKET_QUEUE_EYEBROW,
+    showWhatsAppOptIn: branding?.kiosk_show_whatsapp_optin ?? true,
     // Details-screen fields. NULL / no row = the defaults (name + cellphone), so a shop that never
     // touched this behaves as before. The cellphone number is always asked for (see updateKioskSettings).
     ...detailsFieldsFrom({

@@ -250,6 +250,26 @@ async function checkSubmittedDetails(
 }
 
 /**
+ * Settings > Kiosk > "Ask about WhatsApp updates". When a shop turns it off it does not want kiosk
+ * customers messaged, so the instant confirmation texts below are skipped too. Defaults to on, and to
+ * on if the lookup fails, so existing shops behave exactly as before.
+ */
+async function kioskWhatsAppAllowed(tenantId: string): Promise<boolean> {
+  try {
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return true
+    const { data } = await supabase
+      .from("tenant_branding")
+      .select("kiosk_show_whatsapp_optin")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    return data?.kiosk_show_whatsapp_optin !== false
+  } catch {
+    return true
+  }
+}
+
+/**
  * Keeps the email / custom answer with the ticket it belongs to (table kiosk_checkin_details,
  * sql/migration_kiosk_details_fields.sql). Best-effort like the WhatsApp confirmation: the booking or
  * queue entry already exists, so a failure here is only logged and never stops the ticket showing.
@@ -428,7 +448,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     }
 
     try {
-      await sendWhatsAppTextMessage(
+      if (await kioskWhatsAppAllowed(tenantId)) await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
         `Hi${name ? ` ${name}` : ""}! You're booked${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}. ` +
@@ -561,7 +581,7 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
 
     try {
       const serviceClause = serviceNames ? ` for ${serviceNames}` : ""
-      await sendWhatsAppTextMessage(
+      if (await kioskWhatsAppAllowed(tenantId)) await sendWhatsAppTextMessage(
         tenantId,
         input.phone,
         `Hi${name ? ` ${name}` : ""}! You're in the queue${serviceClause} — your ticket is ${formattedTicketNumber}, ` +
