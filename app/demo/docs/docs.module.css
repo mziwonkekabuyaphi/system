@@ -51,6 +51,10 @@
   color: var(--qless-ink);
   border-left-color: var(--qless-amber);
 }
+.toc a[aria-current="page"] {
+  color: var(--qless-ink);
+  border-left-color: var(--qless-amber);
+}
 .toc a:focus-visible {
   outline: 2px solid var(--qless-amber-dim);
   outline-offset: 2px;
@@ -63,6 +67,10 @@
 .block {
   padding: 0 0 56px;
   scroll-margin-top: 24px;
+}
+.content .block h1 {
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  margin-bottom: 14px;
 }
 .block h2 {
   font-size: 28px;
@@ -80,6 +88,66 @@
 .block a {
   color: var(--qless-amber-dim);
   text-underline-offset: 3px;
+}
+
+/* "Next" link at the bottom of a docs page */
+.pagers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+.pagerNext {
+  margin-left: auto;
+  text-align: right;
+}
+.pager {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 18px;
+  border: 1px solid var(--qless-line);
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.pager span {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--qless-ink-soft);
+}
+.pager:hover {
+  border-color: var(--qless-amber);
+}
+
+/* Topic cards on the docs home */
+.topics {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.topics a {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--qless-line);
+  border-radius: 10px;
+  text-decoration: none;
+}
+.topics a:hover {
+  border-color: var(--qless-amber);
+}
+.topics strong {
+  color: var(--qless-ink);
+}
+.topics span {
+  color: var(--qless-ink-soft);
+  font-size: 14.5px;
 }
 
 /* Piece definitions */
@@ -221,6 +289,10 @@
     border: 1px solid var(--qless-line);
     border-radius: 999px;
     font-size: 13.5px;
+  }
+  .toc a[aria-current="page"] {
+    background: var(--qless-paper-dim);
+    border-color: var(--qless-amber);
   }
   .defs > div {
     grid-template-columns: minmax(0, 1fr);
