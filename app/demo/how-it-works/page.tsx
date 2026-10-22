@@ -44,7 +44,7 @@ const DAY: Array<{ time: string; title: string; text: string }> = [
   {
     time: "09:10",
     title: "A walk-in checks themselves in",
-    text: "The kiosk gives them a ticket and an estimated wait. If they shared a WhatsApp number, they’re messaged when it’s nearly their turn.",
+    text: "The kiosk prints them a ticket with an estimated wait. If they shared a WhatsApp number, they’re messaged when it’s nearly their turn.",
   },
   {
     time: "11:30",
@@ -74,7 +74,7 @@ const STEPS: Array<{ title: string; text: string }> = [
   },
   {
     title: "A booking or queue spot is confirmed on the spot",
-    text: "No back-and-forth. On WhatsApp they get a reference and a time. At the kiosk they get a ticket with their number, place in line and estimated wait.",
+    text: "No back-and-forth. On WhatsApp they get a reference and a time. At the kiosk they get a printed ticket with their number, place in line and estimated wait, or a booking reference slip if they booked.",
   },
   {
     title: "You see it land on your dashboard, live",
@@ -97,7 +97,7 @@ const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: bo
   },
   {
     title: "Self-service kiosk",
-    text: "A tablet by the door where walk-ins book a time or join the queue in a few taps, in your name, logo and colours. It resets itself after every customer.",
+    text: "A tablet by the door where walk-ins book a time or join the queue in a few taps, in your name, logo and colours. It prints a queue ticket or booking reference, then resets itself after every customer.",
     icon: (
       <>
         <rect x="4" y="3" width="16" height="18" rx="2" />
