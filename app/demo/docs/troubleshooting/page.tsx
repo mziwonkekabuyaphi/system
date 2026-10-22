@@ -150,7 +150,7 @@ const GROUPS: Array<{ id: string; short: string; title: string; items: Array<[st
       ],
       [
         "A staff member can’t see payroll.",
-        "Pay details are only visible to people who have been given payroll access. Ask an owner or admin about payroll access.",
+        "That is by design. Payroll, including hours, pay and payslips, is only visible to owners and admins. The Staff role can’t see it.",
       ],
     ],
   },
