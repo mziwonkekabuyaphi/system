@@ -99,7 +99,7 @@ const DETAILS: Array<{
       "Each staff member has a PIN that is unique within your shop. Clock-ins and clock-outs are recorded as shifts.",
       "Payroll turns completed shifts into hours worked and pay. Pay can be hourly, commission, or a hybrid of the two.",
       "Payroll adds an estimate of PAYE and UIF, and you mark each period paid when it is.",
-      "Pay details are only visible to people who have been given payroll access.",
+      "Pay details are only visible to owners and admins, never to the Staff role.",
     ],
     setup: [["Turn on clock-in and payroll", "/demo/docs/setup"], ["Roles & access", "/demo/docs/team"]],
   },
