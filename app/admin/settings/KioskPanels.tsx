@@ -376,9 +376,11 @@ type KioskDraft = {
   showCustom: boolean
   customLabel: string
   customRequired: boolean
+  // Whether the kiosk shows the "Send me WhatsApp updates" tick box (and sends kiosk confirmation texts).
+  showWhatsAppOptIn: boolean
 }
 
-type DetailsToggleKey = "showName" | "showSurname" | "showPhone" | "showEmail" | "emailRequired" | "showCustom" | "customRequired"
+type DetailsToggleKey = "showName" | "showSurname" | "showPhone" | "showEmail" | "emailRequired" | "showCustom" | "customRequired" | "showWhatsAppOptIn"
 
 function toKioskDraft(s: AdminKioskSettings): KioskDraft {
   return {
@@ -398,6 +400,7 @@ function toKioskDraft(s: AdminKioskSettings): KioskDraft {
     ticketBookingEyebrow: s.ticketBookingEyebrow ?? "",
     ticketQueueEyebrow: s.ticketQueueEyebrow ?? "",
     ...detailsFieldsFrom(s),
+    showWhatsAppOptIn: s.showWhatsAppOptIn ?? true,
   }
 }
 
@@ -428,6 +431,7 @@ function toKioskPayload(d: KioskDraft) {
     showCustom: d.showCustom,
     customLabel: d.customLabel.trim(),
     customRequired: d.showCustom && d.customRequired,
+    showWhatsAppOptIn: d.showWhatsAppOptIn,
   }
 }
 
@@ -454,6 +458,7 @@ const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
   "showCustom",
   "customLabel",
   "customRequired",
+  "showWhatsAppOptIn",
 ]
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
@@ -633,9 +638,14 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
             {fieldToggle(
               "showPhone",
               "Cellphone number",
-              "Needs 10 digits. When this is on, customers also see a “Send me WhatsApp updates” tick box (if your WhatsApp is connected). It is never pre-ticked. Always on for now: bookings and the queue identify customers by their cellphone number.",
+              "Needs 10 digits. Always on for now: bookings and the queue identify customers by their cellphone number.",
               undefined,
               true,
+            )}
+            {fieldToggle(
+              "showWhatsAppOptIn",
+              "WhatsApp updates tick box",
+              "Shows “Send me WhatsApp updates about my visit” under the cellphone number. It is never pre-ticked, and only appears if your WhatsApp is connected. Turn this off to hide it: no new customers can opt in at the kiosk, and the kiosk stops sending its own WhatsApp confirmation. Turn off individual messages under WhatsApp messages to stop the rest.",
             )}
             {fieldToggle(
               "showEmail",
