@@ -161,9 +161,9 @@ const STEPS: Array<{
       "Reminders default to two hours before the appointment; you can change the lead time.",
     ],
     where:
-      "Settings, on the WhatsApp messages page, under the connection card, in “Messages to customers who haven’t messaged you”.",
+      "Settings, on the WhatsApp messages page, under the connection card, in “Messages to customers who haven’t messaged you”. The wording of the booking confirmation and booking reminder is edited in the “Templates & AI” card on the Messages page.",
     detail:
-      "Each message shows a status: Not submitted, In review at Meta, Approved, Rejected, Paused by Meta or Disabled. You can edit the wording (up to 1,024 characters) and see a preview. Press Save wording, then Submit to Meta, and press Refresh status to check on it. You can’t edit a message while it is in review. If the page says no templates are set up yet, press Set up default templates. If you change the wording of a message Meta has already approved, it goes back to Meta for review. Until it is approved again, customers who haven’t messaged you in the last 24 hours won’t receive it.",
+      "The four messages in that list (queue joined, nearly their turn, called and waitlist slot open) each show a status: Not submitted, In review at Meta, Approved, Rejected, Paused by Meta or Disabled. You can edit the wording (up to 1,024 characters) and see a preview. Press Save wording, then Submit to Meta, and press Refresh status to check on it. You can’t edit a message while it is in review. If the page says no templates are set up yet, press Set up default templates. If you change the wording of a message Meta has already approved, it goes back to Meta for review. Until it is approved again, customers who haven’t messaged you in the last 24 hours won’t receive it. The booking confirmation and booking reminder go through Meta review too. A reminder reaches a customer who messaged you in the last 24 hours as a normal message. Everyone else only gets it if they agreed to WhatsApp updates and your reminder wording has been approved.",
     check: "Each message you want to use shows as Approved and switched on. Press Refresh status if one is still in review.",
     mistake:
       "Writing promotional wording. Keep each message plain and about the visit itself, or Meta re-labels it “Marketing”, which costs more. If a wording is rejected, the reason is shown under the message: edit it and submit it again. Also, don’t switch off the “It’s their turn” message unless you tell customers another way.",
@@ -174,15 +174,22 @@ const STEPS: Array<{
     items: [
       "The WhatsApp updates tick box is never pre-ticked. Customers without WhatsApp can still join.",
       "Add your logo, colours and a short tagline. Removing “Powered by ZozoQueue” is a Business-plan option.",
+      "Customer options are Booking and Queue, Booking Only, or Queue Only. Only “Booking and Queue” shows the choice screen where customers pick between the two.",
+      "Under Local terms you can reword every screen in the order customers see it: welcome (the tagline), choice, service, date and time, details, and the final ticket. Leave a field empty to use the default.",
+      "The details screen can ask for name (at least 2 letters), surname, cellphone number (10 digits), email and one custom question of your own. Email and the custom question can each be made compulsory. The cellphone number is always asked, because bookings and the queue identify customers by it.",
+      "The WhatsApp tick box only appears if your WhatsApp is connected. Turn it off to hide it: no new customers can opt in at the kiosk, and the kiosk stops sending its own WhatsApp confirmation.",
+      "Timing: the idle reset (10 to 600 seconds) sends the kiosk back to the welcome screen when nobody is using it, and the confirmation screen (3 to 120 seconds) sets how long the ticket stays up.",
     ],
-    where: "Settings, on the Kiosk page, which also shows your kiosk link.",
+    where:
+      "Settings, on the Kiosk page. Switch on “Kiosk module” first. The kiosk address is on the same page, with a Copy button, an “Open the kiosk” link and a QR code. Print it on a table stand, or open it directly on the kiosk tablet.",
     detail:
-      "Your display name, logo and colours are set once under Private Label and are used on the kiosk, the TV screen and the clock-in pad. A logo can be PNG, JPEG, WebP or SVG, up to 2 MB. A custom logo and brand colours are a Business-plan feature, but your display name can be changed on any plan.",
+      "Your display name, logo and colours are set once under Private Label and are used on the kiosk, the TV screen and the clock-in pad. A logo can be PNG, JPEG, WebP or SVG, up to 2 MB. A custom logo and brand colours are a Business-plan feature, but your display name can be changed on any plan. If the kiosk isn’t in your plan, the page shows a locked card and points you to Plans & Billing.",
     check: "Join the queue from the tablet as a test customer. The screens ask only for the details you chose.",
     mistake: (
       <>
-        A missing booking or queue button. Check the kiosk type, that the matching module is on for your plan, and that
-        you are inside opening hours. If you use a ticket printer, see{" "}
+        A missing booking or queue button. Check that “Kiosk module” is on, the customer option (Booking and Queue, Booking Only or Queue Only), that the matching module is on for your plan, and that
+        you are inside opening hours. The kiosk also refuses to save details settings that leave customers nothing to
+        fill in, or a custom question with no name. If you use a ticket printer, see{" "}
         <a href="/demo/docs/troubleshooting#printing">ticket printing</a>.
       </>
     ),
