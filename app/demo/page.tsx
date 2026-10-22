@@ -376,7 +376,8 @@ export default async function DemoPage() {
             </Faq>
             <Faq q="What do I need to run the kiosk?">
               A tablet or screen with a web browser, opened on your shop&rsquo;s kiosk link. You decide whether it
-              offers bookings, the walk-in queue or both, and what each button says. Which plans include it is on the{" "}
+              offers bookings, the walk-in queue or both, and what each button says. The kiosk can also print a queue ticket or booking
+              reference, using a thermal receipt printer connected to it. Which plans include it is on the{" "}
               <a href={PRICING_URL}>pricing page</a>.
             </Faq>
             <Faq q="What do I need for the waiting-area TV?">

@@ -96,8 +96,8 @@ const STEP_INFO: Record<KioskStep, { tab: string; caption: (p: Path) => string }
     tab: "Take a ticket",
     caption: (p) =>
       p === "booking"
-        ? "A confirmation with their reference, day and time. It lands in Appointments on your dashboard the moment they confirm, then the tablet resets for the next person."
-        : "A ticket with their number, place in line and estimated wait. It lands on your Live Queue board tagged “Kiosk”, then the tablet resets for the next person.",
+        ? "A confirmation with their reference, day and time, printed at the kiosk. It lands in Appointments on your dashboard the moment they confirm, then the tablet resets for the next person."
+        : "A ticket with their number, place in line and estimated wait, printed at the kiosk. It lands on your Live Queue board tagged “Kiosk”, then the tablet resets for the next person.",
   },
 }
 

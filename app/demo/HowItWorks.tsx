@@ -162,7 +162,7 @@ function SceneConfirm() {
           </Bubble>
         </Phone>
       </Pane>
-      <Pane cap="At the kiosk: a ticket with place in line and wait.">
+      <Pane cap="At the kiosk: a printed ticket with place in line and wait.">
         <div className={m.kiosk}>
           <div className={`${m.kioskScreen} ${m.center}`}>
             <span className={`${m.kEyebrow} ${m.seq}`} style={delay(0.2)}>Your place in line</span>
