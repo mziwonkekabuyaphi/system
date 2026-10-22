@@ -1,0 +1,231 @@
+/* Docs page. Shell, buttons, FAQ and closing styles come from ../demo.module.css;
+   this file only adds the docs layout. Colours use the shared --qless-* tokens. */
+
+.head {
+  padding: 56px 0 40px;
+  border-bottom: 1px solid var(--qless-line);
+}
+.head h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  margin-bottom: 14px;
+}
+.head p {
+  max-width: 60ch;
+  margin: 0 0 24px;
+  color: var(--qless-ink-soft);
+  font-size: 18px;
+}
+.headCtas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 48px;
+  padding-top: 40px;
+  padding-bottom: 64px;
+}
+
+/* Sticky table of contents */
+.toc {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--qless-line);
+}
+.toc a {
+  padding: 7px 14px;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--qless-ink-soft);
+  font-size: 14.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.toc a:hover {
+  color: var(--qless-ink);
+  border-left-color: var(--qless-amber);
+}
+.toc a:focus-visible {
+  outline: 2px solid var(--qless-amber-dim);
+  outline-offset: 2px;
+}
+
+.content {
+  min-width: 0;
+}
+/* A div, not a section, so the shell's "section" padding rule never applies */
+.block {
+  padding: 0 0 56px;
+  scroll-margin-top: 24px;
+}
+.block h2 {
+  font-size: 28px;
+  margin-bottom: 14px;
+}
+.block h3 {
+  font-size: 18px;
+  margin: 28px 0 10px;
+}
+.block > p {
+  max-width: 68ch;
+  color: var(--qless-ink-soft);
+  margin: 0 0 18px;
+}
+.block a {
+  color: var(--qless-amber-dim);
+  text-underline-offset: 3px;
+}
+
+/* Piece definitions */
+.defs {
+  margin: 24px 0 0;
+  border-top: 1px solid var(--qless-line);
+}
+.defs > div {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 8px 24px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--qless-line);
+}
+.defs dt {
+  font-weight: 700;
+  color: var(--qless-ink);
+}
+.defs dd {
+  margin: 0;
+  color: var(--qless-ink-soft);
+  max-width: 62ch;
+}
+
+/* Numbered setup steps: the content really is a sequence */
+.steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 28px 0 0;
+  padding: 0;
+}
+.steps > li {
+  counter-increment: step;
+  position: relative;
+  padding: 0 0 28px 56px;
+}
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: -2px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--qless-navy);
+  color: var(--qless-paper);
+  font-family: var(--qless-font-mono), monospace;
+  font-size: 15px;
+  font-weight: 700;
+}
+.steps > li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 40px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--qless-line);
+}
+.block .steps h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.steps p {
+  margin: 0 0 8px;
+  max-width: 64ch;
+  color: var(--qless-ink-soft);
+}
+.steps ul {
+  margin: 8px 0 0;
+  padding: 12px 16px 12px 32px;
+  background: var(--qless-paper-dim);
+  border-left: 3px solid var(--qless-amber);
+  border-radius: 0 8px 8px 0;
+  max-width: 64ch;
+  color: var(--qless-ink);
+  font-size: 15px;
+}
+.steps ul li {
+  margin: 4px 0;
+}
+
+/* Tables scroll inside their own box, never the page */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--qless-line);
+  border-radius: 10px;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.table th,
+.table td {
+  padding: 12px 16px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--qless-line);
+}
+.table thead th {
+  background: var(--qless-paper-dim);
+  font-size: 13.5px;
+  color: var(--qless-ink-soft);
+}
+.table tbody th {
+  font-weight: 600;
+  color: var(--qless-ink);
+  min-width: 160px;
+}
+.table td {
+  color: var(--qless-ink-soft);
+  min-width: 140px;
+}
+.table tr:last-child th,
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding-top: 24px;
+  }
+  /* The TOC becomes a wrapping row of links above the content */
+  .toc {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-left: none;
+  }
+  .toc a {
+    margin: 0;
+    padding: 6px 12px;
+    border: 1px solid var(--qless-line);
+    border-radius: 999px;
+    font-size: 13.5px;
+  }
+  .defs > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .steps > li {
+    padding-left: 48px;
+  }
+}
