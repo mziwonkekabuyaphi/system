@@ -4,6 +4,7 @@ import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { SiteNav } from "./SiteNav";
 import { QueueScenes } from "./QueueScenes";
+import { StoryScene } from "./StoryScene";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
 
@@ -307,7 +308,9 @@ export default async function DemoPage() {
         </div>
       </section>
 
-      <section>
+      <StoryScene />
+
+      <section className={styles.flow}>
         <div className={styles.wrap}>
           <p className={styles.sectionLabel}>Who it&rsquo;s built for</p>
           <div className={styles.sectionHead}>
