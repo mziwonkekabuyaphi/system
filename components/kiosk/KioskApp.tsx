@@ -551,6 +551,8 @@ export function KioskApp({
 
   // The details-screen fields this shop turned on (Settings > Kiosk > Details screen).
   const fields = useMemo(() => detailsFieldsFrom(branding), [branding])
+  // The shop can hide the WhatsApp tick box in Settings > Kiosk. Missing counts as shown.
+  const showOptInBox = branding.showWhatsAppOptIn !== false
 
   const submit = async () => {
     // Booking always needs a service (date/time availability is looked up
@@ -575,7 +577,7 @@ export function KioskApp({
 
     // Consent has to be on file BEFORE the queue insert: the insert fires the "joined" WhatsApp message
     // straight away. A failure here must never block a check-in.
-    if (fields.showPhone && whatsappAvailable && whatsappOptIn) {
+    if (fields.showPhone && whatsappAvailable && showOptInBox && whatsappOptIn) {
       try {
         await recordWhatsAppOptIn(slug, phone)
       } catch {
@@ -718,7 +720,7 @@ export function KioskApp({
           onSurnameChange={setSurname}
           onEmailChange={setEmail}
           onCustomChange={setCustomAnswer}
-          showWhatsAppOptIn={whatsappAvailable && !isWeb && fields.showPhone}
+          showWhatsAppOptIn={whatsappAvailable && !isWeb && fields.showPhone && showOptInBox}
           whatsAppOptIn={whatsappOptIn}
           onWhatsAppOptInChange={setWhatsappOptIn}
           onSubmit={submit}
