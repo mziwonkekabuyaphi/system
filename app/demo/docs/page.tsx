@@ -1,66 +1,46 @@
-import type { ReactNode } from "react";
-import base from "../../demo.module.css"; // FAQ styles
-import styles from "../docs.module.css";
-import { DocsShell } from "../DocsShell";
+import base from "../demo.module.css"; // button styles
+import styles from "./docs.module.css";
+import { DocsShell, TOC, SIGN_UP_URL, DEMO_URL } from "./DocsShell";
 
 export const metadata = {
-  title: "Troubleshooting — ZozoQueue docs",
+  title: "ZozoQueue docs — from the problem it solves to your first day live",
   description:
-    "Fixes for common problems: WhatsApp stuck on pending, missing customer updates, rejected message wording, missing time slots, the kiosk and staff clock-in.",
+    "How ZozoQueue works and how to set it up: WhatsApp booking assistant, walk-in kiosk, waiting-area screen, live dashboard, staff clock-in and payroll.",
 };
 
-function Faq({ q, children }: { q: string; children: ReactNode }) {
-  return (
-    <details className={base.faqItem}>
-      <summary>
-        {q}
-        <svg className={base.faqIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      </summary>
-      <p className={base.faqAnswer}>{children}</p>
-    </details>
-  );
-}
+const hero = (
+  <header className={styles.head}>
+    <div className={base.wrapWide}>
+      <h1>ZozoQueue documentation</h1>
+      <p>
+        What ZozoQueue solves, how the pieces fit together, and how to get a shop from sign-up to its first live
+        customer.
+      </p>
+      <div className={styles.headCtas}>
+        <a className={`${base.btn} ${base.btnPrimary}`} href={SIGN_UP_URL}>Try for free</a>
+        <a className={`${base.btn} ${base.btnSecondary}`} href={DEMO_URL}>See the live demo</a>
+      </div>
+    </div>
+  </header>
+);
 
-export default function TroubleshootingPage() {
+// Each topic has its own page. The list and the one-line descriptions live in TOC (DocsShell.tsx).
+export default function DocsHomePage() {
   return (
-    <DocsShell current="troubleshooting">
+    <DocsShell hero={hero}>
       <div className={styles.block}>
-        <h1>Troubleshooting</h1>
-        <p>The questions we hear most. If yours isn’t here, email us and a person will help.</p>
-    <div className={base.faqList}>
-            <Faq q="My WhatsApp number still shows as pending.">
-              A new connection stays pending until Meta has verified it. If it has been more than a day, email us your business
-              name and we will check the connection with you.
-            </Faq>
-            <Faq q="A customer didn’t get a WhatsApp update.">
-              Check three things: the customer ticked the WhatsApp updates box (or messaged you first), the message is
-              switched on, and Meta has approved its wording. Outside an open chat, WhatsApp only allows approved
-              message templates.
-            </Faq>
-            <Faq q="A message wording was rejected.">
-              Meta decides this. Keep the wording plain and about the visit itself, not promotional, then resubmit. If
-              it keeps failing, email us.
-            </Faq>
-            <Faq q="A time slot isn’t being offered.">
-              Slots only appear inside your opening hours, after the minimum notice, within the booking window, and
-              when a staff member is free for the full service duration.
-            </Faq>
-            <Faq q="The kiosk is missing the booking or queue button.">
-              Check the kiosk registration type (bookings, queue or both), that the matching module is on for your plan,
-              and that you are inside opening hours.
-            </Faq>
-            <Faq q="A staff member can’t clock in.">
-              Check that they are active, that their PIN is set, and that nobody else in your shop has the same PIN.
-            </Faq>
-          </div>
-        <div className={styles.pagers}>
-          <a className={styles.pager} href="/demo/docs/billing">
-            <span>Previous</span>
-            ← Visits &amp; billing
-          </a>
-        </div>
+        <h2>Start here</h2>
+        <p>Read them in order, or jump to what you need.</p>
+        <ul className={styles.topics}>
+          {TOC.map((t) => (
+            <li key={t.id}>
+              <a href={t.href}>
+                <strong>{t.label}</strong>
+                <span>{t.blurb}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
       </div>
     </DocsShell>
   );
