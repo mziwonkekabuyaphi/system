@@ -159,10 +159,6 @@ export default async function DemoPage() {
 
       <section className={styles.heroSplit}>
         <aside className={styles.heroStub} style={{ justifyContent: "flex-start", gap: 40 }}>
-          <span className={styles.heroStubBrand}>
-            <Logo size={44} />
-            ZozoQueue
-          </span>
           <div className={styles.heroStubTicket}>
             <span className={styles.heroStubLabel}>Now serving</span>
             <span className={styles.heroStubNumber}>Q001</span>
