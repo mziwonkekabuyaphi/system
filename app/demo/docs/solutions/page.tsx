@@ -103,7 +103,7 @@ const DETAILS: Array<{
       "Staff clock in and out on a shared PIN pad. Completed shifts become hours worked.",
       "Pay can be hourly, commission or a hybrid of the two.",
       "Payroll adds an estimate of PAYE and UIF, and you mark each period paid when it is.",
-      "Pay details are only visible to people who have been given payroll access.",
+      "Pay details are only visible to owners and admins, never to the Staff role.",
     ],
     setup: [["Turn on clock-in and payroll", "/demo/docs/setup"], ["Roles & access", "/demo/docs/team"]],
   },
