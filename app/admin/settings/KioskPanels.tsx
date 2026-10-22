@@ -347,6 +347,7 @@ const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
 const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
 const DEFAULT_TIME_SCREEN_TITLE = "Pick a time"
 const DEFAULT_DETAILS_SCREEN_TITLE = "Almost done — who are we booking for?"
+const DEFAULT_WHATSAPP_OPTIN_LABEL = "Send me WhatsApp updates about my visit"
 const DEFAULT_TICKET_BOOKING_EYEBROW = "Your booking"
 const DEFAULT_TICKET_QUEUE_EYEBROW = "Your place in line"
 
@@ -378,6 +379,7 @@ type KioskDraft = {
   customRequired: boolean
   // Whether the kiosk shows the "Send me WhatsApp updates" tick box (and sends kiosk confirmation texts).
   showWhatsAppOptIn: boolean
+  whatsAppOptInLabel: string
 }
 
 type DetailsToggleKey = "showName" | "showSurname" | "showPhone" | "showEmail" | "emailRequired" | "showCustom" | "customRequired" | "showWhatsAppOptIn"
@@ -401,6 +403,7 @@ function toKioskDraft(s: AdminKioskSettings): KioskDraft {
     ticketQueueEyebrow: s.ticketQueueEyebrow ?? "",
     ...detailsFieldsFrom(s),
     showWhatsAppOptIn: s.showWhatsAppOptIn ?? true,
+    whatsAppOptInLabel: s.whatsAppOptInLabel ?? "",
   }
 }
 
@@ -432,6 +435,7 @@ function toKioskPayload(d: KioskDraft) {
     customLabel: d.customLabel.trim(),
     customRequired: d.showCustom && d.customRequired,
     showWhatsAppOptIn: d.showWhatsAppOptIn,
+    whatsAppOptInLabel: d.whatsAppOptInLabel.trim() || null,
   }
 }
 
@@ -459,6 +463,7 @@ const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
   "customLabel",
   "customRequired",
   "showWhatsAppOptIn",
+  "whatsAppOptInLabel",
 ]
 
 function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
@@ -646,6 +651,13 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
               "showWhatsAppOptIn",
               "WhatsApp updates tick box",
               "Shows “Send me WhatsApp updates about my visit” under the cellphone number. It is never pre-ticked, and only appears if your WhatsApp is connected. Turn this off to hide it: no new customers can opt in at the kiosk, and the kiosk stops sending its own WhatsApp confirmation. Turn off individual messages under WhatsApp messages to stop the rest.",
+              textField(
+                "whatsAppOptInLabel",
+                "Tick box wording",
+                DEFAULT_WHATSAPP_OPTIN_LABEL,
+                80,
+                `What customers read next to the tick box. Keep it short. Defaults to "${DEFAULT_WHATSAPP_OPTIN_LABEL}".`,
+              ),
             )}
             {fieldToggle(
               "showEmail",
