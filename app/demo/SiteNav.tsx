@@ -1,7 +1,7 @@
 // app/demo/SiteNav.tsx
 //
 // The one top bar used by every public page: Overview (landing), How it works, Demo (live),
-// Pricing, Sign in and Try for free. Each page passes `current` so its own link is marked.
+// Docs, Pricing, Sign in and Try for free. Each page passes `current` so its own link is marked.
 // Change a link or a button here and it changes on all four pages.
 
 import styles from "./demo.module.css"
@@ -14,6 +14,7 @@ const LINKS = [
   { key: "home", label: "Overview", href: "/demo" },
   { key: "how", label: "How it works", href: "/demo/how-it-works" },
   { key: "demo", label: "Demo", href: "/demo/live" },
+  { key: "docs", label: "Docs", href: "/demo/docs" },
   { key: "pricing", label: "Pricing", href: "/demo/pricing" },
 ] as const
 

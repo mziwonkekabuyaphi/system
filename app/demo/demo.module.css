@@ -2220,3 +2220,27 @@
 @media (max-width: 860px) {
   .heroStubExtra { display: none; }
 }
+
+/* ---------- Nav hover / current page ---------- */
+/* Hovering or keyboard-focusing a top-bar link highlights it and underlines the word.
+   The page you are on keeps a permanent underline. Placed last so it wins over the
+   earlier .btnSecondary rules. */
+.siteNavActions a {
+  text-decoration-line: none;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+  text-decoration-color: var(--qless-amber-dim);
+  transition: background-color 0.15s ease, text-decoration-color 0.15s ease;
+}
+.siteNavActions .btnSecondary:hover {
+  background: var(--qless-paper-dim);
+}
+.siteNavActions a:hover,
+.siteNavActions a:focus-visible,
+.siteNavActions a[aria-current="page"] {
+  text-decoration-line: underline;
+}
+.siteNavActions a:focus-visible {
+  outline: 2px solid var(--qless-amber-dim);
+  outline-offset: 2px;
+}
