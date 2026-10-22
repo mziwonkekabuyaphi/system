@@ -31,7 +31,7 @@
 }
 
 .page :global(section) {
-  padding: 72px 0;
+  padding: 56px 0;
 }
 
 .wrap {
@@ -1468,7 +1468,7 @@
 }
 
 @media (min-width: 1100px) {
-  .page :global(section) { padding: 96px 0; }
+  .page :global(section) { padding: 72px 0; }
   .wrap { max-width: 960px; }
   .wrapWide { max-width: 1120px; }
   .sectionHead { max-width: 52ch; }
