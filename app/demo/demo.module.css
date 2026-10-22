@@ -177,7 +177,7 @@
 .page .heroSplit {
   --hero-stub-width: minmax(320px, 400px);
   --hero-min-height: 100vh;
-  --hero-stub-pad: 16px 2.5rem 3rem; /* top padding = the nav's, so the brand shares the nav's line */
+  --hero-stub-pad: 3rem 2.5rem 3rem;
   --hero-main-pad: 96px 56px 64px;
 
   display: grid;
@@ -191,7 +191,7 @@
   .page .heroSplit {
     --hero-stub-width: minmax(280px, 320px);
     --hero-min-height: 560px;
-    --hero-stub-pad: 16px 2rem 2.5rem;
+    --hero-stub-pad: 2.5rem 2rem 2.5rem;
     --hero-main-pad: 96px 36px 56px;
   }
 }
@@ -218,7 +218,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 2rem;
   padding: var(--hero-stub-pad);
   background: linear-gradient(180deg, var(--qless-navy) 0%, var(--qless-navy-deep) 100%);
@@ -273,7 +273,7 @@
 }
 
 .heroStubTicket {
-  margin: auto 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2143,3 +2143,80 @@
 .closing .contactCard .contactDoneText { margin: 12px 0 0; font-size: 15.5px; }
 .closing .contactCard .contactError { margin: 14px 0 0; font-size: 14px; color: #8a1f14; }
 .closing .contactCard h3 { color: var(--qless-ink); }
+
+/* =====================================================================
+   HERO PANEL CONTENT: up-next queue, the two front doors, trust ticks,
+   and a "scan to join" card. Appended; the only edits above are the panel's
+   top padding, its justify-content and the ticket's margin (so the ticket
+   sits at the top of the panel).
+   ===================================================================== */
+
+.heroStubSection { display: flex; flex-direction: column; gap: 0.6rem; }
+.heroStubFoot { margin-top: auto; }
+
+.heroQueue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.heroQueueRow {
+  display: grid;
+  grid-template-columns: 3.1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--demo-line-on-dark);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.875rem;
+  color: var(--qless-paper);
+}
+.heroQueueNo { font-family: var(--qless-font-mono); font-variant-numeric: tabular-nums; color: var(--qless-amber); }
+.heroQueueTag { padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.heroTagWhatsApp { background: #dcf6e4; color: #17653a; }
+.heroTagKiosk { background: #e2e8f3; color: #1d3358; }
+
+.heroDoors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.heroDoor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--demo-line-on-dark);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--demo-muted-on-dark);
+}
+.heroDoor strong { font-size: 0.875rem; color: var(--qless-paper); }
+
+.heroTrust { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.heroTrust li { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--qless-paper); }
+.heroTrust svg { flex: none; width: 18px; height: 18px; color: var(--qless-amber); }
+
+.heroQr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--qless-paper);
+  color: var(--qless-ink);
+}
+.heroQrCode {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  width: 64px;
+  height: 64px;
+  padding: 4px;
+  border: 1px solid var(--qless-line);
+  border-radius: 6px;
+  background: #ffffff;
+}
+.heroQrCode i { background: transparent; }
+.heroQrCode i.heroQrOn { background: #14181f; }
+.heroQrText { display: flex; flex-direction: column; gap: 2px; font-size: 0.78rem; line-height: 1.35; color: var(--qless-ink-soft); }
+.heroQrText strong { font-size: 0.875rem; color: var(--qless-ink); }
+
+/* Phones: the panel stacks above the headline, so keep it short (ticket + up next only) */
+@media (max-width: 860px) {
+  .heroStubExtra { display: none; }
+}

@@ -39,6 +39,19 @@ const TERMS_URL = "";
 
 const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
+/** The navy hero panel: who is next in line, and which door they came through. */
+const HERO_QUEUE: Array<{ no: string; name: string; src: "WhatsApp" | "Kiosk" }> = [
+  { no: "Q002", name: "Naledi P.", src: "WhatsApp" },
+  { no: "Q003", name: "Zinhle D.", src: "Kiosk" },
+];
+
+/** Only things the product already does (same claims as the trust strip below). */
+const HERO_TRUST = ["Official WhatsApp Cloud API", "No double-bookings", "WhatsApp updates are opt-in"];
+
+/** A decorative QR graphic (not a working code), same pattern as the ticket on the How it works page. */
+const HERO_QR = ["1111111", "1000001", "1011101", "1011101", "1011101", "1000001", "1111111"];
+const HERO_QR_NOISE = "0110100101101001";
+
 /**
  * Trust copy. Every line here restates something this page or the product already
  * does. Do not add certifications (ISO, SOC 2, POPIA "compliant"), customer logos or
@@ -158,13 +171,70 @@ export default async function DemoPage() {
       <SiteNav current="home" />
 
       <section className={styles.heroSplit}>
-        <aside className={styles.heroStub} style={{ justifyContent: "flex-start", gap: 40 }}>
+        <aside className={styles.heroStub}>
           <div className={styles.heroStubTicket}>
             <span className={styles.heroStubLabel}>Now serving</span>
             <span className={styles.heroStubNumber}>Q001</span>
             <p className={styles.heroStubTagline}>Every business you manage, one held place in line.</p>
           </div>
-          <span className={styles.heroStubLabel} style={{ marginTop: "auto" }}>A Ndithini product</span>
+
+          <div className={styles.heroStubSection}>
+            <span className={styles.heroStubLabel}>Up next</span>
+            <ul className={styles.heroQueue}>
+              {HERO_QUEUE.map((q) => (
+                <li key={q.no} className={styles.heroQueueRow}>
+                  <span className={styles.heroQueueNo}>{q.no}</span>
+                  <span>{q.name}</span>
+                  <span className={`${styles.heroQueueTag} ${q.src === "WhatsApp" ? styles.heroTagWhatsApp : styles.heroTagKiosk}`}>{q.src}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className={`${styles.heroStubSection} ${styles.heroStubExtra}`}>
+            <span className={styles.heroStubLabel}>Two front doors</span>
+            <div className={styles.heroDoors}>
+              <div className={styles.heroDoor}>
+                <strong>WhatsApp</strong>
+                <span>Books around the clock</span>
+              </div>
+              <div className={styles.heroDoor}>
+                <strong>Kiosk</strong>
+                <span>Walk-ins check themselves in</span>
+              </div>
+            </div>
+          </div>
+
+          <ul className={`${styles.heroTrust} ${styles.heroStubExtra}`}>
+            {HERO_TRUST.map((t) => (
+              <li key={t}>
+                <svg viewBox="0 0 24 24" {...stroke} aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M8.5 12.2l2.4 2.4 4.6-5" />
+                </svg>
+                {t}
+              </li>
+            ))}
+          </ul>
+
+          <div className={`${styles.heroQr} ${styles.heroStubExtra}`}>
+            <span className={styles.heroQrCode} aria-hidden="true">
+              {HERO_QR.flatMap((row, r) =>
+                row.split("").map((c, i) => (
+                  <i
+                    key={`${r}-${i}`}
+                    className={c === "1" || (r > 1 && r < 5 && i > 1 && i < 5 && HERO_QR_NOISE[(r * 7 + i) % HERO_QR_NOISE.length] === "1") ? styles.heroQrOn : ""}
+                  />
+                )),
+              )}
+            </span>
+            <span className={styles.heroQrText}>
+              <strong>Scan to join the queue</strong>
+              <span>A QR code at your door puts walk-ins in line.</span>
+            </span>
+          </div>
+
+          <span className={`${styles.heroStubLabel} ${styles.heroStubFoot}`}>A Ndithini product</span>
         </aside>
         <div className={styles.heroMain}>
           <div className={styles.heroPreview}>
