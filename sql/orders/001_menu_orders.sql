@@ -1,7 +1,10 @@
 -- =====================================================================
 -- Ndithini Platform  |  Module: menu_orders  (Rands "Product Management")
 -- Target project : muelggaqfjumjjdqtnaq (Ndithini Platform)
--- Status         : DRAFT v2 - NOT applied. Tested on a throwaway Postgres.
+-- Status         : DRAFT v3 - NOT applied. Tested on a throwaway Postgres.
+-- v3 fixes       : stock CHECKs + atomic stock deduction/restore, track_inventory
+--                  now defaults to false, staff references must be active tenant
+--                  members, order_events status/payment history (append-only).
 -- v2 fixes       : permissions.module (NOT NULL), unique (id,tenant_id) on
 --                  tenant_customers detected by columns, EXECUTE revoked on
 --                  trigger functions.
@@ -10,7 +13,13 @@
 --                  RLS via is_platform_admin() / user_has_permission() /
 --                  tenant_has_module(), existing set_updated_at() trigger.
 -- Payments       : manual only. Staff mark an order paid (who/when/how).
---                  No gateway, no wallet.
+--                  No gateway, no wallet. Single payment fields on orders are
+--                  deliberate for v1; partial payments, refunds or split tenders
+--                  will need an order_payments table (revisit with the wallet).
+-- Customers      : NO customer policies on purpose. Customer-facing ordering
+--                  must go through a server action (service role) that
+--                  re-reads prices from products and never trusts the client.
+--                  Customers read the menu only via get_public_menu().
 -- =====================================================================
 
 begin;
@@ -137,9 +146,9 @@ create table public.products (
   price               numeric(12,2) not null default 0 check (price >= 0),
   cost_price          numeric(12,2) check (cost_price >= 0),
   compare_price       numeric(12,2) check (compare_price >= 0),
-  track_inventory     boolean not null default true,
-  stock_quantity      integer not null default 0,
-  low_stock_threshold integer not null default 5,
+  track_inventory     boolean not null default false,   -- opt-in: tracked products are decremented per order
+  stock_quantity      integer not null default 0 check (stock_quantity >= 0),
+  low_stock_threshold integer not null default 5 check (low_stock_threshold >= 0),
   status              text not null default 'active'
                         check (status in ('draft', 'active', 'archived')),
   is_available        boolean not null default true,       -- quick "86 it" toggle
@@ -250,6 +259,7 @@ create table public.orders (
   notes            text,
   meta             jsonb not null default '{}'::jsonb,
   created_by       uuid references public.profiles(id) on delete set null,
+  updated_by       uuid references public.profiles(id) on delete set null,   -- set by the app on every change; feeds order_events
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now(),
   unique (id, tenant_id),
@@ -349,6 +359,206 @@ create trigger order_items_recalc
   for each row execute function public.trg_order_items_recalc();
 
 -- ---------------------------------------------------------------------
+-- 6b. Stock: atomic deduct / restore (tracked products only)
+--     The UPDATE ... WHERE stock_quantity >= qty takes the row lock, so two
+--     concurrent sales of the last units cannot both succeed.
+--     Deleting a whole order restores stock like deleting its items does;
+--     cancel the order instead if you want to keep it for history.
+-- ---------------------------------------------------------------------
+create or replace function public.order_stock_adjust(
+  p_tenant uuid, p_product uuid, p_qty integer)   -- p_qty > 0 deducts, < 0 restores
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tracked boolean;
+  v_rows    integer;
+begin
+  if p_product is null or p_qty = 0 then
+    return;
+  end if;
+
+  select track_inventory into v_tracked
+  from public.products where id = p_product and tenant_id = p_tenant;
+  if not coalesce(v_tracked, false) then
+    return;
+  end if;
+
+  update public.products
+     set stock_quantity = stock_quantity - p_qty
+   where id = p_product and tenant_id = p_tenant
+     and stock_quantity - p_qty >= 0;
+  get diagnostics v_rows = row_count;
+
+  if v_rows = 0 then
+    raise exception 'Insufficient stock for product %', p_product
+      using errcode = 'check_violation';
+  end if;
+end;
+$$;
+revoke all on function public.order_stock_adjust(uuid, uuid, integer) from public, anon, authenticated;
+
+create or replace function public.trg_order_items_stock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_status text;
+begin
+  if tg_op in ('INSERT', 'UPDATE') then
+    select status into v_status from public.orders
+     where id = new.order_id and tenant_id = new.tenant_id;
+    if v_status = 'cancelled' then
+      raise exception 'Cannot change items on a cancelled order';
+    end if;
+  end if;
+
+  if tg_op = 'INSERT' then
+    perform public.order_stock_adjust(new.tenant_id, new.product_id, new.quantity);
+  elsif tg_op = 'UPDATE' then
+    perform public.order_stock_adjust(old.tenant_id, old.product_id, -old.quantity);
+    perform public.order_stock_adjust(new.tenant_id, new.product_id,  new.quantity);
+  else  -- DELETE
+    select status into v_status from public.orders
+     where id = old.order_id and tenant_id = old.tenant_id;
+    if coalesce(v_status, '') <> 'cancelled' then   -- cancelled orders were already restored
+      perform public.order_stock_adjust(old.tenant_id, old.product_id, -old.quantity);
+    end if;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.trg_order_items_stock() from public, anon, authenticated;
+
+create trigger order_items_stock
+  after insert or update of product_id, quantity or delete on public.order_items
+  for each row execute function public.trg_order_items_stock();
+
+create or replace function public.trg_orders_cancel_stock()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r record;
+begin
+  if new.status = 'cancelled' and old.status <> 'cancelled' then
+    for r in select product_id, quantity from public.order_items
+             where order_id = new.id and tenant_id = new.tenant_id loop
+      perform public.order_stock_adjust(new.tenant_id, r.product_id, -r.quantity);
+    end loop;
+  elsif old.status = 'cancelled' and new.status <> 'cancelled' then
+    for r in select product_id, quantity from public.order_items
+             where order_id = new.id and tenant_id = new.tenant_id loop
+      perform public.order_stock_adjust(new.tenant_id, r.product_id, r.quantity);
+    end loop;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.trg_orders_cancel_stock() from public, anon, authenticated;
+
+create trigger orders_cancel_stock
+  after update of status on public.orders
+  for each row execute function public.trg_orders_cancel_stock();
+
+-- ---------------------------------------------------------------------
+-- 6c. Staff references must be ACTIVE members of the order's tenant
+--     (checked when the value is set or changed, so an ex-staff member
+--     stays on old orders).
+-- ---------------------------------------------------------------------
+create or replace function public.trg_orders_validate_staff()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_col text;
+  v_id  uuid;
+  v_old uuid;
+begin
+  foreach v_col in array array['created_by', 'updated_by', 'ready_by', 'collected_by', 'paid_by'] loop
+    v_id  := (to_jsonb(new) ->> v_col)::uuid;
+    v_old := case when tg_op = 'UPDATE' then (to_jsonb(old) ->> v_col)::uuid end;
+    if v_id is not null and v_id is distinct from v_old
+       and not exists (select 1 from public.tenant_members tm
+                       where tm.tenant_id = new.tenant_id
+                         and tm.profile_id = v_id
+                         and tm.status = 'active') then
+      raise exception '% is not an active member of this tenant', v_col;
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+revoke all on function public.trg_orders_validate_staff() from public, anon, authenticated;
+
+create trigger orders_validate_staff
+  before insert or update on public.orders
+  for each row execute function public.trg_orders_validate_staff();
+
+-- ---------------------------------------------------------------------
+-- 6d. order_events: who moved an order through each status / payment state.
+--     Written by a trigger only; clients get read access. Actor = the signed-in
+--     user, else orders.updated_by (server actions on the service role set it).
+-- ---------------------------------------------------------------------
+create table public.order_events (
+  id          uuid primary key default gen_random_uuid(),
+  tenant_id   uuid not null references public.tenants(id) on delete cascade,
+  order_id    uuid not null,
+  kind        text not null check (kind in ('status', 'payment')),
+  from_value  text,
+  to_value    text not null,
+  actor_id    uuid references public.profiles(id) on delete set null,
+  created_at  timestamptz not null default now(),
+  foreign key (order_id, tenant_id)
+    references public.orders (id, tenant_id) on delete cascade
+);
+create index order_events_order_idx on public.order_events (tenant_id, order_id, created_at);
+
+create trigger order_events_no_update
+  before update on public.order_events
+  for each row execute function public.trg_append_only();
+
+create or replace function public.trg_orders_log_events()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := coalesce(auth.uid(), new.updated_by, new.created_by);
+begin
+  if tg_op = 'INSERT' then
+    insert into public.order_events (tenant_id, order_id, kind, from_value, to_value, actor_id)
+    values (new.tenant_id, new.id, 'status', null, new.status, v_actor);
+  else
+    if new.status is distinct from old.status then
+      insert into public.order_events (tenant_id, order_id, kind, from_value, to_value, actor_id)
+      values (new.tenant_id, new.id, 'status', old.status, new.status, v_actor);
+    end if;
+    if new.payment_status is distinct from old.payment_status then
+      insert into public.order_events (tenant_id, order_id, kind, from_value, to_value, actor_id)
+      values (new.tenant_id, new.id, 'payment', old.payment_status, new.payment_status,
+              coalesce(new.paid_by, v_actor));
+    end if;
+  end if;
+  return null;
+end;
+$$;
+revoke all on function public.trg_orders_log_events() from public, anon, authenticated;
+
+create trigger orders_log_events
+  after insert or update on public.orders
+  for each row execute function public.trg_orders_log_events();
+
+-- ---------------------------------------------------------------------
 -- 7. updated_at + tenant_id immutability
 -- ---------------------------------------------------------------------
 do $$
@@ -379,6 +589,7 @@ alter table public.products           enable row level security;
 alter table public.order_settings     enable row level security;
 alter table public.orders             enable row level security;
 alter table public.order_items        enable row level security;
+alter table public.order_events       enable row level security;
 
 -- product_categories
 create policy product_categories_select on public.product_categories for select
@@ -428,6 +639,10 @@ create policy orders_update on public.orders for update
                   or public.user_has_permission(tenant_id, 'orders.manage'))));
 create policy orders_delete on public.orders for delete
   using (public.is_platform_admin() or public.user_has_permission(tenant_id, 'orders.manage'));
+
+-- order_events (read only for clients; the trigger writes them)
+create policy order_events_select on public.order_events for select
+  using (public.is_platform_admin() or public.user_has_permission(tenant_id, 'orders.view'));
 
 -- order_items (same rules as their order)
 create policy order_items_select on public.order_items for select
@@ -515,6 +730,8 @@ commit;
 --   products   : 19 rows. category text -> category_id lookup.
 --                Skip the 1 `locker_rental` product (legacy lockers).
 --                Keep the 1 vault_eligible product flag.
+--                Set track_inventory = true and copy stock_quantity for all 19
+--                (Rands tracks all of them; the new default is false).
 --   orders     : 11 rows. 10 are source=vvip_pos / payment_method=vvip_tab
 --                (VVIP module) - hold these until VVIP moves, or import as
 --                history. Only 1 is a real WhatsApp order.
