@@ -80,6 +80,11 @@ export interface AdminStaffPermissions {
   /** analytics.view — shows the Analytics tab. The server action in
    *  app/admin/analytics/actions.ts re-checks it; this only hides the tab. */
   analyticsView: boolean
+  /** shisha.view / shisha.operate / shisha.manage — the Shisha tab. Every action in
+   *  app/admin/shisha/actions.ts re-checks these plus the plan entitlement. */
+  shishaView: boolean
+  shishaOperate: boolean
+  shishaManage: boolean
 }
 
 /** A currently-open row in staff_shifts, joined with the staff member's

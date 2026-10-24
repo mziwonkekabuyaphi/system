@@ -50,7 +50,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { last4 } from "@/lib/payroll/staff-details"
-import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+import { tenantHasModule, isTenantModuleEnabled, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
 import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
@@ -743,6 +743,9 @@ export default async function AdminPage() {
     "settings.manage",
     "services.manage",
     "analytics.view",
+    "shisha.view",
+    "shisha.operate",
+    "shisha.manage",
   ]
 
   let permissions: AdminStaffPermissions
@@ -756,6 +759,9 @@ export default async function AdminPage() {
       settingsManage: granted.has("settings.manage"),
       servicesManage: granted.has("services.manage"),
       analyticsView: granted.has("analytics.view"),
+      shishaView: granted.has("shisha.view"),
+      shishaOperate: granted.has("shisha.operate"),
+      shishaManage: granted.has("shisha.manage"),
     }
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
@@ -767,6 +773,9 @@ export default async function AdminPage() {
       settingsManage: false,
       servicesManage: false,
       analyticsView: false,
+      shishaView: false,
+      shishaOperate: false,
+      shishaManage: false,
     }
   }
 
@@ -810,6 +819,13 @@ export default async function AdminPage() {
   // Custom sidebar colours need the 'branding' plan module, same as the kiosk's
   // brand colours: stored values are ignored (not deleted) without it.
   const brandingEntitled = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding).catch(() => false)
+  // The Shisha tab needs the module on the tenant's PLAN (plan_modules), switched
+  // ON for the tenant (tenant_modules, opt-in) and shisha.view. Fails closed;
+  // every shisha action re-checks all three.
+  const shishaEnabled = permissions.shishaView
+    ? await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.shisha, { defaultOn: false })
+    : false
+
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
     : { ...settingsData.branding, sidebarColor: null, sidebarTextColor: null, accentColor: null }
@@ -823,6 +839,7 @@ export default async function AdminPage() {
       initialStaff={staff}
       initialActiveShifts={activeShifts}
       staffPermissions={permissions}
+      shishaEnabled={shishaEnabled}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}

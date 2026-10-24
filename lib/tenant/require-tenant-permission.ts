@@ -49,6 +49,9 @@ export type PermissionKey =
   | "queue.manage"
   | "analytics.view"
   | "billing.view"
+  | "shisha.view"
+  | "shisha.operate"
+  | "shisha.manage"
 
 export type PermissionCheckResult =
   | { ok: true; member: CurrentTenantMember }

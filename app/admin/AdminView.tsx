@@ -11,6 +11,7 @@ import { InboxManager } from "./InboxManager"
 import { PayrollManager } from "./PayrollManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
+import { ShishaManager } from "./shisha/ShishaManager"
 import { SettingsManager } from "./SettingsManager"
 import { sidebarStyleVars } from "./sidebar-theme"
 import { StaffManager } from "./StaffManager"
@@ -39,6 +40,7 @@ import type {
 type Tab =
   | "today"
   | "queue"
+  | "shisha"
   | "customers"
   | "inbox"
   | "services"
@@ -154,6 +156,17 @@ function BanknoteIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function HookahIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M9.5 3.5h5l-.8 3.2h-3.4z" />
+      <path d="M12 6.7V12" />
+      <path d="M8.2 12h7.6l1.3 7.3a1 1 0 0 1-1 1.2H7.9a1 1 0 0 1-1-1.2z" />
+      <path d="M15.8 14c2.4.2 3.7 1.3 3.7 3" />
+    </svg>
+  )
+}
+
 function ChevronIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -165,6 +178,7 @@ function ChevronIcon(props: SVGProps<SVGSVGElement>) {
 const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement>) => JSX.Element }> = [
   { id: "today", label: "Appointments", icon: CalendarIcon },
   { id: "queue", label: "Live Queue", icon: TicketIcon },
+  { id: "shisha", label: "Shisha", icon: HookahIcon },
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "customers", label: "Customers", icon: ContactsIcon },
   { id: "services", label: "Services", icon: TagIcon },
@@ -183,6 +197,7 @@ export function AdminView({
   initialStaff,
   initialActiveShifts,
   staffPermissions,
+  shishaEnabled,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -206,6 +221,8 @@ export function AdminView({
   initialStaff: AdminStaff[]
   initialActiveShifts: AdminStaffShift[]
   staffPermissions: AdminStaffPermissions
+  /** Plan includes the shisha module AND the caller has shisha.view (computed in page.tsx). */
+  shishaEnabled: boolean
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -236,6 +253,8 @@ export function AdminView({
   const visibleTabs = TABS.filter((t) => {
     if (t.id === "services") return staffPermissions.servicesManage
     if (t.id === "settings") return staffPermissions.settingsManage
+    // Plan entitlement + shisha.view. The actions re-check both server-side.
+    if (t.id === "shisha") return shishaEnabled && staffPermissions.shishaView
     // Analytics has its own permission key (analytics.view). The server
     // action in app/admin/analytics/actions.ts re-checks it, so this only
     // controls whether the tab is shown.
@@ -429,6 +448,13 @@ export function AdminView({
         <main className="px-6 pb-24 pt-2">
           {tab === "today" && <TodayBookings initialBookings={initialBookings} timezone={timezone} />}
           {tab === "queue" && <QueueManager initialQueue={initialQueue} timezone={timezone} />}
+          {tab === "shisha" && shishaEnabled && staffPermissions.shishaView && (
+            <ShishaManager
+              timezone={timezone}
+              canOperate={staffPermissions.shishaOperate}
+              canManage={staffPermissions.shishaManage}
+            />
+          )}
           {tab === "customers" && staffPermissions.settingsManage && <CustomersManager timezone={timezone} />}
           {tab === "inbox" && staffPermissions.settingsManage && (
             <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
