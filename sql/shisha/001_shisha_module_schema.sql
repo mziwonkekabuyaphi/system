@@ -102,10 +102,15 @@ where m.key = 'shisha'
 -- ---------------------------------------------------------------------
 do $$
 begin
+  -- Detects ANY unique constraint on {id, tenant_id} (the menu_orders module
+  -- adds one too), so applying both modules never creates a duplicate.
   if not exists (
-    select 1 from pg_constraint
-    where conname = 'tenant_customers_tenant_id_id_key'
-      and conrelid = 'public.tenant_customers'::regclass
+    select 1 from pg_constraint c
+    where c.conrelid = 'public.tenant_customers'::regclass
+      and c.contype in ('u', 'p')
+      and (select array_agg(a.attname::text order by a.attname)
+           from unnest(c.conkey) k join pg_attribute a
+             on a.attrelid = c.conrelid and a.attnum = k) = array['id', 'tenant_id']
   ) then
     alter table public.tenant_customers
       add constraint tenant_customers_tenant_id_id_key unique (tenant_id, id);
