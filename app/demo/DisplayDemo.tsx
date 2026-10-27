@@ -203,7 +203,7 @@ export function DisplayDemo() {
   const t = data.terms
 
   const [layout, setLayout] = useState<Layout>("rotation")
-  const [theme, setTheme] = useState<Theme>("dark")
+  const [theme, setTheme] = useState<Theme>("light")
   const [show, setShow] = useState<Record<Screen, boolean>>({ menu: true, bookings: true, queue: true })
   const [det, setDet] = useState<Details>({ service: true, phone: false, surname: true, email: false, custom: false, wait: true, waited: true })
   const [step, setStep] = useState(0)
@@ -630,19 +630,19 @@ export function DisplayDemo() {
 
           <span className={styles.dGroupLabel}>Colour theme</span>
           <div className={styles.dOpts} role="group" aria-label="Colour theme">
-            <button type="button" aria-pressed={theme === "dark"} className={styles.dOpt} onClick={() => setTheme("dark")}>
-              <span className={styles.dOptTitle}>
-                <i className={styles.dSwatch} style={{ background: "#15110d" }} />
-                Dark
-              </span>
-              <span className={styles.dOptText}>Easy on the eyes in dim rooms.</span>
-            </button>
             <button type="button" aria-pressed={theme === "light"} className={styles.dOpt} onClick={() => setTheme("light")}>
               <span className={styles.dOptTitle}>
                 <i className={styles.dSwatch} style={{ background: "#faf8f5" }} />
                 Light
               </span>
               <span className={styles.dOptText}>Suits bright, airy spaces.</span>
+            </button>
+            <button type="button" aria-pressed={theme === "dark"} className={styles.dOpt} onClick={() => setTheme("dark")}>
+              <span className={styles.dOptTitle}>
+                <i className={styles.dSwatch} style={{ background: "#15110d" }} />
+                Dark
+              </span>
+              <span className={styles.dOptText}>Easy on the eyes in dim rooms.</span>
             </button>
           </div>
         </div>
