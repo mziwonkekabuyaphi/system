@@ -18,6 +18,7 @@ import {
   SHISHA_DISPLAY_LABELS,
   isHex6,
   normalizeShishaDisplaySettings,
+  type ShishaDisplayLayout,
   type ShishaDisplaySettings,
   type ShishaDisplaySort,
   type ShishaDisplayTheme,
@@ -32,6 +33,20 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "show", label: "What shows" },
   { id: "wording", label: "Wording" },
   { id: "alerts", label: "Alerts" },
+]
+
+const LAYOUTS: Array<{ value: ShishaDisplayLayout; title: string; description: string }> = [
+  {
+    value: "board",
+    title: "Board",
+    description: "Every device as a card with its own coal ring. Best when you want the whole floor on screen at once.",
+  },
+  {
+    value: "lounge",
+    title: "Lounge",
+    description:
+      "The session closest to finishing gets a big glowing ring, with every device in a live burn-down list beside it. Uses your brand colours.",
+  },
 ]
 
 const THEMES: Array<{ value: ShishaDisplayTheme; title: string; description: string; swatch: string }> = [
@@ -395,6 +410,17 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
 
               {tab === "look" && (
                 <div className="space-y-6">
+                  <Group title="Layout" hint="Both layouts use your settings below and the same alerts.">
+                    <div className="space-y-2">
+                      {LAYOUTS.map((o) => (
+                        <OptionCard key={o.value} selected={draft.layout === o.value} disabled={saving} onClick={() => set("layout", o.value)}>
+                          <span className="text-sm font-semibold text-[#1C1A17]">{o.title}</span>
+                          <span className="text-xs text-[#8A8375]">{o.description}</span>
+                        </OptionCard>
+                      ))}
+                    </div>
+                  </Group>
+
                   <Group title="Colour theme" hint="Text colour is chosen for you so it stays readable on any background.">
                     <div className="space-y-2">
                       {THEMES.map((o) => {
@@ -455,7 +481,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                     </Field>
                   </Group>
 
-                  <Group title="Order of devices">
+                  <Group title="Order of devices" hint={draft.layout === "lounge" ? "Applies to the list. The big device is always the one finishing soonest." : undefined}>
                     <div className="space-y-2">
                       {SORTS.map((o) => (
                         <OptionCard key={o.value} selected={draft.sort === o.value} disabled={saving} onClick={() => set("sort", o.value)}>

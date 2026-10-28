@@ -6,6 +6,8 @@
 
 export type ShishaDisplayTheme = "dark" | "light" | "custom"
 export type ShishaDisplaySort = "code" | "urgency"
+/** "board" = grid of device cards; "lounge" = featured device + burn-down list. */
+export type ShishaDisplayLayout = "board" | "lounge"
 
 /** Every piece of wording on the TV. null = use `fallback`. */
 export const SHISHA_DISPLAY_LABELS = [
@@ -18,6 +20,7 @@ export const SHISHA_DISPLAY_LABELS = [
   { key: "live", column: "label_live", title: "Connected pill", fallback: "Live", hint: "Header pill while the screen is connected." },
   { key: "offline", column: "label_offline", title: "Offline pill", fallback: "Reconnecting…", hint: "Header pill when the connection drops." },
   { key: "timeUp", column: "label_time_up", title: "Time-up alert heading", fallback: "Time's up", hint: "Heading on the full-screen alert." },
+  { key: "soonest", column: "label_soonest", title: "Lounge layout: featured heading", fallback: "Finishing soonest", hint: "Heading above the big device in the Lounge layout." },
   { key: "empty", column: "label_empty", title: "No devices message", fallback: "No devices set up yet.", hint: "Shown when you haven't added any devices." },
 ] as const
 
@@ -37,6 +40,7 @@ export const DISPLAY_LABEL_MAX = 24
 export interface ShishaDisplaySettings {
   /** Owner's on/off switch for the TV address. */
   isEnabled: boolean
+  layout: ShishaDisplayLayout
   theme: ShishaDisplayTheme
   /** #RRGGBB. Only used when theme === "custom". */
   backgroundColor: string | null
@@ -63,6 +67,7 @@ export interface ShishaDisplaySettings {
 
 export const DEFAULT_SHISHA_DISPLAY_SETTINGS: ShishaDisplaySettings = {
   isEnabled: true,
+  layout: "board",
   theme: "dark",
   backgroundColor: null,
   title: null,
@@ -84,6 +89,7 @@ export const DEFAULT_SHISHA_DISPLAY_SETTINGS: ShishaDisplaySettings = {
 /** Columns read from shisha_display_settings (one place, so reader and writer agree). */
 export const SHISHA_DISPLAY_SELECT = [
   "is_enabled",
+  "layout",
   "theme",
   "background_color",
   "title",
@@ -117,6 +123,7 @@ export function rowToShishaDisplaySettings(row: Record<string, unknown> | null |
   const seconds = Number(row.time_up_alert_seconds)
   return {
     isEnabled: flag(row.is_enabled, d.isEnabled),
+    layout: row.layout === "lounge" ? "lounge" : "board",
     theme: row.theme === "light" || row.theme === "custom" ? row.theme : "dark",
     backgroundColor: isHex6(row.background_color) ? row.background_color.toUpperCase() : null,
     title: text(row.title),
@@ -140,6 +147,7 @@ export function rowToShishaDisplaySettings(row: Record<string, unknown> | null |
 export function shishaDisplaySettingsToRow(s: ShishaDisplaySettings): Record<string, unknown> {
   const row: Record<string, unknown> = {
     is_enabled: s.isEnabled,
+    layout: s.layout,
     theme: s.theme,
     background_color: s.backgroundColor,
     title: s.title,
