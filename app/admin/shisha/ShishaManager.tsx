@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
+import { ShishaDisplayDrawer } from "./ShishaDisplayDrawer"
 import {
   addDevice,
   addFlavour,
@@ -151,6 +152,7 @@ export function ShishaManager({
   const busyRef = useRef(false)
   const [editing, setEditing] = useState<Editing | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null)
+  const [displayOpen, setDisplayOpen] = useState(false)
 
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [refreshFailed, setRefreshFailed] = useState(false)
@@ -290,6 +292,11 @@ export function ShishaManager({
           <button type="button" onClick={() => void doRefresh()} disabled={refreshing || busy} className={BTN}>
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
+          {canManage && (
+            <button type="button" onClick={() => setDisplayOpen(true)} className={BTN}>
+              TV display
+            </button>
+          )}
         </div>
       </div>
 
@@ -509,6 +516,9 @@ export function ShishaManager({
           correct.
         </p>
       </AdminDialog>
+
+      {/* TV display settings: right-hand overlay panel */}
+      {canManage && <ShishaDisplayDrawer open={displayOpen} onClose={() => setDisplayOpen(false)} />}
     </div>
   )
 }
