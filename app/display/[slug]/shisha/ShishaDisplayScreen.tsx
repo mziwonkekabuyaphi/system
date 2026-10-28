@@ -30,7 +30,16 @@ import {
 } from "@/app/admin/shisha/shisha-display-types"
 import { deriveDisplayStatus, type ShishaDisplayStatus } from "@/app/admin/shisha/shisha-types"
 import { CallAlertOverlay, type CallAlertEntry } from "../CallAlertOverlay"
-import { DEFAULT_ACCENT, ensureContrast, hexToRgba, mixHex, resolveThemeTokens } from "../displayTheme"
+import { DEFAULT_ACCENT, DEFAULT_SECONDARY, ensureContrast, hexToRgba, mixHex, resolveThemeTokens } from "../displayTheme"
+import { ShishaLoungeView } from "./ShishaLoungeView"
+import {
+  STATUS_BASE,
+  URGENCY_RANK,
+  formatPrice,
+  timerText,
+  type CardState,
+  type CardView,
+} from "./shisha-display-shared"
 import {
   fetchShishaDisplayData,
   type ShishaDisplayData,
@@ -39,51 +48,6 @@ import {
 } from "./actions"
 
 const POLL_MS = 10_000
-
-type CardState = ShishaDisplayStatus | "available" | "maintenance"
-
-const STATUS_BASE: Record<CardState, string> = {
-  active: "#3FA7D6",
-  refill: "#D9A441",
-  expired: "#E5533D",
-  paused: "#9B7FC7",
-  available: "#3E9B6E",
-  maintenance: "#8A8375",
-}
-
-interface CardView {
-  device: ShishaDisplayDevice
-  state: CardState
-  /** Seconds left; negative once overdue. null when there is no session. */
-  raw: number | null
-  /** 0-100, how much of the coal ring is filled. */
-  pct: number
-}
-
-const pad = (n: number) => String(n).padStart(2, "0")
-
-function formatTimer(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds))
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${pad(m)}:${pad(s % 60)}`
-}
-
-function formatPrice(amount: number, currency: string): string {
-  const digits = Number.isInteger(amount) ? 0 : 2
-  try {
-    return new Intl.NumberFormat("en-ZA", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    }).format(amount)
-  } catch {
-    return `${amount.toFixed(digits)} ${currency}`
-  }
-}
-
-const URGENCY_RANK: Record<CardState, number> = { expired: 0, refill: 1, active: 2, paused: 3, available: 4, maintenance: 5 }
 
 /** Picks columns/rows and ring size so every device fits on one screen with no
  *  scrolling (a TV can't be scrolled). Sizes assume a 16:9 screen; the ring is
@@ -229,10 +193,23 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
   // ---- Theme ----
   const theme = resolveThemeTokens(settings.theme, settings.backgroundColor)
   const accent = ensureContrast(data.branding.primaryColor || DEFAULT_ACCENT, theme.bgSolid, theme.fg, 3)
+  const secondary = ensureContrast(data.branding.secondaryColor || DEFAULT_SECONDARY, theme.bgSolid, theme.fg, 3)
   const statusColor = (s: CardState) => ensureContrast(STATUS_BASE[s], theme.bgSolid, theme.fg, 3)
   const cardBg = mixHex(theme.bgSolid, theme.fg, 0.07)
   const brandName = data.branding.displayName?.trim() || "Welcome"
   const title = settings.title?.trim() || DISPLAY_TITLE_DEFAULT
+
+  const alertOverlay = activeAlert ? (
+    <CallAlertOverlay
+      key={activeAlert.id}
+      entry={activeAlert}
+      label={label("timeUp")}
+      seconds={alertSeconds}
+      accent={accent}
+      bg={theme.bgCss}
+      fg={theme.fg}
+    />
+  ) : null
 
   const layout = pickLayout(views.length, settings.showStats, settings.showTicker)
   const ringCss = `min(${layout.ringVw.toFixed(2)}vw, ${(layout.ringVw / 0.5625).toFixed(2)}vh)`
@@ -266,6 +243,30 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
     "--ticker-s": `${Math.max(24, tickerItems.length * 7)}s`,
   } as CSSProperties
 
+  if (settings.layout === "lounge") {
+    return (
+      <>
+        {alertOverlay}
+        <ShishaLoungeView
+          data={data}
+          views={views}
+          allViews={allViews}
+          counts={counts}
+          online={online}
+          blocked={blocked}
+          nowMs={nowMs}
+          mounted={mounted}
+          label={label}
+          theme={theme}
+          accent={accent}
+          secondary={secondary}
+          statusColor={statusColor}
+          tickerItems={tickerItems}
+        />
+      </>
+    )
+  }
+
   const statItems: Array<{ state: CardState; key: ShishaDisplayLabelKey }> = [
     { state: "active", key: "active" },
     { state: "refill", key: "refill" },
@@ -276,17 +277,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
 
   return (
     <>
-      {activeAlert && (
-        <CallAlertOverlay
-          key={activeAlert.id}
-          entry={activeAlert}
-          label={label("timeUp")}
-          seconds={alertSeconds}
-          accent={accent}
-          bg={theme.bgCss}
-          fg={theme.fg}
-        />
-      )}
+      {alertOverlay}
 
       <div className="stage" style={stage}>
         {blocked ? (
@@ -352,7 +343,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           <section className="grid">
             {views.map(({ device, state, raw, pct }) => {
               const s = device.session
-              const timer = raw === null ? null : raw < 0 ? `+${formatTimer(-raw)}` : formatTimer(raw)
+              const timer = timerText(raw)
               const meta = [s?.flavour, s?.firstName, device.station, device.name].filter(
                 (m): m is string => Boolean(m && m.trim()),
               )

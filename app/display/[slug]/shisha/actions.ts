@@ -35,6 +35,7 @@ export interface ShishaDisplayBranding {
   displayName: string | null
   logoUrl: string | null
   primaryColor: string | null
+  secondaryColor: string | null
 }
 
 export type ShishaDisplayDeviceState = "live" | "available" | "maintenance"
@@ -114,7 +115,7 @@ export async function fetchShishaDisplayData(slug: string): Promise<ShishaDispla
         supabase.from("shisha_display_settings").select(SHISHA_DISPLAY_SELECT).eq("tenant_id", tenantId).maybeSingle(),
         supabase
           .from("tenant_branding")
-          .select("display_name, logo_url, primary_color")
+          .select("display_name, logo_url, primary_color, secondary_color")
           .eq("tenant_id", tenantId)
           .maybeSingle(),
         supabase
@@ -208,7 +209,12 @@ export async function fetchShishaDisplayData(slug: string): Promise<ShishaDispla
       : []
 
     const timing = timingRes.data as { coal_duration_minutes: number; refill_threshold_minutes: number } | null
-    const branding = brandingRes.data as { display_name: string | null; logo_url: string | null; primary_color: string | null } | null
+    const branding = brandingRes.data as {
+      display_name: string | null
+      logo_url: string | null
+      primary_color: string | null
+      secondary_color: string | null
+    } | null
 
     return {
       ok: true,
@@ -218,6 +224,7 @@ export async function fetchShishaDisplayData(slug: string): Promise<ShishaDispla
           displayName: branding?.display_name ?? null,
           logoUrl: brandingEntitled ? (branding?.logo_url ?? null) : null,
           primaryColor: brandingEntitled ? (branding?.primary_color ?? null) : null,
+          secondaryColor: brandingEntitled ? (branding?.secondary_color ?? null) : null,
         },
         settings,
         timing: {
