@@ -8,6 +8,7 @@ const LINKS: Array<[string, string]> = [
   ["/platform", "Overview"],
   ["/platform/tenants", "Shops"],
   ["/platform/upgrades", "Upgrade requests"],
+  ["/platform/shisha", "Shisha"],
   ["/platform/sales", "Sales & commissions"],
 ]
 
