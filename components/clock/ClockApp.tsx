@@ -21,7 +21,7 @@ import type { CSSProperties } from "react"
 import { submitClockPin, type ClockAction } from "@/app/clock/[slug]/actions"
 import type { ClockCopy } from "@/app/clock/[slug]/clockSettings"
 
-const MAX_PIN_LENGTH = 6
+const PIN_LENGTH = 6
 const CONFIRMATION_DISPLAY_MS = 3500
 
 interface ClockAppProps {
@@ -65,7 +65,7 @@ export function ClockApp({ slug, displayName, logoUrl, themeVars, bgSolid, copy 
   function pressDigit(digit: string) {
     if (busy || confirmation) return
     setError(null)
-    setPin((p) => (p.length >= MAX_PIN_LENGTH ? p : p + digit))
+    setPin((p) => (p.length >= PIN_LENGTH ? p : p + digit))
   }
 
   function backspace() {
@@ -81,7 +81,7 @@ export function ClockApp({ slug, displayName, logoUrl, themeVars, bgSolid, copy 
   }
 
   async function submit() {
-    if (pin.length < 4 || busy) return
+    if (pin.length !== PIN_LENGTH || busy) return
     setBusy(true)
     setError(null)
 
@@ -123,7 +123,7 @@ export function ClockApp({ slug, displayName, logoUrl, themeVars, bgSolid, copy 
           <p className="prompt">{copy.prompt}</p>
 
           <div className="dots" aria-hidden="true">
-            {Array.from({ length: MAX_PIN_LENGTH }).map((_, i) => (
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
               <span key={i} className={`dot ${i < pin.length ? "filled" : ""}`} />
             ))}
           </div>
@@ -148,7 +148,7 @@ export function ClockApp({ slug, displayName, logoUrl, themeVars, bgSolid, copy 
             </button>
           </div>
 
-          <button type="button" className="enter" onClick={submit} disabled={pin.length < 4 || busy}>
+          <button type="button" className="enter" onClick={submit} disabled={pin.length !== PIN_LENGTH || busy}>
             Enter
           </button>
         </div>
