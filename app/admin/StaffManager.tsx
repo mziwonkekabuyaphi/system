@@ -2,7 +2,7 @@
 "use client"
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react"
-import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, toggleStaffActive, updateStaff } from "./actions"
+import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, resetStaffClockInPin, toggleStaffActive, updateStaff } from "./actions"
 import { ConfirmDialog, NoticeModal, type Notice } from "./AdminModals"
 import type { AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
 import type {
@@ -26,7 +26,6 @@ type StaffFormState = {
   jobTitle: string
   phone: string
   email: string
-  clockInPin: string
   loginPassword: string
   hourlyRate: number | null
   // How they are paid (payroll.manage only, like hourlyRate). commissionRate is
@@ -59,7 +58,6 @@ const EMPTY_FORM: StaffFormState = {
   hybridMode: "base_plus_commission",
   phone: "",
   email: "",
-  clockInPin: "",
   loginPassword: "",
   employeeNumber: "",
   startDate: "",
@@ -85,7 +83,6 @@ function formFromStaff(member: AdminStaff, profile?: AdminStaffPayProfile): Staf
     hybridMode: profile?.hybridMode ?? "base_plus_commission",
     phone: member.phone ?? "",
     email: member.email ?? "",
-    clockInPin: member.clockInPin ?? "",
     loginPassword: "",
     employeeNumber: member.employeeNumber ?? "",
     startDate: member.startDate ?? "",
@@ -259,6 +256,49 @@ function StaffClockInUrlPanel({ tenantSlug }: { tenantSlug: string }) {
   )
 }
 
+// Shows a freshly generated PIN exactly once. Closing it discards the PIN from the browser.
+function PinRevealModal({ reveal, onClose }: { reveal: { name: string; pin: string } | null; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  if (!reveal) return null
+
+  async function copyPin() {
+    try {
+      await navigator.clipboard.writeText(reveal!.pin)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard can be unavailable; the PIN is on screen to read out.
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-sm rounded-lg bg-[#FAF6EE] p-6 shadow-xl">
+        <h3 className="text-base font-semibold text-[#1C1A17]">New PIN for {reveal.name}</h3>
+        <p className="mt-4 text-center font-mono text-4xl tracking-[0.3em] text-[#1C1A17]">{reveal.pin}</p>
+        <p className="mt-4 text-sm text-[#7A2E2E]">
+          This is the only time you will see it. It isn&apos;t stored anywhere readable. If it&apos;s lost, reset it again.
+        </p>
+        <div className="mt-6 flex items-center justify-between">
+          <button type="button" onClick={copyPin} className="border border-[#D9D3C3] px-3 py-1.5 text-sm text-[#1C1A17]">
+            {copied ? "Copied!" : "Copy"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCopied(false)
+              onClose()
+            }}
+            className="bg-[#1C1A17] px-4 py-2 text-sm text-[#FAF6EE]"
+          >
+            I&apos;ve noted it
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function StaffManager({
   initialStaff: staff,
   initialActiveShifts: activeShifts,
@@ -303,6 +343,23 @@ export function StaffManager({
   const [notice, setNotice] = useState<Notice | null>(null)
 
   const isEditing = editingId !== null
+  const editingMember = editingId ? (staff.find((m) => m.id === editingId) ?? null) : null
+
+  const [resetTarget, setResetTarget] = useState<AdminStaff | null>(null)
+  const [isResetting, startReset] = useTransition()
+  // The new PIN, held only until the owner closes the dialog. Never stored anywhere else.
+  const [revealed, setRevealed] = useState<{ name: string; pin: string } | null>(null)
+
+  function confirmReset() {
+    if (!permissions.staffManage || !resetTarget) return
+    const target = resetTarget
+    startReset(async () => {
+      const result = await resetStaffClockInPin(target.id)
+      setResetTarget(null)
+      if (result.ok) setRevealed({ name: target.name, pin: result.pin })
+      else setNotice({ title: "Couldn't reset PIN", message: result.error })
+    })
+  }
 
   function startEdit(member: AdminStaff) {
     setEditingId(member.id)
@@ -341,7 +398,8 @@ export function StaffManager({
       jobTitle: form.jobTitle,
       phone: form.phone,
       email: form.email,
-      clockInPin: form.clockInPin,
+      // Unused: PINs are never typed in. Owners use Reset PIN, which shows the new PIN once.
+      clockInPin: "",
       loginPassword: form.loginPassword,
       employeeNumber: form.employeeNumber,
       startDate: form.startDate,
@@ -487,6 +545,9 @@ export function StaffManager({
                   <div className="flex shrink-0 items-center gap-4">
                     <button onClick={() => startEdit(member)} className="text-sm text-[#8A8375]">
                       Edit
+                    </button>
+                    <button onClick={() => setResetTarget(member)} className="text-sm text-[#8A8375]">
+                      {member.clockInPin != null ? "Reset PIN" : "Create PIN"}
                     </button>
                     <button
                       onClick={() => toggle(member)}
@@ -661,15 +722,17 @@ export function StaffManager({
           )}
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Clock-in PIN (4-6 digits)</label>
-            <input
-              value={form.clockInPin}
-              onChange={(e) => setForm((f) => ({ ...f, clockInPin: e.target.value.replace(/\D/g, "") }))}
-              placeholder="1234"
-              inputMode="numeric"
-              maxLength={6}
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
-            />
+            <label className="block text-sm text-[#8A8375]">Clock-in PIN</label>
+            {editingMember ? (
+              <div className="mt-1 flex items-center gap-3">
+                <span className="text-sm text-[#1C1A17]">{editingMember.clockInPin != null ? "6 digits, hidden" : "No PIN yet"}</span>
+                <button type="button" onClick={() => setResetTarget(editingMember)} className="text-sm text-[#7A2E2E]">
+                  {editingMember.clockInPin != null ? "Reset PIN" : "Create PIN"}
+                </button>
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-[#8A8375]">Add the person first, then create their PIN. You&apos;ll see it once.</p>
+            )}
           </div>
 
           <div>
@@ -830,6 +893,23 @@ export function StaffManager({
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+      <ConfirmDialog
+        open={resetTarget !== null}
+        title={resetTarget?.clockInPin != null ? "Reset this PIN?" : "Create a PIN?"}
+        message={
+          <>
+            A new 6-digit PIN will be made for <span className="font-medium text-[#1C1A17]">{resetTarget?.name}</span>
+            {resetTarget?.clockInPin != null ? ", and their old PIN stops working straight away" : ""}. You will see it once, so
+            have a pen ready or tell them right away.
+          </>
+        }
+        confirmLabel={resetTarget?.clockInPin != null ? "Reset PIN" : "Create PIN"}
+        busyLabel="Working…"
+        isBusy={isResetting}
+        onConfirm={confirmReset}
+        onCancel={() => setResetTarget(null)}
+      />
+      <PinRevealModal reveal={revealed} onClose={() => setRevealed(null)} />
       <NoticeModal notice={notice} onClose={() => setNotice(null)} />
     </div>
   )

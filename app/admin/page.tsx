@@ -159,7 +159,7 @@ async function getAllStaff(
   includeHourlyRate: boolean,
   includeClockInPin: boolean,
 ): Promise<AdminStaff[]> {
-  const baseColumns = "id, name, active, job_title, phone, email, clock_in_pin, profile_id, employee_number, start_date"
+  const baseColumns = "id, name, active, job_title, phone, email, clock_in_pin_hash, profile_id, employee_number, start_date"
   const columns = includeHourlyRate ? `${baseColumns}, hourly_rate` : baseColumns
 
   const [staffResult, detailsResult] = await Promise.all([
@@ -185,9 +185,10 @@ async function getAllStaff(
       jobTitle: s.job_title,
       phone: s.phone,
       email: s.email,
-      // A colleague's PIN lets you clock in as them at /clock/[slug], so
-      // only staff.manage callers (who can edit it) ever receive it.
-      clockInPin: includeClockInPin ? s.clock_in_pin : null,
+      // PINs are stored hashed and are NEVER sent to the browser. For staff.manage
+      // callers this is only a placeholder meaning "has a PIN" (null = no PIN yet),
+      // which drives the Reset PIN / Create PIN wording in StaffManager.
+      clockInPin: includeClockInPin && s.clock_in_pin_hash ? "\u2022\u2022\u2022\u2022\u2022\u2022" : null,
       hasLogin: !!s.profile_id,
       employeeNumber: s.employee_number ?? null,
       startDate: s.start_date ?? null,

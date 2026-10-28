@@ -28,6 +28,7 @@
  * the ActionResult error return happens first.
  */
 
+import { randomInt } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -788,9 +789,6 @@ function validateStaffInput(input: AdminStaffInput): string | null {
   ) {
     return "Hourly rate must be 0 or more."
   }
-  if (input.clockInPin && !/^\d{4,6}$/.test(input.clockInPin)) {
-    return "PIN must be 4-6 digits."
-  }
   return null
 }
 
@@ -962,23 +960,59 @@ async function saveStaffPayrollDetails(
   return error ? error.message : null
 }
 
-// Pre-check for a friendly error message — the DB's partial unique index
-// on (tenant_id, clock_in_pin) is the real guard (see the
-// add_staff_hr_profile_and_shifts migration); this just avoids a raw
-// constraint-violation message reaching the admin. Scoped to this tenant
-// only, since the same PIN is fine across different shops.
-async function assertPinAvailable(
-  supabase: ServerClient,
-  tenantId: string,
-  pin: string,
-  excludeStaffId?: string,
-): Promise<string | null> {
-  if (!pin) return null
-  let query = supabase.from("staff").select("id, name").eq("tenant_id", tenantId).eq("clock_in_pin", pin)
-  if (excludeStaffId) query = query.neq("id", excludeStaffId)
-  const { data } = await query.maybeSingle()
-  if (data) return `That PIN is already used by ${data.name}.`
-  return null
+// ---- Clock-in PINs: reset and see once -------------------------------------
+// PINs are never stored readable and never sent back to the browser. Resetting
+// generates a random 6-digit PIN here on the server, the database stores only a
+// bcrypt hash (set_staff_clock_in_pin), and the plain PIN is returned ONCE so the
+// owner can pass it on. It is never written to the activity log.
+
+const CLOCK_PIN_LENGTH = 6
+
+function generateClockInPin(): string {
+  for (;;) {
+    const pin = String(randomInt(0, 10 ** CLOCK_PIN_LENGTH)).padStart(CLOCK_PIN_LENGTH, "0")
+    // Skip the obvious ones (000000, 111111, 123456, 654321...).
+    if (/^(\d)\1+$/.test(pin) || "0123456789".includes(pin) || "9876543210".includes(pin)) continue
+    return pin
+  }
+}
+
+export async function resetStaffClockInPin(
+  staffId: string,
+): Promise<{ ok: true; pin: string } | { ok: false; error: string }> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("staff.manage")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { data: member, error: memberError } = await supabase
+    .from("staff")
+    .select("id, name")
+    .eq("id", staffId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (memberError) return { ok: false, error: memberError.message }
+  if (!member) return { ok: false, error: "Staff member not found." }
+
+  // A random PIN can collide with a colleague's; just draw again.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const pin = generateClockInPin()
+    const { data: result, error: rpcError } = await supabase.rpc("set_staff_clock_in_pin", {
+      p_tenant_id: tenantId,
+      p_staff_id: staffId,
+      p_pin: pin,
+    })
+    if (rpcError) return { ok: false, error: "Couldn't set the PIN. Please try again." }
+    if (result === "duplicate") continue
+    if (result !== "ok") return { ok: false, error: "Couldn't set the PIN. Please try again." }
+
+    await logActivity(supabase, tenantId!, {
+      category: "staff",
+      action: `Reset clock-in PIN for staff member "${member.name}"`,
+      staffId,
+    })
+    revalidatePath("/admin")
+    return { ok: true, pin }
+  }
+  return { ok: false, error: "Couldn't find a free PIN. Please try again." }
 }
 
 // ---- Staff sign-in (auth user + profile + tenant membership) ----------------
@@ -1060,11 +1094,6 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
   const payProfile = preparePayProfile(input)
   if (!payProfile.ok) return { ok: false, error: payProfile.error }
 
-  if (input.clockInPin) {
-    const pinError = await assertPinAvailable(supabase, tenantId!, input.clockInPin)
-    if (pinError) return { ok: false, error: pinError }
-  }
-
   // Plan staff cap (Mahala 1, Growth 8, Business unlimited). Staff above the
   // plan's included seats but under the cap are allowed and billed as extra staff.
   const limitError = await staffLimitError(supabase, tenantId!)
@@ -1092,7 +1121,6 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
         hourly_rate: "hourlyRate" in input ? input.hourlyRate : null,
         phone: input.phone.trim() || null,
         email: input.email.trim() || null,
-        clock_in_pin: input.clockInPin || null,
         employee_number: extras.staffPatch.employee_number ?? null,
         start_date: extras.staffPatch.start_date ?? null,
         active: true,
@@ -1169,17 +1197,11 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
   const payProfile = preparePayProfile(input)
   if (!payProfile.ok) return { ok: false, error: payProfile.error }
 
-  if (input.clockInPin) {
-    const pinError = await assertPinAvailable(supabase, tenantId!, input.clockInPin, id)
-    if (pinError) return { ok: false, error: pinError }
-  }
-
   const patch: Record<string, unknown> = {
     name: input.name.trim(),
     job_title: input.jobTitle.trim() || null,
     phone: input.phone.trim() || null,
     email: input.email.trim() || null,
-    clock_in_pin: input.clockInPin || null,
   }
   if (canTouchRate) patch.hourly_rate = input.hourlyRate
   // Only the HR fields the input actually carried; omitted keys stay as they are.
