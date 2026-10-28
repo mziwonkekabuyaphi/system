@@ -8,7 +8,9 @@ import { redirect } from "next/navigation"
 
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { MODULE_KEYS } from "@/lib/services/plans"
+
+// Literal on purpose: independent of MODULE_KEYS.shisha existing in plans.ts.
+const SHISHA_MODULE_KEY = "shisha"
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -31,8 +33,9 @@ export async function setShishaEnabledAction(formData: FormData): Promise<void> 
   const { data: tenant, error: tenantError } = await supabase.from("tenants").select("id").eq("id", tenantId).maybeSingle()
   if (tenantError || !tenant) fail("Shop not found.")
 
-  const { data: mod, error: modError } = await supabase.from("modules").select("id").eq("key", MODULE_KEYS.shisha).maybeSingle()
-  if (modError || !mod) fail("The shisha module isn't registered yet. Run the shisha migration first.")
+  const { data: mod, error: modError } = await supabase.from("modules").select("id").eq("key", SHISHA_MODULE_KEY).maybeSingle()
+  if (modError) fail(`Couldn't read the modules table: ${modError.message}`)
+  if (!mod) fail("No 'shisha' row in the modules table of the database this app uses. Check the migration ran on the right project.")
 
   const { data: existing, error: existingError } = await supabase
     .from("tenant_modules")

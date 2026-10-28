@@ -4,7 +4,6 @@ import { redirect } from "next/navigation"
 
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { MODULE_KEYS } from "@/lib/services/plans"
 
 import { setShishaEnabledAction } from "./actions"
 
@@ -13,6 +12,9 @@ export const dynamic = "force-dynamic"
 const card = "rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
 // Same zone as shisha_usage_monthly and the in-app usage card.
 const BILLING_TZ = "Africa/Johannesburg"
+// Literal on purpose: this page must not depend on MODULE_KEYS.shisha existing
+// (if plans.ts isn't updated it would be undefined and match no row).
+const SHISHA_MODULE_KEY = "shisha"
 
 type Tenant = { id: string; name: string; slug: string; status: string }
 type Usage = { tenant_id: string; month: string; sessions: number; refills: number; amount: number | string; currency: string }
@@ -45,8 +47,14 @@ export default async function PlatformShisha({ searchParams }: { searchParams: P
 
   const { thisMonth, lastMonth } = monthKeys()
 
-  const modRes = await supabase.from("modules").select("id").eq("key", MODULE_KEYS.shisha).maybeSingle()
+  const modRes = await supabase.from("modules").select("id").eq("key", SHISHA_MODULE_KEY).maybeSingle()
   const moduleId = (modRes.data as { id: string } | null)?.id ?? null
+  // Say WHY it is missing: a failed query and a missing row are different problems.
+  const moduleProblem = modRes.error
+    ? `Couldn't read the modules table: ${modRes.error.message}`
+    : !moduleId
+      ? "No row with key 'shisha' in the modules table of the database this app is connected to. The migration either didn't commit or was run on a different Supabase project."
+      : null
 
   const [tenantsRes, switchesRes, usageRes] = await Promise.all([
     supabase.from("tenants").select("id, name, slug, status").order("name", { ascending: true }).limit(500),
@@ -80,10 +88,8 @@ export default async function PlatformShisha({ searchParams }: { searchParams: P
       </div>
 
       {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
-      {!moduleId && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          The shisha module isn&apos;t registered yet. Run the shisha migration first.
-        </p>
+      {moduleProblem && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">{moduleProblem}</p>
       )}
 
       <section className={card}>
