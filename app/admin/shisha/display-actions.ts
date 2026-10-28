@@ -101,7 +101,14 @@ export async function updateShishaDisplaySettings(input: ShishaDisplaySettings):
   if (input.theme !== "dark" && input.theme !== "light" && input.theme !== "custom") {
     return { ok: false, error: "Pick a colour theme." }
   }
-  if (input.layout !== "board" && input.layout !== "lounge") return { ok: false, error: "Pick a layout." }
+  if (input.layout !== "board" && input.layout !== "lounge" && input.layout !== "rotate") {
+    return { ok: false, error: "Pick a layout." }
+  }
+  for (const seconds of [input.rotateBoardSeconds, input.rotateLoungeSeconds]) {
+    if (!Number.isInteger(seconds) || seconds < 5 || seconds > 300) {
+      return { ok: false, error: "Rotation timing must be a whole number between 5 and 300 seconds." }
+    }
+  }
   if (input.sort !== "code" && input.sort !== "urgency") return { ok: false, error: "Pick a sort order." }
   if (!Number.isInteger(input.timeUpAlertSeconds) || input.timeUpAlertSeconds < 3 || input.timeUpAlertSeconds > 60) {
     return { ok: false, error: "Alert duration must be a whole number between 3 and 60 seconds." }

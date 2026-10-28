@@ -6,8 +6,9 @@
 
 export type ShishaDisplayTheme = "dark" | "light" | "custom"
 export type ShishaDisplaySort = "code" | "urgency"
-/** "board" = grid of device cards; "lounge" = featured device + burn-down list. */
-export type ShishaDisplayLayout = "board" | "lounge"
+/** "board" = grid of device cards; "lounge" = featured device + burn-down list;
+ *  "rotate" = the TV alternates between the two. */
+export type ShishaDisplayLayout = "board" | "lounge" | "rotate"
 
 /** Every piece of wording on the TV. null = use `fallback`. */
 export const SHISHA_DISPLAY_LABELS = [
@@ -41,6 +42,9 @@ export interface ShishaDisplaySettings {
   /** Owner's on/off switch for the TV address. */
   isEnabled: boolean
   layout: ShishaDisplayLayout
+  /** Rotate layout only: seconds the Board / Lounge stays up. 5-300. */
+  rotateBoardSeconds: number
+  rotateLoungeSeconds: number
   theme: ShishaDisplayTheme
   /** #RRGGBB. Only used when theme === "custom". */
   backgroundColor: string | null
@@ -68,6 +72,8 @@ export interface ShishaDisplaySettings {
 export const DEFAULT_SHISHA_DISPLAY_SETTINGS: ShishaDisplaySettings = {
   isEnabled: true,
   layout: "board",
+  rotateBoardSeconds: 20,
+  rotateLoungeSeconds: 20,
   theme: "dark",
   backgroundColor: null,
   title: null,
@@ -90,6 +96,8 @@ export const DEFAULT_SHISHA_DISPLAY_SETTINGS: ShishaDisplaySettings = {
 export const SHISHA_DISPLAY_SELECT = [
   "is_enabled",
   "layout",
+  "rotate_board_seconds",
+  "rotate_lounge_seconds",
   "theme",
   "background_color",
   "title",
@@ -111,6 +119,10 @@ export const SHISHA_DISPLAY_SELECT = [
 const HEX6 = /^#[0-9a-f]{6}$/i
 export const isHex6 = (v: unknown): v is string => typeof v === "string" && HEX6.test(v)
 
+const rotateSeconds = (v: unknown, fallback: number): number => {
+  const n = Number(v)
+  return Number.isInteger(n) && n >= 5 && n <= 300 ? n : fallback
+}
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null)
 const flag = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean" ? v : fallback)
 
@@ -123,7 +135,9 @@ export function rowToShishaDisplaySettings(row: Record<string, unknown> | null |
   const seconds = Number(row.time_up_alert_seconds)
   return {
     isEnabled: flag(row.is_enabled, d.isEnabled),
-    layout: row.layout === "lounge" ? "lounge" : "board",
+    layout: row.layout === "lounge" || row.layout === "rotate" ? row.layout : "board",
+    rotateBoardSeconds: rotateSeconds(row.rotate_board_seconds, d.rotateBoardSeconds),
+    rotateLoungeSeconds: rotateSeconds(row.rotate_lounge_seconds, d.rotateLoungeSeconds),
     theme: row.theme === "light" || row.theme === "custom" ? row.theme : "dark",
     backgroundColor: isHex6(row.background_color) ? row.background_color.toUpperCase() : null,
     title: text(row.title),
@@ -148,6 +162,8 @@ export function shishaDisplaySettingsToRow(s: ShishaDisplaySettings): Record<str
   const row: Record<string, unknown> = {
     is_enabled: s.isEnabled,
     layout: s.layout,
+    rotate_board_seconds: s.rotateBoardSeconds,
+    rotate_lounge_seconds: s.rotateLoungeSeconds,
     theme: s.theme,
     background_color: s.backgroundColor,
     title: s.title,

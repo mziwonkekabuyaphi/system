@@ -47,6 +47,11 @@ const LAYOUTS: Array<{ value: ShishaDisplayLayout; title: string; description: s
     description:
       "The session closest to finishing gets a big glowing ring, with every device in a live burn-down list beside it. Uses your brand colours.",
   },
+  {
+    value: "rotate",
+    title: "Rotate",
+    description: "The screen alternates between Board and Lounge, so people see both. You choose how long each stays up.",
+  },
 ]
 
 const THEMES: Array<{ value: ShishaDisplayTheme; title: string; description: string; swatch: string }> = [
@@ -263,7 +268,9 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
     draft !== null &&
     draft.timeUpAlertEnabled &&
     !(Number.isInteger(draft.timeUpAlertSeconds) && draft.timeUpAlertSeconds >= 3 && draft.timeUpAlertSeconds <= 60)
-  const canSave = dirty && !saving && !customColourInvalid && !alertSecondsInvalid
+  const validSeconds = (n: number) => Number.isInteger(n) && n >= 5 && n <= 300
+  const rotateInvalid = draft?.layout === "rotate" && !(validSeconds(draft.rotateBoardSeconds) && validSeconds(draft.rotateLoungeSeconds))
+  const canSave = dirty && !saving && !customColourInvalid && !alertSecondsInvalid && !rotateInvalid
 
   async function save() {
     if (!draft || !canSave) return
@@ -410,7 +417,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
 
               {tab === "look" && (
                 <div className="space-y-6">
-                  <Group title="Layout" hint="Both layouts use your settings below and the same alerts.">
+                  <Group title="Layout" hint="Every layout uses the settings below and the same alerts.">
                     <div className="space-y-2">
                       {LAYOUTS.map((o) => (
                         <OptionCard key={o.value} selected={draft.layout === o.value} disabled={saving} onClick={() => set("layout", o.value)}>
@@ -420,6 +427,33 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                       ))}
                     </div>
                   </Group>
+
+                  {draft.layout === "rotate" && (
+                    <Group title="Rotation timing" hint="How long each screen stays up before fading to the other. Between 5 and 300 seconds.">
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Board (seconds)" hint={rotateInvalid ? "Whole number, 5 to 300." : undefined}>
+                          <input
+                            type="number"
+                            min={5}
+                            max={300}
+                            className={FIELD}
+                            value={Number.isNaN(draft.rotateBoardSeconds) ? "" : draft.rotateBoardSeconds}
+                            onChange={(e) => set("rotateBoardSeconds", e.target.value === "" ? Number.NaN : Number(e.target.value))}
+                          />
+                        </Field>
+                        <Field label="Lounge (seconds)">
+                          <input
+                            type="number"
+                            min={5}
+                            max={300}
+                            className={FIELD}
+                            value={Number.isNaN(draft.rotateLoungeSeconds) ? "" : draft.rotateLoungeSeconds}
+                            onChange={(e) => set("rotateLoungeSeconds", e.target.value === "" ? Number.NaN : Number(e.target.value))}
+                          />
+                        </Field>
+                      </div>
+                    </Group>
+                  )}
 
                   <Group title="Colour theme" hint="Text colour is chosen for you so it stays readable on any background.">
                     <div className="space-y-2">
