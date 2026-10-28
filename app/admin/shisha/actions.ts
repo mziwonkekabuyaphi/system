@@ -139,9 +139,15 @@ export async function startSession(input: {
   deviceId: string
   productId: string
   customerPhone?: string
+  /** Taken at the counter when the customer pays up front. Optional: the
+   *  Sessions panel still records it when the session ends instead. */
+  paymentMethod?: string | null
 }): Promise<ShishaActionResult> {
   const s = await scoped("shisha.operate")
   if (!s.ok) return s
+
+  const paymentMethod = PAYMENT_METHODS.find((m) => m.value === input.paymentMethod)?.value ?? null
+  if (input.paymentMethod && !paymentMethod) return fail("Pick a valid payment method.")
 
   const [deviceRes, productRes] = await Promise.all([
     s.supabase
@@ -200,6 +206,7 @@ export async function startSession(input: {
       remaining_time_seconds: settings.coalDurationMinutes * 60,
       total_amount: Number(product.price),
       status: "active",
+      payment_method: paymentMethod,
     },
   ])
   if (insertError) {
@@ -326,9 +333,14 @@ export async function endSession(id: string, paymentMethod: string | null): Prom
   if (error) return fail(error)
   if (!row) return fail("That session has already ended.")
 
+  // Only write payment_method when one was chosen: "Not recorded" must not
+  // wipe a payment already taken at the counter when the session started.
+  const update: Record<string, unknown> = { status: "completed", ended_at: new Date().toISOString() }
+  if (method) update.payment_method = method
+
   const { data, error: updateError } = await s.supabase
     .from("shisha_sessions")
-    .update({ status: "completed", ended_at: new Date().toISOString(), payment_method: method })
+    .update(update)
     .eq("id", id)
     .eq("tenant_id", s.tenantId)
     .in("status", SHISHA_LIVE_STATUSES)

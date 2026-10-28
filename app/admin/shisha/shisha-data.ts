@@ -87,10 +87,12 @@ export async function loadShishaSnapshot(
   const dayStart = startOfDayUtc(todayKey, timezone).toISOString()
   const dayEnd = startOfDayUtc(addDaysKey(todayKey, 1), timezone).toISOString()
 
-  const [settings, usage, currencyRes, stationsRes, flavoursRes, devicesRes, liveRes, todayRes] = await Promise.all([
+  const [settings, usage, shopRes, currencyRes, stationsRes, flavoursRes, devicesRes, liveRes, todayRes] = await Promise.all([
     loadShishaSettings(supabase, tenantId),
     // Fee ledger: only for callers allowed to see it (shisha.manage).
     options.includeUsage ? loadShishaUsage(supabase, tenantId) : Promise.resolve(null),
+    // Receipt header only; a failure here must not break the tab.
+    supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
     supabase.from("tenant_settings").select("currency").eq("tenant_id", tenantId).maybeSingle(),
     supabase
       .from("shisha_locations")
@@ -110,7 +112,7 @@ export async function loadShishaSnapshot(
     supabase
       .from("shisha_sessions")
       .select(
-        "id, customer_id, customer_phone, device_id, product_id, location_id, start_time, last_refill_time, remaining_time_seconds, total_amount, refill_count, paused",
+        "id, customer_id, customer_phone, device_id, product_id, location_id, start_time, last_refill_time, remaining_time_seconds, total_amount, refill_count, paused, payment_method",
       )
       .eq("tenant_id", tenantId)
       .in("status", SHISHA_LIVE_STATUSES)
@@ -190,11 +192,13 @@ export async function loadShishaSnapshot(
     totalAmount: Number(r.total_amount),
     refillCount: r.refill_count,
     paused: r.paused,
+    paymentMethod: r.payment_method ?? null,
   }))
 
   const todayRows = (todayRes.data ?? []) as any[]
 
   return {
+    shopName: ((shopRes.data as any)?.name as string | undefined) ?? "",
     settings,
     currency: (currencyRes.data as any)?.currency || "ZAR",
     stations,

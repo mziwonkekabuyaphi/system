@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
+import { ShishaCounter } from "./ShishaCounter"
 import { ShishaDisplayDrawer } from "./ShishaDisplayDrawer"
 import {
   addDevice,
@@ -47,7 +48,7 @@ import {
 
 const REFRESH_MS = 30_000
 
-type Section = "sessions" | "flavours" | "devices" | "stations" | "timing"
+type Section = "counter" | "sessions" | "flavours" | "devices" | "stations" | "timing"
 type Notice = { kind: "success" | "error"; text: string }
 type Editing =
   | { kind: "flavour"; item: ShishaFlavour | null }
@@ -146,7 +147,8 @@ export function ShishaManager({
   canManage: boolean
 }) {
   const [snap, setSnap] = useState<ShishaSnapshot | null>(null)
-  const [section, setSection] = useState<Section>("sessions")
+  // Floor staff (can operate, can't manage) land on the Counter; owners on Sessions.
+  const [section, setSection] = useState<Section>(canOperate && !canManage ? "counter" : "sessions")
   const [notice, setNotice] = useState<Notice | null>(null)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -252,6 +254,7 @@ export function ShishaManager({
       : new Date(lastUpdated).toLocaleTimeString("en-ZA", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false })
 
   const sections: Array<{ id: Section; label: string }> = [
+    ...(canOperate ? [{ id: "counter" as const, label: "Counter" }] : []),
     { id: "sessions", label: "Sessions" },
     { id: "flavours", label: "Flavours" },
     { id: "devices", label: "Devices" },
@@ -342,6 +345,20 @@ export function ShishaManager({
         )
       ) : (
         <>
+          {section === "counter" && canOperate && (
+            <ShishaCounter
+              snap={snap}
+              timezone={timezone}
+              busy={busy}
+              occupiedDeviceIds={occupiedDeviceIds}
+              onStart={(input) => run(() => startSession(input), "Session started.")}
+              onPause={(s) => void run(() => pauseSession(s.id), `${s.deviceCode} paused.`)}
+              onResume={(s) => void run(() => resumeSession(s.id), `${s.deviceCode} resumed.`)}
+              onRefill={(s) => void run(() => refillSession(s.id), `${s.deviceCode} refilled.`)}
+              onEnd={(s, method) => run(() => endSession(s.id, method), `${s.deviceCode} session ended.`)}
+            />
+          )}
+
           {section === "sessions" && (
             <SessionsPanel
               snap={snap}

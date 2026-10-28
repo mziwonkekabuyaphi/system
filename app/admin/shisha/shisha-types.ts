@@ -79,6 +79,8 @@ export interface ShishaSession {
   totalAmount: number
   refillCount: number
   paused: boolean
+  /** Stored payment method value (see PAYMENT_METHODS), if already taken at the counter. */
+  paymentMethod: string | null
 }
 
 export interface ShishaTodaySummary {
@@ -99,6 +101,8 @@ export interface ShishaUsageSummary {
 }
 
 export interface ShishaSnapshot {
+  /** Shop name, used on printed receipts. May be empty if it couldn't be read. */
+  shopName: string
   settings: ShishaSettings
   /** ISO 4217 code from tenant_settings.currency */
   currency: string

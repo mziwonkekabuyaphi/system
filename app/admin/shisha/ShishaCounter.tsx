@@ -1,0 +1,678 @@
+// app/admin/shisha/ShishaCounter.tsx
+//
+// Staff counter screen (ported from the old Rands shisha-pos.html): pick a
+// flavour, pick or SCAN a device, take payment, start, print a receipt. Live
+// sessions sit beside it with one-tap Refill / Pause / End.
+//
+// It owns no data and calls no server action itself: ShishaManager passes the
+// snapshot and the (permission-checked) handlers, so every rule stays in
+// ./actions.ts. Needs shisha.operate (the Counter tab is hidden without it).
+"use client"
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+
+import {
+  PAYMENT_METHODS,
+  deriveDisplayStatus,
+  liveRemainingSeconds,
+  type ShishaDisplayStatus,
+  type ShishaSession,
+  type ShishaSnapshot,
+} from "./shisha-types"
+
+export interface CounterStartInput {
+  deviceId: string
+  productId: string
+  customerPhone: string
+  paymentMethod: string
+}
+
+// --------------------------------------------------------------------------
+// Small shared bits (same look as ShishaManager)
+// --------------------------------------------------------------------------
+const FIELD =
+  "w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+const BTN =
+  "rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+const BTN_PRIMARY =
+  "rounded-md bg-[#7A2E3A] px-4 py-3 text-base font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+const BTN_DANGER =
+  "rounded-md bg-[#7A2E2E] px-3 py-2 text-sm font-medium text-white hover:bg-[#651F1F] disabled:cursor-not-allowed disabled:opacity-50"
+const CARD = "rounded-lg border border-[#E6E1D4] bg-white"
+const TILE_BASE =
+  "min-h-[56px] rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+const TILE_OFF = "border-[#D9D3C3] bg-white text-[#1C1A17] hover:bg-[#F3EEE2]"
+const TILE_ON = "border-[#7A2E3A] bg-[#7A2E3A] text-white"
+
+const STATUS_LABEL: Record<ShishaDisplayStatus, string> = {
+  active: "Running",
+  refill: "Refill soon",
+  paused: "Paused",
+  expired: "Time's up",
+}
+const STATUS_BADGE: Record<ShishaDisplayStatus, string> = {
+  active: "bg-[#4B6B54]/10 text-[#4B6B54]",
+  refill: "bg-[#9A6A12]/10 text-[#9A6A12]",
+  paused: "bg-[#1C1A17]/[0.07] text-[#6B6558]",
+  expired: "bg-[#7A2E2E]/10 text-[#7A2E2E]",
+}
+
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(amount)
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`
+  }
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const s = Math.max(totalSeconds, 0)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  const mm = String(m).padStart(2, "0")
+  const ss = String(sec).padStart(2, "0")
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(t)
+  }, [intervalMs])
+  return now
+}
+
+const paymentLabel = (value: string | null): string | null =>
+  value ? (PAYMENT_METHODS.find((m) => m.value === value)?.label ?? value) : null
+
+// --------------------------------------------------------------------------
+// Receipts (80mm thermal, printed through the browser like the old POS)
+// --------------------------------------------------------------------------
+interface ReceiptData {
+  shopName: string
+  deviceCode: string
+  station: string | null
+  flavour: string
+  durationMinutes: number
+  payment: string | null
+  amount: number
+  currency: string
+  at: Date
+  timezone: string
+}
+
+/** Flavour / shop / station names are typed by staff: never trust them in HTML. */
+function esc(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string)
+}
+
+function buildReceiptHtml(r: ReceiptData): string {
+  const when = r.at.toLocaleString("en-ZA", {
+    timeZone: r.timezone,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+  const row = (label: string, value: string) => `<div class="row"><span>${esc(label)}</span><span>${esc(value)}</span></div>`
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title>
+<style>
+  @page { size: 80mm auto; margin: 0; }
+  body { margin: 0; width: 72mm; padding: 4mm; font: 12px/1.4 "Courier New", monospace; color: #000; }
+  h1 { font-size: 16px; text-align: center; margin: 0 0 2px; text-transform: uppercase; }
+  .center { text-align: center; }
+  hr { border: 0; border-top: 1px dashed #000; margin: 6px 0; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .total { font-weight: bold; font-size: 14px; }
+  .foot { text-align: center; margin-top: 6px; }
+</style></head><body>
+  <h1>${esc(r.shopName || "Shisha")}</h1>
+  ${r.shopName ? '<div class="center">Shisha</div>' : ""}
+  <hr>
+  ${row("Device", r.deviceCode)}
+  ${r.station ? row("Station", r.station) : ""}
+  ${row("Flavour", r.flavour)}
+  ${row("Duration", `${r.durationMinutes} min`)}
+  ${r.payment ? row("Payment", r.payment) : ""}
+  <hr>
+  <div class="row total"><span>TOTAL</span><span>${esc(formatMoney(r.amount, r.currency))}</span></div>
+  <hr>
+  <div class="center">${esc(when)}</div>
+  <div class="foot">Enjoy your session.<br>Ask staff for a refill anytime.</div>
+</body></html>`
+}
+
+/** Prints through a hidden iframe so no page styles leak into the receipt.
+ *  Returns false if the browser blocked it. Without a kiosk-printing browser
+ *  flag the normal print dialog still appears for staff to confirm. */
+function printHtml(html: string): boolean {
+  const iframe = document.createElement("iframe")
+  iframe.setAttribute("aria-hidden", "true")
+  Object.assign(iframe.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" })
+  document.body.appendChild(iframe)
+  const win = iframe.contentWindow
+  const doc = iframe.contentDocument
+  if (!win || !doc) {
+    iframe.remove()
+    return false
+  }
+  doc.open()
+  doc.write(html)
+  doc.close()
+  const cleanup = () => {
+    if (iframe.isConnected) iframe.remove()
+  }
+  win.onafterprint = () => setTimeout(cleanup, 500)
+  setTimeout(() => {
+    try {
+      win.focus()
+      win.print()
+    } catch {
+      cleanup()
+    }
+    setTimeout(cleanup, 60_000) // fallback for browsers that never fire afterprint
+  }, 150)
+  return true
+}
+
+// --------------------------------------------------------------------------
+// QR scanning of device stickers
+// --------------------------------------------------------------------------
+type JsQrFn = (data: Uint8ClampedArray, width: number, height: number) => { data: string } | null
+type Detect = (video: HTMLVideoElement, canvas: HTMLCanvasElement) => Promise<string | null>
+
+// Pinned version + integrity hash: the browser refuses the file if it differs.
+const JSQR_URL = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"
+const JSQR_SRI = "sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx"
+
+function loadJsQr(): Promise<JsQrFn> {
+  const w = window as unknown as { jsQR?: JsQrFn }
+  if (typeof w.jsQR === "function") return Promise.resolve(w.jsQR)
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script")
+    s.src = JSQR_URL
+    s.integrity = JSQR_SRI
+    s.crossOrigin = "anonymous"
+    s.async = true
+    s.onload = () =>
+      typeof w.jsQR === "function" ? resolve(w.jsQR) : reject(new Error("The QR scanner didn't start."))
+    s.onerror = () => reject(new Error("Couldn't load the QR scanner. Pick the device from the list instead."))
+    document.head.appendChild(s)
+  })
+}
+
+/** Native BarcodeDetector where the browser has it (Chrome / Android), jsQR otherwise (Safari / iOS). */
+async function makeDetector(): Promise<Detect> {
+  const BD = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => { detect: (v: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>> } }).BarcodeDetector
+  if (BD) {
+    try {
+      const detector = new BD({ formats: ["qr_code"] })
+      return async (video) => (await detector.detect(video))[0]?.rawValue ?? null
+    } catch {
+      /* fall through to jsQR */
+    }
+  }
+  const jsQR = await loadJsQr()
+  return async (video, canvas) => {
+    const w = video.videoWidth
+    const h = video.videoHeight
+    if (!w || !h) return null
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })
+    if (!ctx) return null
+    ctx.drawImage(video, 0, 0, w, h)
+    const img = ctx.getImageData(0, 0, w, h)
+    return jsQR(img.data, w, h)?.data ?? null
+  }
+}
+
+/** Accepts whatever the stickers were printed with: a plain code ("SH-003"),
+ *  a small JSON payload, or a URL carrying the code in its query string. */
+function extractDeviceCode(raw: string): string {
+  try {
+    const obj = JSON.parse(raw)
+    if (obj && (obj.device_code || obj.deviceCode)) return String(obj.device_code || obj.deviceCode)
+  } catch {
+    /* not JSON */
+  }
+  try {
+    const url = new URL(raw)
+    const fromQuery = url.searchParams.get("device_code") || url.searchParams.get("device") || url.searchParams.get("code")
+    if (fromQuery) return fromQuery
+  } catch {
+    /* not a URL */
+  }
+  return raw
+}
+
+function QrScanner({ onResult, onClose }: { onResult: (raw: string) => void; onClose: () => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [error, setError] = useState<string | null>(null)
+  const onResultRef = useRef(onResult)
+  onResultRef.current = onResult
+
+  useEffect(() => {
+    let cancelled = false
+    let stream: MediaStream | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const stopAll = () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+      stream?.getTracks().forEach((t) => t.stop())
+      stream = null
+    }
+
+    async function start() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("This browser can't use the camera here (it needs a secure https page).")
+        }
+        const detect = await makeDetector()
+        const media = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        if (cancelled) {
+          media.getTracks().forEach((t) => t.stop())
+          return
+        }
+        stream = media
+        const video = videoRef.current
+        if (!video) return
+        video.srcObject = media
+        await video.play()
+        const canvas = document.createElement("canvas")
+
+        const tick = async () => {
+          if (cancelled) return
+          if (video.readyState >= 2) {
+            try {
+              const raw = await detect(video, canvas)
+              if (raw && !cancelled) {
+                stopAll()
+                onResultRef.current(raw.trim())
+                return
+              }
+            } catch {
+              /* a bad frame: just try the next one */
+            }
+          }
+          timer = setTimeout(() => void tick(), 150)
+        }
+        void tick()
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Camera access failed.")
+      }
+    }
+
+    void start()
+    return stopAll
+  }, [])
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Scan device QR code" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/85 p-4">
+      <p className="text-sm text-white">Point the camera at the QR code on the device.</p>
+      <video ref={videoRef} playsInline muted className="max-h-[60vh] w-full max-w-md rounded-lg bg-black object-cover" />
+      {error && <p className="max-w-md rounded-md bg-[#7A2E2E] px-3 py-2 text-center text-sm text-white">{error}</p>}
+      <button type="button" onClick={onClose} className={BTN}>
+        Cancel
+      </button>
+    </div>
+  )
+}
+
+// --------------------------------------------------------------------------
+// The counter
+// --------------------------------------------------------------------------
+const AUTOPRINT_KEY = "shishaCounterAutoPrint"
+
+export function ShishaCounter({
+  snap,
+  timezone,
+  busy,
+  occupiedDeviceIds,
+  onStart,
+  onPause,
+  onResume,
+  onRefill,
+  onEnd,
+}: {
+  snap: ShishaSnapshot
+  timezone: string
+  busy: boolean
+  occupiedDeviceIds: Set<string>
+  onStart: (input: CounterStartInput) => Promise<boolean>
+  onPause: (s: ShishaSession) => void
+  onResume: (s: ShishaSession) => void
+  onRefill: (s: ShishaSession) => void
+  onEnd: (s: ShishaSession, method: string | null) => Promise<boolean>
+}) {
+  const now = useNow(1000)
+
+  const [productId, setProductId] = useState("")
+  const [deviceId, setDeviceId] = useState("")
+  const [phone, setPhone] = useState("")
+  const [payment, setPayment] = useState<string>(PAYMENT_METHODS[0].value)
+  const [scanOpen, setScanOpen] = useState(false)
+  const [flash, setFlash] = useState<{ kind: "ok" | "error"; text: string } | null>(null)
+
+  const [autoPrint, setAutoPrint] = useState(true)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
+
+  const [endingId, setEndingId] = useState<string | null>(null)
+  const [endMethod, setEndMethod] = useState("")
+
+  // Auto-print preference lives in this browser (one counter terminal, one setting).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(AUTOPRINT_KEY) === "false") setAutoPrint(false)
+    } catch {
+      /* storage blocked: keep the default */
+    }
+  }, [])
+  function changeAutoPrint(value: boolean) {
+    setAutoPrint(value)
+    try {
+      localStorage.setItem(AUTOPRINT_KEY, String(value))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  useEffect(() => {
+    if (flash?.kind !== "ok") return
+    const t = setTimeout(() => setFlash(null), 3500)
+    return () => clearTimeout(t)
+  }, [flash])
+
+  const flavours = useMemo(() => snap.flavours.filter((f) => f.isAvailable), [snap.flavours])
+  const freeDevices = useMemo(
+    () => snap.devices.filter((d) => d.status !== "maintenance" && !occupiedDeviceIds.has(d.id)),
+    [snap.devices, occupiedDeviceIds],
+  )
+  const stationName = useCallback(
+    (id: string | null) => snap.stations.find((st) => st.id === id)?.name ?? null,
+    [snap.stations],
+  )
+
+  // A selection that became invalid after a refresh (device taken, flavour sold out) just drops out.
+  const flavour = flavours.find((f) => f.id === productId) ?? null
+  const device = freeDevices.find((d) => d.id === deviceId) ?? null
+
+  const rows = snap.sessions
+    .map((s) => {
+      const remaining = liveRemainingSeconds(s, now)
+      return { s, remaining, status: deriveDisplayStatus(remaining, s.paused, snap.settings.refillThresholdMinutes) }
+    })
+    .sort((a, b) => a.remaining - b.remaining)
+
+  function receiptFor(d: { deviceCode: string; locationId: string | null }, f: { name: string; price: number }): ReceiptData {
+    return {
+      shopName: snap.shopName,
+      deviceCode: d.deviceCode,
+      station: stationName(d.locationId),
+      flavour: f.name,
+      durationMinutes: snap.settings.coalDurationMinutes,
+      payment: paymentLabel(payment),
+      amount: f.price,
+      currency: snap.currency,
+      at: new Date(),
+      timezone,
+    }
+  }
+
+  function printReceipt(receipt: ReceiptData) {
+    if (!printHtml(buildReceiptHtml(receipt))) {
+      setFlash({ kind: "error", text: "Couldn't open the print window. Use Reprint last receipt." })
+    }
+  }
+
+  async function submit() {
+    if (!flavour || !device || busy) return
+    const receipt = receiptFor(device, flavour)
+    const ok = await onStart({ deviceId: device.id, productId: flavour.id, customerPhone: phone, paymentMethod: payment })
+    if (!ok) return // ShishaManager already shows why (e.g. device just taken)
+    setLastReceipt(receipt)
+    if (autoPrint) printReceipt(receipt)
+    setDeviceId("")
+    setPhone("")
+  }
+
+  function handleScan(raw: string) {
+    setScanOpen(false)
+    const code = extractDeviceCode(raw).trim().toUpperCase()
+    const match = snap.devices.find((d) => d.deviceCode.toUpperCase() === code)
+    if (!match) return setFlash({ kind: "error", text: `No device found for "${code}".` })
+    if (match.status === "maintenance") return setFlash({ kind: "error", text: `${match.deviceCode} is under maintenance.` })
+    if (occupiedDeviceIds.has(match.id)) return setFlash({ kind: "error", text: `${match.deviceCode} already has a live session.` })
+    setDeviceId(match.id)
+    setFlash({ kind: "ok", text: `Selected ${match.deviceCode}.` })
+  }
+
+  async function confirmEnd(s: ShishaSession) {
+    // If the customer already paid at the counter, ending must not ask again.
+    const ok = await onEnd(s, s.paymentMethod ? null : endMethod || null)
+    if (ok) {
+      setEndingId(null)
+      setEndMethod("")
+    }
+  }
+
+  const noSetup = flavours.length === 0 || (snap.devices.length === 0)
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      {scanOpen && <QrScanner onResult={handleScan} onClose={() => setScanOpen(false)} />}
+
+      {/* ---------------- New session ---------------- */}
+      <section className={`${CARD} space-y-5 p-4`} aria-label="New session">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">New session</h3>
+          <button type="button" onClick={() => setScanOpen(true)} disabled={busy || snap.devices.length === 0} className={BTN}>
+            Scan QR
+          </button>
+        </div>
+
+        {flash && (
+          <p
+            role={flash.kind === "error" ? "alert" : "status"}
+            className={`rounded-md px-3 py-2 text-sm ${flash.kind === "error" ? "bg-[#7A2E2E]/10 text-[#7A2E2E]" : "bg-[#4B6B54]/10 text-[#4B6B54]"}`}
+          >
+            {flash.text}
+          </p>
+        )}
+
+        {noSetup ? (
+          <p className="text-sm text-[#8A8375]">
+            {flavours.length === 0
+              ? "No flavours are in stock yet. A manager needs to add one first."
+              : "No devices have been added yet. A manager needs to add one first."}
+          </p>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <p className="text-sm text-[#8A8375]">Flavour</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {flavours.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    aria-pressed={flavour?.id === f.id}
+                    onClick={() => setProductId(f.id)}
+                    className={`${TILE_BASE} ${flavour?.id === f.id ? TILE_ON : TILE_OFF}`}
+                  >
+                    <span className="block font-medium">{f.name}</span>
+                    <span className="block text-xs opacity-80">{formatMoney(f.price, snap.currency)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm text-[#8A8375]">Device</p>
+              {freeDevices.length === 0 ? (
+                <p className="text-sm text-[#7A2E2E]">Every device is in use or under maintenance.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {freeDevices.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      aria-pressed={device?.id === d.id}
+                      onClick={() => setDeviceId(d.id)}
+                      className={`${TILE_BASE} ${device?.id === d.id ? TILE_ON : TILE_OFF}`}
+                    >
+                      <span className="block font-medium">{d.deviceCode}</span>
+                      <span className="block truncate text-xs opacity-80">
+                        {[d.deviceName, stationName(d.locationId)].filter(Boolean).join(" · ") || "\u00a0"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm text-[#8A8375]">Paid by</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {PAYMENT_METHODS.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    aria-pressed={payment === m.value}
+                    onClick={() => setPayment(m.value)}
+                    className={`${TILE_BASE} text-center ${payment === m.value ? TILE_ON : TILE_OFF}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="block space-y-1 text-sm">
+              <span className="text-[#8A8375]">Customer cellphone (optional)</span>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                inputMode="tel"
+                placeholder="Leave empty for a walk-in"
+                className={FIELD}
+              />
+            </label>
+
+            <button type="button" onClick={() => void submit()} disabled={busy || !flavour || !device} className={`${BTN_PRIMARY} w-full`}>
+              {busy
+                ? "Working…"
+                : flavour && device
+                  ? `Start ${device.deviceCode} · ${formatMoney(flavour.price, snap.currency)}`
+                  : "Pick a flavour and a device"}
+            </button>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E6E1D4] pt-3 text-sm">
+              <label className="flex items-center gap-2 text-[#1C1A17]">
+                <input type="checkbox" checked={autoPrint} onChange={(e) => changeAutoPrint(e.target.checked)} />
+                Print receipt when a session starts
+              </label>
+              <button type="button" onClick={() => lastReceipt && printReceipt(lastReceipt)} disabled={!lastReceipt} className={BTN}>
+                Reprint last receipt
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ---------------- Live sessions ---------------- */}
+      <section className="space-y-3" aria-label="Live sessions">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+          Live now <span className="text-sm text-[#8A8375]">({rows.length})</span>
+        </h3>
+
+        {rows.length === 0 && (
+          <div className={`${CARD} px-4 py-8 text-center text-sm text-[#8A8375]`}>No live sessions. Start one on the left.</div>
+        )}
+
+        {rows.map(({ s, remaining, status }) => (
+          <article key={s.id} className={`${CARD} p-4`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-base font-medium text-[#1C1A17]">
+                  {s.deviceCode}
+                  {s.stationName ? <span className="font-normal text-[#8A8375]"> · {s.stationName}</span> : null}
+                </p>
+                <p className="truncate text-sm text-[#8A8375]">
+                  {s.flavourName} · {formatMoney(s.totalAmount, snap.currency)}
+                  {s.refillCount > 0 ? ` · ${s.refillCount} refill${s.refillCount === 1 ? "" : "s"}` : ""}
+                </p>
+                <p className="truncate text-xs text-[#8A8375]">
+                  {s.customerName || s.customerPhone || "Walk-in"}
+                  {s.paymentMethod ? ` · ${paymentLabel(s.paymentMethod)}` : " · payment not recorded"}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-2xl font-semibold tabular-nums text-[#1C1A17]">{formatCountdown(remaining)}</p>
+                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[status]}`}>{STATUS_LABEL[status]}</span>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => onRefill(s)} disabled={busy || s.paused} className={BTN}>
+                Refill
+              </button>
+              {s.paused ? (
+                <button type="button" onClick={() => onResume(s)} disabled={busy} className={BTN}>
+                  Resume
+                </button>
+              ) : (
+                <button type="button" onClick={() => onPause(s)} disabled={busy} className={BTN}>
+                  Pause
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setEndingId(endingId === s.id ? null : s.id)
+                  setEndMethod("")
+                }}
+                disabled={busy}
+                className={BTN}
+              >
+                End…
+              </button>
+            </div>
+
+            {endingId === s.id && (
+              <div className="mt-3 space-y-3 rounded-md bg-[#F3EEE2] p-3">
+                {s.paymentMethod ? (
+                  <p className="text-sm text-[#1C1A17]">Already paid by {paymentLabel(s.paymentMethod)}. The device becomes available again.</p>
+                ) : (
+                  <label className="block space-y-1 text-sm">
+                    <span className="text-[#8A8375]">Paid by</span>
+                    <select value={endMethod} onChange={(e) => setEndMethod(e.target.value)} className={FIELD}>
+                      <option value="">Not recorded</option>
+                      {PAYMENT_METHODS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setEndingId(null)} disabled={busy} className={BTN}>
+                    Keep running
+                  </button>
+                  <button type="button" onClick={() => void confirmEnd(s)} disabled={busy} className={BTN_DANGER}>
+                    {busy ? "Ending…" : "End session"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </article>
+        ))}
+      </section>
+    </div>
+  )
+}
