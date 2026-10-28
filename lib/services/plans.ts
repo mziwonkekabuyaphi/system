@@ -209,6 +209,7 @@ export const MODULE_KEYS = {
   prioritySupport: "priority_support",
   removePoweredBy: "remove_powered_by",
   bookingTicket: "booking_ticket",
+  shisha: "shisha",
 } as const
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
@@ -237,17 +238,22 @@ export async function tenantHasModule(supabase: SupabaseClient, tenantId: string
  *             only an explicit enabled=false turns it off.
  *    false -> off until an admin explicitly enables it (the default).
  *
- *  A downgrade shuts the feature off immediately either way, because the
- *  plan check comes first. Fails closed on any error. */
+ *  requirePlan (default true) controls whether the plan check runs at all.
+ *  Pass false for modules that are NOT part of any plan and are billed on
+ *  their own (shisha): then tenant_modules is the only switch.
+ *
+ *  A downgrade shuts a plan-gated feature off immediately either way, because
+ *  the plan check comes first. Fails closed on any error. */
 export async function isTenantModuleEnabled(
   supabase: SupabaseClient,
   tenantId: string,
   moduleKey: ModuleKey,
-  options: { defaultOn?: boolean } = {},
+  options: { defaultOn?: boolean; requirePlan?: boolean } = {},
 ): Promise<boolean> {
   const defaultOn = options.defaultOn ?? false
+  const requirePlan = options.requirePlan ?? true
   try {
-    if (!(await tenantHasModule(supabase, tenantId, moduleKey))) return false
+    if (requirePlan && !(await tenantHasModule(supabase, tenantId, moduleKey))) return false
 
     const { data, error } = await supabase
       .from("tenant_modules")
