@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { CSSProperties } from "react"
+import type { CSSProperties, ReactNode } from "react"
 
 import {
   DISPLAY_TICKER_DEFAULT,
@@ -110,6 +110,17 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
   }, [slug])
 
   const { settings, timing } = data
+
+  // ---- Rotate layout: alternate Board / Lounge, each for its own number of seconds ----
+  const [rotIndex, setRotIndex] = useState(0)
+  const rotating = settings.layout === "rotate"
+  const effectiveLayout: "board" | "lounge" = rotating ? (rotIndex === 0 ? "board" : "lounge") : settings.layout === "lounge" ? "lounge" : "board"
+  const rotateSeconds = rotIndex === 0 ? settings.rotateBoardSeconds : settings.rotateLoungeSeconds
+  useEffect(() => {
+    if (!rotating) return
+    const id = setTimeout(() => setRotIndex((i) => (i + 1) % 2), rotateSeconds * 1000)
+    return () => clearTimeout(id)
+  }, [rotating, rotIndex, rotateSeconds])
   const label = (key: ShishaDisplayLabelKey) => settings.labels[key]?.trim() || SHISHA_DISPLAY_LABEL_DEFAULTS[key]
   const coalSeconds = timing.coalDurationMinutes * 60
 
@@ -243,10 +254,11 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
     "--ticker-s": `${Math.max(24, tickerItems.length * 7)}s`,
   } as CSSProperties
 
-  if (settings.layout === "lounge") {
+  if (effectiveLayout === "lounge") {
     return (
       <>
         {alertOverlay}
+        <Fade key="lounge">
         <ShishaLoungeView
           data={data}
           views={views}
@@ -263,6 +275,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           statusColor={statusColor}
           tickerItems={tickerItems}
         />
+        </Fade>
       </>
     )
   }
@@ -279,6 +292,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
     <>
       {alertOverlay}
 
+      <Fade key="board">
       <div className="stage" style={stage}>
         {blocked ? (
           <p className="blocked">
@@ -791,6 +805,34 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
       `}</style>
     
       </div>
+      </Fade>
     </>
+  )
+}
+
+/** Fades a screen in when the rotation swaps it (the key changes, so it remounts). */
+function Fade({ children }: { children: ReactNode }) {
+  return (
+    <div className="fade">
+      {children}
+      <style jsx>{`
+        .fade {
+          animation: fadeIn 1.1s ease both;
+        }
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .fade {
+            animation: none;
+          }
+        }
+      `}</style>
+    </div>
   )
 }
