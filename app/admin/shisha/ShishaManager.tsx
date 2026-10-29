@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
-import { ShishaCounter } from "./ShishaCounter"
+import { ShishaCounter, StationTag } from "./ShishaCounter"
 import { ShishaDisplayDrawer } from "./ShishaDisplayDrawer"
 import {
   addDevice,
@@ -37,6 +37,7 @@ import {
   PAYMENT_METHODS,
   deriveDisplayStatus,
   liveRemainingSeconds,
+  signedRemainingSeconds,
   type ShishaActionResult,
   type ShishaDevice,
   type ShishaDisplayStatus,
@@ -431,7 +432,7 @@ export function ShishaManager({
 
           {section === "timing" && (
             <TimingPanel
-              key={`${snap.settings.coalDurationMinutes}-${snap.settings.refillThresholdMinutes}`}
+              key={`${snap.settings.coalDurationMinutes}-${snap.settings.refillThresholdMinutes}-${snap.settings.requireStation}`}
               snap={snap}
               canManage={canManage}
               busy={busy}
@@ -574,14 +575,19 @@ function SessionsPanel({
   const rows = snap.sessions
     .map((s) => {
       const remaining = liveRemainingSeconds(s, now)
-      return { s, remaining, status: deriveDisplayStatus(remaining, s.paused, snap.settings.refillThresholdMinutes) }
+      return {
+        s,
+        remaining,
+        signed: signedRemainingSeconds(s, now),
+        status: deriveDisplayStatus(remaining, s.paused, snap.settings.refillThresholdMinutes),
+      }
     })
-    .sort((a, b) => a.remaining - b.remaining)
+    // Signed value so sessions that ran out sort most overdue first.
+    .sort((a, b) => a.signed - b.signed)
 
   const needAttention = rows.filter((r) => r.status === "refill" || r.status === "expired").length
   const freeDevices = snap.devices.filter((d) => d.status !== "maintenance" && !occupiedDeviceIds.has(d.id))
   const availableFlavours = snap.flavours.filter((f) => f.isAvailable)
-  const stationName = (id: string | null) => snap.stations.find((st) => st.id === id)?.name ?? null
 
   return (
     <div className="space-y-4">
@@ -628,11 +634,9 @@ function SessionsPanel({
                 <div className="min-w-0">
                   <p className="truncate font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
                     {s.deviceCode}
+                    <StationTag name={s.stationName} className="font-sans text-base" />
                   </p>
-                  <p className="truncate text-sm text-[#6B6558]">
-                    {s.flavourName}
-                    {s.stationName ? ` · ${s.stationName}` : ""}
-                  </p>
+                  <p className="truncate text-sm text-[#6B6558]">{s.flavourName}</p>
                 </div>
                 <Badge className={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
               </div>
@@ -694,7 +698,7 @@ function SessionsPanel({
             devices={freeDevices}
             flavours={availableFlavours}
             stations={snap.stations.filter((st) => st.isActive)}
-            stationName={stationName}
+            requireStation={snap.settings.requireStation}
             currency={snap.currency}
             busy={busy}
             onCancel={() => setStartOpen(false)}
@@ -730,7 +734,7 @@ function StartSessionForm({
   devices,
   flavours,
   stations,
-  stationName,
+  requireStation,
   currency,
   busy,
   onCancel,
@@ -738,8 +742,9 @@ function StartSessionForm({
 }: {
   devices: ShishaDevice[]
   flavours: ShishaFlavour[]
+  /** Active stations only (the ones staff can pick). */
   stations: ShishaStation[]
-  stationName: (id: string | null) => string | null
+  requireStation: boolean
   currency: string
   busy: boolean
   onCancel: () => void
@@ -769,6 +774,14 @@ function StartSessionForm({
 
   const chosen = flavours.find((f) => f.id === productId)
 
+  // Station = explicit pick, else the chosen device's usual station (if staff can
+  // pick it, i.e. it's active). Same rule the server applies.
+  const device = devices.find((d) => d.id === deviceId)
+  const usualStation = stations.find((st) => st.id === device?.locationId) ?? null
+  const effectiveStationId = locationId || usualStation?.id || ""
+  const stationRequired = requireStation && stations.length > 0
+  const stationMissing = stationRequired && !effectiveStationId
+
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
@@ -784,19 +797,42 @@ function StartSessionForm({
       </label>
       {stations.length > 0 && (
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">Station</span>
-          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
-            <option value="">
-              {stationName(devices.find((d) => d.id === deviceId)?.locationId ?? null)
-                ? `Device's usual station: ${stationName(devices.find((d) => d.id === deviceId)?.locationId ?? null)}`
-                : "No station"}
-            </option>
-            {stations.map((st) => (
-              <option key={st.id} value={st.id}>
-                {st.name}
-              </option>
-            ))}
-          </select>
+          <span className="text-[#8A8375]">
+            Station
+            {stationRequired && <span className="font-medium text-[#7A2E2E]"> * required</span>}
+          </span>
+          {stationRequired ? (
+            <select
+              value={effectiveStationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              required
+              aria-required="true"
+              className={FIELD}
+            >
+              {!effectiveStationId && (
+                <option value="" disabled>
+                  Pick a station…
+                </option>
+              )}
+              {stations.map((st) => (
+                <option key={st.id} value={st.id}>
+                  {st.name}
+                  {st.id === usualStation?.id ? " (device's usual station)" : ""}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
+              <option value="">{usualStation ? `${usualStation.name} (device's usual station)` : "No station"}</option>
+              {stations
+                .filter((st) => st.id !== usualStation?.id)
+                .map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                  </option>
+                ))}
+            </select>
+          )}
         </label>
       )}
       <label className="block space-y-1 text-sm">
@@ -825,11 +861,15 @@ function StartSessionForm({
         </button>
         <button
           type="button"
-          disabled={busy || !deviceId || !productId}
-          onClick={() => void onSubmit({ deviceId, productId, locationId, customerPhone: phone })}
+          disabled={busy || !deviceId || !productId || stationMissing}
+          onClick={() => void onSubmit({ deviceId, productId, locationId: effectiveStationId, customerPhone: phone })}
           className={BTN_PRIMARY}
         >
-          {busy ? "Starting…" : `Start${chosen ? ` · ${formatMoney(chosen.price, currency)}` : ""}`}
+          {busy
+            ? "Starting…"
+            : stationMissing
+              ? "Pick a station to start"
+              : `Start${chosen ? ` · ${formatMoney(chosen.price, currency)}` : ""}`}
         </button>
       </div>
     </div>
@@ -1155,7 +1195,7 @@ function DeviceForm({
           ))}
         </select>
         <span className="block text-xs text-[#8A8375]">
-          Only a default. Staff pick the station for each session when they start it.
+          Pre-selected when staff start a session on this device. They can still pick a different station.
         </span>
       </label>
       <div className="flex justify-end gap-2">
@@ -1295,10 +1335,11 @@ function TimingPanel({
   snap: ShishaSnapshot
   canManage: boolean
   busy: boolean
-  onSave: (input: { coalDurationMinutes: number; refillThresholdMinutes: number }) => Promise<boolean>
+  onSave: (input: { coalDurationMinutes: number; refillThresholdMinutes: number; requireStation: boolean }) => Promise<boolean>
 }) {
   const [duration, setDuration] = useState(String(snap.settings.coalDurationMinutes))
   const [threshold, setThreshold] = useState(String(snap.settings.refillThresholdMinutes))
+  const [requireStation, setRequireStation] = useState(snap.settings.requireStation)
   const d = Number(duration)
   const t = Number(threshold)
   const valid =
@@ -1333,6 +1374,20 @@ function TimingPanel({
             className={FIELD}
           />
         </label>
+        <div className="space-y-1 border-t border-[#E6E1D4] pt-4">
+          <label className="flex items-center gap-2 text-sm text-[#1C1A17]">
+            <input
+              type="checkbox"
+              checked={requireStation}
+              onChange={(e) => setRequireStation(e.target.checked)}
+              disabled={!canManage}
+            />
+            Require a station for every session
+          </label>
+          <p className="text-xs text-[#8A8375]">
+            Link devices to a usual station in Devices to have it selected automatically.
+          </p>
+        </div>
         {!valid && canManage && (
           <p className="text-xs text-[#7A2E2E]">
             Session length is 5–480 minutes, the warning is 1–120 minutes and must be shorter than the session.
@@ -1343,7 +1398,7 @@ function TimingPanel({
             <button
               type="button"
               disabled={busy || !valid}
-              onClick={() => void onSave({ coalDurationMinutes: d, refillThresholdMinutes: t })}
+              onClick={() => void onSave({ coalDurationMinutes: d, refillThresholdMinutes: t, requireStation })}
               className={BTN_PRIMARY}
             >
               {busy ? "Saving…" : "Save timing"}

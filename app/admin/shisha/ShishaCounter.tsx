@@ -15,6 +15,7 @@ import {
   PAYMENT_METHODS,
   deriveDisplayStatus,
   liveRemainingSeconds,
+  signedRemainingSeconds,
   type ShishaDisplayStatus,
   type ShishaSession,
   type ShishaSnapshot,
@@ -23,7 +24,7 @@ import {
 export interface CounterStartInput {
   deviceId: string
   productId: string
-  /** "" = no station */
+  /** "" = no station (only possible when the shop doesn't require one) */
   locationId: string
   customerPhone: string
   paymentMethod: string
@@ -88,6 +89,17 @@ function useNow(intervalMs: number): number {
 
 const paymentLabel = (value: string | null): string | null =>
   value ? (PAYMENT_METHODS.find((m) => m.value === value)?.label ?? value) : null
+
+/** Where a session is sitting, shown bold next to the device code. A session
+ *  with no station (older ones, or shops that don't require it) shows a muted
+ *  "No station" so the gap is visible rather than silently blank. */
+export function StationTag({ name, className = "" }: { name: string | null; className?: string }) {
+  return name ? (
+    <span className={`font-semibold text-[#1C1A17] ${className}`}> · {name}</span>
+  ) : (
+    <span className={`font-normal text-[#8A8375] ${className}`}> · No station</span>
+  )
+}
 
 // --------------------------------------------------------------------------
 // Receipts (80mm thermal, printed through the browser like the old POS)
@@ -469,14 +481,29 @@ export function ShishaCounter({
   // station only pre-selects when staff haven't picked one.
   const activeStations = useMemo(() => snap.stations.filter((st) => st.isActive), [snap.stations])
   const pickedStation = activeStations.find((st) => st.id === stationId) ?? null
-  const effectiveStation = pickedStation ?? activeStations.find((st) => st.id === device?.locationId) ?? null
+  // The device's usual station (only if staff can actually pick it: active).
+  const deviceStation = activeStations.find((st) => st.id === device?.locationId) ?? null
+  const effectiveStation = pickedStation ?? deviceStation
+  // Required only when the shop can offer a station (same rule as the server).
+  const stationRequired = snap.settings.requireStation && activeStations.length > 0
+  const stationMissing = stationRequired && !effectiveStation
 
   const rows = snap.sessions
     .map((s) => {
       const remaining = liveRemainingSeconds(s, now)
-      return { s, remaining, status: deriveDisplayStatus(remaining, s.paused, snap.settings.refillThresholdMinutes) }
+      const signed = signedRemainingSeconds(s, now)
+      return {
+        s,
+        remaining,
+        signed,
+        status: deriveDisplayStatus(remaining, s.paused, snap.settings.refillThresholdMinutes),
+      }
     })
-    .sort((a, b) => a.remaining - b.remaining)
+    // Signed value: sessions that ran out sort by how long ago, most overdue first.
+    .sort((a, b) => a.signed - b.signed)
+
+  // Expired or refill-soon (paused ones are deliberately excluded), most overdue first.
+  const attention = rows.filter((r) => r.status === "expired" || r.status === "refill")
 
   function receiptFor(d: { deviceCode: string }, f: { name: string; price: number }): ReceiptData {
     return {
@@ -521,7 +548,7 @@ export function ShishaCounter({
   }
 
   async function submit() {
-    if (!flavour || !device || busy) return
+    if (!flavour || !device || busy || stationMissing) return
     const receipt = receiptFor(device, flavour)
     const ok = await onStart({
       deviceId: device.id,
@@ -563,6 +590,40 @@ export function ShishaCounter({
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       {scanOpen && <QrScanner onResult={handleScan} onClose={() => setScanOpen(false)} />}
+
+      {/* ---------------- Needs attention ---------------- */}
+      {attention.length > 0 && (
+        <section
+          className="space-y-2 rounded-lg border border-[#7A2E2E]/30 bg-[#7A2E2E]/[0.06] p-3 lg:col-span-2"
+          aria-label="Needs attention"
+        >
+          <h3 className="text-sm font-semibold text-[#7A2E2E]">
+            Needs attention <span className="font-normal">({attention.length})</span>
+          </h3>
+          <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {attention.map(({ s, remaining, signed, status }) => (
+              <li
+                key={s.id}
+                className={`flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-2 ${
+                  status === "expired" ? "border-[#7A2E2E]/40" : "border-[#9A6A12]/40"
+                }`}
+              >
+                <p className="min-w-0 truncate text-sm">
+                  <span className="font-semibold text-[#1C1A17]">{s.deviceCode}</span>
+                  <StationTag name={s.stationName} />
+                </p>
+                <p
+                  className={`shrink-0 text-sm font-semibold tabular-nums ${
+                    status === "expired" ? "text-[#7A2E2E]" : "text-[#9A6A12]"
+                  }`}
+                >
+                  {status === "expired" ? `${formatCountdown(-signed)} over` : `${formatCountdown(remaining)} left`}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* ---------------- New session ---------------- */}
       <section className={`${CARD} space-y-5 p-4`} aria-label="New session">
@@ -610,20 +671,43 @@ export function ShishaCounter({
 
             {activeStations.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm text-[#8A8375]">Station</p>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {activeStations.map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      aria-pressed={effectiveStation?.id === st.id}
-                      onClick={() => setStationId(stationId === st.id ? "" : st.id)}
-                      className={`${TILE_BASE} ${effectiveStation?.id === st.id ? TILE_ON : TILE_OFF}`}
-                    >
-                      <span className="block truncate font-medium">{st.name}</span>
-                    </button>
-                  ))}
+                <p className="text-sm text-[#8A8375]">
+                  Station
+                  {stationRequired && (
+                    <>
+                      {" "}
+                      <span className="font-medium text-[#7A2E2E]" aria-hidden>
+                        * required
+                      </span>
+                      <span className="sr-only">(required)</span>
+                    </>
+                  )}
+                </p>
+                <div
+                  role="group"
+                  aria-label={stationRequired ? "Station (required)" : "Station"}
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+                >
+                  {activeStations.map((st) => {
+                    const selected = effectiveStation?.id === st.id
+                    const isUsual = deviceStation?.id === st.id
+                    return (
+                      <button
+                        key={st.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setStationId(stationId === st.id ? "" : st.id)}
+                        className={`${TILE_BASE} ${selected ? TILE_ON : TILE_OFF}`}
+                      >
+                        <span className="block truncate font-medium">{st.name}</span>
+                        {isUsual && <span className="block truncate text-xs opacity-80">(device&apos;s usual station)</span>}
+                      </button>
+                    )
+                  })}
                 </div>
+                {stationMissing && flavour && device && (
+                  <p className="text-xs text-[#7A2E2E]">Pick where this customer is sitting to start the session.</p>
+                )}
               </div>
             )}
 
@@ -677,10 +761,12 @@ export function ShishaCounter({
               />
             </label>
 
-            <button type="button" onClick={() => void submit()} disabled={busy || !flavour || !device} className={`${BTN_PRIMARY} w-full`}>
+            <button type="button" onClick={() => void submit()} disabled={busy || !flavour || !device || stationMissing} className={`${BTN_PRIMARY} w-full`}>
               {busy
                 ? "Working…"
-                : flavour && device
+                : flavour && device && stationMissing
+                  ? "Pick a station to start"
+                  : flavour && device
                   ? `Start ${device.deviceCode}${effectiveStation ? ` · ${effectiveStation.name}` : ""} · ${formatMoney(flavour.price, snap.currency)}`
                   : "Pick a flavour and a device"}
             </button>
@@ -719,7 +805,7 @@ export function ShishaCounter({
               <div className="min-w-0">
                 <p className="text-base font-medium text-[#1C1A17]">
                   {s.deviceCode}
-                  {s.stationName ? <span className="font-normal text-[#8A8375]"> · {s.stationName}</span> : null}
+                  <StationTag name={s.stationName} />
                 </p>
                 <p className="truncate text-sm text-[#8A8375]">
                   {s.flavourName} · {formatMoney(s.totalAmount, snap.currency)}

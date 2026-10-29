@@ -21,6 +21,8 @@ export const SHISHA_BILLING_TIMEZONE = "Africa/Johannesburg"
 
 export const DEFAULT_COAL_DURATION_MINUTES = 60
 export const DEFAULT_REFILL_THRESHOLD_MINUTES = 15
+/** Shops that never saved settings behave as if "Require a station" is on. */
+export const DEFAULT_REQUIRE_STATION = true
 
 export const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
@@ -35,6 +37,9 @@ export type ShishaActionResult = { ok: true } | { ok: false; error: string }
 export interface ShishaSettings {
   coalDurationMinutes: number
   refillThresholdMinutes: number
+  /** Every session must have a station (explicit pick, else the device's usual
+   *  one). Only enforced while the shop has at least one active station. */
+  requireStation: boolean
 }
 
 export interface ShishaStation {
@@ -125,6 +130,18 @@ export function liveRemainingSeconds(
   if (s.paused) return Math.max(s.remainingSeconds, 0)
   const elapsed = Math.max(Math.floor((nowMs - new Date(s.lastRefillTime).getTime()) / 1000), 0)
   return Math.max(s.remainingSeconds - elapsed, 0)
+}
+
+/** Like liveRemainingSeconds but NOT clamped at zero: negative = seconds the
+ *  session is overdue. Used to rank "needs attention" most overdue first.
+ *  Paused sessions report their frozen (non-negative) value. */
+export function signedRemainingSeconds(
+  s: { paused: boolean; remainingSeconds: number; lastRefillTime: string },
+  nowMs: number,
+): number {
+  if (s.paused) return Math.max(s.remainingSeconds, 0)
+  const elapsed = Math.max(Math.floor((nowMs - new Date(s.lastRefillTime).getTime()) / 1000), 0)
+  return s.remainingSeconds - elapsed
 }
 
 export function deriveDisplayStatus(

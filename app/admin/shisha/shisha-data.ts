@@ -11,6 +11,7 @@ import { addDaysKey, dateKeyInTz, startOfDayUtc } from "../tz"
 import {
   DEFAULT_COAL_DURATION_MINUTES,
   DEFAULT_REFILL_THRESHOLD_MINUTES,
+  DEFAULT_REQUIRE_STATION,
   SHISHA_BILLING_TIMEZONE,
   SHISHA_LIVE_STATUSES,
   type ShishaDevice,
@@ -29,7 +30,7 @@ type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 export async function loadShishaSettings(supabase: ServerClient, tenantId: string): Promise<ShishaSettings> {
   const { data, error } = await supabase
     .from("shisha_settings")
-    .select("coal_duration_minutes, refill_threshold_minutes")
+    .select("coal_duration_minutes, refill_threshold_minutes, require_station")
     .eq("tenant_id", tenantId)
     .maybeSingle()
 
@@ -38,6 +39,7 @@ export async function loadShishaSettings(supabase: ServerClient, tenantId: strin
   return {
     coalDurationMinutes: data?.coal_duration_minutes ?? DEFAULT_COAL_DURATION_MINUTES,
     refillThresholdMinutes: data?.refill_threshold_minutes ?? DEFAULT_REFILL_THRESHOLD_MINUTES,
+    requireStation: data?.require_station ?? DEFAULT_REQUIRE_STATION,
   }
 }
 

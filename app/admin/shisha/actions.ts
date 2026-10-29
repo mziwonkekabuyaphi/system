@@ -140,7 +140,8 @@ export async function startSession(input: {
   productId: string
   customerPhone?: string
   /** Where the customer is sitting (a station). Chosen by staff per session;
-   *  when omitted the device's usual station, if it has one, is used. */
+   *  when omitted the device's usual station, if it has one, is used. If the
+   *  shop requires stations and neither exists, the start is refused. */
   locationId?: string | null
   /** Taken at the counter when the customer pays up front. Optional: the
    *  Sessions panel still records it when the session ends instead. */
@@ -177,27 +178,37 @@ export async function startSession(input: {
   if (device.status === "maintenance") return fail("That device is under maintenance.")
   if (!product || !product.is_available) return fail("That flavour isn't available.")
 
-  // Station: picked per session. The device's own station is only the default.
-  let locationId: string | null = device.location_id
-  if (input.locationId) {
-    const { data: stationRow, error: stationError } = await s.supabase
-      .from("shisha_locations")
-      .select("id, is_active")
-      .eq("id", input.locationId)
-      .eq("tenant_id", s.tenantId)
-      .is("archived_at", null)
-      .maybeSingle()
-    if (stationError) return fail(stationError.message)
-    const station = stationRow as { id: string; is_active: boolean } | null
-    if (!station || !station.is_active) return fail("That station isn't available.")
-    locationId = station.id
-  }
-
   let settings
   try {
     settings = await loadShishaSettings(s.supabase, s.tenantId)
   } catch {
     return fail("Couldn't load shisha settings.")
+  }
+
+  // Station: explicit choice, else the device's usual station, else none.
+  // Only active, non-archived stations of THIS tenant count, and that is the
+  // same list the start screens offer, so UI and server always agree.
+  const { data: stationRows, error: stationError } = await s.supabase
+    .from("shisha_locations")
+    .select("id")
+    .eq("tenant_id", s.tenantId)
+    .eq("is_active", true)
+    .is("archived_at", null)
+  if (stationError) return fail(stationError.message)
+  const activeStationIds = new Set(((stationRows ?? []) as Array<{ id: string }>).map((r) => r.id))
+
+  let locationId: string | null = null
+  if (input.locationId) {
+    if (!activeStationIds.has(input.locationId)) return fail("That station isn't available.")
+    locationId = input.locationId
+  } else if (device.location_id && activeStationIds.has(device.location_id)) {
+    locationId = device.location_id
+  }
+
+  // Required only when the shop can actually offer a station; otherwise
+  // nobody could start a session.
+  if (settings.requireStation && activeStationIds.size > 0 && !locationId) {
+    return fail("Pick a station for this session.")
   }
 
   // Link to an existing customer by (tenant_id, phone) — never phone alone,
@@ -601,6 +612,8 @@ export async function archiveStation(id: string): Promise<ShishaActionResult> {
 export async function updateShishaSettings(input: {
   coalDurationMinutes: number
   refillThresholdMinutes: number
+  /** Optional so older callers keep working; when omitted the stored value is left alone. */
+  requireStation?: boolean
 }): Promise<ShishaActionResult> {
   const s = await scoped("shisha.manage")
   if (!s.ok) return s
@@ -610,10 +623,20 @@ export async function updateShishaSettings(input: {
   if (threshold === null) return fail("Refill warning must be a whole number between 1 and 120 minutes.")
   if (threshold >= duration) return fail("The refill warning must be shorter than the session length.")
 
-  const { error } = await s.supabase.from("shisha_settings").upsert(
-    [{ tenant_id: s.tenantId, coal_duration_minutes: duration, refill_threshold_minutes: threshold }],
-    { onConflict: "tenant_id" },
-  )
+  if (input.requireStation !== undefined && typeof input.requireStation !== "boolean") {
+    return fail("Station requirement must be on or off.")
+  }
+
+  // Upsert writes only the columns present, so an omitted require_station keeps
+  // its stored value (or the column default for a brand-new row).
+  const row: Record<string, unknown> = {
+    tenant_id: s.tenantId,
+    coal_duration_minutes: duration,
+    refill_threshold_minutes: threshold,
+  }
+  if (input.requireStation !== undefined) row.require_station = input.requireStation
+
+  const { error } = await s.supabase.from("shisha_settings").upsert([row], { onConflict: "tenant_id" })
   if (error) return fail(error.message)
   return { ok: true }
 }
