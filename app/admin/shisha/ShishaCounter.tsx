@@ -111,10 +111,13 @@ interface ReceiptData {
   flavour: string
   durationMinutes: number
   payment: string | null
+  /** Grand total (session + refills). */
   amount: number
   currency: string
   at: Date
   timezone: string
+  /** Refills charged on this session so far; shown as their own line when present. */
+  refills?: { count: number; amount: number }
 }
 
 /** Flavour / shop / station names are typed by staff: never trust them in HTML. */
@@ -160,6 +163,8 @@ function buildReceiptHtml(r: ReceiptData): string {
   ${r.station ? row("Station", r.station) : ""}
   ${row("Flavour", r.flavour)}
   ${row("Duration", `${r.durationMinutes} min`)}
+  ${r.refills && r.refills.count > 0 ? row("Session", formatMoney(r.amount - r.refills.amount, r.currency)) : ""}
+  ${r.refills && r.refills.count > 0 ? row(`Refills (${r.refills.count})`, formatMoney(r.refills.amount, r.currency)) : ""}
   ${r.payment ? row("Payment", r.payment) : ""}
   <hr>
   <div class="row total"><span>TOTAL</span><span>${esc(formatMoney(r.amount, r.currency))}</span></div>
@@ -237,6 +242,13 @@ async function printViaAgent(r: ReceiptData): Promise<AgentResult> {
           durationText: `${r.durationMinutes} min`,
           payment: r.payment,
           amountText: plain(formatMoney(r.amount, r.currency)),
+          // Only sent when the session has refills. A print agent that predates these
+          // fields just ignores them and prints the grand total as before.
+          sessionText: r.refills && r.refills.count > 0 ? plain(formatMoney(r.amount - r.refills.amount, r.currency)) : undefined,
+          refillsText:
+            r.refills && r.refills.count > 0
+              ? `${r.refills.count} x refill ${plain(formatMoney(r.refills.amount, r.currency))}`
+              : undefined,
           dateText: receiptWhen(r),
         },
       }),
@@ -439,6 +451,7 @@ export function ShishaCounter({
 
   const [endingId, setEndingId] = useState<string | null>(null)
   const [endMethod, setEndMethod] = useState("")
+  const [refillConfirmId, setRefillConfirmId] = useState<string | null>(null)
 
   // Auto-print preference lives in this browser (one counter terminal, one setting).
   useEffect(() => {
@@ -517,6 +530,23 @@ export function ShishaCounter({
       currency: snap.currency,
       at: new Date(),
       timezone,
+    }
+  }
+
+  /** Receipt for a session that is already running, with its refills itemised. */
+  function receiptForSession(s: ShishaSession): ReceiptData {
+    return {
+      shopName: snap.shopName,
+      deviceCode: s.deviceCode,
+      station: s.stationName,
+      flavour: s.flavourName,
+      durationMinutes: snap.settings.coalDurationMinutes,
+      payment: paymentLabel(s.paymentMethod),
+      amount: s.totalAmount,
+      currency: snap.currency,
+      at: new Date(),
+      timezone,
+      refills: s.refillCount > 0 ? { count: s.refillCount, amount: s.refillTotal } : undefined,
     }
   }
 
@@ -809,7 +839,11 @@ export function ShishaCounter({
                 </p>
                 <p className="truncate text-sm text-[#8A8375]">
                   {s.flavourName} · {formatMoney(s.totalAmount, snap.currency)}
-                  {s.refillCount > 0 ? ` · ${s.refillCount} refill${s.refillCount === 1 ? "" : "s"}` : ""}
+                  {s.refillCount > 0
+                    ? ` · ${s.refillCount} refill${s.refillCount === 1 ? "" : "s"}${
+                        s.refillTotal > 0 ? ` (${formatMoney(s.refillTotal, snap.currency)})` : ""
+                      }`
+                    : ""}
                 </p>
                 <p className="truncate text-xs text-[#8A8375]">
                   {s.customerName || s.customerPhone || "Walk-in"}
@@ -823,8 +857,17 @@ export function ShishaCounter({
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" onClick={() => onRefill(s)} disabled={busy || s.paused} className={BTN}>
-                Refill
+              <button
+                type="button"
+                onClick={() => {
+                  // A refill that costs money asks first; a free one goes straight through.
+                  if (s.refillPrice > 0) setRefillConfirmId(refillConfirmId === s.id ? null : s.id)
+                  else onRefill(s)
+                }}
+                disabled={busy || s.paused}
+                className={BTN}
+              >
+                Refill{s.refillPrice > 0 ? ` · ${formatMoney(s.refillPrice, snap.currency)}` : ""}
               </button>
               {s.paused ? (
                 <button type="button" onClick={() => onResume(s)} disabled={busy} className={BTN}>
@@ -846,12 +889,44 @@ export function ShishaCounter({
               >
                 End…
               </button>
+              <button type="button" onClick={() => void printReceipt(receiptForSession(s))} disabled={printing} className={BTN}>
+                Receipt
+              </button>
             </div>
+
+            {refillConfirmId === s.id && (
+              <div className="mt-3 space-y-3 rounded-md bg-[#F3EEE2] p-3">
+                <p className="text-sm text-[#1C1A17]">
+                  A refill adds {formatMoney(s.refillPrice, snap.currency)} (total becomes{" "}
+                  {formatMoney(s.totalAmount + s.refillPrice, snap.currency)}). Collect it from the customer.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setRefillConfirmId(null)} disabled={busy} className={BTN}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setRefillConfirmId(null)
+                      onRefill(s)
+                    }}
+                    className={`${BTN_PRIMARY} !px-3 !py-2 !text-sm`}
+                  >
+                    Refill · {formatMoney(s.refillPrice, snap.currency)}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {endingId === s.id && (
               <div className="mt-3 space-y-3 rounded-md bg-[#F3EEE2] p-3">
                 {s.paymentMethod ? (
-                  <p className="text-sm text-[#1C1A17]">Already paid by {paymentLabel(s.paymentMethod)}. The device becomes available again.</p>
+                  <p className="text-sm text-[#1C1A17]">
+                    Already paid by {paymentLabel(s.paymentMethod)}.
+                    {s.refillTotal > 0 ? ` Refills added since (${formatMoney(s.refillTotal, snap.currency)}): make sure that was collected.` : ""}{" "}
+                    The device becomes available again.
+                  </p>
                 ) : (
                   <label className="block space-y-1 text-sm">
                     <span className="text-[#8A8375]">Paid by</span>

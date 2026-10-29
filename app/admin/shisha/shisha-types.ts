@@ -32,9 +32,13 @@ export const PAYMENT_METHODS = [
 ] as const
 export type ShishaPaymentMethod = (typeof PAYMENT_METHODS)[number]["value"]
 
-/** `warning` on the ok branch: the action worked, but something secondary didn't
- *  (e.g. the WhatsApp message to the customer couldn't be sent). run() shows it to staff. */
-export type ShishaActionResult = { ok: true; warning?: string } | { ok: false; error: string }
+/** `warning` = the action succeeded but something around it didn't (e.g. the WhatsApp
+ *  message to the customer couldn't be sent). `charged` = refill amount just added to a
+ *  session. `message` = a ready-made success text from the server (accepted requests). */
+export type ShishaActionResult =
+  | { ok: true; warning?: string; charged?: number; message?: string }
+  | { ok: false; error: string }
+export type ShishaActionOk = Extract<ShishaActionResult, { ok: true }>
 
 export interface ShishaSettings {
   coalDurationMinutes: number
@@ -53,8 +57,9 @@ export interface ShishaStation {
 export interface ShishaFlavour {
   id: string
   name: string
+  /** What a new session costs. */
   price: number
-  /** What a coal refill costs for this flavour. 0 = free refill. */
+  /** What each refill costs (0 = refills are free). */
   refillPrice: number
   isAvailable: boolean
 }
@@ -85,50 +90,46 @@ export interface ShishaSession {
   lastRefillTime: string
   /** Seconds left AT the anchor above (frozen value while paused). */
   remainingSeconds: number
+  /** Grand total: session price + refillTotal. */
   totalAmount: number
+  /** Part of totalAmount that came from refills. */
+  refillTotal: number
+  /** What ONE more refill costs right now (the flavour's current refill price; 0 if free
+   *  or the flavour was archived). Shown on the Refill button. */
+  refillPrice: number
   refillCount: number
   paused: boolean
   /** Stored payment method value (see PAYMENT_METHODS), if already taken at the counter. */
   paymentMethod: string | null
-  /** Sum of refill charges. totalAmount stays the grand total (session price + refills). */
-  refillTotal: number
-  /** How much of totalAmount has been settled. Balance = totalAmount - paidAmount. */
-  paidAmount: number
-  /** How a later balance (refills) was paid, when it differs from paymentMethod. */
-  balancePaymentMethod: string | null
-}
-
-/** Amount still owed on a session (refills added after an up-front payment). */
-export function sessionBalance(s: { totalAmount: number; paidAmount: number }): number {
-  return Math.max(Math.round((s.totalAmount - s.paidAmount) * 100) / 100, 0)
 }
 
 export type ShishaRequestType = "order_session" | "maintenance" | "end_session" | "issue_report"
 
-export const SHISHA_REQUEST_LABEL: Record<ShishaRequestType, string> = {
-  order_session: "New session",
-  maintenance: "Coal refill",
-  end_session: "End session",
-  issue_report: "Issue report",
-}
-
-/** A customer request waiting for staff (status = pending). */
+/** A pending WhatsApp request waiting for staff. */
 export interface ShishaRequest {
   id: string
   requestType: ShishaRequestType
   customerId: string | null
   customerName: string | null
   customerPhone: string | null
-  /** Station name as the customer saw it. */
-  locationName: string | null
+  stationName: string | null
   flavourName: string | null
   deviceCode: string | null
-  /** The amount stored on the request: the price the customer was quoted. */
+  /** The amount stored when the customer asked (what they were quoted, if anything). */
   quotedAmount: number | null
-  /** What it costs NOW, resolved server-side: the flavour's session price for a new
-   *  session, its refill price for a refill. null when it doesn't apply or can't be found. */
-  currentPrice: number | null
+  /** What accepting would charge RIGHT NOW: the flavour's current price (order_session),
+   *  the current refill price (maintenance), the session total (end_session). null = n/a
+   *  or the flavour/session is gone. */
+  currentAmount: number | null
   sessionId: string | null
+  /** maintenance / end_session: is the target session still live, and is it paused? */
+  sessionLive: boolean
+  sessionPaused: boolean
+  /** Payment already recorded on the target session (so End doesn't ask again). */
+  sessionPaymentMethod: string | null
+  /** order_session only: the flavour can't be served as requested. */
+  flavourIssue: "out_of_stock" | "missing" | null
+  /** issue_report: the label the customer picked / typed. */
   issueLabel: string | null
   /** ISO timestamp */
   createdAt: string
@@ -162,7 +163,7 @@ export interface ShishaSnapshot {
   devices: ShishaDevice[]
   /** Live sessions only (active / refill / paused). */
   sessions: ShishaSession[]
-  /** Pending customer requests, oldest first (max 200). */
+  /** Requests still waiting for staff, oldest first. */
   requests: ShishaRequest[]
   today: ShishaTodaySummary
   /** Only loaded for callers with shisha.manage; null for everyone else, and

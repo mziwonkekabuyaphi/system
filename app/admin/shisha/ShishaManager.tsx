@@ -13,6 +13,7 @@ import { AdminDialog } from "../AdminDialog"
 import { ShishaCounter, StationTag } from "./ShishaCounter"
 import { ShishaDisplayDrawer } from "./ShishaDisplayDrawer"
 import {
+  acceptShishaRequest,
   addDevice,
   addFlavour,
   addStation,
@@ -23,6 +24,7 @@ import {
   pauseSession,
   refillSession,
   refreshShisha,
+  rejectShishaRequest,
   resumeSession,
   setDeviceMaintenance,
   setFlavourAvailable,
@@ -38,19 +40,26 @@ import {
   deriveDisplayStatus,
   liveRemainingSeconds,
   signedRemainingSeconds,
+  type ShishaActionOk,
   type ShishaActionResult,
   type ShishaDevice,
   type ShishaDisplayStatus,
   type ShishaFlavour,
+  type ShishaRequest,
+  type ShishaRequestType,
   type ShishaSession,
   type ShishaSnapshot,
   type ShishaStation,
 } from "./shisha-types"
 
 const REFRESH_MS = 30_000
+/** Staff who can operate poll faster: a customer is waiting on WhatsApp for their request. */
+const STAFF_REFRESH_MS = 10_000
+/** A request waiting longer than this is highlighted. */
+const STALE_REQUEST_MS = 5 * 60_000
 
-type Section = "counter" | "sessions" | "flavours" | "devices" | "stations" | "timing"
-type Notice = { kind: "success" | "error"; text: string }
+type Section = "counter" | "requests" | "sessions" | "flavours" | "devices" | "stations" | "timing"
+type Notice = { kind: "success" | "error" | "warning"; text: string }
 type Editing =
   | { kind: "flavour"; item: ShishaFlavour | null }
   | { kind: "device"; item: ShishaDevice | null }
@@ -192,11 +201,13 @@ export function ShishaManager({
     }
   }, [])
 
+  const pollMs = canOperate ? STAFF_REFRESH_MS : REFRESH_MS
+
   useEffect(() => {
     void doRefresh()
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") void doRefresh()
-    }, REFRESH_MS)
+    }, pollMs)
     const onVisible = () => {
       if (document.visibilityState === "visible") void doRefresh()
     }
@@ -205,7 +216,7 @@ export function ShishaManager({
       clearInterval(poll)
       document.removeEventListener("visibilitychange", onVisible)
     }
-  }, [doRefresh])
+  }, [doRefresh, pollMs])
 
   useEffect(() => {
     if (notice?.kind !== "success") return
@@ -215,7 +226,7 @@ export function ShishaManager({
 
   /** Runs one mutation, then reloads. Returns true on success so a dialog can close. */
   const run = useCallback(
-    async (fn: () => Promise<ShishaActionResult>, successText: string): Promise<boolean> => {
+    async (fn: () => Promise<ShishaActionResult>, successText: string | ((r: ShishaActionOk) => string)): Promise<boolean> => {
       if (busyRef.current) return false
       busyRef.current = true
       setBusy(true)
@@ -226,7 +237,14 @@ export function ShishaManager({
         if (result.ok) {
           ok = true
           mutationVersion.current += 1
-          setNotice({ kind: "success", text: successText })
+          const text = result.message ?? (typeof successText === "function" ? successText(result) : successText)
+          // A warning means it worked but something around it didn't (e.g. the customer
+          // couldn't be messaged): keep it on screen until dismissed.
+          setNotice(
+            result.warning
+              ? { kind: "warning", text: `${text} ${result.warning}` }
+              : { kind: "success", text },
+          )
         } else {
           // The usual cause is someone else changing the same row first.
           setNotice({ kind: "error", text: result.error })
@@ -249,6 +267,12 @@ export function ShishaManager({
     [snap],
   )
 
+  const pendingCount = snap?.requests.length ?? 0
+  const refillText = (s: ShishaSession) => (r: ShishaActionOk) =>
+    r.charged && r.charged > 0
+      ? `${s.deviceCode} refilled · ${formatMoney(r.charged, snap?.currency ?? "ZAR")} charged.`
+      : `${s.deviceCode} refilled.`
+
   const updatedLabel =
     lastUpdated === null
       ? "—"
@@ -256,6 +280,7 @@ export function ShishaManager({
 
   const sections: Array<{ id: Section; label: string }> = [
     ...(canOperate ? [{ id: "counter" as const, label: "Counter" }] : []),
+    ...(canOperate ? [{ id: "requests" as const, label: "Requests" }] : []),
     { id: "sessions", label: "Sessions" },
     { id: "flavours", label: "Flavours" },
     { id: "devices", label: "Devices" },
@@ -291,7 +316,7 @@ export function ShishaManager({
             />
             {refreshFailed
               ? `Can't reach the server — showing data as of ${updatedLabel}`
-              : `Updates every ${REFRESH_MS / 1000}s · last ${updatedLabel}`}
+              : `Updates every ${pollMs / 1000}s · last ${updatedLabel}`}
           </p>
           <button type="button" onClick={() => void doRefresh()} disabled={refreshing || busy} className={BTN}>
             {refreshing ? "Refreshing…" : "Refresh"}
@@ -308,7 +333,11 @@ export function ShishaManager({
         <div
           role={notice.kind === "error" ? "alert" : "status"}
           className={`flex items-start justify-between gap-3 rounded-md px-3 py-2 text-sm ${
-            notice.kind === "error" ? "bg-[#7A2E2E]/10 text-[#7A2E2E]" : "bg-[#4B6B54]/10 text-[#4B6B54]"
+            notice.kind === "error"
+              ? "bg-[#7A2E2E]/10 text-[#7A2E2E]"
+              : notice.kind === "warning"
+                ? "bg-[#9A6A12]/10 text-[#9A6A12]"
+                : "bg-[#4B6B54]/10 text-[#4B6B54]"
           }`}
         >
           <span>{notice.text}</span>
@@ -329,9 +358,33 @@ export function ShishaManager({
             className={section === s.id ? BTN_PRIMARY : BTN}
           >
             {s.label}
+            {s.id === "requests" && pendingCount > 0 && (
+              <span
+                className={`ml-2 inline-block min-w-[1.25rem] rounded-full px-1.5 text-center text-xs font-semibold ${
+                  section === "requests" ? "bg-white/25 text-white" : "bg-[#7A2E2E] text-white"
+                }`}
+                aria-label={`${pendingCount} waiting`}
+              >
+                {pendingCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
+
+      {canOperate && pendingCount > 0 && section !== "requests" && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#9A6A12]/30 bg-[#9A6A12]/10 px-3 py-2 text-sm text-[#9A6A12]"
+        >
+          <span>
+            {pendingCount} customer {pendingCount === 1 ? "request is" : "requests are"} waiting for staff.
+          </span>
+          <button type="button" onClick={() => setSection("requests")} className={BTN}>
+            Review
+          </button>
+        </div>
+      )}
 
       {!snap ? (
         loadError ? (
@@ -355,8 +408,20 @@ export function ShishaManager({
               onStart={(input) => run(() => startSession(input), "Session started.")}
               onPause={(s) => void run(() => pauseSession(s.id), `${s.deviceCode} paused.`)}
               onResume={(s) => void run(() => resumeSession(s.id), `${s.deviceCode} resumed.`)}
-              onRefill={(s) => void run(() => refillSession(s.id), `${s.deviceCode} refilled.`)}
+              onRefill={(s) => void run(() => refillSession(s.id), refillText(s))}
               onEnd={(s, method) => run(() => endSession(s.id, method), `${s.deviceCode} session ended.`)}
+            />
+          )}
+
+          {section === "requests" && canOperate && (
+            <RequestsPanel
+              snap={snap}
+              busy={busy}
+              occupiedDeviceIds={occupiedDeviceIds}
+              onAccept={(req, input) =>
+                run(() => acceptShishaRequest({ requestId: req.id, ...input }), "Request accepted.")
+              }
+              onReject={(req, reason) => run(() => rejectShishaRequest(req.id, reason), "Request rejected.")}
             />
           )}
 
@@ -372,7 +437,7 @@ export function ShishaManager({
               }
               onPause={(s) => void run(() => pauseSession(s.id), `${s.deviceCode} paused.`)}
               onResume={(s) => void run(() => resumeSession(s.id), `${s.deviceCode} resumed.`)}
-              onRefill={(s) => void run(() => refillSession(s.id), `${s.deviceCode} refilled.`)}
+              onRefill={(s) => void run(() => refillSession(s.id), refillText(s))}
               onEnd={(s, method) => run(() => endSession(s.id, method), `${s.deviceCode} session ended.`)}
             />
           )}
@@ -542,6 +607,507 @@ export function ShishaManager({
 }
 
 // ============================================================================
+// Requests (WhatsApp requests waiting for staff)
+// ============================================================================
+
+const REQUEST_TYPE_LABEL: Record<ShishaRequestType, string> = {
+  order_session: "New session",
+  maintenance: "Coal refill",
+  end_session: "End session",
+  issue_report: "Issue report",
+}
+
+type AcceptInput = { deviceId?: string | null; locationId?: string | null; paymentMethod?: string | null }
+
+function timeAgo(createdAt: string, now: number): string {
+  const mins = Math.max(Math.floor((now - new Date(createdAt).getTime()) / 60_000), 0)
+  if (mins < 1) return "Just now"
+  if (mins < 60) return `${mins}m ago`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m ago`
+}
+
+/** The money line on a request card: what accepting would charge right now. */
+function requestAmountText(req: ShishaRequest, currency: string): string | null {
+  const quotedDiffers =
+    req.quotedAmount !== null && req.currentAmount !== null && req.quotedAmount !== req.currentAmount
+  if (req.requestType === "order_session" && req.currentAmount !== null) {
+    return `Price now ${formatMoney(req.currentAmount, currency)}${
+      quotedDiffers ? ` · customer was quoted ${formatMoney(req.quotedAmount as number, currency)}` : ""
+    }`
+  }
+  if (req.requestType === "maintenance" && req.currentAmount !== null) {
+    return req.currentAmount > 0 ? `Refill charge ${formatMoney(req.currentAmount, currency)}` : "Refill is free"
+  }
+  if (req.requestType === "end_session" && req.currentAmount !== null) {
+    return `Session total ${formatMoney(req.currentAmount, currency)}`
+  }
+  return null
+}
+
+function RequestsPanel({
+  snap,
+  busy,
+  occupiedDeviceIds,
+  onAccept,
+  onReject,
+}: {
+  snap: ShishaSnapshot
+  busy: boolean
+  occupiedDeviceIds: Set<string>
+  onAccept: (req: ShishaRequest, input: AcceptInput) => Promise<boolean>
+  onReject: (req: ShishaRequest, reason: string) => Promise<boolean>
+}) {
+  const now = useNow(15_000)
+  const [acting, setActing] = useState<{ kind: "accept" | "reject"; id: string } | null>(null)
+
+  const freeDevices = useMemo(
+    () => snap.devices.filter((d) => d.status !== "maintenance" && !occupiedDeviceIds.has(d.id)),
+    [snap.devices, occupiedDeviceIds],
+  )
+  const activeStations = useMemo(() => snap.stations.filter((st) => st.isActive), [snap.stations])
+
+  // Always show the freshest copy of the request being acted on; if someone else
+  // handles it while the dialog is open, close the dialog.
+  const target = acting ? (snap.requests.find((r) => r.id === acting.id) ?? null) : null
+  useEffect(() => {
+    if (acting && !target) setActing(null)
+  }, [acting, target])
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">Requests</h3>
+        <p className="mt-0.5 text-sm text-[#8A8375]">
+          Customers who asked on WhatsApp. They can't send another request until you accept or reject this one.
+        </p>
+      </div>
+
+      {snap.requests.length === 0 ? (
+        <EmptyState>No requests waiting. New ones appear here within {STAFF_REFRESH_MS / 1000} seconds.</EmptyState>
+      ) : (
+        <ul className="space-y-3">
+          {snap.requests.map((req) => {
+            const stale = now - new Date(req.createdAt).getTime() > STALE_REQUEST_MS
+            const amountText = requestAmountText(req, snap.currency)
+            const details = [
+              req.flavourName,
+              req.stationName ? `Station: ${req.stationName}` : null,
+              req.deviceCode ? `Device ${req.deviceCode}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+            const needsSession = req.requestType === "maintenance" || req.requestType === "end_session"
+            return (
+              <li
+                key={req.id}
+                className={`space-y-3 p-4 ${stale ? "rounded-lg border border-[#9A6A12]/50 bg-[#FBF5E8]" : CARD}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+                      {REQUEST_TYPE_LABEL[req.requestType]}
+                    </p>
+                    <p className="truncate text-sm text-[#6B6558]">
+                      {req.customerName ?? req.customerPhone ?? "Unknown customer"}
+                      {req.customerName && req.customerPhone ? ` · ${req.customerPhone}` : ""}
+                    </p>
+                  </div>
+                  <Badge className={stale ? "bg-[#9A6A12]/10 text-[#9A6A12]" : "bg-[#1C1A17]/[0.07] text-[#6B6558]"}>
+                    {timeAgo(req.createdAt, now)}
+                    {stale ? " · waiting" : ""}
+                  </Badge>
+                </div>
+
+                {details && <p className="text-sm text-[#1C1A17]">{details}</p>}
+                {req.issueLabel && <p className="text-sm text-[#1C1A17]">“{req.issueLabel}”</p>}
+                {amountText && <p className="text-sm tabular-nums text-[#6B6558]">{amountText}</p>}
+
+                {req.flavourIssue === "missing" && (
+                  <p className="text-xs text-[#7A2E2E]">That flavour is no longer on the menu.</p>
+                )}
+                {req.flavourIssue === "out_of_stock" && (
+                  <p className="text-xs text-[#7A2E2E]">That flavour is out of stock.</p>
+                )}
+                {needsSession && !req.sessionLive && (
+                  <p className="text-xs text-[#9A6A12]">
+                    The session this request was about has ended. Accepting looks for the customer's other live
+                    session, otherwise reject it.
+                  </p>
+                )}
+                {req.requestType === "maintenance" && req.sessionPaused && (
+                  <p className="text-xs text-[#9A6A12]">That session is paused. Resume it before accepting the refill.</p>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() =>
+                      req.requestType === "issue_report"
+                        ? void onAccept(req, {})
+                        : setActing({ kind: "accept", id: req.id })
+                    }
+                    className={BTN_PRIMARY}
+                  >
+                    {req.requestType === "issue_report" ? "Mark handled" : "Accept"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setActing({ kind: "reject", id: req.id })}
+                    className={BTN}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <AdminDialog
+        open={acting?.kind === "accept" && target !== null}
+        title={target ? `Accept · ${REQUEST_TYPE_LABEL[target.requestType]}` : "Accept"}
+        onClose={() => !busy && setActing(null)}
+      >
+        {target && acting?.kind === "accept" && (
+          <>
+            {target.requestType === "order_session" && (
+              <AcceptSessionForm
+                key={target.id}
+                req={target}
+                devices={freeDevices}
+                stations={activeStations}
+                requireStation={snap.settings.requireStation}
+                currency={snap.currency}
+                busy={busy}
+                onCancel={() => setActing(null)}
+                onSubmit={async (input) => {
+                  if (await onAccept(target, input)) setActing(null)
+                }}
+              />
+            )}
+            {target.requestType === "maintenance" && (
+              <AcceptRefillForm
+                key={target.id}
+                req={target}
+                currency={snap.currency}
+                busy={busy}
+                onCancel={() => setActing(null)}
+                onSubmit={async () => {
+                  if (await onAccept(target, {})) setActing(null)
+                }}
+              />
+            )}
+            {target.requestType === "end_session" && (
+              <AcceptEndForm
+                key={target.id}
+                req={target}
+                currency={snap.currency}
+                busy={busy}
+                onCancel={() => setActing(null)}
+                onSubmit={async (input) => {
+                  if (await onAccept(target, input)) setActing(null)
+                }}
+              />
+            )}
+          </>
+        )}
+      </AdminDialog>
+
+      <AdminDialog
+        open={acting?.kind === "reject" && target !== null}
+        title="Reject request?"
+        onClose={() => !busy && setActing(null)}
+      >
+        {target && acting?.kind === "reject" && (
+          <RejectForm
+            key={target.id}
+            busy={busy}
+            onCancel={() => setActing(null)}
+            onSubmit={async (reason) => {
+              if (await onReject(target, reason)) setActing(null)
+            }}
+          />
+        )}
+      </AdminDialog>
+    </div>
+  )
+}
+
+function RequestSummary({ req, currency }: { req: ShishaRequest; currency: string }) {
+  const amountText = requestAmountText(req, currency)
+  return (
+    <div className="space-y-1 rounded-md bg-[#F3EEE2] p-3 text-sm text-[#1C1A17]">
+      <p className="font-medium">{req.customerName ?? req.customerPhone ?? "Unknown customer"}</p>
+      {req.flavourName && (
+        <p>
+          {req.flavourName}
+          {req.stationName ? ` · ${req.stationName}` : ""}
+        </p>
+      )}
+      {amountText && <p className="tabular-nums text-[#6B6558]">{amountText}</p>}
+    </div>
+  )
+}
+
+function AcceptSessionForm({
+  req,
+  devices,
+  stations,
+  requireStation,
+  currency,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  req: ShishaRequest
+  devices: ShishaDevice[]
+  stations: ShishaStation[]
+  requireStation: boolean
+  currency: string
+  busy: boolean
+  onCancel: () => void
+  onSubmit: (input: AcceptInput) => Promise<void>
+}) {
+  const [deviceId, setDeviceId] = useState(devices[0]?.id ?? "")
+  // Pre-pick the station the customer asked for (if it's still offered).
+  const [locationId, setLocationId] = useState(stations.find((st) => st.name === req.stationName)?.id ?? "")
+  const [method, setMethod] = useState("")
+
+  if (devices.length === 0) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-[#1C1A17]">Every device is in use or under maintenance. Free one up, or reject.</p>
+        <div className="flex justify-end">
+          <button type="button" onClick={onCancel} className={BTN}>
+            Close
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const device = devices.find((d) => d.id === deviceId)
+  const usual = stations.find((st) => st.id === device?.locationId) ?? null
+  const effectiveStationId = locationId || usual?.id || ""
+  const stationRequired = requireStation && stations.length > 0
+  const stationMissing = stationRequired && !effectiveStationId
+  const flavourBlocked = req.flavourIssue !== null
+  const quotedDiffers =
+    req.quotedAmount !== null && req.currentAmount !== null && req.quotedAmount !== req.currentAmount
+
+  return (
+    <div className="space-y-4">
+      <RequestSummary req={req} currency={currency} />
+      {quotedDiffers && (
+        <p className="text-xs text-[#9A6A12]">
+          The price changed since the customer asked. They'll be charged today's price and told the amount.
+        </p>
+      )}
+      {flavourBlocked && (
+        <p className="text-xs text-[#7A2E2E]">
+          {req.flavourIssue === "missing" ? "That flavour is no longer on the menu." : "That flavour is out of stock."}{" "}
+          Fix that first, or reject the request.
+        </p>
+      )}
+
+      <label className="block space-y-1 text-sm">
+        <span className="text-[#8A8375]">Device</span>
+        <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} className={FIELD}>
+          {devices.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.deviceCode}
+              {d.deviceName ? ` — ${d.deviceName}` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {stations.length > 0 && (
+        <label className="block space-y-1 text-sm">
+          <span className="text-[#8A8375]">
+            Station
+            {stationRequired && <span className="font-medium text-[#7A2E2E]"> * required</span>}
+          </span>
+          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
+            <option value="">
+              {usual ? `Device's usual: ${usual.name}` : stationRequired ? "Pick a station…" : "No station"}
+            </option>
+            {stations.map((st) => (
+              <option key={st.id} value={st.id}>
+                {st.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label className="block space-y-1 text-sm">
+        <span className="text-[#8A8375]">Paid by (optional)</span>
+        <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
+          <option value="">Not recorded</option>
+          {PAYMENT_METHODS.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy || !deviceId || stationMissing || flavourBlocked}
+          onClick={() =>
+            void onSubmit({ deviceId, locationId: effectiveStationId || null, paymentMethod: method || null })
+          }
+          className={BTN_PRIMARY}
+        >
+          {busy
+            ? "Starting…"
+            : stationMissing
+              ? "Pick a station"
+              : `Accept${req.currentAmount !== null ? ` · ${formatMoney(req.currentAmount, currency)}` : ""}`}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AcceptRefillForm({
+  req,
+  currency,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  req: ShishaRequest
+  currency: string
+  busy: boolean
+  onCancel: () => void
+  onSubmit: () => Promise<void>
+}) {
+  const charge = req.currentAmount ?? 0
+  return (
+    <div className="space-y-4">
+      <RequestSummary req={req} currency={currency} />
+      <p className="text-sm text-[#1C1A17]">
+        {charge > 0
+          ? `This refills the session and adds ${formatMoney(charge, currency)} to it. Collect it from the customer.`
+          : "This refills the session. Refills are free for this flavour."}
+      </p>
+      {req.sessionPaused && (
+        <p className="text-xs text-[#9A6A12]">That session is paused. Resume it in Sessions first.</p>
+      )}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
+          Cancel
+        </button>
+        <button type="button" disabled={busy || req.sessionPaused} onClick={() => void onSubmit()} className={BTN_PRIMARY}>
+          {busy ? "Refilling…" : charge > 0 ? `Refill · ${formatMoney(charge, currency)}` : "Refill"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AcceptEndForm({
+  req,
+  currency,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  req: ShishaRequest
+  currency: string
+  busy: boolean
+  onCancel: () => void
+  onSubmit: (input: AcceptInput) => Promise<void>
+}) {
+  const [method, setMethod] = useState("")
+  const alreadyPaid = req.sessionPaymentMethod
+    ? (PAYMENT_METHODS.find((m) => m.value === req.sessionPaymentMethod)?.label ?? req.sessionPaymentMethod)
+    : null
+  return (
+    <div className="space-y-4">
+      <RequestSummary req={req} currency={currency} />
+      <p className="text-sm text-[#1C1A17]">The session ends and the device becomes available again.</p>
+      {alreadyPaid ? (
+        <p className="text-sm text-[#6B6558]">Payment on file: {alreadyPaid}. Collect any refills added since.</p>
+      ) : (
+        <label className="block space-y-1 text-sm">
+          <span className="text-[#8A8375]">Paid by</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
+            <option value="">Not recorded</option>
+            {PAYMENT_METHODS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void onSubmit({ paymentMethod: alreadyPaid ? null : method || null })}
+          className={BTN_DANGER}
+        >
+          {busy ? "Ending…" : "End session"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function RejectForm({
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  busy: boolean
+  onCancel: () => void
+  onSubmit: (reason: string) => Promise<void>
+}) {
+  const [reason, setReason] = useState("")
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-[#1C1A17]">
+        The customer is told on WhatsApp, and can send a new request straight away.
+      </p>
+      <label className="block space-y-1 text-sm">
+        <span className="text-[#8A8375]">Reason (optional, sent to the customer)</span>
+        <input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={200}
+          placeholder="e.g. That flavour has run out"
+          className={FIELD}
+          autoFocus
+        />
+      </label>
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
+          Keep it
+        </button>
+        <button type="button" disabled={busy} onClick={() => void onSubmit(reason)} className={BTN_DANGER}>
+          {busy ? "Rejecting…" : "Reject"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // Sessions
 // ============================================================================
 
@@ -571,6 +1137,7 @@ function SessionsPanel({
   const now = useNow(1000)
   const [startOpen, setStartOpen] = useState(false)
   const [endTarget, setEndTarget] = useState<ShishaSession | null>(null)
+  const [refillTarget, setRefillTarget] = useState<ShishaSession | null>(null)
 
   const rows = snap.sessions
     .map((s) => {
@@ -659,6 +1226,7 @@ function SessionsPanel({
                   hour12: false,
                 })}{" "}
                 · {s.refillCount} {s.refillCount === 1 ? "refill" : "refills"} · {formatMoney(s.totalAmount, snap.currency)}
+                {s.refillTotal > 0 ? ` (incl. ${formatMoney(s.refillTotal, snap.currency)} refills)` : ""}
               </p>
 
               {canOperate && (
@@ -671,11 +1239,11 @@ function SessionsPanel({
                     <>
                       <button
                         type="button"
-                        onClick={() => onRefill(s)}
+                        onClick={() => (s.refillPrice > 0 ? setRefillTarget(s) : onRefill(s))}
                         disabled={busy}
                         className={status === "refill" || status === "expired" ? BTN_PRIMARY : BTN}
                       >
-                        Refill
+                        Refill{s.refillPrice > 0 ? ` · ${formatMoney(s.refillPrice, snap.currency)}` : ""}
                       </button>
                       <button type="button" onClick={() => onPause(s)} disabled={busy} className={BTN}>
                         Pause
@@ -706,6 +1274,38 @@ function SessionsPanel({
               if (await onStart(input)) setStartOpen(false)
             }}
           />
+        )}
+      </AdminDialog>
+
+      <AdminDialog
+        open={refillTarget !== null}
+        title={refillTarget ? `Refill ${refillTarget.deviceCode}?` : "Refill?"}
+        onClose={() => !busy && setRefillTarget(null)}
+      >
+        {refillTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-[#1C1A17]">
+              This adds {formatMoney(refillTarget.refillPrice, snap.currency)} to the session (the total becomes{" "}
+              {formatMoney(refillTarget.totalAmount + refillTarget.refillPrice, snap.currency)}). Collect it from the
+              customer.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setRefillTarget(null)} disabled={busy} className={BTN}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  onRefill(refillTarget)
+                  setRefillTarget(null)
+                }}
+                className={BTN_PRIMARY}
+              >
+                Refill · {formatMoney(refillTarget.refillPrice, snap.currency)}
+              </button>
+            </div>
+          </div>
         )}
       </AdminDialog>
 
@@ -987,7 +1587,10 @@ function FlavoursPanel({
             <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-[#1C1A17]">{f.name}</p>
-                <p className="text-xs tabular-nums text-[#8A8375]">{formatMoney(f.price, snap.currency)}</p>
+                <p className="text-xs tabular-nums text-[#8A8375]">
+                  Session {formatMoney(f.price, snap.currency)} · Refill{" "}
+                  {f.refillPrice > 0 ? formatMoney(f.refillPrice, snap.currency) : "free"}
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className={f.isAvailable ? "bg-[#4B6B54]/10 text-[#4B6B54]" : "bg-[#7A2E2E]/10 text-[#7A2E2E]"}>
@@ -1024,12 +1627,19 @@ function FlavourForm({
   initial: ShishaFlavour | null
   busy: boolean
   onCancel: () => void
-  onSubmit: (input: { name: string; price: number }) => Promise<void>
+  onSubmit: (input: { name: string; price: number; refillPrice: number }) => Promise<void>
 }) {
   const [name, setName] = useState(initial?.name ?? "")
   const [price, setPrice] = useState(initial ? String(initial.price) : "")
+  const [refillPrice, setRefillPrice] = useState(initial ? String(initial.refillPrice) : "0")
   const priceNumber = price.trim() === "" ? NaN : Number(price)
-  const valid = name.trim() !== "" && Number.isFinite(priceNumber) && priceNumber >= 0
+  const refillNumber = refillPrice.trim() === "" ? NaN : Number(refillPrice)
+  const valid =
+    name.trim() !== "" &&
+    Number.isFinite(priceNumber) &&
+    priceNumber >= 0 &&
+    Number.isFinite(refillNumber) &&
+    refillNumber >= 0
 
   return (
     <div className="space-y-4">
@@ -1047,6 +1657,19 @@ function FlavourForm({
           className={FIELD}
         />
       </label>
+      <label className="block space-y-1 text-sm">
+        <span className="text-[#8A8375]">Refill price</span>
+        <input
+          value={refillPrice}
+          onChange={(e) => setRefillPrice(e.target.value)}
+          inputMode="decimal"
+          placeholder="0"
+          className={FIELD}
+        />
+        <span className="block text-xs text-[#8A8375]">
+          Charged each time a session with this flavour is refilled. 0 = refills are free.
+        </span>
+      </label>
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
           Cancel
@@ -1054,7 +1677,7 @@ function FlavourForm({
         <button
           type="button"
           disabled={busy || !valid}
-          onClick={() => void onSubmit({ name, price: priceNumber })}
+          onClick={() => void onSubmit({ name, price: priceNumber, refillPrice: refillNumber })}
           className={BTN_PRIMARY}
         >
           {busy ? "Saving…" : "Save flavour"}

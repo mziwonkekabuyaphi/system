@@ -28,6 +28,23 @@ import {
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
+/** Cap on pending requests sent to the browser. */
+const REQUEST_LIMIT = 200
+
+interface RequestRow {
+  id: string
+  request_type: ShishaRequestType
+  session_id: string | null
+  customer_id: string | null
+  customer_phone: string | null
+  location_name: string | null
+  flavour_name: string | null
+  device_code: string | null
+  amount: number | string | null
+  request_data: { issueLabel?: string | null } | null
+  created_at: string
+}
+
 /** One row per tenant; falls back to the column defaults if it doesn't exist yet. */
 export async function loadShishaSettings(supabase: ServerClient, tenantId: string): Promise<ShishaSettings> {
   const { data, error } = await supabase
@@ -91,7 +108,7 @@ export async function loadShishaSnapshot(
   const dayStart = startOfDayUtc(todayKey, timezone).toISOString()
   const dayEnd = startOfDayUtc(addDaysKey(todayKey, 1), timezone).toISOString()
 
-  const [settings, usage, shopRes, currencyRes, stationsRes, flavoursRes, devicesRes, liveRes, todayRes, refillsTodayRes, requestsRes] =
+  const [settings, usage, shopRes, currencyRes, stationsRes, flavoursRes, devicesRes, liveRes, todayRes, requestsRes] =
     await Promise.all([
     loadShishaSettings(supabase, tenantId),
     // Fee ledger: only for callers allowed to see it (shisha.manage).
@@ -117,36 +134,28 @@ export async function loadShishaSnapshot(
     supabase
       .from("shisha_sessions")
       .select(
-        "id, customer_id, customer_phone, device_id, product_id, location_id, start_time, last_refill_time, remaining_time_seconds, total_amount, refill_count, paused, status, payment_method, refill_total, paid_amount, balance_payment_method",
+        "id, customer_id, customer_phone, device_id, product_id, location_id, start_time, last_refill_time, remaining_time_seconds, total_amount, refill_total, refill_count, paused, payment_method",
       )
       .eq("tenant_id", tenantId)
       .in("status", SHISHA_LIVE_STATUSES)
       .order("start_time", { ascending: true }),
     supabase
       .from("shisha_sessions")
-      .select("total_amount, refill_total")
+      .select("total_amount")
       .eq("tenant_id", tenantId)
       .gte("created_at", dayStart)
       .lt("created_at", dayEnd)
       .limit(5000),
-    // Refill money is dated by WHEN the refill happened, not when the session started.
-    supabase
-      .from("shisha_refill_charges")
-      .select("amount")
-      .eq("tenant_id", tenantId)
-      .gte("occurred_at", dayStart)
-      .lt("occurred_at", dayEnd)
-      .limit(5000),
-    // Pending requests only, oldest first.
+    // Requests waiting for staff, oldest first (the one waiting longest on top).
     supabase
       .from("shisha_requests")
       .select(
-        "id, request_type, customer_id, customer_phone, location_name, flavour_name, device_code, amount, session_id, request_data, created_at",
+        "id, request_type, session_id, customer_id, customer_phone, location_name, flavour_name, device_code, amount, request_data, created_at",
       )
       .eq("tenant_id", tenantId)
       .eq("status", "pending")
       .order("created_at", { ascending: true })
-      .limit(200),
+      .limit(REQUEST_LIMIT),
   ])
 
   if (currencyRes.error) throw new Error(`Failed to load currency: ${currencyRes.error.message}`)
@@ -155,14 +164,13 @@ export async function loadShishaSnapshot(
   if (devicesRes.error) throw new Error(`Failed to load devices: ${devicesRes.error.message}`)
   if (liveRes.error) throw new Error(`Failed to load sessions: ${liveRes.error.message}`)
   if (todayRes.error) throw new Error(`Failed to load today's sessions: ${todayRes.error.message}`)
-  if (refillsTodayRes.error) throw new Error(`Failed to load today's refills: ${refillsTodayRes.error.message}`)
   if (requestsRes.error) throw new Error(`Failed to load requests: ${requestsRes.error.message}`)
 
   const stationRows = (stationsRes.data ?? []) as any[]
   const flavourRows = (flavoursRes.data ?? []) as any[]
   const deviceRows = (devicesRes.data ?? []) as any[]
   const liveRows = (liveRes.data ?? []) as any[]
-  const requestRows = (requestsRes.data ?? []) as any[]
+  const requestRows = (requestsRes.data ?? []) as unknown as RequestRow[]
 
   // Archived rows stay in these lookups: a live session can still point at an
   // archived device / flavour / station and must keep showing its name.
@@ -172,7 +180,11 @@ export async function loadShishaSnapshot(
 
   // Customer names for linked (non walk-in) sessions and requests only.
   const customerIds = [
-    ...new Set([...liveRows, ...requestRows].map((r) => r.customer_id).filter((id): id is string => Boolean(id))),
+    ...new Set(
+      [...liveRows.map((r) => r.customer_id), ...requestRows.map((r) => r.customer_id)].filter((id): id is string =>
+        Boolean(id),
+      ),
+    ),
   ]
   const customerName = new Map<string, string | null>()
   if (customerIds.length > 0) {
@@ -199,6 +211,12 @@ export async function loadShishaSnapshot(
       isAvailable: r.is_available,
     }))
 
+  // What one more refill costs, by flavour id. Archived flavours charge nothing
+  // (same rule as refillSession in actions.ts).
+  const refillPriceById = new Map<string, number>(
+    flavourRows.filter((r) => r.archived_at === null).map((r) => [r.id, Number(r.refill_price ?? 0)]),
+  )
+
   const devices: ShishaDevice[] = deviceRows
     .filter((r) => r.archived_at === null)
     .map((r) => ({
@@ -224,51 +242,53 @@ export async function loadShishaSnapshot(
     lastRefillTime: r.last_refill_time,
     remainingSeconds: r.remaining_time_seconds,
     totalAmount: Number(r.total_amount),
-    refillCount: r.refill_count,
-    // The paused column and status are written together now; treating either as paused
-    // also keeps any row paused before that fix correct.
-    paused: Boolean(r.paused) || r.status === "paused",
-    paymentMethod: r.payment_method ?? null,
     refillTotal: Number(r.refill_total ?? 0),
-    paidAmount: Number(r.paid_amount ?? 0),
-    balancePaymentMethod: r.balance_payment_method ?? null,
+    refillPrice: (r.product_id && refillPriceById.get(r.product_id)) || 0,
+    refillCount: r.refill_count,
+    paused: r.paused,
+    paymentMethod: r.payment_method ?? null,
   }))
 
-  // Current prices, resolved by name within this tenant (the request only stores names).
-  const priceByName = new Map(flavours.map((f) => [f.name, f]))
-  const flavourById = new Map(flavours.map((f) => [f.id, f]))
-  const sessionById = new Map(sessions.map((s) => [s.id, s]))
-
+  // Pending requests, with what accepting would charge right now.
+  const activeFlavourByName = new Map<string, ShishaFlavour>(flavours.map((f) => [f.name, f]))
+  const liveSessionById = new Map<string, ShishaSession>(sessions.map((s) => [s.id, s]))
   const requests: ShishaRequest[] = requestRows.map((r) => {
-    const type = r.request_type as ShishaRequestType
-    let currentPrice: number | null = null
-    if (type === "order_session") {
-      currentPrice = priceByName.get(r.flavour_name)?.price ?? null
-    } else if (type === "maintenance") {
-      // Prefer the live session's own flavour (the name on the request may have been renamed).
-      const live = r.session_id ? sessionById.get(r.session_id) : undefined
-      const flavour = (live?.productId && flavourById.get(live.productId)) || priceByName.get(r.flavour_name)
-      currentPrice = flavour ? flavour.refillPrice : null
-    }
+    const live = r.session_id ? (liveSessionById.get(r.session_id) ?? null) : null
+    const flavour = r.flavour_name ? (activeFlavourByName.get(r.flavour_name) ?? null) : null
+    let currentAmount: number | null = null
+    if (r.request_type === "order_session") currentAmount = flavour ? flavour.price : null
+    else if (r.request_type === "maintenance") currentAmount = live ? live.refillPrice : null
+    else if (r.request_type === "end_session") currentAmount = live ? live.totalAmount : null
+
     return {
       id: r.id,
-      requestType: type,
-      customerId: r.customer_id ?? null,
+      requestType: r.request_type,
+      customerId: r.customer_id,
       customerName: r.customer_id ? (customerName.get(r.customer_id) ?? null) : null,
-      customerPhone: r.customer_phone ?? null,
-      locationName: r.location_name ?? null,
-      flavourName: r.flavour_name ?? null,
-      deviceCode: r.device_code ?? null,
-      quotedAmount: r.amount === null || r.amount === undefined ? null : Number(r.amount),
-      currentPrice,
-      sessionId: r.session_id ?? null,
-      issueLabel: typeof r.request_data?.issueLabel === "string" ? r.request_data.issueLabel : null,
+      customerPhone: r.customer_phone,
+      stationName: r.location_name,
+      flavourName: r.flavour_name,
+      deviceCode: r.device_code,
+      quotedAmount: r.amount === null ? null : Number(r.amount),
+      currentAmount,
+      sessionId: r.session_id,
+      sessionLive: live !== null,
+      sessionPaused: live?.paused ?? false,
+      sessionPaymentMethod: live?.paymentMethod ?? null,
+      flavourIssue:
+        r.request_type !== "order_session"
+          ? null
+          : !flavour
+            ? "missing"
+            : !flavour.isAvailable
+              ? "out_of_stock"
+              : null,
+      issueLabel: r.request_type === "issue_report" ? (r.request_data?.issueLabel ?? null) : null,
       createdAt: r.created_at,
     }
   })
 
   const todayRows = (todayRes.data ?? []) as any[]
-  const refillsTodayRows = (refillsTodayRes.data ?? []) as any[]
 
   return {
     shopName: ((shopRes.data as any)?.name as string | undefined) ?? "",
@@ -281,11 +301,7 @@ export async function loadShishaSnapshot(
     requests,
     today: {
       sessions: todayRows.length,
-      // Session price for sessions started today, plus refill money taken today (even on an
-      // older session). total_amount alone would put today's refills on the session's start day.
-      revenue:
-        todayRows.reduce((sum, r) => sum + Number(r.total_amount ?? 0) - Number(r.refill_total ?? 0), 0) +
-        refillsTodayRows.reduce((sum, r) => sum + Number(r.amount ?? 0), 0),
+      revenue: todayRows.reduce((sum, r) => sum + Number(r.total_amount ?? 0), 0),
     },
     usage,
   }
