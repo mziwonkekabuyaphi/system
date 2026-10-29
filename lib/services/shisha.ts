@@ -166,19 +166,32 @@ type MenuChoice = "new_session" | "coal_refill" | "end_session" | "report_issue"
 
 function parseMenuChoice(rawMessage: string): MenuChoice {
   const text = rawMessage.trim().toLowerCase()
-  const selection = extractListSelection(text)
 
-  // A natural one-shot ("I want a mint hookah at the rooftop") counts as a new
-  // session when a request verb is paired with shisha/hookah/hubbly.
-  const namesShisha = /\bshisha\b|\bhookah\b|\bhubbly\b/.test(text)
-  const hasRequestVerb = /^(?:i want|i'd like|i need|get me|can i (?:get|have)|order|buy|start)\b/.test(text)
-  if (selection === 1 || /new session|start.*session|smoke/.test(text) || (namesShisha && hasRequestVerb)) {
-    return "new_session"
-  }
-  if (selection === 2 || /refill|coal/.test(text)) return "coal_refill"
-  if (selection === 3 || /end session|end my|close/.test(text)) return "end_session"
-  if (selection === 4 || /issue|report|problem/.test(text)) return "report_issue"
-  if (selection === 5 || /track|my session|session status|hookah/.test(text)) return "track_session"
+  // A pick from the numbered menu: a bare number ("2", "number 2", "option 2").
+  // Deliberately NOT "any digit anywhere" — "I need 2 hookahs" is not option 2.
+  const pick = text.match(/^(?:number|no\.?|option)?\s*(\d{1,2})$/)
+  const selection = pick ? parseInt(pick[1], 10) : null
+  if (selection === 1) return "new_session"
+  if (selection === 2) return "coal_refill"
+  if (selection === 3) return "end_session"
+  if (selection === 4) return "report_issue"
+  if (selection === 5) return "track_session"
+
+  // Specific actions first, so "I want to end my shisha session" is an
+  // end-session request and not a new-session one just because it has "want".
+  if (/refill|coal/.test(text)) return "coal_refill"
+  if (/end session|end my|close/.test(text)) return "end_session"
+  if (/issue|report|problem/.test(text)) return "report_issue"
+  if (/track|my session|session status/.test(text)) return "track_session"
+
+  // New session: explicit phrasing, or a request verb paired with shisha/hookah/hubbly
+  // anywhere in the message ("book a shisha", "can I get a mint hookah", "I need shisha").
+  const namesShisha = /\b(?:shisha|hookah|hubbly)s?\b/.test(text)
+  const wantsOne = /\b(book|reserve|order|buy|start|get|want|need|like|bring|give|have|try)\b/.test(text)
+  if (/new session|start.*session|smoke/.test(text) || (namesShisha && wantsOne)) return "new_session"
+
+  // A bare mention of "hookah" (e.g. the "Track My Hookah" button) means tracking.
+  if (/hookah/.test(text)) return "track_session"
   return null
 }
 
