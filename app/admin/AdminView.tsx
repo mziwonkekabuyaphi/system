@@ -13,7 +13,7 @@ import { ServicesManager } from "./ServicesManager"
 import { ShishaManager } from "./shisha/ShishaManager"
 import { SettingsManager } from "./SettingsManager"
 import { sidebarStyleVars } from "./sidebar-theme"
-import { StaffManager } from "./StaffManager"
+import { StaffManager } from "./staff/StaffManager"
 import { TodayBookings } from "./TodayBookings"
 import type {
   AdminBooking,
