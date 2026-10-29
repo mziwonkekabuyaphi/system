@@ -10,7 +10,6 @@ import type {
   AdminClockSettings,
   AdminDisplaySettings,
   AdminKioskSettings,
-  AdminMessageSettings,
   AdminPlan,
   AdminQueueSettings,
   AdminTenantSettings,
@@ -21,11 +20,10 @@ import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
-import { BookingSettingsPanel, MessageSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
-import { WhatsAppTemplatesPanel } from "./settings/WhatsAppTemplatesPanel"
+import { BookingSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
 import { SettingsPageHeader } from "./settings/ui"
 
-type SubTab = "general" | "kiosk" | "display" | "clock" | "private-label" | "booking" | "queue" | "messages"
+type SubTab = "general" | "kiosk" | "display" | "clock" | "private-label" | "booking" | "queue"
 
 // Settings are grouped by what the owner is thinking about, not by which
 // part of the system they happen to touch. Labels avoid clashing with the
@@ -66,12 +64,6 @@ const SETTINGS_NAV: Array<{
         label: "Public display",
         title: "Public display",
         description: "The screen in your waiting area showing the queue, bookings and menu.",
-      },
-      {
-        id: "messages",
-        label: "WhatsApp Settings",
-        title: "WhatsApp messages",
-        description: "The messages customers receive for bookings and queue updates.",
       },
     ],
   },
@@ -117,7 +109,6 @@ export function SettingsManager({
   initialClockSettings,
   initialBookingSettings,
   initialQueueSettings,
-  initialMessageSettings,
   initialBusinessHours,
 }: {
   initialPlan: AdminPlan
@@ -146,7 +137,6 @@ export function SettingsManager({
   initialClockSettings: AdminClockSettings
   initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
-  initialMessageSettings: AdminMessageSettings
   initialBusinessHours: AdminBusinessHours
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
@@ -256,12 +246,6 @@ export function SettingsManager({
       )}
       {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
       {subTab === "queue" && <QueueSettingsPanel initial={queueSettings} onSaved={setQueueSettings} />}
-      {subTab === "messages" && (
-        <div className="space-y-4">
-          <MessageSettingsPanel initial={initialMessageSettings} />
-          <WhatsAppTemplatesPanel />
-        </div>
-      )}
       </div>
     </div>
   )

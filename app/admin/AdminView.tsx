@@ -457,7 +457,11 @@ export function AdminView({
           )}
           {tab === "customers" && staffPermissions.settingsManage && <CustomersManager timezone={timezone} />}
           {tab === "inbox" && staffPermissions.settingsManage && (
-            <InboxManager initialConversations={initialConversations} initialStats={initialInboxStats} />
+            <InboxManager
+              initialConversations={initialConversations}
+              initialStats={initialInboxStats}
+              initialMessageSettings={initialMessageSettings!}
+            />
           )}
           {tab === "services" && staffPermissions.servicesManage && (
             <ServicesManager initialServices={initialServices} />
@@ -495,7 +499,6 @@ export function AdminView({
               initialClockSettings={initialClockSettings!}
               initialBookingSettings={initialBookingSettings!}
               initialQueueSettings={initialQueueSettings!}
-              initialMessageSettings={initialMessageSettings!}
               initialBusinessHours={initialBusinessHours!}
             />
           )}

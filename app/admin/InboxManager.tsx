@@ -35,7 +35,8 @@ import { useState, useTransition } from "react"
 
 import { AnalyticsDashboard } from "./AnalyticsDashboard"
 import { getConversationThread, sendAgentMessage, setConversationAiState } from "./inbox-actions"
-import type { AdminAiState, AdminConversationSummary, AdminInboxStats, AdminMessage } from "./types"
+import type { AdminAiState, AdminConversationSummary, AdminInboxStats, AdminMessage, AdminMessageSettings } from "./types"
+import { WhatsAppSettingsDrawer } from "./WhatsAppSettingsDrawer"
 
 type Filter = "all" | "ai_active" | "needs_human" | "unread"
 
@@ -83,15 +84,19 @@ function matchesFilter(conversation: AdminConversationSummary, filter: Filter): 
 export function InboxManager({
   initialConversations,
   initialStats,
+  initialMessageSettings,
 }: {
   initialConversations: AdminConversationSummary[]
   initialStats: AdminInboxStats
+  /** message_settings row for the WhatsApp settings drawer (owner-only, like the Inbox itself). */
+  initialMessageSettings: AdminMessageSettings
 }) {
   const [conversations, setConversations] = useState(initialConversations)
   const [filter, setFilter] = useState<Filter>("all")
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showAnalytics, setShowAnalytics] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const [messages, setMessages] = useState<AdminMessage[]>([])
   const [loadingThread, setLoadingThread] = useState(false)
@@ -289,6 +294,13 @@ export function InboxManager({
         >
           Analytics
         </button>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="shrink-0 rounded-full border border-stone-300 px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-50"
+        >
+          WhatsApp settings
+        </button>
       </div>
 
       {showAnalytics && <AnalyticsDashboard stats={initialStats} />}
@@ -337,6 +349,13 @@ export function InboxManager({
           ))}
         </div>
       )}
+
+      {/* WhatsApp settings: right-hand overlay panel */}
+      <WhatsAppSettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        messageSettings={initialMessageSettings}
+      />
     </div>
   )
 }
