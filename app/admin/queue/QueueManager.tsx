@@ -14,6 +14,8 @@
 // regains focus. The status indicator reports exactly that — nothing more.
 "use client"
 
+import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_FOCUS_OUTLINE, BRAND_ON, BRAND_TEXT } from "@/components/admin/brand"
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AddWalkInForm } from "../AddWalkInDialog"
@@ -28,11 +30,10 @@ const REFRESH_MS = 30_000
 type Notice = { kind: "success" | "error"; text: string }
 
 const FIELD =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+  `rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER}`
 const BTN =
   "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
-const BTN_CALL =
-  "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+const BTN_CALL = `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 const BTN_DONE =
   "rounded-md bg-[#4B6B54] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3D5745] disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_GHOST =
@@ -370,7 +371,7 @@ export function QueueManager({
                 <button
                   type="button"
                   onClick={() => setDetailsId(q.id)}
-                  className="mt-2 block w-full rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#7A2E2E]"
+                  className={`mt-2 block w-full rounded text-left focus-visible:outline focus-visible:outline-2 ${BRAND_FOCUS_OUTLINE}`}
                 >
                   <p className="truncate text-[1.02rem] text-[#1C1A17]">{q.customerName ?? "No name on file"}</p>
                   <p className="truncate text-sm text-[#8A8375]">{q.serviceName}</p>
@@ -456,7 +457,7 @@ export function QueueManager({
                   <button
                     type="button"
                     onClick={() => setDetailsId(q.id)}
-                    className="flex min-w-0 flex-1 items-center gap-4 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#7A2E2E]"
+                    className={`flex min-w-0 flex-1 items-center gap-4 rounded text-left focus-visible:outline focus-visible:outline-2 ${BRAND_FOCUS_OUTLINE}`}
                   >
                     <span className="w-16 shrink-0 rounded-md bg-[#1C1A17] px-2 py-1 text-center font-mono text-sm tabular-nums text-[#FAF6EE]">
                       {ticket(q)}
@@ -465,7 +466,7 @@ export function QueueManager({
                       <span className="block truncate text-[1.02rem] text-[#1C1A17]">
                         {q.customerName ?? "No name on file"}
                         {position === 1 && (
-                          <span className="ml-2 rounded-full bg-[#7A2E3A]/10 px-2 py-0.5 align-middle text-xs font-medium text-[#7A2E3A]">
+                          <span className={`ml-2 rounded-full bg-[#1C1A17]/[0.07] px-2 py-0.5 align-middle text-xs font-medium ${BRAND_TEXT}`}>
                             Next
                           </span>
                         )}
