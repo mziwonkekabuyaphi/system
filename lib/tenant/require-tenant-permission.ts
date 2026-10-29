@@ -36,6 +36,7 @@ import { requireTenantMember, type CurrentTenantMember } from "./current-tenant-
 // Keep in sync with the `permissions.key` rows the staff/payroll
 // migration inserted, plus the pre-existing keys already in use
 // elsewhere in app/admin/actions.ts.
+
 export type PermissionKey =
   | "staff.view"
   | "staff.manage"
@@ -49,6 +50,10 @@ export type PermissionKey =
   | "queue.manage"
   | "analytics.view"
   | "billing.view"
+  | "shisha.view"
+  | "shisha.operate"
+  | "shisha.manage"
+
 
 export type PermissionCheckResult =
   | { ok: true; member: CurrentTenantMember }
