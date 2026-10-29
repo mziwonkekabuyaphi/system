@@ -1,5 +1,7 @@
 "use client"
 
+import { BRAND_BG, BRAND_BORDER, BRAND_BTN_DISABLED, BRAND_FOCUS_BORDER, BRAND_FOCUS_RING, BRAND_FOCUS_VISIBLE_RING, BRAND_ON, BRAND_TEXT } from "@/components/admin/brand"
+
 import { useState } from "react"
 
 export const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
@@ -17,7 +19,7 @@ export const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // ---------------------------------------------------------------------------
 export const inputClass =
   "w-full rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 " +
-  "placeholder:text-stone-400 focus:border-[color:var(--sb-bg,#7A2E3A)] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[color:var(--sb-bg,#7A2E3A)] " +
+  `placeholder:text-stone-400 ${BRAND_FOCUS_BORDER} focus:bg-white focus:outline-none focus:ring-1 ${BRAND_FOCUS_RING} ` +
   "disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
 
 export const secondaryButtonClass =
@@ -25,8 +27,8 @@ export const secondaryButtonClass =
   "hover:bg-stone-50 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400 disabled:hover:bg-stone-100"
 
 export const primaryButtonClass =
-  "rounded-full bg-[var(--sb-bg,#7A2E3A)] px-4 py-2 text-sm font-medium text-[color:var(--sb-text,#ffffff)] hover:brightness-90 " +
-  "disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:hover:brightness-100"
+  `rounded-full ${BRAND_BG} px-4 py-2 text-sm font-medium ${BRAND_ON} hover:brightness-90 ` +
+  `disabled:cursor-not-allowed ${BRAND_BTN_DISABLED} disabled:hover:brightness-100`
 
 
 
@@ -249,7 +251,7 @@ export function ColorField({
           className={`${inputClass} ${!isValid ? "border-red-300 bg-red-50" : ""}`}
           value={draft}
           onChange={(e) => commit(e.target.value)}
-          placeholder="#7A2E3A"
+          placeholder="#1F2937"
         />
       </div>
     </FieldRow>
@@ -302,13 +304,13 @@ export function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`inline-flex shrink-0 items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--sb-bg,#7A2E3A)] focus-visible:ring-offset-2 ${
+      className={`inline-flex shrink-0 items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 ${BRAND_FOCUS_VISIBLE_RING} focus-visible:ring-offset-2 ${
         disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"
       }`}
     >
       <span
         className={`relative inline-block h-6 w-11 rounded-full border-2 transition-colors ${
-          checked ? "border-[color:var(--sb-bg,#7A2E3A)] bg-[var(--sb-bg,#7A2E3A)]" : "border-stone-400 bg-stone-300"
+          checked ? `${BRAND_BORDER} ${BRAND_BG}` : "border-stone-400 bg-stone-300"
         }`}
       >
         <span
@@ -318,7 +320,7 @@ export function Toggle({
         />
       </span>
       {showState && (
-        <span className={`w-6 text-xs font-semibold ${checked ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-500"}`}>
+        <span className={`w-6 text-xs font-semibold ${checked ? BRAND_TEXT : "text-stone-500"}`}>
           {checked ? "On" : "Off"}
         </span>
       )}
