@@ -71,8 +71,11 @@ export interface ActiveShishaSession {
   deviceCode: string | null
   locationName: string | null
   flavourName: string | null
-  /** The flavour's current price (shisha_products.price), used as the refill amount. */
+  /** The flavour's current session price (shisha_products.price). */
   flavourPrice: number | null
+  /** The flavour's current refill price (shisha_products.refill_price): what a refill
+   *  request quotes. Optional because older saved conversation states don't have it. */
+  flavourRefillPrice?: number | null
   amount: number
   status: string
   remainingTimeSeconds: number
