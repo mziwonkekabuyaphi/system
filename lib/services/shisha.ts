@@ -96,7 +96,7 @@ async function getActiveSession(
       id, total_amount, status, remaining_time_seconds, refill_count,
       last_refill_time, paused,
       shisha_devices ( device_code ),
-      shisha_products ( name, price ),
+      shisha_products ( name, price, refill_price ),
       shisha_locations ( name )
     `,
     )
@@ -114,7 +114,7 @@ async function getActiveSession(
       last_refill_time: string | null
       paused: boolean | null
       shisha_devices: { device_code: string | null } | null
-      shisha_products: { name: string | null; price: number | null } | null
+      shisha_products: { name: string | null; price: number | null; refill_price: number | null } | null
       shisha_locations: { name: string | null } | null
     }>()
 
@@ -130,6 +130,7 @@ async function getActiveSession(
     locationName: data.shisha_locations?.name ?? null,
     flavourName: data.shisha_products?.name ?? null,
     flavourPrice: data.shisha_products?.price != null ? Number(data.shisha_products.price) : null,
+    flavourRefillPrice: data.shisha_products?.refill_price != null ? Number(data.shisha_products.refill_price) : null,
     amount: Number(data.total_amount),
     status: data.status,
     remainingTimeSeconds: computeLiveRemainingSeconds(
@@ -223,12 +224,16 @@ async function handleCoalRefillRequest(
       locationName: session.locationName,
       flavourName: session.flavourName,
       deviceCode: session.deviceCode,
-      // The single-business version hardcoded R250. Per-tenant now: the
-      // flavour's own price (its comment said refills cost the session
-      // price). null if unknown — staff set the amount on approval.
-      amount: session.flavourPrice,
+      // The flavour's own REFILL price (shisha_products.refill_price), which staff
+      // set separately from the session price. This is only what the customer is
+      // quoted: staff charge the price in force when they accept. 0 = free refill.
+      amount: session.flavourRefillPrice ?? 0,
     })
-    return actionResult(messages.COAL_REFILL_SENT, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
+    return actionResult(
+      messages.coalRefillRequested(session.flavourRefillPrice ?? null),
+      null,
+      messages.SHISHA_NEXT_STEPS_BUTTONS,
+    )
   } catch (err) {
     logger.error("[shisha] failed to create maintenance request", {
       tenantId,
