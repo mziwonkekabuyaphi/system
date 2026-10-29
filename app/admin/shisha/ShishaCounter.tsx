@@ -23,6 +23,8 @@ import {
 export interface CounterStartInput {
   deviceId: string
   productId: string
+  /** "" = no station */
+  locationId: string
   customerPhone: string
   paymentMethod: string
 }
@@ -412,6 +414,7 @@ export function ShishaCounter({
 
   const [productId, setProductId] = useState("")
   const [deviceId, setDeviceId] = useState("")
+  const [stationId, setStationId] = useState("")
   const [phone, setPhone] = useState("")
   const [payment, setPayment] = useState<string>(PAYMENT_METHODS[0].value)
   const [scanOpen, setScanOpen] = useState(false)
@@ -462,6 +465,12 @@ export function ShishaCounter({
   const flavour = flavours.find((f) => f.id === productId) ?? null
   const device = freeDevices.find((d) => d.id === deviceId) ?? null
 
+  // Station = where the customer sits, picked per session. A device's own
+  // station only pre-selects when staff haven't picked one.
+  const activeStations = useMemo(() => snap.stations.filter((st) => st.isActive), [snap.stations])
+  const pickedStation = activeStations.find((st) => st.id === stationId) ?? null
+  const effectiveStation = pickedStation ?? activeStations.find((st) => st.id === device?.locationId) ?? null
+
   const rows = snap.sessions
     .map((s) => {
       const remaining = liveRemainingSeconds(s, now)
@@ -469,11 +478,11 @@ export function ShishaCounter({
     })
     .sort((a, b) => a.remaining - b.remaining)
 
-  function receiptFor(d: { deviceCode: string; locationId: string | null }, f: { name: string; price: number }): ReceiptData {
+  function receiptFor(d: { deviceCode: string }, f: { name: string; price: number }): ReceiptData {
     return {
       shopName: snap.shopName,
       deviceCode: d.deviceCode,
-      station: stationName(d.locationId),
+      station: effectiveStation?.name ?? null,
       flavour: f.name,
       durationMinutes: snap.settings.coalDurationMinutes,
       payment: paymentLabel(payment),
@@ -514,11 +523,18 @@ export function ShishaCounter({
   async function submit() {
     if (!flavour || !device || busy) return
     const receipt = receiptFor(device, flavour)
-    const ok = await onStart({ deviceId: device.id, productId: flavour.id, customerPhone: phone, paymentMethod: payment })
+    const ok = await onStart({
+      deviceId: device.id,
+      productId: flavour.id,
+      locationId: effectiveStation?.id ?? "",
+      customerPhone: phone,
+      paymentMethod: payment,
+    })
     if (!ok) return // ShishaManager already shows why (e.g. device just taken)
     setLastReceipt(receipt)
     if (autoPrint) void printReceipt(receipt)
     setDeviceId("")
+    setStationId("")
     setPhone("")
   }
 
@@ -592,6 +608,25 @@ export function ShishaCounter({
               </div>
             </div>
 
+            {activeStations.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-[#8A8375]">Station</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {activeStations.map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      aria-pressed={effectiveStation?.id === st.id}
+                      onClick={() => setStationId(stationId === st.id ? "" : st.id)}
+                      className={`${TILE_BASE} ${effectiveStation?.id === st.id ? TILE_ON : TILE_OFF}`}
+                    >
+                      <span className="block truncate font-medium">{st.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <p className="text-sm text-[#8A8375]">Device</p>
               {freeDevices.length === 0 ? (
@@ -607,9 +642,7 @@ export function ShishaCounter({
                       className={`${TILE_BASE} ${device?.id === d.id ? TILE_ON : TILE_OFF}`}
                     >
                       <span className="block font-medium">{d.deviceCode}</span>
-                      <span className="block truncate text-xs opacity-80">
-                        {[d.deviceName, stationName(d.locationId)].filter(Boolean).join(" · ") || "\u00a0"}
-                      </span>
+                      <span className="block truncate text-xs opacity-80">{d.deviceName || "\u00a0"}</span>
                     </button>
                   ))}
                 </div>
@@ -648,7 +681,7 @@ export function ShishaCounter({
               {busy
                 ? "Working…"
                 : flavour && device
-                  ? `Start ${device.deviceCode} · ${formatMoney(flavour.price, snap.currency)}`
+                  ? `Start ${device.deviceCode}${effectiveStation ? ` · ${effectiveStation.name}` : ""} · ${formatMoney(flavour.price, snap.currency)}`
                   : "Pick a flavour and a device"}
             </button>
 

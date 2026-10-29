@@ -561,7 +561,7 @@ function SessionsPanel({
   canOperate: boolean
   busy: boolean
   occupiedDeviceIds: Set<string>
-  onStart: (input: { deviceId: string; productId: string; customerPhone: string }) => Promise<boolean>
+  onStart: (input: { deviceId: string; productId: string; locationId: string; customerPhone: string }) => Promise<boolean>
   onPause: (s: ShishaSession) => void
   onResume: (s: ShishaSession) => void
   onRefill: (s: ShishaSession) => void
@@ -693,6 +693,7 @@ function SessionsPanel({
           <StartSessionForm
             devices={freeDevices}
             flavours={availableFlavours}
+            stations={snap.stations.filter((st) => st.isActive)}
             stationName={stationName}
             currency={snap.currency}
             busy={busy}
@@ -728,6 +729,7 @@ function SessionsPanel({
 function StartSessionForm({
   devices,
   flavours,
+  stations,
   stationName,
   currency,
   busy,
@@ -736,13 +738,15 @@ function StartSessionForm({
 }: {
   devices: ShishaDevice[]
   flavours: ShishaFlavour[]
+  stations: ShishaStation[]
   stationName: (id: string | null) => string | null
   currency: string
   busy: boolean
   onCancel: () => void
-  onSubmit: (input: { deviceId: string; productId: string; customerPhone: string }) => Promise<void>
+  onSubmit: (input: { deviceId: string; productId: string; locationId: string; customerPhone: string }) => Promise<void>
 }) {
   const [deviceId, setDeviceId] = useState(devices[0]?.id ?? "")
+  const [locationId, setLocationId] = useState("")
   const [productId, setProductId] = useState(flavours[0]?.id ?? "")
   const [phone, setPhone] = useState("")
 
@@ -774,11 +778,27 @@ function StartSessionForm({
             <option key={d.id} value={d.id}>
               {d.deviceCode}
               {d.deviceName ? ` — ${d.deviceName}` : ""}
-              {stationName(d.locationId) ? ` · ${stationName(d.locationId)}` : ""}
             </option>
           ))}
         </select>
       </label>
+      {stations.length > 0 && (
+        <label className="block space-y-1 text-sm">
+          <span className="text-[#8A8375]">Station</span>
+          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
+            <option value="">
+              {stationName(devices.find((d) => d.id === deviceId)?.locationId ?? null)
+                ? `Device's usual station: ${stationName(devices.find((d) => d.id === deviceId)?.locationId ?? null)}`
+                : "No station"}
+            </option>
+            {stations.map((st) => (
+              <option key={st.id} value={st.id}>
+                {st.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="block space-y-1 text-sm">
         <span className="text-[#8A8375]">Flavour</span>
         <select value={productId} onChange={(e) => setProductId(e.target.value)} className={FIELD}>
@@ -806,7 +826,7 @@ function StartSessionForm({
         <button
           type="button"
           disabled={busy || !deviceId || !productId}
-          onClick={() => void onSubmit({ deviceId, productId, customerPhone: phone })}
+          onClick={() => void onSubmit({ deviceId, productId, locationId, customerPhone: phone })}
           className={BTN_PRIMARY}
         >
           {busy ? "Starting…" : `Start${chosen ? ` · ${formatMoney(chosen.price, currency)}` : ""}`}
@@ -1054,7 +1074,7 @@ function DevicesPanel({
                     {d.deviceName ? <span className="font-normal text-[#6B6558]"> — {d.deviceName}</span> : null}
                   </p>
                   <p className="text-xs text-[#8A8375]">
-                    {(d.locationId && stationById.get(d.locationId)?.name) || "No station"}
+                    {(d.locationId && stationById.get(d.locationId)?.name) || "No usual station"}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1125,15 +1145,18 @@ function DeviceForm({
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Terrace hookah 1" className={FIELD} />
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Station</span>
+        <span className="text-[#8A8375]">Usual station (optional)</span>
         <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
-          <option value="">No station</option>
+          <option value="">No usual station</option>
           {stations.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
             </option>
           ))}
         </select>
+        <span className="block text-xs text-[#8A8375]">
+          Only a default. Staff pick the station for each session when they start it.
+        </span>
       </label>
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className={BTN}>

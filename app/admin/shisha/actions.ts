@@ -139,6 +139,9 @@ export async function startSession(input: {
   deviceId: string
   productId: string
   customerPhone?: string
+  /** Where the customer is sitting (a station). Chosen by staff per session;
+   *  when omitted the device's usual station, if it has one, is used. */
+  locationId?: string | null
   /** Taken at the counter when the customer pays up front. Optional: the
    *  Sessions panel still records it when the session ends instead. */
   paymentMethod?: string | null
@@ -174,6 +177,22 @@ export async function startSession(input: {
   if (device.status === "maintenance") return fail("That device is under maintenance.")
   if (!product || !product.is_available) return fail("That flavour isn't available.")
 
+  // Station: picked per session. The device's own station is only the default.
+  let locationId: string | null = device.location_id
+  if (input.locationId) {
+    const { data: stationRow, error: stationError } = await s.supabase
+      .from("shisha_locations")
+      .select("id, is_active")
+      .eq("id", input.locationId)
+      .eq("tenant_id", s.tenantId)
+      .is("archived_at", null)
+      .maybeSingle()
+    if (stationError) return fail(stationError.message)
+    const station = stationRow as { id: string; is_active: boolean } | null
+    if (!station || !station.is_active) return fail("That station isn't available.")
+    locationId = station.id
+  }
+
   let settings
   try {
     settings = await loadShishaSettings(s.supabase, s.tenantId)
@@ -202,7 +221,7 @@ export async function startSession(input: {
       customer_phone: phone || null,
       device_id: device.id,
       product_id: product.id,
-      location_id: device.location_id,
+      location_id: locationId,
       remaining_time_seconds: settings.coalDurationMinutes * 60,
       total_amount: Number(product.price),
       status: "active",
