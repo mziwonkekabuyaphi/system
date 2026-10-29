@@ -32,7 +32,9 @@ export const PAYMENT_METHODS = [
 ] as const
 export type ShishaPaymentMethod = (typeof PAYMENT_METHODS)[number]["value"]
 
-export type ShishaActionResult = { ok: true } | { ok: false; error: string }
+/** `warning` on the ok branch: the action worked, but something secondary didn't
+ *  (e.g. the WhatsApp message to the customer couldn't be sent). run() shows it to staff. */
+export type ShishaActionResult = { ok: true; warning?: string } | { ok: false; error: string }
 
 export interface ShishaSettings {
   coalDurationMinutes: number
@@ -52,6 +54,8 @@ export interface ShishaFlavour {
   id: string
   name: string
   price: number
+  /** What a coal refill costs for this flavour. 0 = free refill. */
+  refillPrice: number
   isAvailable: boolean
 }
 
@@ -86,6 +90,48 @@ export interface ShishaSession {
   paused: boolean
   /** Stored payment method value (see PAYMENT_METHODS), if already taken at the counter. */
   paymentMethod: string | null
+  /** Sum of refill charges. totalAmount stays the grand total (session price + refills). */
+  refillTotal: number
+  /** How much of totalAmount has been settled. Balance = totalAmount - paidAmount. */
+  paidAmount: number
+  /** How a later balance (refills) was paid, when it differs from paymentMethod. */
+  balancePaymentMethod: string | null
+}
+
+/** Amount still owed on a session (refills added after an up-front payment). */
+export function sessionBalance(s: { totalAmount: number; paidAmount: number }): number {
+  return Math.max(Math.round((s.totalAmount - s.paidAmount) * 100) / 100, 0)
+}
+
+export type ShishaRequestType = "order_session" | "maintenance" | "end_session" | "issue_report"
+
+export const SHISHA_REQUEST_LABEL: Record<ShishaRequestType, string> = {
+  order_session: "New session",
+  maintenance: "Coal refill",
+  end_session: "End session",
+  issue_report: "Issue report",
+}
+
+/** A customer request waiting for staff (status = pending). */
+export interface ShishaRequest {
+  id: string
+  requestType: ShishaRequestType
+  customerId: string | null
+  customerName: string | null
+  customerPhone: string | null
+  /** Station name as the customer saw it. */
+  locationName: string | null
+  flavourName: string | null
+  deviceCode: string | null
+  /** The amount stored on the request: the price the customer was quoted. */
+  quotedAmount: number | null
+  /** What it costs NOW, resolved server-side: the flavour's session price for a new
+   *  session, its refill price for a refill. null when it doesn't apply or can't be found. */
+  currentPrice: number | null
+  sessionId: string | null
+  issueLabel: string | null
+  /** ISO timestamp */
+  createdAt: string
 }
 
 export interface ShishaTodaySummary {
@@ -116,6 +162,8 @@ export interface ShishaSnapshot {
   devices: ShishaDevice[]
   /** Live sessions only (active / refill / paused). */
   sessions: ShishaSession[]
+  /** Pending customer requests, oldest first (max 200). */
+  requests: ShishaRequest[]
   today: ShishaTodaySummary
   /** Only loaded for callers with shisha.manage; null for everyone else, and
    *  null if the ledger couldn't be read (the tab still works without it). */
