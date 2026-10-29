@@ -68,6 +68,7 @@ import { RESCHEDULE_REQUEST_PATTERN, rescheduleService } from "@/lib/services/re
 import { REMINDER_TAP_PATTERN, handleReminderTap } from "@/lib/services/reminder-reply"
 import { WAITLIST_TAP_PATTERN, handleWaitlistTap } from "@/lib/services/waitlist-reply"
 import { profileService } from "@/lib/services/profile"
+import { shishaService } from "@/lib/services/shisha"
 import { conciergeService } from "@/lib/ai/concierge"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
 
@@ -81,6 +82,7 @@ import { getOpenStatus } from "@/lib/whatsapp/utils/business-hours"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 
 /**
  * Contract each service must implement to participate in stateful
@@ -106,7 +108,9 @@ type Handler = IntentService["handle"]
 // booking.ts's handleEntryChoice (or the "Join Queue" row, which sets a
 // queue_* state itself), so booking gets first refusal on every state name.
 // cancelService owns exactly the "cancel_*" states.
-const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService]
+// shishaService owns exactly the "shisha_*" states; it is only reachable for tenants
+// with the module on (guard at the top of routeAction + a check inside the service).
+const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService, shishaService]
 
 const intentHandlers: Record<string, Handler> = {
   booking: bookingService.handleBooking.bind(bookingService),
@@ -114,6 +118,8 @@ const intentHandlers: Record<string, Handler> = {
   cancel: cancelService.handleCancel,
   // Stateless: one live read in, one message out (no state to own).
   profile: profileService.handleProfile,
+  // Module-gated: never reached for a tenant without "shisha" (see routeAction step -1).
+  shisha: shishaService.handle,
 }
 
 /**
@@ -132,16 +138,21 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
   [MENU_ROW_IDS.reschedule]: rescheduleService.handleReschedule,
   [MENU_ROW_IDS.cancel]: cancelService.handleCancel,
   [MENU_ROW_IDS.profile]: profileService.handleProfile,
+  [MENU_ROW_IDS.shisha]: (tenantId, _intent, message) => shishaService.startShishaFlow(tenantId, message.from),
 }
 
 // `unhandled: true` marks a genuine "we don't know what to do" reply —
 // handover.ts's shouldEscalate() uses this flag, not raw intent confidence.
-const UNKNOWN_STATE_REPLY: ActionResult = {
-  reply: "I couldn't continue your previous request, so let's start again. How can I help you today?",
-  buttons: [],
-  nextState: null,
-  unhandled: true,
-  followUp: [buildServicesListMessage("Tap below to choose what you'd like to do 👇")],
+// A function, not a constant: the menu it carries depends on which modules the tenant has on.
+async function unknownStateReply(tenantId: string): Promise<ActionResult> {
+  const shisha = await isModuleEnabled(tenantId, "shisha")
+  return {
+    reply: "I couldn't continue your previous request, so let's start again. How can I help you today?",
+    buttons: [],
+    nextState: null,
+    unhandled: true,
+    followUp: [buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha })],
+  }
 }
 
 /** Words that reset the conversation to the menu from anywhere. */
@@ -171,6 +182,7 @@ function resolveOwningIntent(stateName: string): Intent | null {
   // cancel...) can still take over, a plain answer never does.
   if (stateName.startsWith("reschedule_")) return "booking"
   if (stateName.startsWith(CANCEL_STATE_PREFIX)) return "cancel"
+  if (stateName.startsWith("shisha_")) return "shisha"
   return null
 }
 
@@ -242,7 +254,8 @@ function withoutQueueRow(menu: ReturnType<typeof buildServicesListMessage>): Ret
  * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const menu = buildServicesListMessage(await menuPromptFor(tenantId))
+  const shishaOn = await isModuleEnabled(tenantId, "shisha")
+  const menu = buildServicesListMessage(await menuPromptFor(tenantId), { shisha: shishaOn })
 
   if (!greet) {
     return {
@@ -292,9 +305,10 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
 
   const greeting = getSmartGreeting({ timeZone, isReturning })
   // Closed: no mention of joining the queue; the note explains it instead.
+  const shishaBit = shishaOn ? " You can also start a shisha session." : ""
   const canDo = openStatus.isClosed
-    ? "I can help you book an appointment."
-    : "I can help you book an appointment or join the walk-in queue."
+    ? `I can help you book an appointment.${shishaBit}`
+    : `I can help you book an appointment or join the walk-in queue.${shishaBit}`
   const welcomeLine = shopName ? `Welcome to *${shopName}*. ${canDo}` : `Welcome! ${canDo}`
   const closedLine = openStatus.isClosed ? `\n\n${openStatus.note}` : ""
   const webLine = webLink ? `\n\nPrefer to do it online? You can also use ${webLink}` : ""
@@ -323,7 +337,7 @@ async function delegateState(
   }
 
   await stateService.clearState(tenantId, message.from)
-  return UNKNOWN_STATE_REPLY
+  return unknownStateReply(tenantId)
 }
 
 export async function routeAction(
@@ -332,6 +346,26 @@ export async function routeAction(
   state: ConversationState | null,
   message: IncomingMessage,
 ): Promise<ActionResult> {
+  // ── -1. MODULE GATE (shisha) ───────────────────────────────────────
+  // Hiding the menu row is not enough: WhatsApp list messages stay in the
+  // chat, so a customer can scroll up and tap an OLD menu that still has the
+  // Shisha row; or the shop can switch the module off while the customer is
+  // mid-flow. Either way: clear state, say it's unavailable, show a fresh
+  // menu (which no longer has the row). A typed "shisha" intent is downgraded
+  // to "support" so the concierge/greeting handles it like any other question.
+  if (!(await isModuleEnabled(tenantId, "shisha"))) {
+    const staleTap = message.interactiveId === MENU_ROW_IDS.shisha
+    const midFlow = Boolean(state?.state.startsWith("shisha_"))
+    if (staleTap || midFlow) {
+      await stateService.clearState(tenantId, message.from)
+      const fresh = await buildEntryReply(tenantId, message, false)
+      return { ...fresh, reply: "Sorry, that service isn't available right now. What would you like to do instead?" }
+    }
+    if (intent?.intent === "shisha") {
+      intent = { ...intent, intent: "support" }
+    }
+  }
+
   // ── 0. REMINDER BUTTON TAP ("Confirm" / "Can't make it") ───────────
   // Carries the booking id in the button id, so it works with no conversation
   // open (the reminder was sent by the system, not as part of a flow) and must

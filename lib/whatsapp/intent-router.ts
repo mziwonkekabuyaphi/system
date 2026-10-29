@@ -86,6 +86,9 @@ const INTENTS = [
   "status",  // Check their own booking and/or place in the queue
   "cancel",  // Cancel their booking or leave the queue
   "profile", // Their own overview: upcoming booking, queue spot, visit history
+  "shisha",  // Shisha lounge session / refill / track. MODULE-GATED per tenant: this router is
+             // tenant-agnostic by design, so action-router.ts downgrades it to "support"
+             // for any tenant that has the shisha module off.
   "support", // Needs a human: complaints, reschedule, running late, shop questions
   "unknown", // Greetings, chit-chat, or not enough information
 ] as const
@@ -401,6 +404,12 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
   const manageResult = checkCancelOrStatusFastPath(normalized)
   if (manageResult) return manageResult
 
+  // Shisha lounge: a clear shisha/hookah mention that is not a question.
+  // (A question like "do you have shisha?" is left to the concierge/AI.)
+  if (/\b(shisha|hookah|hubbly)\b/.test(normalized) && !text.includes("?")) {
+    return { intent: "shisha", confidence: 0.9, reasoning: "Fast-path: shisha request" }
+  }
+
   // Profile overview (clear intent)
   if (PROFILE_PHRASES.has(normalized)) {
     return { intent: "profile", confidence: 0.95, reasoning: "Fast-path: profile request" }
@@ -505,6 +514,19 @@ in. Examples of how the same intents sound locally:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE INTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+shisha
+Customer wants a shisha / hookah session, a coal refill, to end or track their
+shisha session, or to report a problem with their hookah. Only for these — a
+question about whether the shop offers shisha is "support".
+
+Examples:
+
+I want a shisha
+
+coal refill please
+
+track my hookah
 
 booking
 Customer wants an appointment OR wants to join the walk-in queue. Both are
