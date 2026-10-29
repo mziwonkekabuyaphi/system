@@ -288,7 +288,7 @@ export function BookingSettingsPanel({ initial }: { initial: AdminBookingSetting
         <p className="mt-3 text-xs text-stone-400">
           Reminders go out within about 5 minutes of the time above. Customers who messaged your WhatsApp in the last
           24 hours get it as a normal message. Everyone else only gets it if they&apos;ve agreed to WhatsApp updates
-          and your reminder template (Messages tab) is approved by WhatsApp.
+          and your reminder template (Inbox → WhatsApp settings → Connection &amp; templates) is approved by WhatsApp.
         </p>
 
         <SaveRow isPending={isPending} onSave={save} message={message} />
