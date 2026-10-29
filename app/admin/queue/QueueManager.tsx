@@ -103,10 +103,13 @@ export function QueueManager({
     setLastUpdated(Date.now())
   }, [initialQueue])
 
-  // Formatted on the server with formatQueueTicketNumber() (lib/services/
-  // queue.ts) so it can never disagree with the kiosk slip. Entries promoted
-  // from a booking have no ticket number yet (see queue.ts "KNOWN GAP").
-  const ticket = (e: Pick<AdminQueueEntry, "ticketLabel">) => e.ticketLabel ?? "—"
+  // The label shown for an entry: the queue ticket (e.g. "Q007", formatted on
+  // the server with formatQueueTicketNumber() in lib/services/queue.ts so it
+  // can never disagree with the kiosk slip). Entries promoted from a booking
+  // have no ticket number (see queue.ts "KNOWN GAP"), so they show the
+  // booking's reference instead. "—" only when neither exists.
+  const ticket = (e: Pick<AdminQueueEntry, "ticketLabel" | "bookingReference">) =>
+    e.ticketLabel ?? e.bookingReference ?? "—"
 
   const doRefresh = useCallback(async () => {
     if (refreshingRef.current || busyRef.current) return
@@ -459,7 +462,7 @@ export function QueueManager({
                     onClick={() => setDetailsId(q.id)}
                     className={`flex min-w-0 flex-1 items-center gap-4 rounded text-left focus-visible:outline focus-visible:outline-2 ${BRAND_FOCUS_OUTLINE}`}
                   >
-                    <span className="w-16 shrink-0 rounded-md bg-[#1C1A17] px-2 py-1 text-center font-mono text-sm tabular-nums text-[#FAF6EE]">
+                    <span className="min-w-16 shrink-0 rounded-md bg-[#1C1A17] px-2.5 py-1 text-center font-mono text-sm tabular-nums text-[#FAF6EE]">
                       {ticket(q)}
                     </span>
                     <span className="min-w-0">
@@ -536,7 +539,7 @@ export function QueueManager({
       >
         {detailsEntry && (
           <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2">
-            <dt className="text-[#8A8375]">Ticket</dt>
+            <dt className="text-[#8A8375]">{detailsEntry.ticketLabel ? "Ticket" : "Reference"}</dt>
             <dd className="font-mono">{ticket(detailsEntry)}</dd>
             <dt className="text-[#8A8375]">Status</dt>
             <dd>
