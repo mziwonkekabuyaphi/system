@@ -1,7 +1,8 @@
 // lib/whatsapp/utils/services-list.ts
 /**
- * The QLess main menu — an interactive WhatsApp LIST with six rows:
- * Book Now, Join Queue, Check Status, Reschedule, Cancel Now, My Profile.
+ * The QLess main menu — an interactive WhatsApp LIST with six core rows:
+ * Book Now, Join Queue, Check Status, Reschedule, Cancel Now, My Profile,
+ * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on.
  *
  * Same idea as the old Rands "services list": the menu is sent as a
  * `followUp` message after a short greeting, and every row has a fixed id.
@@ -34,6 +35,8 @@ export const MENU_ROW_IDS = {
   reschedule: "menu_reschedule",
   cancel: "menu_cancel",
   profile: "menu_profile",
+  // Only shown for tenants with the "shisha" module switched on (see buildServicesListMessage).
+  shisha: "menu_shisha",
 } as const
 
 export type MenuRowId = (typeof MENU_ROW_IDS)[keyof typeof MENU_ROW_IDS]
@@ -45,8 +48,20 @@ export function isMenuRowId(id: string | null | undefined): id is MenuRowId {
 /**
  * Builds the menu as a follow-up message.
  * @param bodyText The text shown above the "View Options" button.
+ * @param options.shisha Include the Shisha Lounge row (tenant has the module on). Default false,
+ *   so a caller that forgets the flag can never show a module the tenant doesn't have.
  */
-export function buildServicesListMessage(bodyText: string): FollowUpMessage {
+export function buildServicesListMessage(bodyText: string, options: { shisha?: boolean } = {}): FollowUpMessage {
+  const moduleRows = options.shisha
+    ? [
+        {
+          id: MENU_ROW_IDS.shisha,
+          title: "💨 Shisha Lounge",
+          description: "Start a session, refill coals or track yours",
+        },
+      ]
+    : []
+
   return {
     reply: bodyText,
     list: {
@@ -85,6 +100,7 @@ export function buildServicesListMessage(bodyText: string): FollowUpMessage {
               title: "👤 My Profile",
               description: "Your booking, queue spot and visit history",
             },
+            ...moduleRows,
           ],
         },
       ],
