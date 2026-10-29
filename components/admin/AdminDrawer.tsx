@@ -22,6 +22,7 @@ export function AdminDrawer({
   title,
   subtitle,
   width = "md",
+  footer,
   children,
 }: {
   open: boolean
@@ -29,6 +30,8 @@ export function AdminDrawer({
   title: string
   subtitle?: string
   width?: keyof typeof WIDTHS
+  /** Pinned bar under the scrolling body (Save / Discard). Omit for panels that save themselves. */
+  footer?: ReactNode
   children: ReactNode
 }) {
   // Mount first, slide in a frame later, so the transition actually plays.
@@ -104,7 +107,109 @@ export function AdminDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+
+        {footer && <div className="space-y-2 border-t border-[#E6E1D4] bg-white px-5 py-3">{footer}</div>}
       </aside>
     </div>
+  )
+}
+
+// ---- shared building blocks (same look as ShishaDisplayDrawer) --------------
+
+export const DRAWER_FIELD =
+  "w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E] disabled:bg-[#F3EEE2]"
+export const DRAWER_BTN =
+  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+export const DRAWER_BTN_PRIMARY =
+  "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+
+export function DrawerTabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  label,
+}: {
+  tabs: Array<{ id: T; label: string }>
+  value: T
+  onChange: (id: T) => void
+  label: string
+}) {
+  return (
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label={label}>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={value === t.id}
+          onClick={() => onChange(t.id)}
+          className={value === t.id ? DRAWER_BTN_PRIMARY : DRAWER_BTN}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function DrawerSwitch({
+  title,
+  description,
+  checked,
+  onChange,
+  disabled,
+}: {
+  title: string
+  description?: string
+  checked: boolean
+  onChange: (v: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2.5">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-[#1C1A17]">{title}</p>
+        {description && <p className="mt-0.5 text-xs text-[#8A8375]">{description}</p>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={title}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+          checked ? "bg-[#7A2E3A]" : "bg-[#D9D3C3]"
+        }`}
+      >
+        <span
+          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${
+            checked ? "translate-x-4" : ""
+          }`}
+        />
+      </button>
+    </div>
+  )
+}
+
+export function DrawerField({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1 text-sm">
+      <span className="text-[#1C1A17]">{label}</span>
+      {children}
+      {hint && <span className="block text-xs text-[#8A8375]">{hint}</span>}
+    </label>
+  )
+}
+
+export function DrawerGroup({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold text-[#1C1A17]">{title}</h3>
+        {hint && <p className="mt-0.5 text-xs text-[#8A8375]">{hint}</p>}
+      </div>
+      {children}
+    </section>
   )
 }
