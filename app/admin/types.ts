@@ -113,6 +113,9 @@ export interface AdminQueueEntry {
   /** Formatted server-side with formatQueueTicketNumber() + the tenant's
    *  prefix, e.g. "Q007". Null when ticketNumber is null. */
   ticketLabel: string | null
+  /** bookings.booking_reference for entries promoted from a booking (they have
+   *  no ticket number, so the admin shows this in its place); null for walk-ins. */
+  bookingReference: string | null
   /** 1-based place in line from getQueueSimulation() — the ONE source of
    *  queue order. It honours booking_settings.queue_priority_mode, so under
    *  'priority' it can differ from joined_at order. Called entries are

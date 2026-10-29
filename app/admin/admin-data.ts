@@ -83,6 +83,29 @@ export async function loadQueueEntries(
 
   if (error) throw new Error(`Failed to load queue: ${error.message}`)
 
+  // Entries promoted from a booking have no ticket number, so look up the
+  // booking's reference (bookings.booking_reference) to show in its place.
+  // A separate query rather than a nested select, and a failure here only
+  // means those rows fall back to "—" — it never takes the queue down.
+  const bookingIds = (data ?? [])
+    .map((q: any) => q.booking_id as string | null)
+    .filter((id: string | null): id is string => Boolean(id))
+  let referenceByBookingId = new Map<string, string>()
+  if (bookingIds.length > 0) {
+    const { data: refRows, error: refError } = await supabase
+      .from("bookings")
+      .select("id, booking_reference")
+      .eq("tenant_id", tenantId)
+      .in("id", bookingIds)
+    if (refError) {
+      console.error("[admin] Failed to load booking references", { tenantId, error: refError.message })
+    } else {
+      referenceByBookingId = new Map(
+        (refRows ?? []).map((b: { id: string; booking_reference: string }) => [b.id, b.booking_reference]),
+      )
+    }
+  }
+
   // Order/ETA come from the SAME simulation the WhatsApp/kiosk join flow
   // uses, so staff see what customers were told and the tenant's
   // fifo/priority/hybrid mode is respected. It is a heuristic and it adds a
@@ -106,6 +129,7 @@ export async function loadQueueEntries(
       source: q.source,
       ticketNumber: q.ticket_number,
       ticketLabel: q.ticket_number == null ? null : formatQueueTicketNumber(q.ticket_number, ticketPrefix),
+      bookingReference: q.booking_id ? (referenceByBookingId.get(q.booking_id) ?? null) : null,
       position: sim?.position ?? null,
       etaMinutes: q.status === "waiting" ? (sim?.etaMinutes ?? null) : null,
       runningLate: sim?.runningLate ?? false,
