@@ -7,6 +7,8 @@
 // second from the server-stored anchor, so they never need a round trip.
 "use client"
 
+import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_ON } from "@/components/admin/brand"
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
@@ -67,11 +69,11 @@ type Editing =
 type ArchiveTarget = { kind: "flavour" | "device" | "station"; id: string; name: string }
 
 const FIELD =
-  "w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+  `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER}`
 const BTN =
   "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
-  "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+  `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 const BTN_DANGER =
   "rounded-md bg-[#7A2E2E] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F1F] disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_GHOST =

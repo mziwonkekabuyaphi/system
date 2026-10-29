@@ -9,6 +9,8 @@
 // ./actions.ts. Needs shisha.operate (the Counter tab is hidden without it).
 "use client"
 
+import { BRAND_BG, BRAND_BORDER, BRAND_FOCUS_BORDER, BRAND_ON } from "@/components/admin/brand"
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
@@ -34,18 +36,18 @@ export interface CounterStartInput {
 // Small shared bits (same look as ShishaManager)
 // --------------------------------------------------------------------------
 const FIELD =
-  "w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+  `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER}`
 const BTN =
   "rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
-  "rounded-md bg-[#7A2E3A] px-4 py-3 text-base font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+  `rounded-md ${BRAND_BG} ${BRAND_ON} px-4 py-3 text-base font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 const BTN_DANGER =
   "rounded-md bg-[#7A2E2E] px-3 py-2 text-sm font-medium text-white hover:bg-[#651F1F] disabled:cursor-not-allowed disabled:opacity-50"
 const CARD = "rounded-lg border border-[#E6E1D4] bg-white"
 const TILE_BASE =
   "min-h-[56px] rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
 const TILE_OFF = "border-[#D9D3C3] bg-white text-[#1C1A17] hover:bg-[#F3EEE2]"
-const TILE_ON = "border-[#7A2E3A] bg-[#7A2E3A] text-white"
+const TILE_ON = `${BRAND_BORDER} ${BRAND_BG} ${BRAND_ON}`
 
 const STATUS_LABEL: Record<ShishaDisplayStatus, string> = {
   active: "Running",

@@ -6,6 +6,8 @@
 // props. One Save button for the whole panel; closing with unsaved changes asks first.
 "use client"
 
+import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_ON, BRAND_SELECTED, BRAND_TEXT } from "@/components/admin/brand"
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { loadShishaDisplaySettings, updateShishaDisplaySettings } from "./display-actions"
@@ -66,11 +68,11 @@ const SORTS: Array<{ value: ShishaDisplaySort; title: string; description: strin
 ]
 
 const FIELD =
-  "w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E] disabled:bg-[#F3EEE2]"
+  `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER} disabled:bg-[#F3EEE2]`
 const BTN =
   "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
-  "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+  `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 
 // ---- small building blocks --------------------------------------------------
 
@@ -101,7 +103,7 @@ function Switch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          checked ? "bg-[#7A2E3A]" : "bg-[#D9D3C3]"
+          checked ? BRAND_BG : "bg-[#D9D3C3]"
         }`}
       >
         <span
@@ -150,7 +152,7 @@ function OptionCard({
       disabled={disabled}
       onClick={onClick}
       className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        selected ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]" : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
+        selected ? `${BRAND_SELECTED} bg-white` : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
       }`}
     >
       {children}
@@ -381,7 +383,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                 </div>
                 <div className="flex items-center justify-between gap-3 pt-1">
                   {displayUrl && (
-                    <a href={displayUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-[#7A2E3A] hover:underline">
+                    <a href={displayUrl} target="_blank" rel="noreferrer" className={`text-sm font-medium ${BRAND_TEXT} hover:underline`}>
                       Open the screen
                     </a>
                   )}
