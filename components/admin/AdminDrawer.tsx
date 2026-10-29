@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 
 const WIDTHS = {
   md: "max-w-[460px]", // simple settings forms
+  lg: "max-w-[620px]", // settings with a preview or option grids
   xl: "max-w-[1040px]", // tables (payroll)
 } as const
 
@@ -211,5 +212,31 @@ export function DrawerGroup({ title, hint, children }: { title: string; hint?: s
       </div>
       {children}
     </section>
+  )
+}
+
+export function DrawerOptionCard({
+  selected,
+  disabled,
+  onClick,
+  children,
+}: {
+  selected: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+        selected ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]" : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
+      }`}
+    >
+      {children}
+    </button>
   )
 }
