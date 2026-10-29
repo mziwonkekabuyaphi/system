@@ -8,7 +8,7 @@ import { BillingPanel } from "@/components/admin/BillingPanel"
 import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
 import { CustomersManager } from "./CustomersManager"
 import { InboxManager } from "./InboxManager"
-import { QueueManager } from "./QueueManager"
+import { QueueManager } from "./queue/QueueManager"
 import { ServicesManager } from "./ServicesManager"
 import { ShishaManager } from "./shisha/ShishaManager"
 import { SettingsManager } from "./SettingsManager"
@@ -228,6 +228,11 @@ export function AdminView({
   initialBusinessHours: AdminBusinessHours | null
 }) {
   const [tab, setTab] = useState<Tab>("today")
+
+  // Queue settings are edited from two places (Live Queue > Queue rules, and
+  // Settings > Kiosk > Services). Held here so each always opens with what the
+  // other last saved. Null unless the caller has settings.manage.
+  const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
   const expanded = hovered || pinned
@@ -431,7 +436,14 @@ export function AdminView({
 
         <main className="px-6 pb-24 pt-2">
           {tab === "today" && <TodayBookings initialBookings={initialBookings} timezone={timezone} />}
-          {tab === "queue" && <QueueManager initialQueue={initialQueue} timezone={timezone} />}
+          {tab === "queue" && (
+            <QueueManager
+              initialQueue={initialQueue}
+              timezone={timezone}
+              queueSettings={staffPermissions.settingsManage ? queueSettings : null}
+              onQueueSettingsSaved={setQueueSettings}
+            />
+          )}
           {tab === "shisha" && shishaEnabled && staffPermissions.shishaView && (
             <ShishaManager
               timezone={timezone}
@@ -482,7 +494,8 @@ export function AdminView({
               initialDisplaySettings={initialDisplaySettings!}
               initialClockSettings={initialClockSettings!}
               initialBookingSettings={initialBookingSettings!}
-              initialQueueSettings={initialQueueSettings!}
+              initialQueueSettings={queueSettings!}
+              onQueueSettingsChange={setQueueSettings}
               initialBusinessHours={initialBusinessHours!}
             />
           )}
