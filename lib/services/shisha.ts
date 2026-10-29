@@ -26,7 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { isModuleEnabled } from "@/lib/tenant/modules"
-import * as messages from "@/lib/messages/shisha"
+import * as messages from "@/lib/services/messages/shisha"
 import type { RoutedIntent } from "@/lib/whatsapp/intent-router"
 import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import type { ActionResult } from "@/lib/types/action"

@@ -20,7 +20,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { normalizePhoneNumber } from "@/lib/utils/phone"
-import * as messages from "@/lib/messages/shisha"
+import * as messages from "@/lib/services/messages/shisha"
 import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 

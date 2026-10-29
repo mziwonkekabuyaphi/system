@@ -22,7 +22,7 @@ import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import { getAiModelName } from "@/lib/ai/openai"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
-import * as messages from "@/lib/messages/shisha"
+import * as messages from "@/lib/services/messages/shisha"
 import type { ActionResult } from "@/lib/types/action"
 import {
   actionResult,
