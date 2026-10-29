@@ -108,16 +108,25 @@ function esc(value: string): string {
   return value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string)
 }
 
+/** en-ZA formatting uses non-breaking spaces, which thermal printers print as junk. */
+const plain = (v: string) => v.replace(/[\u00a0\u202f]/g, " ")
+
+function receiptWhen(r: ReceiptData): string {
+  return plain(
+    r.at.toLocaleString("en-ZA", {
+      timeZone: r.timezone,
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }),
+  )
+}
+
 function buildReceiptHtml(r: ReceiptData): string {
-  const when = r.at.toLocaleString("en-ZA", {
-    timeZone: r.timezone,
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  })
+  const when = receiptWhen(r)
   const row = (label: string, value: string) => `<div class="row"><span>${esc(label)}</span><span>${esc(value)}</span></div>`
   return `<!doctype html><html><head><meta charset="utf-8"><title>Receipt</title>
 <style>
@@ -146,9 +155,9 @@ function buildReceiptHtml(r: ReceiptData): string {
 </body></html>`
 }
 
-/** Prints through a hidden iframe so no page styles leak into the receipt.
- *  Returns false if the browser blocked it. Without a kiosk-printing browser
- *  flag the normal print dialog still appears for staff to confirm. */
+/** FALLBACK ONLY (PCs with no print agent): prints through a hidden iframe so
+ *  no page styles leak into the receipt. This always shows the browser's print
+ *  dialog. Returns false if the browser blocked it. */
 function printHtml(html: string): boolean {
   const iframe = document.createElement("iframe")
   iframe.setAttribute("aria-hidden", "true")
@@ -177,6 +186,55 @@ function printHtml(html: string): boolean {
     setTimeout(cleanup, 60_000) // fallback for browsers that never fire afterprint
   }, 150)
   return true
+}
+
+// Silent printing: the same local print agent the kiosk uses (runs on the PC
+// the receipt printer is plugged into, listens on 127.0.0.1:4000). Only works
+// when this page is opened in a browser ON that PC and from the origin the
+// agent allows (CORS).
+const PRINT_AGENT_URL = "http://127.0.0.1:4000"
+const AGENT_TIMEOUT_MS = 25_000 // the very first print after an agent restart can be slow
+
+type AgentResult = "printed" | "unreachable" | "timeout" | "failed"
+
+function newJobId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+async function printViaAgent(r: ReceiptData): Promise<AgentResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${PRINT_AGENT_URL}/print-shisha`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        shopName: r.shopName,
+        receipt: {
+          // Fresh id per print: a retry of the SAME job is never printed twice by
+          // the agent, while "Reprint last receipt" (new id) prints again.
+          jobId: newJobId(),
+          deviceCode: r.deviceCode,
+          station: r.station,
+          flavour: r.flavour,
+          durationText: `${r.durationMinutes} min`,
+          payment: r.payment,
+          amountText: plain(formatMoney(r.amount, r.currency)),
+          dateText: receiptWhen(r),
+        },
+      }),
+    })
+    return res.ok ? "printed" : "failed"
+  } catch (e) {
+    // Aborted = the agent may still be printing: don't fall back to a second print.
+    if (e instanceof DOMException && e.name === "AbortError") return "timeout"
+    return "unreachable" // refused / blocked: no agent on this PC
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -361,6 +419,8 @@ export function ShishaCounter({
 
   const [autoPrint, setAutoPrint] = useState(true)
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
+  const [printing, setPrinting] = useState(false)
+  const printingRef = useRef(false)
 
   const [endingId, setEndingId] = useState<string | null>(null)
   const [endMethod, setEndMethod] = useState("")
@@ -424,9 +484,30 @@ export function ShishaCounter({
     }
   }
 
-  function printReceipt(receipt: ReceiptData) {
-    if (!printHtml(buildReceiptHtml(receipt))) {
-      setFlash({ kind: "error", text: "Couldn't open the print window. Use Reprint last receipt." })
+  /** Silent print through the local print agent. Only if no agent exists on this
+   *  PC (connection refused) does it fall back to the browser's print window. */
+  async function printReceipt(receipt: ReceiptData) {
+    if (printingRef.current) return
+    printingRef.current = true
+    setPrinting(true)
+    try {
+      const result = await printViaAgent(receipt)
+      if (result === "printed") {
+        setFlash({ kind: "ok", text: "Receipt printed." })
+      } else if (result === "unreachable") {
+        if (printHtml(buildReceiptHtml(receipt))) {
+          setFlash({ kind: "ok", text: "No receipt printer is connected to this PC, so the print window opened instead." })
+        } else {
+          setFlash({ kind: "error", text: "Couldn't print the receipt. Use Reprint last receipt." })
+        }
+      } else if (result === "timeout") {
+        setFlash({ kind: "error", text: "The receipt printer didn't answer in time. Check whether a slip came out before reprinting." })
+      } else {
+        setFlash({ kind: "error", text: "The receipt printer reported a problem. Check the paper and cover, then use Reprint last receipt." })
+      }
+    } finally {
+      printingRef.current = false
+      setPrinting(false)
     }
   }
 
@@ -436,7 +517,7 @@ export function ShishaCounter({
     const ok = await onStart({ deviceId: device.id, productId: flavour.id, customerPhone: phone, paymentMethod: payment })
     if (!ok) return // ShishaManager already shows why (e.g. device just taken)
     setLastReceipt(receipt)
-    if (autoPrint) printReceipt(receipt)
+    if (autoPrint) void printReceipt(receipt)
     setDeviceId("")
     setPhone("")
   }
@@ -576,8 +657,13 @@ export function ShishaCounter({
                 <input type="checkbox" checked={autoPrint} onChange={(e) => changeAutoPrint(e.target.checked)} />
                 Print receipt when a session starts
               </label>
-              <button type="button" onClick={() => lastReceipt && printReceipt(lastReceipt)} disabled={!lastReceipt} className={BTN}>
-                Reprint last receipt
+              <button
+                type="button"
+                onClick={() => lastReceipt && void printReceipt(lastReceipt)}
+                disabled={!lastReceipt || printing}
+                className={BTN}
+              >
+                {printing ? "Printing…" : "Reprint last receipt"}
               </button>
             </div>
           </>
