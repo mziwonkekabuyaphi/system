@@ -11,6 +11,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
+import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_ON, BRAND_SELECTED } from "./brand"
+
 const WIDTHS = {
   md: "max-w-[460px]", // simple settings forms
   lg: "max-w-[620px]", // settings with a preview or option grids
@@ -117,12 +119,10 @@ export function AdminDrawer({
 
 // ---- shared building blocks (same look as ShishaDisplayDrawer) --------------
 
-export const DRAWER_FIELD =
-  "w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E] disabled:bg-[#F3EEE2]"
+export const DRAWER_FIELD = `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER} disabled:bg-[#F3EEE2]`
 export const DRAWER_BTN =
   "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
-export const DRAWER_BTN_PRIMARY =
-  "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+export const DRAWER_BTN_PRIMARY = `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 
 export function DrawerTabs<T extends string>({
   tabs,
@@ -180,7 +180,7 @@ export function DrawerSwitch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          checked ? "bg-[#7A2E3A]" : "bg-[#D9D3C3]"
+          checked ? BRAND_BG : "bg-[#D9D3C3]"
         }`}
       >
         <span
@@ -233,7 +233,7 @@ export function DrawerOptionCard({
       disabled={disabled}
       onClick={onClick}
       className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        selected ? "border-[#7A2E3A] bg-[#7A2E3A]/5 ring-1 ring-[#7A2E3A]" : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
+        selected ? `${BRAND_SELECTED} bg-white` : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
       }`}
     >
       {children}
