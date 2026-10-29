@@ -1,4 +1,4 @@
-// lib/services/messages/shisha.ts
+// lib/messages/shisha.ts
 /**
  * Customer-facing copy for the Shisha Lounge WhatsApp flow (multi-tenant).
  *
@@ -33,11 +33,11 @@ export const WELCOME_MENU =
 export const MENU_CHOICE_INVALID =
   "I didn't catch that. Reply 1, 2, 3, 4, or 5 to choose an option, or 'menu' to see them again."
 
-export const NO_LOCATIONS = "There aren't any shisha stations available right now. Please check our with staff."
+export const NO_LOCATIONS = "There aren't any shisha stations available right now. Please check with staff."
 
-export const NO_FLAVOURS = "There aren't any flavours available right now. Please check with our staff."
+export const NO_FLAVOURS = "There aren't any flavours available right now. Please check with staff."
 
-export const LOCATION_REQUEST = "Which station/Table/Location? Reply with a number."
+export const LOCATION_REQUEST = "Which station? Reply with a number."
 
 export function invalidLocation(count: number): string {
   return `Please reply with a number between 1 and ${count}.`
@@ -124,7 +124,14 @@ export function sessionStatusMessage(session: ActiveSessionSummary): string {
 export const NO_SESSION_TO_TRACK =
   "You don't have an active shisha session to track right now. Want to start one? Reply 'shisha'."
 
+/** Kept for any caller that still imports it. The refill flow now uses coalRefillRequested(). */
 export const COAL_REFILL_SENT = "🔥 Coal refill requested — staff have been notified and are on their way."
+
+/** `price` = what staff will charge for the refill (null/0 = no charge to mention). */
+export function coalRefillRequested(price: number | null): string {
+  const priceLine = price !== null && price > 0 ? `\n💰 Refill: ${formatRands(price)} (staff will confirm payment with you)` : ""
+  return `${COAL_REFILL_SENT}${priceLine}`
+}
 
 export const END_SESSION_SENT = "⏹️ Got it — I've asked staff to come close out your session."
 
@@ -148,6 +155,44 @@ export const ISSUE_OTHER_REQUEST = "Please describe the issue in a few words."
 
 export function issueReportSent(label: string): string {
   return `⚠️ Thanks — I've reported "${label}" to staff. Someone will be over shortly.`
+}
+
+// ============================================================================
+// STAFF DECISIONS (sent when staff accept or reject a request in the dashboard)
+// ============================================================================
+
+export function requestAcceptedSession(details: {
+  station: string | null
+  flavour: string
+  deviceCode: string
+  price: number
+}): string {
+  const stationLine = details.station ? `📍 Station: ${details.station}\n` : ""
+  return (
+    "✅ Your shisha session is confirmed — enjoy!\n\n" +
+    stationLine +
+    `🍃 Flavour: ${details.flavour}\n` +
+    `🔌 Device: ${details.deviceCode}\n` +
+    `💰 Price: ${formatRands(details.price)}`
+  )
+}
+
+/** `charge` = what was added to the session for this refill (0 = free). */
+export function requestAcceptedRefill(charge: number): string {
+  return charge > 0
+    ? `🔥 Your coal refill is on its way.\n💰 Refill: ${formatRands(charge)}`
+    : "🔥 Your coal refill is on its way."
+}
+
+export function requestAcceptedEnd(total: number): string {
+  return `⏹️ Your session is closed. Thanks for visiting!\n💰 Total: ${formatRands(total)}`
+}
+
+export const REQUEST_ACCEPTED_ISSUE = "🛠️ Thanks for letting us know — staff have seen your report and are on it."
+
+export function requestRejected(reason: string | null): string {
+  const reasonLine = reason ? `\n\nReason: ${reason}` : ""
+  return `Sorry, staff couldn't take that request right now.${reasonLine}\n\nYou can send a new request any time — reply 'shisha'.`
 }
 
 export const TECHNICAL_DIFFICULTY =
