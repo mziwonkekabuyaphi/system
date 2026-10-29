@@ -14,7 +14,7 @@ import { ShishaManager } from "./shisha/ShishaManager"
 import { SettingsManager } from "./SettingsManager"
 import { sidebarStyleVars } from "./sidebar-theme"
 import { StaffManager } from "./staff/StaffManager"
-import { TodayBookings } from "./TodayBookings"
+import { TodayBookings } from "./booking/TodayBookings"
 import type {
   AdminBooking,
   AdminBookingSettings,
@@ -233,6 +233,10 @@ export function AdminView({
   // Settings > Kiosk > Services). Held here so each always opens with what the
   // other last saved. Null unless the caller has settings.manage.
   const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
+
+  // Booking rules live on the Appointments tab now (Booking rules overlay).
+  // Null unless the caller has settings.manage.
+  const [bookingSettings, setBookingSettings] = useState(initialBookingSettings)
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
   const expanded = hovered || pinned
@@ -435,7 +439,14 @@ export function AdminView({
         </header>
 
         <main className="px-6 pb-24 pt-2">
-          {tab === "today" && <TodayBookings initialBookings={initialBookings} timezone={timezone} />}
+          {tab === "today" && (
+            <TodayBookings
+              initialBookings={initialBookings}
+              timezone={timezone}
+              bookingSettings={staffPermissions.settingsManage ? bookingSettings : null}
+              onBookingSettingsSaved={setBookingSettings}
+            />
+          )}
           {tab === "queue" && (
             <QueueManager
               initialQueue={initialQueue}
@@ -493,7 +504,6 @@ export function AdminView({
               initialKioskSettings={initialKioskSettings!}
               initialDisplaySettings={initialDisplaySettings!}
               initialClockSettings={initialClockSettings!}
-              initialBookingSettings={initialBookingSettings!}
               initialQueueSettings={queueSettings!}
               onQueueSettingsChange={setQueueSettings}
               initialBusinessHours={initialBusinessHours!}
