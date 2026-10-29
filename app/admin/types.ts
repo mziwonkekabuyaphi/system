@@ -80,6 +80,10 @@ export interface AdminStaffPermissions {
   /** analytics.view — shows the Analytics tab. The server action in
    *  app/admin/analytics/actions.ts re-checks it; this only hides the tab. */
   analyticsView: boolean
+  /** shisha.view / shisha.operate / shisha.manage — resolved in app/admin/page.tsx. */
+  shishaView: boolean
+  shishaOperate: boolean
+  shishaManage: boolean
 }
 
 /** A currently-open row in staff_shifts, joined with the staff member's
@@ -315,6 +319,12 @@ export interface AdminKioskSettings {
   /** The custom question, e.g. "Car registration". Max 40 characters. */
   customLabel?: string | null
   customRequired?: boolean
+  /** Show the WhatsApp opt-in tick box on the details screen
+   *  (tenant_branding.kiosk_show_whatsapp_optin, default true). */
+  showWhatsAppOptIn?: boolean
+  /** Wording of that tick box; null/empty = default text
+   *  (tenant_branding.kiosk_whatsapp_optin_label). */
+  whatsAppOptInLabel?: string | null
 }
 
 /** tenant_branding's Display-TV columns, one row per tenant. Backs the
@@ -485,10 +495,13 @@ export interface AdminBookingSettings {
   maxServicesPerBooking: number
   /** Whether customers get a WhatsApp reminder before their appointment.
    *  Mirrors booking_settings.booking_reminders_enabled (default true). */
-  bookingRemindersEnabled: boolean
+  bookingRemindersEnabled?: boolean
   /** How many minutes before the appointment the reminder is sent (30-1440).
    *  Mirrors booking_settings.booking_reminder_lead_minutes (default 120). */
-  bookingReminderLeadMinutes: number
+  bookingReminderLeadMinutes?: number
+  /** true = the customer may pick a specific staff member when booking.
+   *  Mirrors booking_settings.allow_customer_staff_choice (default false). */
+  allowCustomerStaffChoice?: boolean
   /** false = bookings skip the service step. Optional so a loader that
    *  doesn't send it yet still compiles; the panel treats missing as true. */
   requireServiceSelection?: boolean
@@ -528,6 +541,19 @@ export interface AdminQueueSettings {
    *  Only used while requireServiceSelection is on. */
   maxServicesPerQueueEntry: number
 }
+
+/** One business_hours row: a weekday's opening hours. dayOfWeek is
+ *  0 = Sunday .. 6 = Saturday. Times are "HH:MM" or "HH:MM:SS" (Postgres
+ *  `time`), null when the day is closed. */
+export interface AdminBusinessHour {
+  dayOfWeek: number
+  isClosed: boolean
+  openTime: string | null
+  closeTime: string | null
+}
+
+/** The shop's opening hours: one entry per weekday that has a row. */
+export type AdminBusinessHours = AdminBusinessHour[]
 
 /** message_settings, one row per tenant. WhatsApp copy used by the booking
  *  and queue notify flows (incl. notify_queue_entry() in Postgres); a null
