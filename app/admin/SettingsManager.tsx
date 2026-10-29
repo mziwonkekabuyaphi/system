@@ -4,7 +4,6 @@
 import { useState } from "react"
 
 import type {
-  AdminBookingSettings,
   AdminBranding,
   AdminBusinessHours,
   AdminClockSettings,
@@ -19,10 +18,9 @@ import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
-import { BookingSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
 import { SettingsPageHeader } from "./settings/ui"
 
-type SubTab = "general" | "kiosk" | "display" | "private-label" | "booking" | "queue"
+type SubTab = "general" | "kiosk" | "display" | "private-label"
 
 // Settings are grouped by what the owner is thinking about, not by which
 // part of the system they happen to touch. Labels avoid clashing with the
@@ -66,23 +64,6 @@ const SETTINGS_NAV: Array<{
       },
     ],
   },
-  {
-    group: "Operations",
-    items: [
-      {
-        id: "booking",
-        label: "Booking rules",
-        title: "Booking rules",
-        description: "How far ahead customers can book, notice periods and cancellations.",
-      },
-      {
-        id: "queue",
-        label: "Queue rules",
-        title: "Queue rules",
-        description: "How the walk-in queue behaves: calling, limits, ticket numbers and wait estimates.",
-      },
-    ],
-  },
 ]
 
 const SETTINGS_PAGES = SETTINGS_NAV.flatMap((g) => g.items)
@@ -100,9 +81,9 @@ export function SettingsManager({
   initialKioskSettings,
   initialDisplaySettings,
   initialClockSettings,
-  initialBookingSettings,
   initialQueueSettings,
   initialBusinessHours,
+  onQueueSettingsChange,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -128,9 +109,10 @@ export function SettingsManager({
   initialKioskSettings: AdminKioskSettings
   initialDisplaySettings: AdminDisplaySettings
   initialClockSettings: AdminClockSettings
-  initialBookingSettings: AdminBookingSettings
   initialQueueSettings: AdminQueueSettings
   initialBusinessHours: AdminBusinessHours
+  /** Tells AdminView when Kiosk > Services saves queue settings, so Live Queue > Queue rules stays current. */
+  onQueueSettingsChange?: (next: AdminQueueSettings) => void
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
@@ -211,7 +193,10 @@ export function SettingsManager({
           tenantSlug={tenantSlug}
           initialKioskSettings={initialKioskSettings}
           queueSettings={queueSettings}
-          onQueueSettingsSaved={setQueueSettings}
+          onQueueSettingsSaved={(next) => {
+            setQueueSettings(next)
+            onQueueSettingsChange?.(next)
+          }}
         />
       )}
       {subTab === "display" && (
@@ -230,8 +215,6 @@ export function SettingsManager({
           onBrandingChange={onBrandingChange}
         />
       )}
-      {subTab === "booking" && <BookingSettingsPanel initial={initialBookingSettings} />}
-      {subTab === "queue" && <QueueSettingsPanel initial={queueSettings} onSaved={setQueueSettings} />}
       </div>
     </div>
   )
