@@ -323,7 +323,9 @@ export function AdminView({
   return (
     <div
       style={{ ...(sidebarVars ?? {}) }}
-      className="min-h-screen bg-admin-body text-admin-text"
+      // Lets components/admin/brand.ts switch to the tenant's own colours.
+      data-brand={custom ? "custom" : "default"}
+      className="group/admin min-h-screen bg-admin-body text-admin-text"
     >
       {/* ================= SIDEBAR ================= */}
       <aside
