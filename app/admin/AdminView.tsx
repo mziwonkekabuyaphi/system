@@ -8,7 +8,6 @@ import { BillingPanel } from "@/components/admin/BillingPanel"
 import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
 import { CustomersManager } from "./CustomersManager"
 import { InboxManager } from "./InboxManager"
-import { PayrollManager } from "./PayrollManager"
 import { QueueManager } from "./QueueManager"
 import { ServicesManager } from "./ServicesManager"
 import { ShishaManager } from "./shisha/ShishaManager"
@@ -45,7 +44,6 @@ type Tab =
   | "inbox"
   | "services"
   | "staff"
-  | "payroll"
   | "analytics"
   | "billing"
   | "settings"
@@ -146,16 +144,6 @@ function ChartIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-function BanknoteIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="2.5" y="6" width="19" height="12" rx="2" />
-      <circle cx="12" cy="12" r="2.6" />
-      <path d="M6 9.5v.01M18 14.5v.01" />
-    </svg>
-  )
-}
-
 function HookahIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -183,7 +171,6 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "customers", label: "Customers", icon: ContactsIcon },
   { id: "services", label: "Services", icon: TagIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
-  { id: "payroll", label: "Payroll", icon: BanknoteIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
   { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
   { id: "settings", label: "Settings", icon: GearIcon },
@@ -259,9 +246,6 @@ export function AdminView({
     // action in app/admin/analytics/actions.ts re-checks it, so this only
     // controls whether the tab is shown.
     if (t.id === "analytics") return staffPermissions.analyticsView
-    // Payroll needs payroll.view. Every action and the payslip PDF routes
-    // re-check it server-side; this only decides whether the tab is shown.
-    if (t.id === "payroll") return staffPermissions.payrollView
     // Billing and Inbox are owner-only for now. settings.manage is the
     // closest existing owner-only key; swap in dedicated keys
     // (billing.view / inbox.view) if you add them.
@@ -472,10 +456,10 @@ export function AdminView({
               initialActiveShifts={initialActiveShifts}
               permissions={staffPermissions}
               tenantSlug={tenantSlug}
+              timezone={timezone}
+              clockSettings={initialClockSettings}
+              canCustomizeBranding={initialPlan === "business"}
             />
-          )}
-          {tab === "payroll" && staffPermissions.payrollView && (
-            <PayrollManager timezone={timezone} permissions={staffPermissions} />
           )}
           {tab === "analytics" && staffPermissions.analyticsView && <AnalyticsDashboard />}
           {tab === "billing" && staffPermissions.settingsManage && <BillingPanel />}

@@ -4,7 +4,9 @@
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react"
 import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, resetStaffClockInPin, toggleStaffActive, updateStaff } from "./actions"
 import { ConfirmDialog, NoticeModal, type Notice } from "./AdminModals"
-import type { AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
+import { StaffClockInDrawer } from "./StaffClockInDrawer"
+import { StaffPayrollDrawer } from "./StaffPayrollDrawer"
+import type { AdminClockSettings, AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "./types"
 import type {
   AdminBankAccountType,
   AdminHybridMode,
@@ -304,6 +306,9 @@ export function StaffManager({
   initialActiveShifts: activeShifts,
   permissions,
   tenantSlug,
+  timezone,
+  clockSettings,
+  canCustomizeBranding,
 }: {
   initialStaff: AdminStaff[]
   initialActiveShifts: AdminStaffShift[]
@@ -315,7 +320,18 @@ export function StaffManager({
    *  bypassing this prop still can't act past what the server allows. */
   permissions: AdminStaffPermissions
   tenantSlug: string
+  /** Shop timezone, needed by the Payroll drawer for pay periods. */
+  timezone: string
+  /** null unless the caller has settings.manage (same invariant as page.tsx). */
+  clockSettings: AdminClockSettings | null
+  canCustomizeBranding: boolean
 }) {
+  // Right-hand overlays, same pattern as Shisha's "TV display".
+  const [payrollOpen, setPayrollOpen] = useState(false)
+  const [clockOpen, setClockOpen] = useState(false)
+  const canSeePayroll = permissions.payrollView
+  const canSeeClockSettings = permissions.settingsManage && clockSettings !== null
+
   const [form, setForm] = useState<StaffFormState>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
   // Pay profiles come from their own payroll.view action rather than the staff list
@@ -463,6 +479,27 @@ export function StaffManager({
 
   return (
     <div className="space-y-10">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Staff</h2>
+          <p className="mt-0.5 text-sm text-[#8A8375]">Your team, who&apos;s clocked in, pay and clock-in settings.</p>
+        </div>
+        {(canSeePayroll || canSeeClockSettings) && (
+          <div className="flex flex-wrap items-center gap-3">
+            {canSeeClockSettings && (
+              <button type="button" onClick={() => setClockOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
+                Clock-in settings
+              </button>
+            )}
+            {canSeePayroll && (
+              <button type="button" onClick={() => setPayrollOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
+                Payroll
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       <StaffClockInUrlPanel tenantSlug={tenantSlug} />
 
       {/* ================= Currently clocked in =================
@@ -911,6 +948,20 @@ export function StaffManager({
       />
       <PinRevealModal reveal={revealed} onClose={() => setRevealed(null)} />
       <NoticeModal notice={notice} onClose={() => setNotice(null)} />
+
+      {/* Payroll + clock-in settings: right-hand overlay panels */}
+      {canSeePayroll && (
+        <StaffPayrollDrawer open={payrollOpen} onClose={() => setPayrollOpen(false)} timezone={timezone} permissions={permissions} />
+      )}
+      {canSeeClockSettings && (
+        <StaffClockInDrawer
+          open={clockOpen}
+          onClose={() => setClockOpen(false)}
+          tenantSlug={tenantSlug}
+          initial={clockSettings!}
+          canCustomizeBranding={canCustomizeBranding}
+        />
+      )}
     </div>
   )
 }

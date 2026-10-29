@@ -15,7 +15,6 @@ import type {
   AdminTenantSettings,
 } from "./types"
 import { PrivateLabelPanel } from "./settings/BrandingPanels"
-import { ClockPanel } from "./settings/ClockPanels"
 import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
@@ -23,7 +22,7 @@ import { KioskPanel } from "./settings/KioskPanels"
 import { BookingSettingsPanel, QueueSettingsPanel } from "./settings/OperationsPanels"
 import { SettingsPageHeader } from "./settings/ui"
 
-type SubTab = "general" | "kiosk" | "display" | "clock" | "private-label" | "booking" | "queue"
+type SubTab = "general" | "kiosk" | "display" | "private-label" | "booking" | "queue"
 
 // Settings are grouped by what the owner is thinking about, not by which
 // part of the system they happen to touch. Labels avoid clashing with the
@@ -81,12 +80,6 @@ const SETTINGS_NAV: Array<{
         label: "Queue rules",
         title: "Queue rules",
         description: "How the walk-in queue behaves: calling, limits, ticket numbers and wait estimates.",
-      },
-      {
-        id: "clock",
-        label: "Staff clock-in",
-        title: "Staff clock-in",
-        description: "The PIN pad your team uses to clock in and out: link, colours and wording.",
       },
     ],
   },
@@ -225,13 +218,6 @@ export function SettingsManager({
         <DisplayPanel
           tenantSlug={tenantSlug}
           initial={initialDisplaySettings}
-          canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
-        />
-      )}
-      {subTab === "clock" && (
-        <ClockPanel
-          tenantSlug={tenantSlug}
-          initial={initialClockSettings}
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
         />
       )}
