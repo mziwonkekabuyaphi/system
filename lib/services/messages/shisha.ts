@@ -1,4 +1,4 @@
-// lib/messages/shisha.ts
+// lib/services/messages/shisha.ts
 /**
  * Customer-facing copy for the Shisha Lounge WhatsApp flow (multi-tenant).
  *
@@ -33,11 +33,11 @@ export const WELCOME_MENU =
 export const MENU_CHOICE_INVALID =
   "I didn't catch that. Reply 1, 2, 3, 4, or 5 to choose an option, or 'menu' to see them again."
 
-export const NO_LOCATIONS = "There aren't any shisha stations available right now. Please check with staff."
+export const NO_LOCATIONS = "There aren't any shisha stations available right now. Please check our with staff."
 
-export const NO_FLAVOURS = "There aren't any flavours available right now. Please check with staff."
+export const NO_FLAVOURS = "There aren't any flavours available right now. Please check with our staff."
 
-export const LOCATION_REQUEST = "Which station? Reply with a number."
+export const LOCATION_REQUEST = "Which station/Table/Location? Reply with a number."
 
 export function invalidLocation(count: number): string {
   return `Please reply with a number between 1 and ${count}.`
