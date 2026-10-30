@@ -24,13 +24,23 @@ export const DEFAULT_REFILL_THRESHOLD_MINUTES = 15
 /** Shops that never saved settings behave as if "Require a station" is on. */
 export const DEFAULT_REQUIRE_STATION = true
 
+/** Payment methods staff can pick, in the order shown. The FIRST one is the default
+ *  everywhere a payment is chosen, and there is no "Not recorded" option. */
 export const PAYMENT_METHODS = [
-  { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
+  { value: "cash", label: "Cash" },
   { value: "eft", label: "EFT" },
-  { value: "tab", label: "On account" },
 ] as const
 export type ShishaPaymentMethod = (typeof PAYMENT_METHODS)[number]["value"]
+export const DEFAULT_PAYMENT_METHOD: ShishaPaymentMethod = PAYMENT_METHODS[0].value
+
+/** Display name for a stored payment_method. Also knows "tab" (On account), which is
+ *  no longer offered but still exists on older sessions, so they keep reading correctly. */
+export function paymentMethodLabel(value: string | null): string | null {
+  if (!value) return null
+  if (value === "tab") return "On account"
+  return PAYMENT_METHODS.find((m) => m.value === value)?.label ?? value
+}
 
 /** `warning` = the action succeeded but something around it didn't (e.g. the WhatsApp
  *  message to the customer couldn't be sent). `charged` = refill amount just added to a

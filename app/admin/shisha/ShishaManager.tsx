@@ -39,7 +39,9 @@ import {
   updateStation,
 } from "./actions"
 import {
+  DEFAULT_PAYMENT_METHOD,
   PAYMENT_METHODS,
+  paymentMethodLabel,
   deriveDisplayStatus,
   liveRemainingSeconds,
   signedRemainingSeconds,
@@ -1015,7 +1017,7 @@ function AcceptSessionForm({
   const [deviceId, setDeviceId] = useState(devices[0]?.id ?? "")
   // Pre-pick the station the customer asked for (if it's still offered).
   const [locationId, setLocationId] = useState(stations.find((st) => st.name === req.stationName)?.id ?? "")
-  const [method, setMethod] = useState("")
+  const [method, setMethod] = useState<string>(DEFAULT_PAYMENT_METHOD)
 
   if (devices.length === 0) {
     return (
@@ -1086,9 +1088,8 @@ function AcceptSessionForm({
       )}
 
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Paid by (optional)</span>
+        <span className="text-[#8A8375]">Paid by</span>
         <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
-          <option value="">Not recorded</option>
           {PAYMENT_METHODS.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}
@@ -1105,7 +1106,7 @@ function AcceptSessionForm({
           type="button"
           disabled={busy || !deviceId || stationMissing || flavourBlocked}
           onClick={() =>
-            void onSubmit({ deviceId, locationId: effectiveStationId || null, paymentMethod: method || null })
+            void onSubmit({ deviceId, locationId: effectiveStationId || null, paymentMethod: method })
           }
           className={BTN_PRIMARY}
         >
@@ -1170,10 +1171,8 @@ function AcceptEndForm({
   onCancel: () => void
   onSubmit: (input: AcceptInput) => Promise<void>
 }) {
-  const [method, setMethod] = useState("")
-  const alreadyPaid = req.sessionPaymentMethod
-    ? (PAYMENT_METHODS.find((m) => m.value === req.sessionPaymentMethod)?.label ?? req.sessionPaymentMethod)
-    : null
+  const [method, setMethod] = useState<string>(DEFAULT_PAYMENT_METHOD)
+  const alreadyPaid = paymentMethodLabel(req.sessionPaymentMethod)
   return (
     <div className="space-y-4">
       <RequestSummary req={req} currency={currency} />
@@ -1184,7 +1183,6 @@ function AcceptEndForm({
         <label className="block space-y-1 text-sm">
           <span className="text-[#8A8375]">Paid by</span>
           <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
-            <option value="">Not recorded</option>
             {PAYMENT_METHODS.map((m) => (
               <option key={m.value} value={m.value}>
                 {m.label}
@@ -1200,7 +1198,7 @@ function AcceptEndForm({
         <button
           type="button"
           disabled={busy}
-          onClick={() => void onSubmit({ paymentMethod: alreadyPaid ? null : method || null })}
+          onClick={() => void onSubmit({ paymentMethod: alreadyPaid ? null : method })}
           className={BTN_DANGER}
         >
           {busy ? "Ending…" : "End session"}
@@ -1630,28 +1628,36 @@ function EndSessionForm({
   onCancel: () => void
   onSubmit: (method: string | null) => Promise<void>
 }) {
-  const [method, setMethod] = useState<string>("")
+  const [method, setMethod] = useState<string>(DEFAULT_PAYMENT_METHOD)
+  // A payment already taken (e.g. up front at the counter) must never be overwritten.
+  const alreadyPaid = paymentMethodLabel(session.paymentMethod)
   return (
     <div className="space-y-4">
       <p className="text-sm text-[#1C1A17]">
         {session.flavourName} · {formatMoney(session.totalAmount, currency)}. The device becomes available again.
       </p>
-      <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Paid by</span>
-        <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
-          <option value="">Not recorded</option>
-          {PAYMENT_METHODS.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {alreadyPaid ? (
+        <p className="text-sm text-[#6B6558]">
+          Already paid by {alreadyPaid}.
+          {session.refillTotal > 0 ? " Collect any refills added since." : ""}
+        </p>
+      ) : (
+        <label className="block space-y-1 text-sm">
+          <span className="text-[#8A8375]">Paid by</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
+            {PAYMENT_METHODS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
           Keep running
         </button>
-        <button type="button" disabled={busy} onClick={() => void onSubmit(method || null)} className={BTN_DANGER}>
+        <button type="button" disabled={busy} onClick={() => void onSubmit(alreadyPaid ? null : method)} className={BTN_DANGER}>
           {busy ? "Ending…" : "End session"}
         </button>
       </div>

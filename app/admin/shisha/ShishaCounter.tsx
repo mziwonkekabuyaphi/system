@@ -14,8 +14,10 @@ import { BRAND_BG, BRAND_BORDER, BRAND_FOCUS_BORDER, BRAND_ON } from "@/componen
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import {
+  DEFAULT_PAYMENT_METHOD,
   PAYMENT_METHODS,
   deriveDisplayStatus,
+  paymentMethodLabel,
   liveRemainingSeconds,
   signedRemainingSeconds,
   type ShishaDisplayStatus,
@@ -89,8 +91,7 @@ function useNow(intervalMs: number): number {
   return now
 }
 
-const paymentLabel = (value: string | null): string | null =>
-  value ? (PAYMENT_METHODS.find((m) => m.value === value)?.label ?? value) : null
+const paymentLabel = paymentMethodLabel
 
 /** Where a session is sitting, shown bold next to the device code. A session
  *  with no station (older ones, or shops that don't require it) shows a muted
@@ -452,7 +453,7 @@ export function ShishaCounter({
   const printingRef = useRef(false)
 
   const [endingId, setEndingId] = useState<string | null>(null)
-  const [endMethod, setEndMethod] = useState("")
+  const [endMethod, setEndMethod] = useState<string>(DEFAULT_PAYMENT_METHOD)
   const [refillConfirmId, setRefillConfirmId] = useState<string | null>(null)
 
   // Auto-print preference lives in this browser (one counter terminal, one setting).
@@ -610,10 +611,10 @@ export function ShishaCounter({
 
   async function confirmEnd(s: ShishaSession) {
     // If the customer already paid at the counter, ending must not ask again.
-    const ok = await onEnd(s, s.paymentMethod ? null : endMethod || null)
+    const ok = await onEnd(s, s.paymentMethod ? null : endMethod)
     if (ok) {
       setEndingId(null)
-      setEndMethod("")
+      setEndMethod(DEFAULT_PAYMENT_METHOD)
     }
   }
 
@@ -884,7 +885,7 @@ export function ShishaCounter({
                 type="button"
                 onClick={() => {
                   setEndingId(endingId === s.id ? null : s.id)
-                  setEndMethod("")
+                  setEndMethod(DEFAULT_PAYMENT_METHOD)
                 }}
                 disabled={busy}
                 className={BTN}
@@ -933,7 +934,6 @@ export function ShishaCounter({
                   <label className="block space-y-1 text-sm">
                     <span className="text-[#8A8375]">Paid by</span>
                     <select value={endMethod} onChange={(e) => setEndMethod(e.target.value)} className={FIELD}>
-                      <option value="">Not recorded</option>
                       {PAYMENT_METHODS.map((m) => (
                         <option key={m.value} value={m.value}>
                           {m.label}
