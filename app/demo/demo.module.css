@@ -125,7 +125,9 @@
 /* Solid top bar variant, used on pages without a hero panel (e.g. /demo/pricing):
    brand pinned to the far left, buttons to the far right, bar in normal flow. */
 .siteNavBar {
-  position: static;
+  position: sticky; /* stays visible (logo, name and links) while the page scrolls */
+  top: 0;
+  z-index: 100;
   pointer-events: auto;
   border-bottom: 1px solid var(--qless-line);
   background: var(--qless-paper);
@@ -150,6 +152,37 @@
   color: var(--qless-ink);
   text-decoration: none;
 }
+
+/* Left side of the bar: zozoQ name, then the page links right next to it. */
+.siteNavLeft {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  min-width: 0;
+}
+.siteNavLinksLeft { flex-wrap: wrap; }
+
+/* Phones: row 1 = name (left) + Sign in / Try for free (right); row 2 = the page links,
+   one swipeable line, so the pinned bar stays short. */
+@media (max-width: 860px) {
+  .siteNavLeft { display: contents; }
+  .siteNavBrand { order: 1; }
+  .siteNavRight { order: 2; }
+  .siteNavLinksLeft {
+    order: 3;
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .siteNavLinksLeft::-webkit-scrollbar { display: none; }
+  .siteNavLinksLeft a { flex: 0 0 auto; white-space: nowrap; }
+  .siteNavInnerBar { gap: 8px 12px; }
+}
+
+/* In-page links (#how, #top ...) must not land underneath the pinned bar. */
+.page :global([id]) { scroll-margin-top: 96px; }
 
 /* Keep dark-on-light button colours in the bar (beats the mobile rule above) */
 .siteNavBar .siteNavActions .btnSecondary {
