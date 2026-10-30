@@ -42,7 +42,7 @@ type Scenario = {
 }
 
 const NAMES = [
-  "Sipho M.", "Naledi P.", "Jaco V.", "Zinhle D.", "Mandla R.", "Ayanda T.", "Riaan B.", "Lerato N.",
+  "Sipho M.", "Mzonke P.", "Jaco V.", "Zinhle D.", "Mandla R.", "Ayanda T.", "Riaan B.", "Lerato N.",
   "Thabo K.", "Chantel F.", "Pieter S.", "Nomsa G.", "Keagan A.", "Fatima H.", "Bongani L.", "Elmarie W.",
 ]
 
