@@ -145,7 +145,7 @@ type PayRow = {
   paye: number // made-up estimate
 }
 const PAY: PayRow[] = [
-  { name: "Sipho M.", type: "hourly", hours: 38.5, rate: 45, pct: 0, sales: 0, services: 0, paye: 0 },
+  { name: "Mzonke B.", type: "hourly", hours: 38.5, rate: 45, pct: 0, sales: 0, services: 0, paye: 0 },
   { name: "Thandi N.", type: "hybrid", mode: "base_plus_commission", hours: 41, rate: 50, pct: 30, sales: 3200, services: 21, paye: 210 },
   { name: "Lwazi K.", type: "commission", hours: 0, rate: 0, pct: 40, sales: 5400, services: 29, paye: 57 },
   { name: "Themba K.", type: "hybrid", mode: "higher_of", hours: 36, rate: 48, pct: 45, sales: 4800, services: 26, paye: 57 },
