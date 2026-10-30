@@ -3,8 +3,7 @@ import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { SiteNav } from "./SiteNav";
-import { HeroRotator } from "./HeroRotator";
-import { IndustryProvider, IndustryPicker } from "./IndustryContext";
+import { QueueScenes } from "./QueueScenes";
 import { StoryScene } from "./StoryScene";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
@@ -175,13 +174,7 @@ export default async function DemoPage() {
       <section className={styles.heroSplit}>
         <div className={styles.heroMain}>
           <div className={styles.heroPreview}>
-            {/* All 9 industries, same rotator + picker as /demo/live. */}
-            <IndustryProvider>
-              <HeroRotator standalone={false} />
-              <div className={styles.heroPick}>
-                <IndustryPicker />
-              </div>
-            </IndustryProvider>
+            <QueueScenes />
           </div>
           <div>
             <h1>Whether they message or walk in, they’re already in line.</h1>

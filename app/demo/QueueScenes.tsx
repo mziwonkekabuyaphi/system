@@ -2,10 +2,11 @@
 
 // app/demo/QueueScenes.tsx
 //
-// Landing-page hero preview. It rotates through four different businesses, each with its own
-// live queue: a barbershop (walk-ins + WhatsApp), a clinic (mostly bookings), a tyre centre
-// (bookings + walk-ins) and a restaurant (table waitlist). Every ~1.7s something happens on the
+// Landing-page hero preview. It rotates through nine different businesses (the same nine as the
+// /demo/live page: barbershop, beauty & nails, clinic, tyre centre, vet, retail, events,
+// restaurant, pharmacy), each with its own live queue. Every ~1.7s something happens on the
 // board: someone joins (via WhatsApp, the kiosk or a booking) or the next ticket is called.
+// To add another business, add one more object to SCENARIOS below; the tabs follow automatically.
 //
 // Self-contained: it does NOT use IndustryContext, so the landing page needs no provider.
 // (The live page keeps using HeroRotator.)
@@ -63,6 +64,24 @@ const SCENARIOS: Scenario[] = [
     onAccent: "#0b1c36",
   },
   {
+    id: "beauty",
+    tab: "Beauty & nails",
+    shop: "Cape Town’s Beauty Studio",
+    initial: "C",
+    tag: "Walk-ins + bookings",
+    prefix: "N",
+    start: 12,
+    counter: "Station 2",
+    details: ["Gel set", "Brow tint", "Manicure", "Lashes", "Pedicure"],
+    sources: ["booked", "whatsapp", "kiosk", "booked", "whatsapp"],
+    perMin: 12,
+    servedBase: 9,
+    seed: 2,
+    main: "#7a2e62",
+    accent: "#f2b6cf",
+    onAccent: "#3e1630",
+  },
+  {
     id: "clinic",
     tab: "Clinic",
     shop: "Greenpoint Family Clinic",
@@ -99,6 +118,60 @@ const SCENARIOS: Scenario[] = [
     onAccent: "#1f1306",
   },
   {
+    id: "vet",
+    tab: "Vet",
+    shop: "Hillcrest Vet Clinic",
+    initial: "H",
+    tag: "Same-day, no booking",
+    prefix: "V",
+    start: 22,
+    counter: "Room 2",
+    details: ["Check-up", "Vaccination", "Dental clean", "Sick pet", "Nail trim"],
+    sources: ["kiosk", "kiosk", "whatsapp", "booked", "kiosk"],
+    perMin: 12,
+    servedBase: 16,
+    seed: 4,
+    main: "#2e6b3f",
+    accent: "#f2c14e",
+    onAccent: "#2a1f05",
+  },
+  {
+    id: "retail",
+    tab: "Retail",
+    shop: "Bree Street Boutique",
+    initial: "B",
+    tag: "Collect + styling",
+    prefix: "S",
+    start: 40,
+    counter: "Till 1",
+    details: ["Click & collect", "Returns", "Personal styling", "Alterations", "Gift wrap"],
+    sources: ["whatsapp", "kiosk", "whatsapp", "booked", "kiosk"],
+    perMin: 6,
+    servedBase: 27,
+    seed: 7,
+    main: "#3d3a8c",
+    accent: "#d7f25a",
+    onAccent: "#1c2a00",
+  },
+  {
+    id: "events",
+    tab: "Events",
+    shop: "Table Bay Events Hub",
+    initial: "T",
+    tag: "Check-in + VIP",
+    prefix: "E",
+    start: 88,
+    counter: "Desk 3",
+    details: ["Registration", "Ticket collection", "Workshop", "VIP lounge", "Badge pickup"],
+    sources: ["booked", "kiosk", "booked", "whatsapp", "booked"],
+    perMin: 3,
+    servedBase: 112,
+    seed: 11,
+    main: "#0d5c8c",
+    accent: "#ffb703",
+    onAccent: "#2b1f00",
+  },
+  {
     id: "restaurant",
     tab: "Restaurant",
     shop: "Braai & Co.",
@@ -115,6 +188,24 @@ const SCENARIOS: Scenario[] = [
     main: "#7c2d12",
     accent: "#facc15",
     onAccent: "#2a1a05",
+  },
+  {
+    id: "pharmacy",
+    tab: "Pharmacy",
+    shop: "Sunrise Pharmacy",
+    initial: "S",
+    tag: "Scripts + advice",
+    prefix: "P",
+    start: 63,
+    counter: "Counter 2",
+    details: ["Collect a script", "Flu vaccine", "Health check", "Ask the pharmacist", "Repeat script"],
+    sources: ["kiosk", "whatsapp", "kiosk", "booked", "whatsapp"],
+    perMin: 5,
+    servedBase: 41,
+    seed: 13,
+    main: "#b3261e",
+    accent: "#ffd9d4",
+    onAccent: "#4a0f0a",
   },
 ]
 

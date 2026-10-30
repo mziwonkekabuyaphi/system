@@ -1871,10 +1871,6 @@
 
 .industryChips { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* Industry picker under the home-page hero rotator, centred like on /demo/live */
-.heroPick { display: flex; justify-content: center; margin-top: 18px; }
-.heroPick .industryPicker { margin-top: 0; justify-content: center; }
-
 /* =====================================================================
    TRUST: strip under the hero, "Security & privacy" section, full footer.
    Appended; nothing above was edited by this block.
