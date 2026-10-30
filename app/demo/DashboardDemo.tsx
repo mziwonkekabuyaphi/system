@@ -61,7 +61,7 @@ type Entry = { ticket: string; name: string; service: string; src: Source }
 type QueueState = { serving: Entry; queue: Entry[]; next: number; served: number }
 
 const POOL: Array<Omit<Entry, "ticket">> = [
-  { name: "Sipho M.", service: "Haircut", src: "WhatsApp" },
+  { name: "Mzonke B.", service: "Haircut", src: "WhatsApp" },
   { name: "Aiden K.", service: "Beard trim", src: "Kiosk" },
   { name: "Naledi P.", service: "Braids", src: "Booked" },
   { name: "Jaco V.", service: "Haircut + beard", src: "Kiosk" },
