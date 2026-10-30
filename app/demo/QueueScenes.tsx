@@ -6,6 +6,8 @@
 // /demo/live page: barbershop, beauty & nails, clinic, tyre centre, vet, retail, events,
 // restaurant, pharmacy), each with its own live queue. Every ~1.7s something happens on the
 // board: someone joins (via WhatsApp, the kiosk or a booking) or the next ticket is called.
+// Next to each TV there is an iPhone-style phone playing a short WhatsApp chat for that business
+// (join the queue, get a ticket, get called), the same look as the phone on /demo/live.
 // To add another business, add one more object to SCENARIOS below; the tabs follow automatically.
 //
 // Self-contained: it does NOT use IndustryContext, so the landing page needs no provider.
@@ -269,6 +271,75 @@ function scenarioVars(s: Scenario): CSSProperties {
   return { "--qs-main": s.main, "--qs-accent": s.accent, "--qs-on-accent": s.onAccent } as CSSProperties
 }
 
+// ---------------------------------------------------------------------------
+// The phone: a short WhatsApp chat that goes with each TV
+// ---------------------------------------------------------------------------
+
+type Msg = { from: "me" | "bot"; text: string; chips?: string[] }
+
+/** The first customer after the opening line-up who joins by WhatsApp, so the phone and the TV agree. */
+function chatCustomer(s: Scenario) {
+  for (let i = 5; i < 5 + s.sources.length; i++) {
+    const c = customer(s, i)
+    if (c.source === "whatsapp") return c
+  }
+  return customer(s, 5)
+}
+
+function chatScript(s: Scenario): Msg[] {
+  const c = chatCustomer(s)
+  const first = c.name.split(" ")[0]
+  const options = [c.detail, ...s.details.filter((d) => d !== c.detail)]
+    .filter((d, i, all) => all.indexOf(d) === i)
+    .slice(0, 3)
+  const ahead = 4
+  return [
+    { from: "me", text: "Hi" },
+    { from: "bot", text: `Hi ${first}! 👋 Welcome to ${s.shop}. What would you like to do?`, chips: ["Join the queue", "Book a time"] },
+    { from: "me", text: "Join the queue" },
+    { from: "bot", text: "What do you need today?", chips: options },
+    { from: "me", text: c.detail },
+    { from: "bot", text: `You’re in line! 🎟️\nTicket ${c.ticket} · ${c.detail}\n${ahead} ahead of you, about ${ahead * s.perMin} min` },
+    { from: "bot", text: `You’re next! 🔔 Please head to ${s.counter}.` },
+  ]
+}
+
+function Phone({ s, active, still }: { s: Scenario; active: boolean; still: boolean }) {
+  const tick = useTick(active && !still, 1000) // one message a second, so the ticket shows well inside the 8s slide
+  const msgs = chatScript(s)
+  const shown = still ? msgs.length : Math.min(msgs.length, tick + 1)
+
+  return (
+    <div className={styles.phone} aria-hidden="true">
+      <div className={styles.phoneScreen}>
+        <div className={styles.phoneHead}>
+          <span className={styles.phoneAvatar}>{s.initial}</span>
+          <span className={styles.phoneName}>
+            <b>{s.shop}</b>
+            <i>WhatsApp Business</i>
+          </span>
+        </div>
+        <div className={styles.phoneBody}>
+          {msgs.slice(0, shown).map((m, i) => (
+            <span key={i} className={m.from === "me" ? styles.rowMe : styles.rowBot}>
+              <span className={m.from === "me" ? `${styles.bubble} ${styles.bubbleMe}` : `${styles.bubble} ${styles.bubbleBot}`}>{m.text}</span>
+              {m.chips && (
+                <span className={styles.chips}>
+                  {m.chips.map((chip) => (
+                    <span key={chip} className={styles.chip}>
+                      {chip}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Board({ s, active, still }: { s: Scenario; active: boolean; still: boolean }) {
   const tick = useTick(active && !still, EVENT_MS)
   const b = board(s, still ? 0 : tick)
@@ -436,7 +507,10 @@ export function QueueScenes() {
               className={on ? `${styles.slide} ${styles.slideOn}` : styles.slide}
               style={scenarioVars(s)}
             >
-              <Board s={s} active={on && running} still={reduced} />
+              <div className={styles.deck}>
+                <Board s={s} active={on && running} still={reduced} />
+                <Phone s={s} active={on && running} still={reduced} />
+              </div>
             </div>
           )
         })}

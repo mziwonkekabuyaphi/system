@@ -72,6 +72,7 @@
 @keyframes qsIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes qsRow { from { opacity: 0; transform: translateX(14px); background: color-mix(in srgb, var(--qs-accent) 35%, #ffffff); } to { opacity: 1; transform: none; } }
 @keyframes qsPop { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes qsBubble { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: none; } }
 @keyframes qsPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 /* ---------- The board ---------- */
@@ -233,6 +234,59 @@
 .feedDot.srcKiosk { background: #3b82f6; }
 .feedDot.srcBooked { background: #f59e0b; }
 
+/* ---------- TV + phone side by side ---------- */
+
+.deck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3vw, 44px);
+  width: 100%;
+  max-width: 1120px;
+}
+.deck .tvWrap { flex: 1 1 0; min-width: 0; }
+
+/* ---------- The phone: iPhone-style frame playing a WhatsApp chat ---------- */
+
+.phone {
+  flex: none;
+  width: clamp(200px, 21vw, 236px);
+  padding: 9px;
+  border-radius: 38px;
+  background: #16191f;
+  box-shadow: 0 0 0 1px #3a404a inset, 0 30px 60px -24px rgba(0, 0, 0, 0.5);
+}
+.phoneScreen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: clamp(360px, 36vw, 450px);
+  overflow: hidden;
+  border-radius: 30px;
+  background: #efeae2;
+  color: #1d2430;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+}
+/* camera cut-out and home bar, so it reads as a phone */
+.phoneScreen::before { content: ""; position: absolute; top: 8px; left: 50%; z-index: 2; width: 58px; height: 16px; transform: translateX(-50%); border-radius: 999px; background: #0b0d11; }
+.phoneScreen::after { content: ""; position: absolute; bottom: 6px; left: 50%; z-index: 2; width: 72px; height: 4px; transform: translateX(-50%); border-radius: 999px; background: rgba(0, 0, 0, 0.5); }
+.phoneHead { display: flex; align-items: center; gap: 0.7em; padding: 2.1em 0.9em 0.7em; background: #075e54; color: #ffffff; }
+.phoneAvatar { display: grid; place-items: center; flex: none; width: 2.2em; height: 2.2em; border-radius: 50%; background: var(--qs-accent); color: var(--qs-on-accent); font-weight: 800; }
+.phoneName { display: flex; flex-direction: column; min-width: 0; }
+.phoneName b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phoneName i { font-style: normal; font-size: 0.85em; opacity: 0.8; }
+.phoneBody { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.5em; padding: 0.7em 0.7em 1.6em; overflow: hidden; }
+.rowMe, .rowBot { display: flex; flex-direction: column; gap: 0.35em; animation: qsBubble 0.3s ease-out; }
+.rowMe { align-items: flex-end; }
+.rowBot { align-items: flex-start; }
+.bubble { max-width: 85%; padding: 0.5em 0.75em; border-radius: 0.7em; white-space: pre-line; box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12); }
+.bubbleMe { background: #d9fdd3; border-top-right-radius: 0.15em; }
+.bubbleBot { background: #ffffff; border-top-left-radius: 0.15em; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35em; }
+.chip { padding: 0.3em 0.8em; border-radius: 999px; border: 1px solid #cfe3d4; background: #ffffff; color: #075e54; font-weight: 600; }
+
 /* ---------- Small screens / reduced motion ---------- */
 
 /* The landing hero's main column is only ~500-700px wide between 861px and 1100px
@@ -244,6 +298,10 @@
 
 /* Note: the landing page hides .heroPreview entirely at 860px and below, so this block only
    matters if QueueScenes is reused somewhere that shows it on a phone. */
+@media (max-width: 760px) {
+  .phone { display: none; }
+}
+
 @media (max-width: 640px) {
   .body { grid-template-columns: 1fr; }
   .tag { display: none; }
@@ -255,5 +313,5 @@
 @media (prefers-reduced-motion: reduce) {
   .slide { transition: none; }
   .tabBar { display: none; }
-  .now, .row, .feedNew, .liveDot { animation: none; }
+  .now, .row, .feedNew, .liveDot, .rowMe, .rowBot { animation: none; }
 }
