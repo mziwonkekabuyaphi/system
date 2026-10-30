@@ -250,6 +250,7 @@ export function WhatsAppAdminDemo() {
         <div className={admin.waWrap}>
           <span className={admin.waLabel}>What {x.customer.split(" ")[0]} sees</span>
           <div className={admin.waPhone}>
+            <span className={admin.waNotch} aria-hidden="true" />
             <div className={admin.waHead}>
               <span className={admin.waAvatar}>{x.initial}</span>
               <span className={admin.waHeadText}>
@@ -264,6 +265,7 @@ export function WhatsAppAdminDemo() {
                 <span className={admin.waTime}>09:41</span>
               </span>
             </div>
+            <span className={admin.waHome} aria-hidden="true" />
           </div>
           <span className={delivered ? `${admin.waDelivery} ${admin.waOk}` : `${admin.waDelivery} ${admin.waNo}`} role="status">
             {deliveryText}

@@ -333,7 +333,7 @@ export function ChatDemo() {
     <>
       <div ref={rootRef} className={styles.demoGrid}>
         <div>
-          <div className={styles.demoTabs} role="tablist" aria-label="Example conversations">
+          <div className={`${styles.demoTabs} ${styles.demoTabsVertical}`} role="tablist" aria-label="Example conversations">
             {scenarios.map((s, i) => (
               <button
                 key={s.tab}

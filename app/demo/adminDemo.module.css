@@ -213,15 +213,41 @@ textarea.aInput:disabled { opacity: 0.6; cursor: not-allowed; }
 .waWrap { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
 .waLabel { font-family: var(--qless-font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--qless-ink-soft); text-align: center; }
 .waPhone {
+  position: relative;
   width: 100%;
-  max-width: 300px;
+  max-width: 270px;
   overflow: hidden;
-  border: 8px solid var(--qless-navy-deep);
-  border-radius: 28px;
-  background: var(--qless-navy-deep);
-  box-shadow: 0 30px 60px -28px rgba(11, 22, 40, 0.55);
+  border: 9px solid #12151a;
+  border-radius: 42px;
+  background: #12151a;
+  box-shadow: 0 0 0 1.5px #3a404a, 0 30px 60px -28px rgba(11, 22, 40, 0.55);
 }
-.waHead { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #1f5f4a; color: #ffffff; }
+/* camera cut-out and home indicator, so it reads as a smartphone */
+.waNotch {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 2;
+  width: 74px;
+  height: 20px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #0b0d11;
+}
+.waHome {
+  display: block;
+  width: 90px;
+  height: 4px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: #efeae2;
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0.7;
+}
+.waHead { display: flex; align-items: center; gap: 10px; padding: 38px 12px 10px; background: #1f5f4a; color: #ffffff; }
 .waAvatar {
   display: grid;
   place-items: center;
@@ -236,7 +262,7 @@ textarea.aInput:disabled { opacity: 0.6; cursor: not-allowed; }
 .waHeadText { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .waHeadName { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .waHeadSub { font-size: 11px; opacity: 0.75; }
-.waBody { display: flex; flex-direction: column; gap: 8px; min-height: 250px; padding: 12px; background: #efeae2; }
+.waBody { display: flex; flex-direction: column; gap: 8px; min-height: 380px; padding: 12px 12px 26px; background: #efeae2; }
 .waSys {
   align-self: center;
   max-width: 92%;
