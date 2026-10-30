@@ -173,6 +173,16 @@ export default async function PricingPage() {
 
       {pricing && (
         <>
+          <section className={styles.flow}>
+            <div className={styles.wrapWide}>
+              <p className={styles.sectionLabel}>Try your own numbers</p>
+              <div className={styles.sectionHead}>
+                <h2>What would I pay?</h2>
+              </div>
+              <PriceCalculator plans={plans.map(({ features: _features, newFeatures: _newFeatures, ...plan }) => plan)} />
+            </div>
+          </section>
+
           <section>
             <div className={styles.wrap}>
               <p className={styles.sectionLabel}>Two words</p>
@@ -262,16 +272,6 @@ export default async function PricingPage() {
           </section>
 
           <section className={styles.flow}>
-            <div className={styles.wrapWide}>
-              <p className={styles.sectionLabel}>Try your own numbers</p>
-              <div className={styles.sectionHead}>
-                <h2>What would I pay?</h2>
-              </div>
-              <PriceCalculator plans={plans.map(({ features: _features, newFeatures: _newFeatures, ...plan }) => plan)} />
-            </div>
-          </section>
-
-          <section>
             <div className={styles.wrap}>
               <p className={styles.sectionLabel}>Which plan?</p>
               <div className={styles.sectionHead}>
