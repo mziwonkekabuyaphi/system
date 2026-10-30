@@ -22,7 +22,7 @@ export function Logo({ size = 24, className }: LogoProps) {
       focusable="false"
     >
       <circle cx="46" cy="50" r="34" fill="none" stroke="currentColor" strokeWidth="15" />
-      <path d="M58,68 L86,92 L94,80 L70,58 Z" fill="#F5A623" />
+      <path d="M58,68 L86,92 L94,80 L70,58 Z" fill="var(--qless-amber, #F5A623)" />
     </svg>
   );
 }
