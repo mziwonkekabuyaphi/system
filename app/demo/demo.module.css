@@ -163,22 +163,57 @@
 }
 .siteNavLinksLeft { flex-wrap: wrap; }
 
-/* Phones: row 1 = name (left) + Sign in / Try for free (right); row 2 = the page links,
-   one swipeable line, so the pinned bar stays short. */
+/* Desktop: the burger and the phone-only Sign in link stay out of sight */
+.siteNavBurger { display: none; }
+.siteNavActions .siteNavMenuOnly { display: none; } /* two classes: beats .btn, which comes later */
+
+/* Phones: the bar is just the name, Try for free and a burger button. The page links and
+   Sign in sit in a dropdown that opens under the bar. */
 @media (max-width: 860px) {
+  .siteNavInnerBar { flex-wrap: nowrap; gap: 8px 12px; }
   .siteNavLeft { display: contents; }
-  .siteNavBrand { order: 1; }
-  .siteNavRight { order: 2; }
-  .siteNavLinksLeft {
-    order: 3;
-    flex: 1 1 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
+  .siteNavActions .siteNavDesktopOnly { display: none; }
+  .siteNavActions .siteNavMenuOnly { display: block; }
+
+  .siteNavBurger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--qless-line);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--qless-ink);
+    cursor: pointer;
   }
-  .siteNavLinksLeft::-webkit-scrollbar { display: none; }
-  .siteNavLinksLeft a { flex: 0 0 auto; white-space: nowrap; }
-  .siteNavInnerBar { gap: 8px 12px; }
+  .siteNavBurger:hover { background: var(--qless-paper-dim); }
+  .siteNavBurger:focus-visible { outline: 2px solid var(--qless-amber-dim); outline-offset: 2px; }
+
+  /* the dropdown: hidden until the burger is tapped */
+  .siteNavActions.siteNavLinksLeft {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: none;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 16px 16px;
+    background: var(--qless-paper);
+    border-bottom: 1px solid var(--qless-line);
+    box-shadow: 0 16px 24px -18px rgba(0, 0, 0, 0.35);
+  }
+  .siteNavActions.siteNavLinksLeft.siteNavOpen { display: flex; }
+  .siteNavActions.siteNavLinksLeft a {
+    display: block;
+    padding: 12px 14px;
+    font-size: 15px;
+    text-align: left;
+  }
 }
 
 /* In-page links (#how, #top ...) must not land underneath the pinned bar. */
