@@ -55,6 +55,51 @@ export function Phone({ children, name = "Mzansi Cuts" }: { children: ReactNode;
   )
 }
 
+type ReceiptKind = "queue" | "booking"
+
+/**
+ * A bigger kiosk with a thermal receipt printer (Epson TM-style) beside it, printing a slip.
+ * `children` is the kiosk screen content (a .kioskScreen div). The slip slides out of the printer
+ * when the scene becomes active (see .receipt in howItWorks.module.css).
+ */
+export function KioskWithPrinter({
+  children,
+  receipt,
+  shop = "Mzansi Cuts",
+  d = 1.2,
+}: {
+  children: ReactNode
+  receipt: ReceiptKind
+  shop?: string
+  d?: number
+}) {
+  const queue = receipt === "queue"
+  return (
+    <div className={m.kpWrap}>
+      <div className={`${m.kiosk} ${m.kioskLg}`}>{children}</div>
+      <div className={m.printer} aria-hidden="true">
+        <div className={m.paper}>
+          <div className={m.receipt} style={delay(d)}>
+            <span className={m.rShop}>{shop}</span>
+            <span className={m.rLabel}>{queue ? "Queue ticket" : "Booking reference"}</span>
+            <span className={m.rNumber}>{queue ? "B015" : "ZQ-4821"}</span>
+            <span className={m.rRule} />
+            <span className={m.rLine}>Naledi P.</span>
+            <span className={m.rLine}>{queue ? "Fade" : "Fade with Thabo"}</span>
+            <span className={m.rLine}>{queue ? "Position 3 · ~20 min" : "Today at 14:30"}</span>
+          </div>
+        </div>
+        <div className={m.printerBody}>
+          <span className={m.printerSlot} />
+          <span className={m.printerLed} />
+          <span className={m.printerFeed} />
+          <span className={m.printerBrand}>EPSON</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Bubble({ me, d, children }: { me?: boolean; d: number; children: ReactNode }) {
   return (
     <span className={`${m.bubble} ${me ? m.me : m.bot} ${m.seq}`} style={{ "--d": `${d}s` } as CSSProperties}>
@@ -90,13 +135,13 @@ function SceneArrive() {
         </Phone>
       </Pane>
       <Pane cap="…or tap the kiosk as they walk in.">
-        <div className={m.kiosk}>
+        <KioskWithPrinter receipt="booking">
           <div className={`${m.kioskScreen} ${m.center}`}>
             <span className={m.kLogo}>M</span>
             <span className={m.kShop}>Mzansi Cuts</span>
             <span className={m.kTap}>Tap anywhere to check in</span>
           </div>
-        </div>
+        </KioskWithPrinter>
       </Pane>
     </>
   )
@@ -163,14 +208,14 @@ function SceneConfirm() {
         </Phone>
       </Pane>
       <Pane cap="At the kiosk: a printed ticket with place in line and wait.">
-        <div className={m.kiosk}>
+        <KioskWithPrinter receipt="queue" d={1.5}>
           <div className={`${m.kioskScreen} ${m.center}`}>
             <span className={`${m.kEyebrow} ${m.seq}`} style={delay(0.2)}>Your place in line</span>
             <span className={`${m.kNumber} ${m.seq}`} style={delay(0.5)}>B015</span>
             <span className={`${m.kFacts} ${m.seq}`} style={delay(0.9)}>Naledi P. · Fade</span>
             <span className={`${m.kFacts} ${m.seq}`} style={delay(1.1)}>Position 3 · about 20 min</span>
           </div>
-        </div>
+        </KioskWithPrinter>
       </Pane>
     </>
   )

@@ -21,7 +21,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import page from "./demo.module.css"
 import m from "./howItWorks.module.css"
 import f from "./featureShowcase.module.css"
-import { Phone, Bubble, Pane, delay } from "./HowItWorks"
+import { Phone, Bubble, Pane, KioskWithPrinter, delay } from "./HowItWorks"
 
 type Feature = { title: string; text: string; icon: ReactNode; isNew?: boolean }
 
@@ -70,7 +70,7 @@ function SceneKiosk() {
   return (
     <>
       <Pane cap="Walk-ins book a time or join the queue in a few taps.">
-        <div className={m.kiosk}>
+        <KioskWithPrinter receipt="queue" d={1.6}>
           <div className={m.kioskScreen}>
             <span className={f.kTitle}>How can we help?</span>
             <div className={f.tiles}>
@@ -78,7 +78,7 @@ function SceneKiosk() {
               <span className={`${f.tile} ${f.tileB} ${f.tapped} ${m.seq}`} style={delay(0.6)}><b>Join the queue</b><span>We’ll call you</span></span>
             </div>
           </div>
-        </div>
+        </KioskWithPrinter>
       </Pane>
       <Pane cap="It resets itself after every customer.">
         <div className={m.card}>
@@ -265,14 +265,14 @@ function SceneHours() {
 function BrandScreen({ name, initial, main, accent, onAccent, powered }: { name: string; initial: string; main: string; accent: string; onAccent: string; powered: boolean }) {
   const vars = { "--b-main": main, "--b-accent": accent, "--b-on": onAccent } as CSSProperties
   return (
-    <div className={m.kiosk}>
+    <KioskWithPrinter receipt="booking" shop={name} d={1.2}>
       <div className={`${m.kioskScreen} ${m.center} ${f.brand}`} style={vars}>
         <span className={f.bLogo}>{initial}</span>
         <span className={m.kShop}>{name}</span>
         <span className={f.bTap}>Tap to check in</span>
         {powered && <span className={f.powered}>Powered by ZozoQueue</span>}
       </div>
-    </div>
+    </KioskWithPrinter>
   )
 }
 
