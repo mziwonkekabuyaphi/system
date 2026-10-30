@@ -317,7 +317,7 @@ export const INDUSTRIES: Industry[] = [
     waitMin: 20,
     chat: {
       emoji: "🍽️",
-      name: "Nomsa",
+      name: "Mzonke",
       day: "Friday",
       menu: [
         { name: "Table for 2", price: 100, mins: 90 },
