@@ -32,7 +32,7 @@
 /* Sticky table of contents */
 .toc {
   position: sticky;
-  top: 24px;
+  top: 96px; /* clears the pinned top bar */
   align-self: start;
   display: flex;
   flex-direction: column;
