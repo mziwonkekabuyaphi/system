@@ -40,6 +40,7 @@ import {
   getTenantPlan,
   getTenantPlanUsage,
   getTenantVisitBreakdown,
+  isBookingQueuePlanKey,
   type Plan,
   type PlanUsage,
   type VisitBreakdown,
@@ -205,6 +206,13 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
 }
 
 export async function requestPlanUpgrade(planKey: string, note?: string): Promise<ActionResult> {
+  // Server Actions are public endpoints: refuse anything that is not a real
+  // Booking & Queue plan (this rejects "shisha" and unknown keys) BEFORE any
+  // database work, so a bypassed UI can never file such a request.
+  if (!isBookingQueuePlanKey(planKey)) {
+    return { ok: false, error: "That plan isn't available for upgrade requests. Please choose one of the plans shown in Billing." }
+  }
+
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
