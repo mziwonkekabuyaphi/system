@@ -3,7 +3,8 @@ import "../auth/theme.css"; // reuse the same --qless-* tokens as login/signup
 import styles from "./demo.module.css";
 import { Logo } from "@/components/Logo";
 import { SiteNav } from "./SiteNav";
-import { QueueScenes } from "./QueueScenes";
+import { HeroRotator } from "./HeroRotator";
+import { IndustryProvider, IndustryPicker } from "./IndustryContext";
 import { StoryScene } from "./StoryScene";
 import { ContactForm } from "./ContactForm";
 import { getPublicPricing, overageFaq, freePlanFaq } from "@/lib/services/pricing";
@@ -172,6 +173,35 @@ export default async function DemoPage() {
       <SiteNav current="home" />
 
       <section className={styles.heroSplit}>
+        <div className={styles.heroMain}>
+          <div className={styles.heroPreview}>
+            {/* All 9 industries, same rotator + picker as /demo/live. */}
+            <IndustryProvider>
+              <HeroRotator standalone={false} />
+              <div className={styles.heroPick}>
+                <IndustryPicker />
+              </div>
+            </IndustryProvider>
+          </div>
+          <div>
+            <h1>Whether they message or walk in, they’re already in line.</h1>
+            <p>
+              ZozoQueue gives your shop two front doors: a WhatsApp number that books and queues customers around the
+              clock, and a self-serve kiosk for walk-ins. Both feed one live board, so nobody waits on a reply and
+              nobody gets lost between them.
+            </p>
+            <div className={styles.heroCtas}>
+              <a className={`${styles.btn} ${styles.btnPrimary}`} href={`${DEMO_URL}#channels`}>
+                See both ways in
+              </a>
+              <a className={`${styles.btn} ${styles.btnSecondary}`} href="#contact">
+                Book a demo
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* Navy ticket panel: now a band underneath the rotating hero */}
         <aside className={styles.heroStub}>
           <div className={styles.heroStubTicket}>
             <span className={styles.heroStubLabel}>Now serving</span>
@@ -237,27 +267,6 @@ export default async function DemoPage() {
 
           <span className={`${styles.heroStubLabel} ${styles.heroStubFoot}`}>A Ndithini product</span>
         </aside>
-        <div className={styles.heroMain}>
-          <div className={styles.heroPreview}>
-            <QueueScenes />
-          </div>
-          <div>
-            <h1>Whether they message or walk in, they’re already in line.</h1>
-            <p>
-              ZozoQueue gives your shop two front doors: a WhatsApp number that books and queues customers around the
-              clock, and a self-serve kiosk for walk-ins. Both feed one live board, so nobody waits on a reply and
-              nobody gets lost between them.
-            </p>
-            <div className={styles.heroCtas}>
-              <a className={`${styles.btn} ${styles.btnPrimary}`} href={`${DEMO_URL}#channels`}>
-                See both ways in
-              </a>
-              <a className={`${styles.btn} ${styles.btnSecondary}`} href="#contact">
-                Book a demo
-              </a>
-            </div>
-          </div>
-        </div>
       </section>
 
       <section className={styles.trustStrip} aria-label="Why shops trust ZozoQueue">

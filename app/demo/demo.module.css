@@ -201,40 +201,31 @@
 
 /* ---------- Hero: ticket-stub split, echoing AuthShell ---------- */
 
-/* Hero sizing knobs, one set per device class. Tweak these to adjust the
-   hero without touching the rules below.
-     --hero-stub-width   width of the blue ticket panel (desktop/tablet)
-     --hero-min-height   minimum hero height
-     --hero-stub-pad     padding inside the blue panel
-     --hero-main-pad     padding around the headline area               */
+/* Hero layout: the rotating preview + headline take the whole top area; the navy ticket
+   panel (.heroStub) sits underneath as a full-width band.
+   Sizing knobs, one set per device class:
+     --hero-stub-pad     padding inside the navy band
+     --hero-main-pad     padding around the rotator + headline area       */
 .page .heroSplit {
-  --hero-stub-width: minmax(320px, 400px);
-  --hero-min-height: 100vh;
   --hero-stub-pad: 3rem 2.5rem 3rem;
-  --hero-main-pad: 96px 56px 64px;
+  --hero-main-pad: 40px 56px 56px;
 
-  display: grid;
-  grid-template-columns: var(--hero-stub-width) 1fr;
-  min-height: var(--hero-min-height);
-  padding: 0; /* cancel the global ".page section" 72px padding so the panel touches the top edge */
+  display: block;
+  padding: 0; /* cancel the global ".page section" padding */
 }
 
 /* Tablet landscape / small laptop */
 @media (max-width: 1100px) {
   .page .heroSplit {
-    --hero-stub-width: minmax(280px, 320px);
-    --hero-min-height: 560px;
     --hero-stub-pad: 2.5rem 2rem 2.5rem;
-    --hero-main-pad: 96px 36px 56px;
+    --hero-main-pad: 40px 36px 48px;
   }
 }
 
-/* Tablet portrait + phones: stack, blue panel on top */
+/* Tablet portrait + phones */
 @media (max-width: 860px) {
   .page .heroSplit {
-    grid-template-columns: 1fr;
-    --hero-min-height: 0;
-    --hero-stub-pad: 2.5rem 1.75rem 2.5rem; /* nav is a bar above the panel now */
+    --hero-stub-pad: 2.5rem 1.75rem 2.5rem;
     --hero-main-pad: 40px 28px 56px;
   }
 }
@@ -249,48 +240,40 @@
 
 .heroStub {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+  gap: 2rem 2.5rem;
   padding: var(--hero-stub-pad);
   background: linear-gradient(180deg, var(--qless-navy) 0%, var(--qless-navy-deep) 100%);
   color: var(--qless-paper);
 }
 
-/* punched perforation line, same trick as AuthShell.module.css's .stub::after */
+/* Wide screens: keep the band's content in line with the rest of the page */
+@media (min-width: 1380px) {
+  .heroStub {
+    padding-left: calc((100% - 1240px) / 2);
+    padding-right: calc((100% - 1240px) / 2);
+  }
+}
+
+/* punched perforation line along the top edge, where the ticket "tears off" the hero
+   (same trick as AuthShell.module.css's .stub::after, turned to run horizontally) */
 .heroStub::after {
   content: "";
   position: absolute;
-  top: 0;
-  right: -1px;
-  bottom: 0;
-  width: 22px;
+  top: -1px;
+  right: 0;
+  left: 0;
+  height: 22px;
   background-image: radial-gradient(
     circle at 11px 11px,
     var(--qless-paper) 5.5px,
     transparent 6px
   );
   background-size: 22px 22px;
-  background-repeat: repeat-y;
-}
-
-@media (max-width: 860px) {
-  .heroStub::after {
-    top: auto;
-    right: 0;
-    left: 0;
-    bottom: -1px;
-    width: auto;
-    height: 22px;
-    background-image: radial-gradient(
-      circle at 11px 11px,
-      var(--qless-paper) 5.5px,
-      transparent 6px
-    );
-    background-size: 22px 22px;
-    background-repeat: repeat-x;
-  }
+  background-repeat: repeat-x;
+  pointer-events: none;
 }
 
 .heroStubBrand {
@@ -340,6 +323,14 @@
   flex-direction: column;
   justify-content: center;
   padding: var(--hero-main-pad);
+}
+
+/* Rotator + headline share one centred column, up to 1180px wide */
+.heroMain > * {
+  width: 100%;
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .heroMain h1 {
@@ -1532,7 +1523,6 @@
 @media (min-width: 1500px) {
   .wrap { max-width: 1040px; }
   .wrapWide { max-width: 1240px; }
-  .page .heroSplit { --hero-stub-width: minmax(360px, 440px); }
   .dashLayout { grid-template-columns: 260px minmax(0, 1fr); gap: 56px; }
   .dashBody { min-height: 500px; }
 }
@@ -1881,6 +1871,10 @@
 
 .industryChips { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* Industry picker under the home-page hero rotator, centred like on /demo/live */
+.heroPick { display: flex; justify-content: center; margin-top: 18px; }
+.heroPick .industryPicker { margin-top: 0; justify-content: center; }
+
 /* =====================================================================
    TRUST: strip under the hero, "Security & privacy" section, full footer.
    Appended; nothing above was edited by this block.
@@ -2185,7 +2179,7 @@
    ===================================================================== */
 
 .heroStubSection { display: flex; flex-direction: column; gap: 0.6rem; }
-.heroStubFoot { margin-top: auto; }
+.heroStubFoot { grid-column: 1 / -1; }
 
 .heroQueue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .heroQueueRow {
@@ -2205,7 +2199,7 @@
 .heroTagWhatsApp { background: #dcf6e4; color: #17653a; }
 .heroTagKiosk { background: #e2e8f3; color: #1d3358; }
 
-.heroDoors { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.heroDoors { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .heroDoor {
   display: flex;
   flex-direction: column;
