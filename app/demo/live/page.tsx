@@ -54,14 +54,6 @@ export default function DemoLivePage() {
           <div className={hero.pick}>
             <IndustryPicker />
           </div>
-          <div className={hero.jump}>
-            <span className={hero.jumpLabel}>Jump to</span>
-            <a className={hero.jumpLink} href="#demo">WhatsApp</a>
-            <a className={hero.jumpLink} href="#kiosk">Kiosk</a>
-            <a className={hero.jumpLink} href="#display">Waiting-room TV</a>
-            <a className={hero.jumpLink} href="#dashboard">Dashboard</a>
-            <a className={hero.jumpLink} href="#setup">Set it up yourself</a>
-          </div>
         </div>
       </section>
 
