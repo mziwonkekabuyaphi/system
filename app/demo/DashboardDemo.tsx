@@ -97,14 +97,14 @@ const BASE_BOOKINGS: Block[] = [
   { col: 2, row: 4, span: 1, name: "Zinhle D.", service: "Gel set" },
 ]
 const INCOMING: Block[] = [
-  { col: 0, row: 5, span: 1, name: "Sipho M.", service: "Haircut" },
+  { col: 0, row: 5, span: 1, name: "Mzonke M.", service: "Haircut" },
   { col: 1, row: 4, span: 1, name: "Lerato N.", service: "Beard trim" },
   { col: 2, row: 6, span: 1, name: "Kabelo S.", service: "Haircut" },
 ]
 
 const CONVOS = [
   { name: "Zinhle D.", preview: "Thanks! Also is it okay if I…", tag: "You" },
-  { name: "Sipho M.", preview: "Saturday at 10:30 works", tag: "AI" },
+  { name: "Mzonke B.", preview: "Saturday at 10:30 works", tag: "AI" },
   { name: "Mr Dlamini", preview: "Do you do school cuts?", tag: "AI" },
   { name: "Riaan B.", preview: "What time do you close?", tag: "AI" },
 ]
