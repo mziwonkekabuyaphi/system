@@ -214,6 +214,17 @@ export const MODULE_KEYS = {
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
 
+/** The ONLY plan keys a tenant may be moved onto through the normal Booking & Queue
+ *  upgrade flow (request AND approval). Deliberately a fixed list, not "any active
+ *  row in `plans`": the `shisha` plan is a separate product's placeholder plan
+ *  (it contains no booking/queue/kiosk), so applying it to a Booking & Queue shop
+ *  would strip that shop's entitlements. Unknown keys are rejected too. */
+export const BOOKING_QUEUE_PLAN_KEYS = ["free", "growth", "business"] as const
+
+export function isBookingQueuePlanKey(planKey: unknown): planKey is (typeof BOOKING_QUEUE_PLAN_KEYS)[number] {
+  return typeof planKey === "string" && (BOOKING_QUEUE_PLAN_KEYS as readonly string[]).includes(planKey)
+}
+
 /** Whether this tenant's CURRENT PLAN includes a module. Plan entitlement
  *  (plan_modules) is the source of truth here, deliberately NOT
  *  tenant_modules: that table is a sparse per-tenant on/off switch that
