@@ -62,7 +62,7 @@ import {
   type BookingSlot,
 } from "@/lib/services/booking"
 import { joinQueue, formatQueueTicketNumber, QUEUE_TOO_MANY_SERVICES } from "@/lib/services/queue"
-import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled } from "@/lib/services/plans"
+import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled, isProductNotEnabledError } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
@@ -493,6 +493,10 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
         error: "Sorry, this shop has reached its booking limit for this month. Please check in with staff.",
       }
     }
+    // Booking switched off for this shop (stale kiosk screen, or a direct call).
+    if (isProductNotEnabledError(error)) {
+      return { ok: false, error: "Sorry, this shop doesn't take bookings here. Please check in with staff." }
+    }
     console.error("[kiosk] submitKioskBooking failed", { slug, error })
     return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
   }
@@ -614,6 +618,10 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
         ok: false,
         error: "Sorry, this shop has reached its queue limit for this month. Please check in with staff.",
       }
+    }
+    // Queue switched off for this shop (stale kiosk screen, or a direct call).
+    if (isProductNotEnabledError(error)) {
+      return { ok: false, error: "Sorry, this shop doesn't use a queue here. Please check in with staff." }
     }
     // The database refuses a walk-in join in three expected situations
     // (same triggers queue.ts handles for WhatsApp). Friendly message each,
