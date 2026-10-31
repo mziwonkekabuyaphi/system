@@ -1,7 +1,7 @@
 // lib/whatsapp/utils/services-list.ts
 /**
  * The QLess main menu — an interactive WhatsApp LIST with six core rows:
- * Book Now, Join Queue, Check Status, Reschedule, Cancel Now, My Profile,
+ * My Profile (always first), Book Now, Join Queue, Check Status, Reschedule, Cancel Now,
  * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on.
  *
  * Same idea as the old Rands "services list": the menu is sent as a
@@ -70,6 +70,13 @@ export function buildServicesListMessage(bodyText: string, options: { shisha?: b
         {
           title: "What can I do for you?", // 21 chars
           rows: [
+            // Always first: it's the customer's home screen, so it stays on top
+            // however many other rows the shop's switches leave in the list.
+            {
+              id: MENU_ROW_IDS.profile,
+              title: "👤 My Profile",
+              description: "See where you stand with this shop",
+            },
             {
               id: MENU_ROW_IDS.book,
               title: "📅 Book Now",
@@ -94,11 +101,6 @@ export function buildServicesListMessage(bodyText: string, options: { shisha?: b
               id: MENU_ROW_IDS.cancel,
               title: "❌ Cancel Now",
               description: "Cancel your booking or leave the queue",
-            },
-            {
-              id: MENU_ROW_IDS.profile,
-              title: "👤 My Profile",
-              description: "Your booking, queue spot and visit history",
             },
             ...moduleRows,
           ],
