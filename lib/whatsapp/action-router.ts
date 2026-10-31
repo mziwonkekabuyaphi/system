@@ -83,6 +83,7 @@ import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 import { isModuleEnabled } from "@/lib/tenant/modules"
+import { getEnabledProducts } from "@/lib/services/plans"
 
 /**
  * Contract each service must implement to participate in stateful
@@ -145,13 +146,15 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
 // handover.ts's shouldEscalate() uses this flag, not raw intent confidence.
 // A function, not a constant: the menu it carries depends on which modules the tenant has on.
 async function unknownStateReply(tenantId: string): Promise<ActionResult> {
-  const shisha = await isModuleEnabled(tenantId, "shisha")
+  const [shisha, products] = await Promise.all([isModuleEnabled(tenantId, "shisha"), getWhatsAppProducts(tenantId)])
   return {
     reply: "I couldn't continue your previous request, so let's start again. How can I help you today?",
     buttons: [],
     nextState: null,
     unhandled: true,
-    followUp: [buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha })],
+    followUp: [
+      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha }), hiddenMenuRows(products)),
+    ],
   }
 }
 
@@ -229,20 +232,52 @@ async function menuPromptFor(tenantId: string): Promise<string> {
   return `${MENU_PROMPT}\n\nOr just type what you need in your own words and I'll take care of it.`
 }
 
-/** The menu minus "Join Queue" (shown while the shop is closed). */
-function withoutQueueRow(menu: ReturnType<typeof buildServicesListMessage>): ReturnType<typeof buildServicesListMessage> {
-  if (!menu.list) return menu
+type ServicesMenu = ReturnType<typeof buildServicesListMessage>
+
+/** Which of the shop's WhatsApp products are switched on (tenant_modules). Fails closed. */
+async function getWhatsAppProducts(tenantId: string): Promise<{ booking: boolean; queue: boolean }> {
+  const supabase = getSupabaseServerClient()
+  if (!supabase) return { booking: false, queue: false }
+  const products = await getEnabledProducts(supabase, tenantId)
+  return { booking: products.booking, queue: products.queue }
+}
+
+/** Removes the given rows from the menu (by MENU_ROW_IDS value). */
+function withoutRows(menu: ServicesMenu, hidden: Set<string>): ServicesMenu {
+  if (!menu.list || hidden.size === 0) return menu
   return {
     ...menu,
     list: {
       ...menu.list,
-      sections: menu.list.sections.map((section) => ({
-        ...section,
-        rows: section.rows.filter((row) => row.id !== MENU_ROW_IDS.queue),
-      })),
+      sections: menu.list.sections
+        .map((section) => ({ ...section, rows: section.rows.filter((row) => !hidden.has(row.id)) }))
+        .filter((section) => section.rows.length > 0),
     },
   }
 }
+
+/** Rows a shop must NOT see: products that are off, plus Join Queue while closed. */
+function hiddenMenuRows(products: { booking: boolean; queue: boolean }, queueClosedNow = false): Set<string> {
+  const hidden = new Set<string>()
+  if (!products.booking) {
+    hidden.add(MENU_ROW_IDS.book)
+    hidden.add(MENU_ROW_IDS.reschedule)
+  }
+  if (!products.queue || queueClosedNow) hidden.add(MENU_ROW_IDS.queue)
+  // Status / Cancel only mean something when the shop takes bookings or queue entries.
+  if (!products.booking && !products.queue) {
+    hidden.add(MENU_ROW_IDS.status)
+    hidden.add(MENU_ROW_IDS.cancel)
+  }
+  return hidden
+}
+
+/** Typed words that mean "the walk-in queue" (same words booking.ts treats as a queue request). */
+const QUEUE_WORDS = /\b(queue|walk[\s-]?in|walkin)\b/
+
+const BOOKING_OFF_REPLY = "Sorry, this shop doesn't take bookings here."
+const QUEUE_OFF_REPLY = "Sorry, this shop doesn't use a walk-in queue here."
+const NOTHING_ON_REPLY = "Sorry, this shop doesn't take bookings or queue entries on WhatsApp."
 
 /**
  * Greeting + menu. Used for a fresh conversation, an unrecognised message
@@ -254,8 +289,15 @@ function withoutQueueRow(menu: ReturnType<typeof buildServicesListMessage>): Ret
  * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const shishaOn = await isModuleEnabled(tenantId, "shisha")
-  const menu = buildServicesListMessage(await menuPromptFor(tenantId), { shisha: shishaOn })
+  const [shishaOn, products] = await Promise.all([isModuleEnabled(tenantId, "shisha"), getWhatsAppProducts(tenantId)])
+  const baseMenu = buildServicesListMessage(await menuPromptFor(tenantId), { shisha: shishaOn })
+  // Only offer what this shop actually runs (a Booking-only shop never sees Join Queue, and so on).
+  const menu = withoutRows(baseMenu, hiddenMenuRows(products))
+
+  // Neither Booking nor Queue (e.g. a shisha-only venue): nothing to book or queue for here.
+  if (!products.booking && !products.queue && !shishaOn) {
+    return { reply: NOTHING_ON_REPLY, buttons: [], nextState: null }
+  }
 
   if (!greet) {
     return {
@@ -306,18 +348,27 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   const greeting = getSmartGreeting({ timeZone, isReturning })
   // Closed: no mention of joining the queue; the note explains it instead.
   const shishaBit = shishaOn ? " You can also start a shisha session." : ""
-  const canDo = openStatus.isClosed
-    ? `I can help you book an appointment.${shishaBit}`
-    : `I can help you book an appointment or join the walk-in queue.${shishaBit}`
+  let canDo: string
+  if (products.booking && products.queue) {
+    canDo = openStatus.isClosed
+      ? `I can help you book an appointment.${shishaBit}`
+      : `I can help you book an appointment or join the walk-in queue.${shishaBit}`
+  } else if (products.booking) {
+    canDo = `I can help you book an appointment.${shishaBit}`
+  } else if (products.queue) {
+    canDo = openStatus.isClosed ? `The walk-in queue is closed right now.${shishaBit}` : `I can help you join the walk-in queue.${shishaBit}`
+  } else {
+    canDo = shishaBit.trim()
+  }
   const welcomeLine = shopName ? `Welcome to *${shopName}*. ${canDo}` : `Welcome! ${canDo}`
-  const closedLine = openStatus.isClosed ? `\n\n${openStatus.note}` : ""
+  const closedLine = openStatus.isClosed && (products.booking || products.queue) ? `\n\n${openStatus.note}` : ""
   const webLine = webLink ? `\n\nPrefer to do it online? You can also use ${webLink}` : ""
 
   return {
     reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}${closedLine}${webLine}`,
     buttons: [],
     nextState: null,
-    followUp: [openStatus.isClosed ? withoutQueueRow(menu) : menu],
+    followUp: [openStatus.isClosed ? withoutRows(menu, new Set([MENU_ROW_IDS.queue])) : menu],
   }
 }
 
@@ -363,6 +414,43 @@ export async function routeAction(
     }
     if (intent?.intent === "shisha") {
       intent = { ...intent, intent: "support" }
+    }
+  }
+
+  // ── -1b. MODULE GATE (booking / queue) ─────────────────────────────
+  // Same idea as the shisha gate above, for the two other products. The menu no
+  // longer offers a switched-off product, but old menus stay in the chat and a
+  // shop can flip a switch while a customer is mid-flow. Stale tap, typed request
+  // or in-flight state for a product that is off -> clear state, say so in one
+  // friendly line, and show a fresh menu with only what the shop runs.
+  {
+    const products = await getWhatsAppProducts(tenantId)
+    if (!products.booking || !products.queue) {
+      const tapId = message.interactiveId
+      const stateName = state?.state ?? ""
+      const typed = (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
+      const bookingBlocked =
+        !products.booking &&
+        (tapId === MENU_ROW_IDS.book ||
+          tapId === MENU_ROW_IDS.reschedule ||
+          stateName.startsWith("booking_") ||
+          stateName.startsWith("reschedule_") ||
+          (!state && intent?.intent === "booking" && !(products.queue && QUEUE_WORDS.test(typed))) ||
+          (!tapId && Boolean(typed) && RESCHEDULE_REQUEST_PATTERN.test(typed)))
+      // A typed queue request ("join the queue") arrives as the "booking" intent, so a
+      // queue-only shop must send it to the queue instead of refusing it as a booking.
+      if (!products.booking && products.queue && !state && !tapId && intent?.intent === "booking" && QUEUE_WORDS.test(typed)) {
+        return queueService.startQueueFlow(tenantId, message.from)
+      }
+      const queueBlocked = !products.queue && (tapId === MENU_ROW_IDS.queue || stateName.startsWith("queue_"))
+
+      if (bookingBlocked || queueBlocked) {
+        await stateService.clearState(tenantId, message.from)
+        const fresh = await buildEntryReply(tenantId, message, false)
+        // A queue-only shop's typed "I want a haircut" is a booking request it can't take.
+        const lead = bookingBlocked ? BOOKING_OFF_REPLY : QUEUE_OFF_REPLY
+        return fresh.followUp?.length ? { ...fresh, reply: `${lead} What would you like to do instead?` } : fresh
+      }
     }
   }
 
