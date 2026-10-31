@@ -86,7 +86,7 @@ import { Manrope } from "next/font/google"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
-import { isKioskEnabled, shouldShowPoweredBy, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+import { getEnabledProducts, isKioskEnabled, shouldShowPoweredBy, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import { KioskApp } from "@/components/kiosk/KioskApp"
 import { detailsFieldsFrom, type KioskDetailsFields } from "@/lib/kiosk/detailsFields"
 
@@ -259,7 +259,11 @@ async function resolveKioskModuleEnabled(
   // Automatic on any plan that includes the kiosk (Growth/Business);
   // only an explicit "off" from the tenant's admin disables it, and a
   // downgrade to Mahala shuts it off immediately. Fails closed on error.
-  return isKioskEnabled(supabase, tenantId)
+  if (!(await isKioskEnabled(supabase, tenantId))) return false
+  // The kiosk only exists to take bookings and/or queue joins: a shop running
+  // neither (e.g. shisha-only) has nothing to offer on it.
+  const products = await getEnabledProducts(supabase, tenantId)
+  return products.booking || products.queue
 }
 
 function resolveRegistrationType(value: string | null | undefined): KioskRegistrationType {
@@ -297,6 +301,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   // they come back on upgrade. Display name is free on every plan. Any
   // lookup error falls back to the default look.
   const brandingEntitled = await tenantHasModule(supabase, tenant.id, MODULE_KEYS.branding).catch(() => false)
+  const products = await getEnabledProducts(supabase, tenant.id)
 
   const resolvedBranding: KioskBranding = {
     displayName: branding?.display_name || tenant.name,
@@ -312,7 +317,14 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     tagline: branding?.tagline?.trim() || DEFAULT_TAGLINE,
     idleRefreshSeconds: branding?.idle_refresh_seconds ?? DEFAULT_IDLE_REFRESH_SECONDS,
     confirmationRefreshSeconds: branding?.confirmation_refresh_seconds ?? DEFAULT_CONFIRMATION_REFRESH_SECONDS,
-    registrationType: resolveRegistrationType(branding?.registration_type),
+    // What the shop configured, narrowed to the products it actually runs:
+    // Booking only -> booking card only; Queue only -> queue card only.
+    registrationType:
+      !products.booking && products.queue
+        ? "queue"
+        : products.booking && !products.queue
+          ? "booking"
+          : resolveRegistrationType(branding?.registration_type),
     choiceTitle: branding?.choice_title?.trim() || DEFAULT_CHOICE_TITLE,
     bookingCardTitle: branding?.booking_card_title?.trim() || DEFAULT_BOOKING_CARD_TITLE,
     bookingCardSubtitle: branding?.booking_card_subtitle?.trim() || DEFAULT_BOOKING_CARD_SUBTITLE,
