@@ -86,7 +86,7 @@ export interface PlanUsage {
   currentBilling: BillingCalculation
   /** Active staff right now (staff.active = true). What the staff limit and extra-staff fee are computed from. */
   staffCount: number
-  /** The plan's hard cap on active staff. null = unlimited. */
+  /** This SHOP's cap on active staff (tenants.staff_limit, not the plan's). null = unlimited. */
   staffLimit: number | null
 }
 
@@ -210,9 +210,87 @@ export const MODULE_KEYS = {
   removePoweredBy: "remove_powered_by",
   bookingTicket: "booking_ticket",
   shisha: "shisha",
+  shifts: "shifts",
 } as const
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
+
+/** The three products a shop can run. Each is an independent on/off switch in
+ *  tenant_modules, set by the platform admin. The plan is NOT consulted: a plan
+ *  only decides billing tier and add-on features, never which products exist. */
+export const PRODUCT_KEYS = ["booking", "queue", "shisha"] as const
+export type ProductKey = (typeof PRODUCT_KEYS)[number]
+
+/** Stand-alone switchable modules that are not products: add-ons any shop can
+ *  have regardless of which products it runs (a nightclub can have Shifts
+ *  without Booking). Same rule as products: tenant_modules only. */
+export const ADDON_KEYS = ["shifts", "payroll"] as const
+export type AddonKey = (typeof ADDON_KEYS)[number]
+
+/** Is this product / add-on switched on for the shop? The ONE check to use for
+ *  Booking, Queue, Shisha, Shifts and Payroll. No tenant_modules row means OFF
+ *  (opt-in). Suspended shops are off. Fails closed on any error. */
+export async function isProductEnabled(
+  supabase: SupabaseClient,
+  tenantId: string,
+  key: ProductKey | AddonKey,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("tenant_modules")
+      .select("enabled, modules!inner(key), tenants!inner(status)")
+      .eq("tenant_id", tenantId)
+      .eq("modules.key", key)
+      .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    if (!data) return false
+    return data.enabled === true && (data as any).tenants?.status === "active"
+  } catch (err) {
+    console.error("[plans] isProductEnabled failed, treating as off", { tenantId, key, error: err })
+    return false
+  }
+}
+
+/** Thrown by assertProductEnabled as `PRODUCT_NOT_ENABLED:<key>`, so callers can
+ *  catch it by prefix the same way they catch PLAN_VISIT_LIMIT_REACHED. */
+export const PRODUCT_NOT_ENABLED = "PRODUCT_NOT_ENABLED"
+
+export function isProductNotEnabledError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith(`${PRODUCT_NOT_ENABLED}:`)
+}
+
+/** Hard gate for server code (service layer, server actions). Fails CLOSED. */
+export async function assertProductEnabled(
+  supabase: SupabaseClient,
+  tenantId: string,
+  key: ProductKey | AddonKey,
+): Promise<void> {
+  if (!(await isProductEnabled(supabase, tenantId, key))) throw new Error(`${PRODUCT_NOT_ENABLED}:${key}`)
+}
+
+/** All five at once (one query), for page loads that need several. */
+export async function getEnabledProducts(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<Record<ProductKey | AddonKey, boolean>> {
+  const result = { booking: false, queue: false, shisha: false, shifts: false, payroll: false }
+  try {
+    const { data, error } = await supabase
+      .from("tenant_modules")
+      .select("enabled, modules!inner(key), tenants!inner(status)")
+      .eq("tenant_id", tenantId)
+      .in("modules.key", [...PRODUCT_KEYS, ...ADDON_KEYS])
+    if (error) throw new Error(error.message)
+    for (const row of (data ?? []) as any[]) {
+      const key = row.modules?.key as keyof typeof result | undefined
+      if (key && key in result) result[key] = row.enabled === true && row.tenants?.status === "active"
+    }
+  } catch (err) {
+    console.error("[plans] getEnabledProducts failed, treating all as off", { tenantId, error: err })
+  }
+  return result
+}
 
 /** The ONLY plan keys a tenant may be moved onto through the normal Booking & Queue
  *  upgrade flow (request AND approval). Deliberately a fixed list, not "any active
@@ -422,6 +500,7 @@ export async function getTenantPlanUsage(supabase: SupabaseClient, tenantId: str
   }
 
   const staffCount = await countActiveStaff(supabase, tenantId)
+  const staffLimit = await getTenantStaffLimit(supabase, tenantId)
   const currentBilling = calculateBilling(plan, visitsThisMonth, staffCount)
 
   // On per-staff plans the allowance grows with staff (visitsPerStaff x billed
@@ -431,7 +510,7 @@ export async function getTenantPlanUsage(supabase: SupabaseClient, tenantId: str
   const visitsRemaining = allowance === null ? null : Math.max(allowance - visitsUsed, 0)
   const atLimit = plan.pricePerVisitCents === null && plan.visitLimit !== null && visitsUsed >= plan.visitLimit
 
-  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, currentBilling, staffCount, staffLimit: plan.staffLimit }
+  return { plan, visitsUsed, visitsThisMonth, visitsRemaining, atLimit, currentBilling, staffCount, staffLimit }
 }
 
 /**
@@ -473,14 +552,23 @@ async function countActiveStaff(supabase: SupabaseClient, tenantId: string): Pro
  * Not race-proof: two simultaneous adds can overshoot the limit by one.
  */
 export async function staffLimitError(supabase: SupabaseClient, tenantId: string): Promise<string | null> {
-  const plan = await getTenantPlan(supabase, tenantId)
-  if (plan.staffLimit === null) return null
+  const limit = await getTenantStaffLimit(supabase, tenantId)
+  if (limit === null) return null
 
   const active = await countActiveStaff(supabase, tenantId)
-  if (active < plan.staffLimit) return null
+  if (active < limit) return null
 
-  const noun = plan.staffLimit === 1 ? "staff member" : "staff members"
-  return `Your ${plan.name} plan allows up to ${plan.staffLimit} active ${noun}. Upgrade your plan in Billing to add more.`
+  const noun = limit === 1 ? "staff member" : "staff members"
+  return `Your shop allows up to ${limit} active ${noun}. Contact support to raise the limit.`
+}
+
+/** The shop's own staff cap (tenants.staff_limit, set by the platform admin).
+ *  null = no cap. Deliberately NOT the plan's staff_limit: a plan is a
+ *  Booking/Queue billing tier, and a shisha-only shop shouldn't inherit it. */
+export async function getTenantStaffLimit(supabase: SupabaseClient, tenantId: string): Promise<number | null> {
+  const { data, error } = await supabase.from("tenants").select("staff_limit").eq("id", tenantId).single()
+  if (error) throw new Error(`Failed to load staff limit: ${error.message}`)
+  return (data.staff_limit as number | null) ?? null
 }
 
 // ============================================================================
