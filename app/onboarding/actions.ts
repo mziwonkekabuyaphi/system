@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSessionClient } from "@/lib/supabase/session-server";
 import { getSupabaseServerClient } from "@/lib/supabase/admin";
+import { modulesForChoice } from "@/lib/services/new-shop-modules";
 
 const TENANT_OWNER_ROLE_KEY = "tenant_owner";
 
@@ -74,7 +75,9 @@ export async function createTenantAction(formData: FormData) {
 
   const { data: tenant, error: tenantError } = await admin
     .from("tenants")
-    .insert({ name: businessName, slug })
+    // "pending" until a platform admin approves the shop on /platform/tenants. Nothing is switched
+    // on yet: the owner's choice is only a request, and the admin picks the real modules.
+    .insert({ name: businessName, slug, status: "pending", requested_modules: modulesForChoice(formData.get("need")) })
     .select("id")
     .single();
 
@@ -99,7 +102,7 @@ export async function createTenantAction(formData: FormData) {
   }
 
   revalidatePath("/admin");
-  redirect("/onboarding/whatsapp");
+  redirect("/onboarding/pending");
 }
 
 export async function joinTenantAction(formData: FormData) {

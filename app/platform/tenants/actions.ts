@@ -10,6 +10,8 @@ import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
+import { cleanModuleKeys, type NewShopModule } from "@/lib/services/new-shop-modules"
+import { enableModulesForNewShop } from "@/lib/services/tenant-modules"
 
 type R<T = object> = ({ success: true } & T) | { success: false; error: string }
 
@@ -45,7 +47,13 @@ async function newOwnerInvite(
 }
 
 /** Creates a shop and an owner invite code. The owner signs up, then redeems the code. */
-export async function createShop(input: { name: string; slug: string; ownerEmail: string }): Promise<R<{ slug: string; inviteCode: string }>> {
+export async function createShop(input: {
+  name: string
+  slug: string
+  ownerEmail: string
+  /** Modules to switch on from day one (booking, queue, shisha, shifts, payroll). */
+  modules: NewShopModule[]
+}): Promise<R<{ slug: string; inviteCode: string }>> {
   try {
     const { actor, supabase } = await ctx()
     const name = input.name.trim()
@@ -64,6 +72,14 @@ export async function createShop(input: { name: string; slug: string; ownerEmail
     const { data: tenant, error: tenantError } = await supabase.from("tenants").insert({ name, slug }).select("id").single()
     if (tenantError || !tenant) return { success: false, error: `Failed to create shop: ${tenantError?.message}` }
 
+    // No tenant_modules row means OFF, so write the chosen modules now (the form defaults to Booking + Queue).
+    try {
+      await enableModulesForNewShop(supabase, tenant.id, cleanModuleKeys(input.modules))
+    } catch (e) {
+      await supabase.from("tenants").delete().eq("id", tenant.id) // don't leave a shop with nothing on
+      return fail(e)
+    }
+
     let inviteCode: string
     try {
       inviteCode = await newOwnerInvite(supabase, tenant.id, ownerEmail || null, actor)
@@ -75,6 +91,57 @@ export async function createShop(input: { name: string; slug: string; ownerEmail
     revalidatePath("/platform")
     revalidatePath("/platform/tenants")
     return { success: true, slug, inviteCode }
+  } catch (e) { return fail(e) }
+}
+
+/** Approves a shop that signed itself up: switches on the chosen modules, then makes it active. */
+export async function approveShop(input: { tenantId: string; modules: NewShopModule[] }): Promise<R> {
+  try {
+    const { supabase } = await ctx()
+
+    const { data: tenant, error } = await supabase.from("tenants").select("id, status").eq("id", input.tenantId).maybeSingle()
+    if (error) return fail(error)
+    if (!tenant) return { success: false, error: "Shop not found." }
+    if (tenant.status !== "pending") return { success: false, error: "That shop isn't waiting for approval any more." }
+
+    // Modules first, then activate: a pending shop has nothing live (isProductEnabled needs status 'active'),
+    // so a failure here leaves it safely pending and the admin can just try again.
+    await enableModulesForNewShop(supabase, tenant.id, cleanModuleKeys(input.modules))
+
+    const { data: claimed, error: claimError } = await supabase
+      .from("tenants")
+      .update({ status: "active" })
+      .eq("id", tenant.id)
+      .eq("status", "pending") // a second admin clicking at the same time can't approve it twice
+      .select("id")
+      .maybeSingle()
+    if (claimError) return fail(claimError)
+    if (!claimed) return { success: false, error: "Someone else already handled that shop." }
+
+    revalidatePath("/platform")
+    revalidatePath("/platform/tenants")
+    revalidatePath("/platform/modules")
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+/** Declines a pending shop. It is kept (status 'inactive') so the owner sees a clear message, not a broken login. */
+export async function declineShop(input: { tenantId: string }): Promise<R> {
+  try {
+    const { supabase } = await ctx()
+    const { data, error } = await supabase
+      .from("tenants")
+      .update({ status: "inactive" })
+      .eq("id", input.tenantId)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle()
+    if (error) return fail(error)
+    if (!data) return { success: false, error: "That shop isn't waiting for approval any more." }
+
+    revalidatePath("/platform")
+    revalidatePath("/platform/tenants")
+    return { success: true }
   } catch (e) { return fail(e) }
 }
 

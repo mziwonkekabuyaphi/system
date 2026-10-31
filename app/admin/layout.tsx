@@ -1,6 +1,8 @@
 // app/admin/layout.tsx
 import type { ReactNode } from "react"
 import { Fraunces, Inter } from "next/font/google"
+import { redirect } from "next/navigation"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
 /**
@@ -32,7 +34,15 @@ const inter = Inter({
 // the repo root, add "/admin/:path*" to its matcher too, so a signed-out
 // request never even reaches this layout — see the auth module's README.
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  await requireTenantMember()
+  const { tenantId } = await requireTenantMember()
+
+  // A shop that signed itself up waits for a platform admin to approve it (status 'pending'),
+  // and a declined one is 'inactive'. Neither gets the admin; both see the status page instead.
+  const supabase = getSupabaseServerClient()
+  if (supabase) {
+    const { data: tenant } = await supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle()
+    if (tenant && (tenant.status === "pending" || tenant.status === "inactive")) redirect("/onboarding/pending")
+  }
 
   return (
     <div
