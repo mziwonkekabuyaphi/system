@@ -6,26 +6,31 @@ import { redirect } from "next/navigation"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
-import { setTenantModuleAction } from "./actions"
+import { setStaffLimitAction, setTenantModuleAction } from "./actions"
 
 export const dynamic = "force-dynamic"
 
 const card = "rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"
 
 /** What "no tenant_modules row" means, mirroring lib/services/plans.ts:
+ *   booking, queue, shisha, shifts, payroll
+ *                  isProductEnabled      not plan-gated, default OFF (opt-in)
  *   kiosk          isKioskEnabled        plan must include it, default ON
  *   display        isTenantSwitchedOn    not plan-gated, default ON
- *   staff_clock_in isTenantSwitchedOn    not plan-gated, default ON
- *   shisha         opt-in, no plan       default OFF (also billed per use) */
-const SWITCHABLE: Array<{ key: string; label: string; defaultOn: boolean; planGated: boolean }> = [
-  { key: "kiosk", label: "Kiosk", defaultOn: true, planGated: true },
-  { key: "display", label: "Public display", defaultOn: true, planGated: false },
-  { key: "staff_clock_in", label: "Staff clock-in", defaultOn: true, planGated: false },
-  { key: "shisha", label: "Shisha", defaultOn: false, planGated: false },
+ *   staff_clock_in isTenantSwitchedOn    not plan-gated, default ON */
+const SWITCHABLE: Array<{ key: string; label: string; defaultOn: boolean; planGated: boolean; group: "product" | "addon" | "feature" }> = [
+  { key: "booking", label: "Booking", defaultOn: false, planGated: false, group: "product" },
+  { key: "queue", label: "Queue", defaultOn: false, planGated: false, group: "product" },
+  { key: "shisha", label: "Shisha", defaultOn: false, planGated: false, group: "product" },
+  { key: "shifts", label: "Shifts", defaultOn: false, planGated: false, group: "addon" },
+  { key: "payroll", label: "Payroll", defaultOn: false, planGated: false, group: "addon" },
+  { key: "kiosk", label: "Kiosk", defaultOn: true, planGated: true, group: "feature" },
+  { key: "display", label: "Public display", defaultOn: true, planGated: false, group: "feature" },
+  { key: "staff_clock_in", label: "Staff clock-in", defaultOn: true, planGated: false, group: "feature" },
 ]
 const SWITCHABLE_KEYS = new Set(SWITCHABLE.map((m) => m.key))
 
-type Tenant = { id: string; name: string; slug: string; status: string; plan: string }
+type Tenant = { id: string; name: string; slug: string; status: string; plan: string; staff_limit: number | null }
 type Mod = { id: string; key: string; name: string }
 type State = "on" | "off" | "no_plan" | "missing"
 
@@ -35,14 +40,19 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
   const supabase = getSupabaseServerClient()
   if (!supabase) redirect("/login")
 
-  const [tenantsRes, modulesRes, planModulesRes, switchesRes] = await Promise.all([
-    supabase.from("tenants").select("id, name, slug, status, plan").order("name", { ascending: true }).limit(500),
+  const [tenantsRes, modulesRes, planModulesRes, switchesRes, staffRes] = await Promise.all([
+    supabase.from("tenants").select("id, name, slug, status, plan, staff_limit").order("name", { ascending: true }).limit(500),
     supabase.from("modules").select("id, key, name").order("key", { ascending: true }),
     supabase.from("plan_modules").select("plan_key, module_id"),
     supabase.from("tenant_modules").select("tenant_id, module_id, enabled"),
+    supabase.from("staff").select("tenant_id").eq("active", true).limit(10000),
   ])
 
-  const loadError = tenantsRes.error ?? modulesRes.error ?? planModulesRes.error ?? switchesRes.error
+  const loadError = tenantsRes.error ?? modulesRes.error ?? planModulesRes.error ?? switchesRes.error ?? staffRes.error
+  const activeStaff = new Map<string, number>()
+  for (const r of (staffRes.data ?? []) as Array<{ tenant_id: string }>) {
+    activeStaff.set(r.tenant_id, (activeStaff.get(r.tenant_id) ?? 0) + 1)
+  }
   const tenants = (tenantsRes.data ?? []) as Tenant[]
   const modules = (modulesRes.data ?? []) as Mod[]
   const moduleByKey = new Map(modules.map((m) => [m.key, m]))
@@ -70,7 +80,8 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
       <div>
         <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Modules</h1>
         <p className="mt-1 text-sm text-stone-500">
-          Switch modules on or off per shop. Modules not listed in the table below are set by the shop&apos;s plan.
+          Choose which products each shop runs (Booking, Queue, Shisha), its add-ons, and how many staff it can have. The plan
+          only sets the billing tier and the plan-only extras listed at the bottom.
         </p>
       </div>
 
@@ -82,7 +93,7 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
       )}
 
       <section className={`${card} overflow-x-auto`}>
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[1100px] text-left text-sm">
           <thead>
             <tr className="text-xs uppercase text-stone-400">
               <th className="py-2 pr-4 font-medium">Shop</th>
@@ -90,12 +101,13 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
               {SWITCHABLE.map((m) => (
                 <th key={m.key} className="py-2 pr-4 font-medium">{m.label}</th>
               ))}
+              <th className="py-2 pr-4 font-medium">Staff cap</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
             {tenants.length === 0 && (
               <tr>
-                <td colSpan={2 + SWITCHABLE.length} className="py-3 text-stone-500">No shops yet.</td>
+                <td colSpan={3 + SWITCHABLE.length} className="py-3 text-stone-500">No shops yet.</td>
               </tr>
             )}
             {tenants.map((t) => (
@@ -132,6 +144,24 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
                     </td>
                   )
                 })}
+                <td className="py-3 pr-4">
+                  <form action={setStaffLimitAction} className="flex items-center gap-2">
+                    <input type="hidden" name="tenantId" value={t.id} />
+                    <input
+                      type="number"
+                      name="staffLimit"
+                      min={1}
+                      defaultValue={t.staff_limit ?? ""}
+                      placeholder="No cap"
+                      aria-label={`Staff cap for ${t.name}`}
+                      className="w-20 rounded-lg border border-stone-300 px-2 py-1 text-xs"
+                    />
+                    <button type="submit" className="rounded-full border border-stone-300 px-3 py-1 text-xs text-stone-700 hover:bg-stone-100">
+                      Save
+                    </button>
+                  </form>
+                  <span className="mt-1 block text-xs text-stone-500">{activeStaff.get(t.id) ?? 0} active now</span>
+                </td>
               </tr>
             ))}
           </tbody>
