@@ -10,8 +10,15 @@
  *   Queue spot      → queue_entries + queue.ts (getQueueSimulation /
  *                     formatQueueTicketNumber) — the SAME numbers staff and
  *                     the kiosk see, never a second calculation
+ *   Shisha session → shisha_sessions       (live session, via shisha.ts)
  *   Visit history   → billable_visits      (one row per real completed visit)
  *   Shop name       → tenant_branding.display_name, falling back to tenants.name
+ *
+ * MODULE SWITCHES: a section only exists for a product the shop has switched
+ * ON (tenant_modules: Booking, Queue, Shisha). A switched-off product is not
+ * read and not shown, and neither are its follow-up menu rows. Visit history
+ * counts Booking/Queue visits, so it needs at least one of those two on.
+ * Fails closed: if the switches can't be read, nothing optional is shown.
  *
  * STATELESS: nextState is always null. Taps on the follow-up menu are
  * routed by row id in action-router.ts, exactly like the greeting menu.
@@ -35,6 +42,9 @@ import type { ActionResult } from "@/lib/types/action"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
+import { getEnabledProducts } from "@/lib/services/plans"
+import { getShishaProfileSession } from "@/lib/services/shisha"
+import type { ActiveSessionSummary } from "@/lib/services/messages/shisha"
 import { getQueueSimulation, formatQueueTicketNumber } from "@/lib/services/queue"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
@@ -67,14 +77,25 @@ interface VisitSummary {
   lastVisitAt: string | null
 }
 
+/** Which products this shop runs (tenant_modules). Decides which sections exist. */
+interface ShownProducts {
+  booking: boolean
+  queue: boolean
+  shisha: boolean
+}
+
 interface ProfileData {
   shopName: string | null
   timeZone: string
   firstName: string | null
+  show: ShownProducts
   booking: Section<UpcomingBooking | null>
   queue: Section<ActiveQueueEntry | null>
+  shisha: Section<ActiveSessionSummary | null>
   visits: Section<VisitSummary>
 }
+
+const NOTHING_SHOWN: ShownProducts = { booking: false, queue: false, shisha: false }
 
 // ============================================================================
 // HELPERS
@@ -263,14 +284,17 @@ function settled<T>(result: PromiseSettledResult<T>): Section<T> {
 async function buildProfileData(tenantId: string, phone: string): Promise<ProfileData> {
   const supabase = getClientOrNull()
 
-  // No DB connection: still return a renderable (all-unavailable) profile.
+  // No DB connection: nothing can be read, and we can't tell which products the
+  // shop runs, so show no sections (fail closed) rather than guess.
   if (!supabase) {
     return {
       shopName: null,
       timeZone: "Africa/Johannesburg",
       firstName: null,
+      show: NOTHING_SHOWN,
       booking: unavailable(),
       queue: unavailable(),
+      shisha: unavailable(),
       visits: unavailable(),
     }
   }
@@ -282,13 +306,16 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
     console.error("[profile] getCustomer failed", { tenantId, error })
   }
 
-  const [shopNameResult, timeZoneResult] = await Promise.allSettled([
-    loadShopName(supabase, tenantId),
-    getTenantTimezone(supabase, tenantId),
+  const [shopNameResult, timeZoneResult, products] = await Promise.all([
+    Promise.allSettled([loadShopName(supabase, tenantId)]).then((r) => r[0]),
+    Promise.allSettled([getTenantTimezone(supabase, tenantId)]).then((r) => r[0]),
+    getEnabledProducts(supabase, tenantId),
   ])
 
   const shopName = shopNameResult.status === "fulfilled" ? shopNameResult.value : null
   const timeZone = timeZoneResult.status === "fulfilled" ? timeZoneResult.value : "Africa/Johannesburg"
+  const show: ShownProducts = { booking: products.booking, queue: products.queue, shisha: products.shisha }
+  const showVisits = show.booking || show.queue
 
   // Brand-new number with no tenant_customers row: nothing to look up, and
   // that is a real answer ("nothing yet"), not a failure.
@@ -297,21 +324,28 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
       shopName,
       timeZone,
       firstName: null,
+      show,
       booking: { status: "ok", value: null },
       queue: { status: "ok", value: null },
+      shisha: { status: "ok", value: null },
       visits: { status: "ok", value: { totalVisits: 0, lastVisitAt: null } },
     }
   }
 
-  const [bookingResult, queueResult, visitsResult] = await Promise.allSettled([
-    readUpcomingBooking(supabase, tenantId, customer.id),
-    readActiveQueueEntry(supabase, tenantId, customer.id),
-    readVisitSummary(supabase, tenantId, customer.id),
+  const customerId = customer.id
+  // A switched-off product is never read: its tables aren't touched at all.
+  const skipped = <T,>(value: T): Promise<T> => Promise.resolve(value)
+  const [bookingResult, queueResult, shishaResult, visitsResult] = await Promise.allSettled([
+    show.booking ? readUpcomingBooking(supabase, tenantId, customerId) : skipped(null),
+    show.queue ? readActiveQueueEntry(supabase, tenantId, customerId) : skipped(null),
+    show.shisha ? getShishaProfileSession(tenantId, phone) : skipped(null),
+    showVisits ? readVisitSummary(supabase, tenantId, customerId) : skipped({ totalVisits: 0, lastVisitAt: null }),
   ])
 
   for (const [label, result] of [
     ["booking", bookingResult],
     ["queue", queueResult],
+    ["shisha", shishaResult],
     ["visits", visitsResult],
   ] as const) {
     if (result.status === "rejected") {
@@ -323,8 +357,10 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
     shopName,
     timeZone,
     firstName: firstNameOf(customer),
+    show,
     booking: settled(bookingResult),
     queue: settled(queueResult),
+    shisha: settled(shishaResult),
     visits: settled(visitsResult),
   }
 }
@@ -386,6 +422,30 @@ function queueLines(section: ProfileData["queue"]): string[] {
   return lines
 }
 
+function formatRemaining(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.round(totalSeconds))
+  return `${Math.floor(clamped / 60)}m ${(clamped % 60).toString().padStart(2, "0")}s`
+}
+
+const SHISHA_STATUS_LABEL: Record<ActiveSessionSummary["status"], string> = {
+  active: "active",
+  refill: "refilling",
+  paused: "paused",
+  expired: "expired",
+}
+
+function shishaLines(section: ProfileData["shisha"]): string[] {
+  if (section.status === "unavailable") return ["💨 *Shisha:* temporarily unavailable"]
+  const session = section.value
+  if (!session) return ["💨 *Shisha:* no active session"]
+
+  const lines = [`💨 *Shisha:* session ${SHISHA_STATUS_LABEL[session.status]}`]
+  lines.push(`   ${session.flavourName}${session.locationName ? ` · ${session.locationName}` : ""}`)
+  lines.push(`   Time left: ${formatRemaining(session.remainingTimeSeconds)}`)
+  if (session.refillCount > 0) lines.push(`   Refills: ${session.refillCount}`)
+  return lines
+}
+
 function visitLines(section: ProfileData["visits"], timeZone: string): string[] {
   if (section.status === "unavailable") return ["✂️ *Visits:* temporarily unavailable"]
   const { totalVisits, lastVisitAt } = section.value
@@ -398,18 +458,18 @@ function visitLines(section: ProfileData["visits"], timeZone: string): string[] 
 
 function buildProfileMessage(data: ProfileData): string {
   const title = data.shopName ? `👤 *${data.shopName} Profile*` : "👤 *Your Profile*"
-  const hello = data.firstName ? `Hi ${data.firstName}! Here's where you stand:` : "Here's where you stand:"
 
-  return [
-    title,
-    hello,
-    "",
-    ...bookingLines(data.booking, data.timeZone),
-    "",
-    ...queueLines(data.queue),
-    "",
-    ...visitLines(data.visits, data.timeZone),
-  ].join("\n")
+  // Only the products the shop runs get a section; blocks are separated by a blank line.
+  const blocks: string[][] = []
+  if (data.show.booking) blocks.push(bookingLines(data.booking, data.timeZone))
+  if (data.show.queue) blocks.push(queueLines(data.queue))
+  if (data.show.shisha) blocks.push(shishaLines(data.shisha))
+  if (data.show.booking || data.show.queue) blocks.push(visitLines(data.visits, data.timeZone))
+
+  if (blocks.length === 0) return [title, "", "There's nothing to show on your profile here yet."].join("\n")
+
+  const hello = data.firstName ? `Hi ${data.firstName}! Here's where you stand:` : "Here's where you stand:"
+  return [title, hello, "", ...blocks.flatMap((lines, i) => (i === 0 ? lines : ["", ...lines]))].join("\n")
 }
 
 // ============================================================================
@@ -417,25 +477,31 @@ function buildProfileMessage(data: ProfileData): string {
 // ============================================================================
 
 /**
- * The same menu as the greeting, minus the rows this screen already covers:
- * the profile shows the customer's booking and queue spot (what Check Status
- * would show) and they are already looking at My Profile, so those two rows
- * would only repeat it. Filtered by row id, so the greeting menu is untouched.
+ * The same menu as the greeting, minus:
+ *  - the rows this screen already covers (Check Status, My Profile: the profile
+ *    shows the booking and queue spot, and they're already looking at it), and
+ *  - the rows for products the shop has switched OFF (Book Now / Reschedule
+ *    without Booking, Join Queue without Queue, Cancel Now with neither).
+ * The Shisha Lounge row appears when Shisha is on. Filtered by row id, so the
+ * greeting menu is untouched. Returns null when no row is left to offer.
+ * (Mirrors hiddenMenuRows() in action-router.ts, which can't be imported here
+ * without a circular import.)
  */
-function buildProfileFollowUp(bodyText: string) {
-  const menu = buildServicesListMessage(bodyText)
-  const hidden: string[] = [MENU_ROW_IDS.status, MENU_ROW_IDS.profile]
-  if (!menu.list) return menu
-  return {
-    ...menu,
-    list: {
-      ...menu.list,
-      sections: menu.list.sections.map((section) => ({
-        ...section,
-        rows: section.rows.filter((row) => !hidden.includes(row.id)),
-      })),
-    },
+function buildProfileFollowUp(bodyText: string, show: ShownProducts) {
+  const menu = buildServicesListMessage(bodyText, { shisha: show.shisha })
+  const hidden = new Set<string>([MENU_ROW_IDS.status, MENU_ROW_IDS.profile])
+  if (!show.booking) {
+    hidden.add(MENU_ROW_IDS.book)
+    hidden.add(MENU_ROW_IDS.reschedule)
   }
+  if (!show.queue) hidden.add(MENU_ROW_IDS.queue)
+  if (!show.booking && !show.queue) hidden.add(MENU_ROW_IDS.cancel)
+  if (!menu.list) return menu
+
+  const sections = menu.list.sections
+    .map((section) => ({ ...section, rows: section.rows.filter((row) => !hidden.has(row.id)) }))
+    .filter((section) => section.rows.length > 0)
+  return sections.length > 0 ? { ...menu, list: { ...menu.list, sections } } : null
 }
 
 // ============================================================================
@@ -449,15 +515,15 @@ async function handleProfile(
 ): Promise<ActionResult> {
   const data = await buildProfileData(tenantId, message.from)
   const reply = buildProfileMessage(data) + (await getTenantWebLinkNote(tenantId).catch(() => ""))
+  const followUp = buildProfileFollowUp("What would you like to do next? 👇", data.show)
 
   return {
     reply,
     buttons: [],
     nextState: null,
-    // The greeting menu without Check Status and My Profile (this screen
-    // already shows both): Book Now / Join Queue / Cancel Now. Row taps are
-    // routed by id upstream.
-    followUp: [buildProfileFollowUp("What would you like to do next? 👇")],
+    // The greeting menu without Check Status and My Profile, and without any
+    // product the shop has switched off. Row taps are routed by id upstream.
+    followUp: followUp ? [followUp] : [],
   }
 }
 

@@ -142,6 +142,28 @@ async function getActiveSession(
   }
 }
 
+/** The customer's live session as a plain summary, for the WhatsApp profile screen.
+ *  null = no live session. Throws on a real error so the profile can show
+ *  "temporarily unavailable" for this section instead of a wrong "none". */
+export async function getShishaProfileSession(
+  tenantId: string,
+  rawPhone: string,
+): Promise<messages.ActiveSessionSummary | null> {
+  const db = getSupabaseServerClient()
+  if (!db) throw new Error("Supabase client unavailable")
+  const who = await resolveCustomerRef(db, tenantId, rawPhone)
+  const session = await getActiveSession(db, tenantId, who)
+  if (!session) return null
+  return {
+    locationName: session.locationName,
+    flavourName: session.flavourName ?? "Unknown",
+    deviceCode: session.deviceCode,
+    remainingTimeSeconds: session.remainingTimeSeconds,
+    refillCount: session.refillCount,
+    status: session.status as messages.ActiveSessionSummary["status"],
+  }
+}
+
 /** Lightweight yes/no check (throws on a real error) for e.g. a future profile/overview line. */
 export async function checkActiveShishaSession(tenantId: string, rawPhone: string): Promise<boolean> {
   const db = getSupabaseServerClient()
