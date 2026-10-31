@@ -11,8 +11,10 @@ import type {
   AdminKioskSettings,
   AdminPlan,
   AdminQueueSettings,
+  AdminService,
   AdminTenantSettings,
 } from "./types"
+import { ServicesManager } from "./ServicesManager"
 import { PrivateLabelPanel } from "./settings/BrandingPanels"
 import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
@@ -20,7 +22,7 @@ import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
 import { SettingsPageHeader } from "./settings/ui"
 
-type SubTab = "general" | "kiosk" | "display" | "private-label"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label"
 
 // Settings are grouped by what the owner is thinking about, not by which
 // part of the system they happen to touch. Labels avoid clashing with the
@@ -60,6 +62,13 @@ const SETTINGS_NAV: Array<{
     group: "Customer Journey",
     items: [
       {
+        id: "services",
+        label: "Services",
+        title: "Services",
+        description: "What customers can book or queue for: names, prices and durations.",
+        needs: ["booking", "queue"],
+      },
+      {
         id: "kiosk",
         label: "Kiosk",
         title: "Self-service kiosk",
@@ -71,7 +80,7 @@ const SETTINGS_NAV: Array<{
         label: "Public display",
         title: "Public display",
         description: "The screen in your waiting area showing the queue, bookings and menu.",
-        needs: ["queue"],
+        needs: ["booking", "queue"], // a Booking-only shop gets a display too (bookings + menu)
       },
     ],
   },
@@ -95,6 +104,8 @@ export function SettingsManager({
   onQueueSettingsChange,
   bookingEnabled = true,
   queueEnabled = true,
+  initialServices = [],
+  servicesManage = true,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -128,6 +139,10 @@ export function SettingsManager({
    *  product that is off are hidden; a group left with no panels is hidden too. */
   bookingEnabled?: boolean
   queueEnabled?: boolean
+  /** Services list (loaded in page.tsx, already [] for a caller without services.manage). */
+  initialServices?: AdminService[]
+  /** Whether the caller has services.manage. The Services page is hidden without it. */
+  servicesManage?: boolean
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
@@ -139,7 +154,10 @@ export function SettingsManager({
   const enabled = { booking: bookingEnabled, queue: queueEnabled }
   const settingsNav = SETTINGS_NAV.map((g) => ({
     ...g,
-    items: g.items.filter((i) => !i.needs || i.needs.some((k) => enabled[k])),
+    items: g.items
+      .filter((i) => !i.needs || i.needs.some((k) => enabled[k]))
+      // Services also needs its own permission (services.manage), like it did in the sidebar.
+      .filter((i) => i.id !== "services" || servicesManage),
   })).filter((g) => g.items.length > 0)
   const settingsPages = settingsNav.flatMap((g) => g.items)
 
@@ -208,6 +226,7 @@ export function SettingsManager({
           <OpeningHoursPanel initial={initialBusinessHours} />
         </div>
       )}
+      {activePage.id === "services" && <ServicesManager initialServices={initialServices} />}
       {activePage.id === "kiosk" && (
         <KioskPanel
           initialEnabled={initialKioskEnabled}
@@ -226,6 +245,7 @@ export function SettingsManager({
           tenantSlug={tenantSlug}
           initial={initialDisplaySettings}
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
+          queueEnabled={queueEnabled}
         />
       )}
       {activePage.id === "private-label" && (
