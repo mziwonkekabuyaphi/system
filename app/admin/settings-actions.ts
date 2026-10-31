@@ -926,8 +926,22 @@ export async function updateBookingSettings(input: {
   bookingReminderLeadMinutes?: number
   /** true = WhatsApp customers may ask for a named staff member (booking_settings.allow_customer_staff_choice). */
   allowCustomerStaffChoice?: boolean
+  /** Prefix for booking ticket numbers (B -> B0001). 1-4 characters; omitted = unchanged. */
+  bookingNumberPrefix?: string
 }): Promise<ActionResult> {
   try {
+    const bookingNumberPrefix = input.bookingNumberPrefix?.trim().toUpperCase()
+    if (
+      bookingNumberPrefix !== undefined &&
+      (bookingNumberPrefix.length < MIN_TICKET_NUMBER_PREFIX_LENGTH ||
+        bookingNumberPrefix.length > MAX_TICKET_NUMBER_PREFIX_LENGTH)
+    ) {
+      return {
+        success: false,
+        error: `Booking number prefix must be ${MIN_TICKET_NUMBER_PREFIX_LENGTH}-${MAX_TICKET_NUMBER_PREFIX_LENGTH} characters.`,
+      }
+    }
+
     if (!isValidServicesPerVisit(input.maxServicesPerBooking)) {
       return {
         success: false,
@@ -1018,6 +1032,7 @@ export async function updateBookingSettings(input: {
         ...(input.bookingReminderLeadMinutes !== undefined
           ? { booking_reminder_lead_minutes: input.bookingReminderLeadMinutes }
           : {}),
+        ...(bookingNumberPrefix !== undefined ? { booking_number_prefix: bookingNumberPrefix } : {}),
         ...(input.allowCustomerStaffChoice !== undefined
           ? { allow_customer_staff_choice: input.allowCustomerStaffChoice === true }
           : {}),

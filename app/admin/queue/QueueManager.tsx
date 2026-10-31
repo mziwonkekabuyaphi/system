@@ -108,8 +108,8 @@ export function QueueManager({
   // can never disagree with the kiosk slip). Entries promoted from a booking
   // have no ticket number (see queue.ts "KNOWN GAP"), so they show the
   // booking's reference instead. "—" only when neither exists.
-  const ticket = (e: Pick<AdminQueueEntry, "ticketLabel" | "bookingReference">) =>
-    e.ticketLabel ?? e.bookingReference ?? "—"
+  const ticket = (e: Pick<AdminQueueEntry, "ticketLabel" | "bookingTicketLabel" | "bookingReference">) =>
+    e.ticketLabel ?? e.bookingTicketLabel ?? e.bookingReference ?? "—"
 
   const doRefresh = useCallback(async () => {
     if (refreshingRef.current || busyRef.current) return

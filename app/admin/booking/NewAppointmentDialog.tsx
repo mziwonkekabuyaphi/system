@@ -31,7 +31,7 @@ export function NewAppointmentForm({
   onCreated,
 }: {
   onClose: () => void
-  onCreated: (result: { bookingReference: string; startTime: string; dateISO: string }) => void
+  onCreated: (result: { bookingReference: string; ticketLabel: string | null; startTime: string; dateISO: string }) => void
 }) {
   const [services, setServices] = useState<AdminBookableService[] | null>(null)
   const [dates, setDates] = useState<Array<{ date: string; label: string }>>([])
@@ -94,7 +94,12 @@ export function NewAppointmentForm({
     setError(null)
     try {
       const result = await createAdminBooking({ serviceId, dateISO: date, slotStart, phone, name })
-      if (result.ok) onCreated({ bookingReference: result.bookingReference, startTime: result.startTime, dateISO: date })
+      if (result.ok) onCreated({
+          bookingReference: result.bookingReference,
+          ticketLabel: result.ticketLabel,
+          startTime: result.startTime,
+          dateISO: date,
+        })
       else setError(result.error)
     } catch {
       setError("Something went wrong reaching the server. Please try again.")

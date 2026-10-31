@@ -49,6 +49,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
+import { formatBookingTicketNumber } from "@/lib/services/ticket-format"
 import { last4 } from "@/lib/payroll/staff-details"
 import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS } from "@/lib/services/plans"
 
@@ -96,7 +97,7 @@ async function getBookingsWindow(
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      `id, service_id, staff_id, start_time, end_time, status, booking_reference,
+      `id, service_id, staff_id, start_time, end_time, status, booking_reference, ticket_number,
        services!bookings_service_id_fkey ( name ),
        booking_services ( position, services ( name ) ),
        staff ( name ),
@@ -110,6 +111,14 @@ async function getBookingsWindow(
 
   if (error) throw new Error(`Failed to load bookings: ${error.message}`)
 
+  // Prefix for the running ticket number (B0001). A failed read just means "B".
+  const { data: prefixRow } = await supabase
+    .from("booking_settings")
+    .select("booking_number_prefix")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  const bookingPrefix = (prefixRow?.booking_number_prefix as string | undefined)?.trim() || "B"
+
   return (data ?? []).map((b: any) => ({
     id: b.id,
     serviceId: b.service_id,
@@ -118,6 +127,7 @@ async function getBookingsWindow(
     endTime: b.end_time,
     status: b.status,
     bookingReference: b.booking_reference,
+    ticketLabel: b.ticket_number == null ? null : formatBookingTicketNumber(b.ticket_number, bookingPrefix),
     serviceName: joinServiceLabels(b.services?.name, b.booking_services) ?? "Unknown service",
     staffName: b.staff?.name ?? "Unassigned",
     customerName: b.tenant_customers?.full_name ?? null,
@@ -330,7 +340,7 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice, booking_number_prefix",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -507,6 +517,7 @@ async function getSettingsData(
       maxServicesPerBooking: bookingSettingsResult.data.max_services_per_booking ?? 1,
       maxDatesOffered: bookingSettingsResult.data.max_dates_offered ?? 7,
       allowCustomerStaffChoice: bookingSettingsResult.data.allow_customer_staff_choice === true,
+      bookingNumberPrefix: bookingSettingsResult.data.booking_number_prefix ?? "B",
       queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)
         ? (bookingSettingsResult.data.queue_priority_mode as AdminBookingSettings["queuePriorityMode"])
         : "fifo",

@@ -84,6 +84,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { formatTicketNumber } from "@/lib/services/ticket-format"
 
 import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import type { ActionResult } from "@/lib/types/action"
@@ -141,16 +142,17 @@ const DEFAULT_SERVICE_DURATION_MINUTES = 15
  * the ONE place this format is defined, so the kiosk's printed slip, any
  * future "Now Serving" display, and (if it's ever added) a WhatsApp
  * confirmation can never disagree on what a ticket number looks like.
- * Zero-padded to 3 digits (Q001..Q999) purely for a tidy, fixed-width
- * printed look — the underlying counter isn't capped at 999, a 4-digit
- * day just prints as "Q1000" rather than wrapping or erroring. `prefix`
+ * Zero-padded to 4 digits (Q0001..Q9999) purely for a tidy, fixed-width
+ * printed look — the underlying counter isn't capped at 9999, a 5-digit
+ * day just prints as "Q10000" rather than wrapping or erroring. The padding
+ * lives in ticket-format.ts so booking tickets (B0001) match. `prefix`
  * is the tenant's own queue_settings.ticket_number_prefix (defaults to
  * "Q" at the DB level, so this parameter is only ever actually optional
  * as a defensive fallback — every real call site has a real value to
  * pass).
  */
 export function formatQueueTicketNumber(ticketNumber: number, prefix: string = "Q"): string {
-  return `${prefix}${String(ticketNumber).padStart(3, "0")}`
+  return formatTicketNumber(ticketNumber, prefix)
 }
 
 async function getTicketNumberPrefix(supabase: SupabaseClient, tenantId: string): Promise<string> {

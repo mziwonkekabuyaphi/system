@@ -180,12 +180,15 @@ export function bookingConfirmedMessage(params: {
   serviceName: string
   slotLabel: string
   bookingReference: string
+  /** Running per-shop ticket number, e.g. "B0012". Omitted lines up with older callers. */
+  ticketLabel?: string | null
 }): string {
-  const { customerName, serviceName, slotLabel, bookingReference } = params
+  const { customerName, serviceName, slotLabel, bookingReference, ticketLabel } = params
   const greetingName = customerName ? `, ${customerName}` : ""
   return (
     `You're booked${greetingName}! 🎉\n\n` +
     `*${serviceName}* on ${slotLabel}\n` +
+    (ticketLabel ? `Ticket: *${ticketLabel}*\n` : "") +
     `Reference: *${bookingReference}*\n\n` +
     (customerName
       ? "See you then!"

@@ -132,7 +132,6 @@
  * The lookup lives in lib/services/rebook.ts and is read-only.
  */
 
-import crypto from "node:crypto"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -145,6 +144,11 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
+import {
+  DEFAULT_BOOKING_NUMBER_PREFIX,
+  formatBookingTicketNumber,
+  generateBookingReference,
+} from "@/lib/services/ticket-format"
 import { assertProductEnabled, assertWithinVisitLimit, isProductEnabled, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
@@ -798,7 +802,12 @@ export interface CreateBookingResult {
   services: CatalogService[]
   /** Sum of the services' durations; endTime - startTime. */
   totalDurationMinutes: number
+  /** Random 5-character code the customer quotes, e.g. "H456R". */
   bookingReference: string
+  /** Running per-shop number assigned by the database, e.g. 12. Null only if the trigger didn't run. */
+  ticketNumber: number | null
+  /** ticketNumber with the shop's booking prefix, e.g. "B0012". */
+  ticketLabel: string | null
   startTime: string
   endTime: string
   /** Who the booking was assigned to. */
@@ -864,7 +873,8 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
 
   const startTime = new Date(slot.start)
   const endTime = new Date(startTime.getTime() + totalDurationMinutes * 60_000)
-  const bookingReference = crypto.randomUUID().slice(0, 8).toUpperCase()
+  let bookingReference = generateBookingReference()
+  let referenceRetries = 0
 
   // claimStaffForSlot() is a read, this insert is the write, and two customers
   // can slip between them. The database (bookings_no_staff_overlap exclusion
@@ -875,7 +885,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   // and when nobody is left claimStaffForSlot() throws
   // BOOKING_SLOT_NO_LONGER_AVAILABLE like it always has.
   const conflicted: string[] = []
-  let inserted: { id: string }
+  let inserted: { id: string; ticket_number: number | null }
   for (;;) {
     const { data, error } = await supabase
       .from("bookings")
@@ -891,12 +901,20 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
           booking_reference: bookingReference,
         },
       ])
-      .select("id")
+      .select("id, ticket_number")
       .single()
 
     if (!error) {
-      inserted = data as { id: string }
+      inserted = data as { id: string; ticket_number: number | null }
       break
+    }
+
+    // Two bookings drew the same 5-character reference: draw another and retry. Checked
+    // before the staff-conflict test below, which must not mistake this for a busy slot.
+    if (error.code === "23505" && error.message.includes("bookings_booking_reference_key") && referenceRetries < 8) {
+      referenceRetries += 1
+      bookingReference = generateBookingReference()
+      continue
     }
 
     // The bookings trigger raises this text when the customer already has an
@@ -947,10 +965,26 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     services,
     totalDurationMinutes,
     bookingReference,
+    ticketNumber: inserted.ticket_number ?? null,
+    ticketLabel:
+      inserted.ticket_number == null
+        ? null
+        : formatBookingTicketNumber(inserted.ticket_number, await readBookingNumberPrefix(supabase, tenantId)),
     startTime: startTime.toISOString(),
     endTime: endTime.toISOString(),
     staffName: staff.name,
   }
+}
+
+/** booking_settings.booking_number_prefix (default "B"). Never throws: a failed read just means "B". */
+async function readBookingNumberPrefix(supabase: SupabaseClient, tenantId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("booking_settings")
+    .select("booking_number_prefix")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (error) console.error("[booking] booking_number_prefix lookup failed", { tenantId, error: error.message })
+  return (data?.booking_number_prefix as string | undefined)?.trim() || DEFAULT_BOOKING_NUMBER_PREFIX
 }
 
 // ============================================================================
@@ -1863,6 +1897,7 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
           serviceName: result.services.map((s) => s.name).join(" + ") || NO_SERVICE_LABEL,
           slotLabel: selectedSlot.label,
           bookingReference: result.bookingReference,
+          ticketLabel: result.ticketLabel,
         }) +
         (data.requestedStaff ? `\n${staffRequestedLine(result.staffName ?? data.requestedStaff.name)}` : "") +
         webNote,
