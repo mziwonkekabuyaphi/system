@@ -508,8 +508,11 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
 
           {key === "queue" && (
             <>
-              <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">{queueTitle}</h2>
+              {/* Live queue: the heading takes the top-left spot, the shop name sits top-right */}
+              <div className="queue-head">
+                <h2 className="slide-title">{queueTitle}</h2>
+                <p className="corner-mark">{brandName}</p>
+              </div>
 
               <div className="queue-table-wrap">
                 <table className="queue-table">
@@ -615,6 +618,24 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           letter-spacing: 0.02em;
           color: var(--fg-55);
           font-weight: 500;
+        }
+
+        /* Live queue slide header: title left, shop name right (same grey as on the other slides) */
+        .queue-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 2rem;
+        }
+        .queue-head .slide-title {
+          min-width: 0;
+        }
+        .queue-head .corner-mark {
+          flex: none;
+          max-width: 40%;
+          margin: 0;
+          text-align: right;
+          overflow-wrap: anywhere;
         }
 
         /* ---- Welcome slide ---- */
