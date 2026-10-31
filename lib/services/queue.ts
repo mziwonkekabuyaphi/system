@@ -93,7 +93,7 @@ import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 import { startOfTenantDay } from "@/lib/services/shared/queue-day"
-import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { assertProductEnabled, assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 
@@ -765,6 +765,8 @@ export interface JoinQueueResult {
 export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
   const { service, extraServices = [], phone } = params
   const supabase = getClientOrThrow()
+  // Queue is a per-shop switch (tenant_modules); a shop without it takes no joins from any channel.
+  await assertProductEnabled(supabase, tenantId, "queue")
 
   // Primary first, repeats dropped; empty when the walk-in picked nothing.
   const chosenServices = service ? dedupeServices([service, ...extraServices]) : []

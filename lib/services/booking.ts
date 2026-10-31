@@ -145,7 +145,7 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
-import { assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { assertProductEnabled, assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
@@ -530,6 +530,7 @@ export async function getAvailableSlots(
   requestedStaffId?: string,
 ): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
+  await assertProductEnabled(supabase, tenantId, "booking")
 
   const [activeStaff, bookingSettings, dayWindow] = await Promise.all([
     getActiveStaff(supabase, tenantId),
@@ -820,6 +821,8 @@ export interface CreateBookingResult {
 export async function createBooking(tenantId: string, params: CreateBookingParams): Promise<CreateBookingResult> {
   const { service, extraServices = [], dateISO, slot, phone } = params
   const supabase = getClientOrThrow()
+  // Booking is a per-shop switch (tenant_modules); a shop without it takes no bookings from any channel.
+  await assertProductEnabled(supabase, tenantId, "booking")
 
   // Primary first, repeats dropped. Everything below uses this list, so the
   // length check, the summed duration and the link rows can't disagree.
@@ -1049,6 +1052,7 @@ export async function rescheduleBooking(
   slot: BookingSlot,
 ): Promise<RescheduleBookingResult> {
   const supabase = getClientOrThrow()
+  await assertProductEnabled(supabase, tenantId, "booking")
 
   const { data: booking, error } = await supabase
     .from("bookings")
