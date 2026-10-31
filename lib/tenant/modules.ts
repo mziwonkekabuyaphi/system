@@ -6,16 +6,19 @@
  * ONE place (the database): no tenant_modules row => off, enabled = false =>
  * off, tenant not 'active' => off.
  *
- * Short per-instance cache (30s) so a burst of WhatsApp messages doesn't pay
- * an RPC each. A toggle-off therefore takes effect within ~30s on a warm
- * instance. FAILS CLOSED: any error means "off", never "on".
+ * Very short per-instance cache (5s) so a burst of WhatsApp messages doesn't pay
+ * an RPC each. A toggle takes effect within ~5s on every warm instance: the
+ * platform toggle actions also call invalidateModuleCache(), which makes the
+ * instance that handled the toggle see it immediately, but each serverless
+ * instance has its own memory, so the TTL is what bounds the others.
+ * FAILS CLOSED: any error means "off", never "on".
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
 export type ModuleKey = "shisha" | (string & {})
 
-const TTL_MS = 30_000
+const TTL_MS = 5_000
 const cache = new Map<string, { value: boolean; expiresAt: number }>()
 
 export async function isModuleEnabled(tenantId: string, moduleKey: ModuleKey): Promise<boolean> {
