@@ -73,6 +73,7 @@ function withDefaults(s: BookingForm): BookingForm {
     bookingRemindersEnabled: s.bookingRemindersEnabled ?? true,
     bookingReminderLeadMinutes: s.bookingReminderLeadMinutes ?? 120,
     allowCustomerStaffChoice: s.allowCustomerStaffChoice ?? false,
+    bookingNumberPrefix: s.bookingNumberPrefix ?? "B",
   }
 }
 
@@ -86,6 +87,8 @@ function validate(s: BookingForm, queueEnabled: boolean): Partial<Record<Tab, st
   else if (!isInt(s.maxAdvanceDays, 0)) e.timing = "Advance booking window must be a whole number of days, 0 or more."
   else if (!isInt(s.maxDatesOffered, 1, 14)) e.timing = "Dates shown must be a whole number from 1 to 14."
   else if (!isInt(s.cancellationWindowMinutes, 0)) e.timing = "Cancellation window must be a whole number of minutes, 0 or more."
+  else if ((s.bookingNumberPrefix ?? "").trim().length < 1 || (s.bookingNumberPrefix ?? "").trim().length > 4)
+    e.timing = "Ticket prefix must be 1-4 characters."
 
   if (!isInt(s.maxServicesPerBooking, 1, 5)) e.services = "Services per booking must be a whole number from 1 to 5."
   else if (s.requireServiceSelection === false && !isInt(s.defaultDurationMinutes, 5, 480))
@@ -243,6 +246,21 @@ export function BookingRulesDrawer({
                 hint="How many date buttons the kiosk and WhatsApp list, starting today. The smaller of this and the limit above applies, so 7 dates with a 3-day limit still shows 4. Set to 1 for today only."
               >
                 <input type="number" min={1} max={14} className={DRAWER_FIELD} value={num(draft.maxDatesOffered)} onChange={(e) => set("maxDatesOffered", onNum(e.target.value))} />
+              </DrawerField>
+            </DrawerGroup>
+
+            <DrawerGroup title="Ticket numbers">
+              <DrawerField
+                label="Ticket prefix (1-4 characters)"
+                hint={`Each booking gets the next number in your shop's own count, for example ${(draft.bookingNumberPrefix ?? "B").trim().toUpperCase() || "B"}0001, ${(draft.bookingNumberPrefix ?? "B").trim().toUpperCase() || "B"}0002. The count never restarts. Changing the prefix only affects how numbers look, so earlier bookings show the new prefix too. Customers also get a separate 5-character reference (for example H456R).`}
+              >
+                <input
+                  type="text"
+                  maxLength={4}
+                  className={DRAWER_FIELD}
+                  value={draft.bookingNumberPrefix ?? ""}
+                  onChange={(e) => set("bookingNumberPrefix", e.target.value.toUpperCase())}
+                />
               </DrawerField>
             </DrawerGroup>
 

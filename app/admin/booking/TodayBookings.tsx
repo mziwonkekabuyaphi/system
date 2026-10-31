@@ -180,6 +180,7 @@ export function TodayBookings({
         (b.customerName ?? "").toLowerCase().includes(q) ||
         b.customerPhone.replace(/\s+/g, "").includes(qDigits) ||
         b.bookingReference.toLowerCase().includes(q) ||
+        (b.ticketLabel ?? "").toLowerCase().includes(q) ||
         b.serviceName.toLowerCase().includes(q) ||
         b.staffName.toLowerCase().includes(q)
       )
@@ -348,7 +349,7 @@ export function TodayBookings({
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, phone or reference"
+          placeholder="Search name, phone, ticket or reference"
           aria-label="Search appointments"
           className={`${FIELD} min-w-[14rem] flex-1`}
         />
@@ -445,7 +446,9 @@ export function TodayBookings({
                           <p className="truncate text-sm text-[#8A8375]">
                             {label(b)} · {b.staffName}
                           </p>
-                          <p className="text-xs text-[#8A8375]">Ref {b.bookingReference}</p>
+                          <p className="text-xs text-[#8A8375]">
+                            {b.ticketLabel ? `${b.ticketLabel} · ` : ""}Ref {b.bookingReference}
+                          </p>
                         </div>
                       </button>
 
@@ -489,11 +492,11 @@ export function TodayBookings({
       <AdminDialog open={newOpen} title="New appointment" onClose={() => setNewOpen(false)}>
         <NewAppointmentForm
           onClose={() => setNewOpen(false)}
-          onCreated={({ bookingReference, startTime, dateISO }) => {
+          onCreated={({ bookingReference, ticketLabel, startTime, dateISO }) => {
             setNewOpen(false)
             setNotice({
               kind: "success",
-              text: `Appointment booked for ${formatDateShort(dateISO)} at ${formatTime(startTime, timezone)} (ref ${bookingReference}).`,
+              text: `Appointment booked for ${formatDateShort(dateISO)} at ${formatTime(startTime, timezone)} (${ticketLabel ? `ticket ${ticketLabel}, ` : ""}ref ${bookingReference}).`,
             })
             if (dateISO >= minKey && dateISO <= maxKey) setSelectedDate(dateISO)
           }}
@@ -571,6 +574,12 @@ export function TodayBookings({
             <dd className="tabular-nums">
               {formatTime(detailsBooking.startTime, timezone)} – {formatTime(detailsBooking.endTime, timezone)}
             </dd>
+            {detailsBooking.ticketLabel && (
+              <>
+                <dt className="text-[#8A8375]">Ticket</dt>
+                <dd className="font-mono">{detailsBooking.ticketLabel}</dd>
+              </>
+            )}
             <dt className="text-[#8A8375]">Reference</dt>
             <dd className="font-mono">{detailsBooking.bookingReference}</dd>
           </dl>

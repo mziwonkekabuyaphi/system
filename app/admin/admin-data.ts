@@ -11,6 +11,7 @@
 import type { getSupabaseServerClient } from "@/lib/supabase/admin"
 
 import { formatQueueTicketNumber, getQueueSimulation, type QueueSimulationEntry } from "@/lib/services/queue"
+import { formatBookingTicketNumber } from "@/lib/services/ticket-format"
 
 import { DEFAULT_TIMEZONE, dateKeyInTz, safeTimezone, startOfDayUtc } from "./tz"
 import type { AdminQueueEntry } from "./types"
@@ -83,26 +84,37 @@ export async function loadQueueEntries(
 
   if (error) throw new Error(`Failed to load queue: ${error.message}`)
 
-  // Entries promoted from a booking have no ticket number, so look up the
-  // booking's reference (bookings.booking_reference) to show in its place.
+  // Entries promoted from a booking have no queue ticket number, so look up the
+  // booking's own ticket (B0001) and reference (bookings.booking_reference) to show in its place.
   // A separate query rather than a nested select, and a failure here only
   // means those rows fall back to "—" — it never takes the queue down.
   const bookingIds = (data ?? [])
     .map((q: any) => q.booking_id as string | null)
     .filter((id: string | null): id is string => Boolean(id))
   let referenceByBookingId = new Map<string, string>()
+  let bookingTicketById = new Map<string, string>()
   if (bookingIds.length > 0) {
     const { data: refRows, error: refError } = await supabase
       .from("bookings")
-      .select("id, booking_reference")
+      .select("id, booking_reference, ticket_number")
       .eq("tenant_id", tenantId)
       .in("id", bookingIds)
     if (refError) {
       console.error("[admin] Failed to load booking references", { tenantId, error: refError.message })
     } else {
-      referenceByBookingId = new Map(
-        (refRows ?? []).map((b: { id: string; booking_reference: string }) => [b.id, b.booking_reference]),
-      )
+      const rows = (refRows ?? []) as Array<{ id: string; booking_reference: string; ticket_number: number | null }>
+      referenceByBookingId = new Map(rows.map((b) => [b.id, b.booking_reference]))
+      if (rows.some((b) => b.ticket_number != null)) {
+        const { data: prefixRow } = await supabase
+          .from("booking_settings")
+          .select("booking_number_prefix")
+          .eq("tenant_id", tenantId)
+          .maybeSingle()
+        const bookingPrefix = (prefixRow?.booking_number_prefix as string | undefined)?.trim() || "B"
+        for (const b of rows) {
+          if (b.ticket_number != null) bookingTicketById.set(b.id, formatBookingTicketNumber(b.ticket_number, bookingPrefix))
+        }
+      }
     }
   }
 
@@ -129,6 +141,7 @@ export async function loadQueueEntries(
       source: q.source,
       ticketNumber: q.ticket_number,
       ticketLabel: q.ticket_number == null ? null : formatQueueTicketNumber(q.ticket_number, ticketPrefix),
+      bookingTicketLabel: q.booking_id ? (bookingTicketById.get(q.booking_id) ?? null) : null,
       bookingReference: q.booking_id ? (referenceByBookingId.get(q.booking_id) ?? null) : null,
       position: sim?.position ?? null,
       etaMinutes: q.status === "waiting" ? (sim?.etaMinutes ?? null) : null,

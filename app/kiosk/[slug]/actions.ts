@@ -440,7 +440,8 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
 
     const ticket: KioskBookingTicket = {
       kind: "booking",
-      ticketNumber: result.bookingReference,
+      // Shown big on the slip: the running ticket (B0001) when there is one, else the reference.
+      ticketNumber: result.ticketLabel ?? result.bookingReference,
       customerName: name,
       serviceName: serviceNames,
       dateLabel: input.dateLabel,
@@ -452,6 +453,7 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
         tenantId,
         input.phone,
         `Hi${name ? ` ${name}` : ""}! You're booked${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}. ` +
+          (result.ticketLabel ? `Your ticket is ${result.ticketLabel}. ` : "") +
           `Your reference is ${result.bookingReference}. See you soon!`,
       )
     } catch (sendError) {

@@ -316,7 +316,9 @@ export async function createAdminBooking(input: {
   slotStart: string
   phone: string
   name?: string
-}): Promise<{ ok: true; bookingReference: string; startTime: string } | { ok: false; error: string }> {
+}): Promise<
+  { ok: true; bookingReference: string; ticketLabel: string | null; startTime: string } | { ok: false; error: string }
+> {
   const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
 
@@ -347,7 +349,7 @@ export async function createAdminBooking(input: {
 
     await logActivity(supabase, tenantId!, { category: "bookings", action: "Created a booking" })
     revalidatePath("/admin")
-    return { ok: true, bookingReference: result.bookingReference, startTime: result.startTime }
+    return { ok: true, bookingReference: result.bookingReference, ticketLabel: result.ticketLabel, startTime: result.startTime }
   } catch (err) {
     if (err instanceof Error) {
       if (err.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {

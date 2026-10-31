@@ -122,6 +122,8 @@ export interface AdminQueueEntry {
   /** bookings.booking_reference for entries promoted from a booking (they have
    *  no ticket number, so the admin shows this in its place); null for walk-ins. */
   bookingReference: string | null
+  /** The booking's own ticket number (e.g. "B0012") for promoted bookings; shown in place of a queue ticket. */
+  bookingTicketLabel: string | null
   /** 1-based place in line from getQueueSimulation() — the ONE source of
    *  queue order. It honours booking_settings.queue_priority_mode, so under
    *  'priority' it can differ from joined_at order. Called entries are
@@ -154,6 +156,8 @@ export interface AdminBooking {
   endTime: string
   status: "confirmed" | "cancelled" | "completed"
   bookingReference: string
+  /** Running per-shop ticket, e.g. "B0012". Null for bookings made before ticket numbers existed. */
+  ticketLabel: string | null
   serviceName: string
   staffName: string
   /** null when the customer has never given a name (see booking.ts's
@@ -504,6 +508,8 @@ export interface AdminBookingSettings {
   /** true = the customer may pick a specific staff member when booking.
    *  Mirrors booking_settings.allow_customer_staff_choice (default false). */
   allowCustomerStaffChoice?: boolean
+  /** Prefix for booking ticket numbers, 1-4 characters ("B" gives B0001). booking_settings.booking_number_prefix. */
+  bookingNumberPrefix?: string
   /** false = bookings skip the service step. Optional so a loader that
    *  doesn't send it yet still compiles; the panel treats missing as true. */
   requireServiceSelection?: boolean
