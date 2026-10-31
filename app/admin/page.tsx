@@ -761,6 +761,7 @@ export default async function AdminPage() {
     "shisha.view",
     "shisha.operate",
     "shisha.manage",
+    "shifts.view",
   ]
 
   let permissions: AdminStaffPermissions
@@ -777,6 +778,7 @@ export default async function AdminPage() {
       shishaView: granted.has("shisha.view"),
       shishaOperate: granted.has("shisha.operate"),
       shishaManage: granted.has("shisha.manage"),
+      shiftsView: granted.has("shifts.view"),
     }
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
@@ -791,6 +793,7 @@ export default async function AdminPage() {
       shishaView: false,
       shishaOperate: false,
       shishaManage: false,
+      shiftsView: false,
     }
   }
 
@@ -849,6 +852,12 @@ export default async function AdminPage() {
     ? await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.shisha, { defaultOn: false, requirePlan: false })
     : false
 
+  // Shifts is plan-gated (growth/business) and needs shifts.view. Fails closed;
+  // every action in shifts/shifts-actions.ts re-checks the permission.
+  const shiftsEnabled = permissions.shiftsView
+    ? await tenantHasModule(supabase, tenantId, "shifts" as typeof MODULE_KEYS.branding).catch(() => false)
+    : false
+
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
     : { ...settingsData.branding, sidebarColor: null, sidebarTextColor: null, accentColor: null }
@@ -863,6 +872,7 @@ export default async function AdminPage() {
       initialActiveShifts={activeShifts}
       staffPermissions={permissions}
       shishaEnabled={shishaEnabled}
+      shiftsEnabled={shiftsEnabled}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}

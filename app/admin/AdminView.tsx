@@ -185,6 +185,7 @@ export function AdminView({
   initialActiveShifts,
   staffPermissions,
   shishaEnabled,
+  shiftsEnabled,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -210,6 +211,8 @@ export function AdminView({
   staffPermissions: AdminStaffPermissions
   /** Shisha is switched on for the tenant AND the caller has shisha.view (computed in page.tsx). */
   shishaEnabled: boolean
+  /** Shifts module on the tenant's plan AND the caller has shifts.view (computed in page.tsx). */
+  shiftsEnabled: boolean
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -484,6 +487,7 @@ export function AdminView({
               timezone={timezone}
               clockSettings={initialClockSettings}
               canCustomizeBranding={initialPlan === "business"}
+              shiftsEnabled={shiftsEnabled}
             />
           )}
           {tab === "analytics" && staffPermissions.analyticsView && <AnalyticsDashboard />}

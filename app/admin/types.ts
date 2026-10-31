@@ -84,6 +84,8 @@ export interface AdminStaffPermissions {
   shishaView: boolean
   shishaOperate: boolean
   shishaManage: boolean
+  /** shifts.view — shows the Shifts tab (also needs the shifts module on the plan). Managers additionally hold shifts.manage, re-checked server-side. */
+  shiftsView: boolean
 }
 
 /** A currently-open row in staff_shifts, joined with the staff member's
