@@ -18,6 +18,7 @@
 import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { isProductEnabled } from "@/lib/services/plans"
 import { createSessionClient } from "@/lib/supabase/session-server"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
@@ -47,6 +48,10 @@ async function ctx(level: "view" | "manage") {
   if (!check.ok) return { error: check.error } as const
   const supabase = getSupabaseServerClient()
   if (!supabase) return { error: "Supabase isn't configured." } as const
+  // Shifts is a per-shop switch (tenant_modules), checked here so every action is covered.
+  if (!(await isProductEnabled(supabase, check.member.tenantId, "shifts"))) {
+    return { error: "Shifts isn't switched on for this shop." } as const
+  }
   const { userId } = await requireTenantMember()
   return { supabase, tenantId: check.member.tenantId, userId } as const
 }
