@@ -473,6 +473,7 @@ export function AdminView({
               timezone={timezone}
               bookingSettings={staffPermissions.settingsManage ? bookingSettings : null}
               onBookingSettingsSaved={setBookingSettings}
+              queueEnabled={queueEnabled}
             />
           )}
           {tab === "queue" && queueEnabled && (
@@ -536,6 +537,8 @@ export function AdminView({
               initialQueueSettings={queueSettings!}
               onQueueSettingsChange={setQueueSettings}
               initialBusinessHours={initialBusinessHours!}
+              bookingEnabled={bookingEnabled}
+              queueEnabled={queueEnabled}
             />
           )}
         </main>

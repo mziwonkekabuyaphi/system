@@ -18,7 +18,7 @@ import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
-import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+import { tenantHasModule, assertProductEnabled, isProductNotEnabledError, MODULE_KEYS } from "@/lib/services/plans"
 import { renderBookingTicketForTenant, type TicketSettingsRow } from "@/lib/whatsapp/booking-ticket-image"
 
 export type TicketHeaderStyle = "gradient" | "solid" | "light"
@@ -130,6 +130,11 @@ function validate(s: AdminBookingTicketSettings): string | null {
   return null
 }
 
+/** Friendly text when Booking is switched off for the shop (stale tab / forged call). */
+function ticketError(err: unknown): string {
+  return isProductNotEnabledError(err) ? "Booking isn't switched on for your shop." : (err as Error).message
+}
+
 async function hasTicketModule(
   supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
   tenantId: string,
@@ -147,6 +152,7 @@ async function hasTicketModule(
 export async function getBookingTicketConfig(): Promise<Result<{ config: BookingTicketConfig }>> {
   try {
     const { supabase, tenantId } = await tenantContext()
+    await assertProductEnabled(supabase, tenantId, "booking")
 
     const [allowed, ticketRes, brandingRes] = await Promise.all([
       hasTicketModule(supabase, tenantId),
@@ -164,7 +170,7 @@ export async function getBookingTicketConfig(): Promise<Result<{ config: Booking
       config: { allowed, settings: fromRow(ticketRes.data), brandHeader, brandAccent },
     }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: ticketError(err) }
   }
 }
 
@@ -177,6 +183,7 @@ export async function updateBookingTicketSettings(input: AdminBookingTicketSetti
     if (invalid) return { success: false, error: invalid }
 
     const { supabase, tenantId } = await tenantContext()
+    await assertProductEnabled(supabase, tenantId, "booking")
 
     if (!(await hasTicketModule(supabase, tenantId))) {
       return { success: false, error: "Booking tickets aren't included in your current plan. Upgrade to Business to use them." }
@@ -191,7 +198,7 @@ export async function updateBookingTicketSettings(input: AdminBookingTicketSetti
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: ticketError(err) }
   }
 }
 
@@ -204,6 +211,7 @@ export async function previewBookingTicket(input: AdminBookingTicketSettings): P
     if (invalid) return { success: false, error: invalid }
 
     const { supabase, tenantId } = await tenantContext()
+    await assertProductEnabled(supabase, tenantId, "booking")
     if (!(await hasTicketModule(supabase, tenantId))) {
       return { success: false, error: "Booking tickets aren't included in your current plan." }
     }
@@ -231,6 +239,6 @@ export async function previewBookingTicket(input: AdminBookingTicketSettings): P
 
     return { success: true, dataUri: `data:image/png;base64,${png.toString("base64")}` }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: ticketError(err) }
   }
 }

@@ -15,6 +15,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { isProductEnabled } from "@/lib/services/plans"
 
 import { fetchDisplayData } from "./actions"
 import { DisplayScreen } from "./DisplayScreen"
@@ -62,6 +63,16 @@ async function isDisplayEnabled(slug: string): Promise<boolean> {
   return row ? row.enabled === true : true
 }
 
+/** The board shows the live queue, so it needs the Queue product switched on for the
+ *  shop (tenant_modules, via isProductEnabled; fails closed). */
+async function isQueueOn(slug: string): Promise<boolean> {
+  const supabase = getSupabaseServerClient()
+  if (!supabase) return false
+  const { data: tenant } = await supabase.from("tenants").select("id").eq("slug", slug).eq("status", "active").maybeSingle()
+  if (!tenant) return false
+  return isProductEnabled(supabase, tenant.id as string, "queue")
+}
+
 function Message({ title, body }: { title: string; body: string }) {
   return (
     <main
@@ -98,6 +109,11 @@ export default async function DisplayPage({ params }: PageProps) {
       : { data: null }
     if (!tenant) notFound()
     return <Message title="Display is switched off" body="Turn it on in Settings > Display, then reload this screen." />
+  }
+
+  // Queue off for this shop: say so, and don't load any queue data.
+  if (!(await isQueueOn(slug))) {
+    return <Message title="This display isn't available" body="This screen isn't set up for this shop." />
   }
 
   const result = await fetchDisplayData(slug)

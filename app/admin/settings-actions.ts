@@ -103,7 +103,14 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
-import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+import {
+  tenantHasModule,
+  isProductEnabled,
+  isProductNotEnabledError,
+  PRODUCT_NOT_ENABLED,
+  MODULE_KEYS,
+  type ProductKey,
+} from "@/lib/services/plans"
 import { detailsFieldsFrom, detailsFieldsProblem } from "@/lib/kiosk/detailsFields"
 import type { AdminClockSettings, AdminKioskRegistrationType, AdminQueuePriorityMode } from "./types"
 import type { AdminEmployerDetails } from "./payroll-types"
@@ -228,6 +235,33 @@ async function tenantContext() {
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Admin isn't configured")
   return { supabase, tenantId }
+}
+
+const PRODUCT_LABELS: Record<ProductKey, string> = { booking: "Booking", queue: "Queue", shisha: "Shisha" }
+
+/** Module guard for settings saves. Hiding a panel in the UI is not enough (a stale
+ *  tab or a forged request can still call the action), so each save for a
+ *  module-specific panel calls this. Passes when ANY of `keys` is switched on
+ *  (tenant_modules via isProductEnabled); otherwise throws PRODUCT_NOT_ENABLED:<keys>,
+ *  which actionError() turns into a friendly message. Fails closed. */
+async function requireAnyProduct(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+  keys: ProductKey[],
+): Promise<void> {
+  for (const key of keys) {
+    if (await isProductEnabled(supabase, tenantId, key)) return
+  }
+  throw new Error(`${PRODUCT_NOT_ENABLED}:${keys.join("|")}`)
+}
+
+/** Message for a failed action: friendly text for PRODUCT_NOT_ENABLED, the raw message otherwise. */
+function actionError(err: unknown): string {
+  if (isProductNotEnabledError(err)) {
+    const keys = (err as Error).message.slice(PRODUCT_NOT_ENABLED.length + 1).split("|") as ProductKey[]
+    return `${keys.map((k) => PRODUCT_LABELS[k] ?? k).join(" or ")} isn't switched on for your shop.`
+  }
+  return (err as Error).message
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +409,7 @@ export async function updateEmployerDetails(input: AdminEmployerDetails): Promis
 export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
   try {
     const { supabase, tenantId } = await tenantContext()
+    await requireAnyProduct(supabase, tenantId, ["booking", "queue"])
 
     const { data: kioskModule, error: moduleLookupError } = await supabase
       .from("modules")
@@ -420,7 +455,7 @@ export async function setKioskEnabled(enabled: boolean): Promise<ActionResult> {
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: actionError(err) }
   }
 }
 
@@ -470,6 +505,7 @@ export async function setModuleSwitch(which: SwitchableModule, enabled: boolean)
   try {
     if (!isSwitchable(which)) return { success: false, error: "Unknown module" }
     const { supabase, tenantId } = await tenantContext()
+    if (which === "display") await requireAnyProduct(supabase, tenantId, ["queue"])
 
     const { data: moduleRow, error: moduleLookupError } = await supabase
       .from("modules")
@@ -500,7 +536,7 @@ export async function setModuleSwitch(which: SwitchableModule, enabled: boolean)
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: actionError(err) }
   }
 }
 
@@ -720,6 +756,7 @@ export async function updateKioskSettings(input: {
     }
 
     const { supabase, tenantId } = await tenantContext()
+    await requireAnyProduct(supabase, tenantId, ["booking", "queue"])
 
     const { error } = await supabase
       .from("tenant_branding")
@@ -765,7 +802,7 @@ export async function updateKioskSettings(input: {
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: actionError(err) }
   }
 }
 
@@ -955,6 +992,7 @@ export async function updateBookingSettings(input: {
     }
 
     const { supabase, tenantId } = await tenantContext()
+    await requireAnyProduct(supabase, tenantId, ["booking"])
 
     const { error } = await supabase
       .from("booking_settings")
@@ -992,7 +1030,7 @@ export async function updateBookingSettings(input: {
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: actionError(err) }
   }
 }
 
@@ -1019,6 +1057,7 @@ export async function updateQueueSettings(input: {
     }
 
     const { supabase, tenantId } = await tenantContext()
+    await requireAnyProduct(supabase, tenantId, ["queue"])
 
     const ticketNumberPrefix = input.ticketNumberPrefix.trim().toUpperCase()
     if (
@@ -1049,7 +1088,7 @@ export async function updateQueueSettings(input: {
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: actionError(err) }
   }
 }
 
@@ -1249,6 +1288,7 @@ export async function updateDisplaySettings(input: {
     }
 
     const { supabase, tenantId } = await tenantContext()
+    await requireAnyProduct(supabase, tenantId, ["queue"])
 
     // The "custom" theme (your own background colour) is part of the
     // 'branding' module. Dark and Light stay free on every plan. Without the
@@ -1333,7 +1373,7 @@ export async function updateDisplaySettings(input: {
     revalidatePath("/admin")
     return { success: true }
   } catch (err) {
-    return { success: false, error: (err as Error).message }
+    return { success: false, error: actionError(err) }
   }
 }
 

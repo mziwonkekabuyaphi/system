@@ -27,7 +27,16 @@ type SubTab = "general" | "kiosk" | "display" | "private-label"
 // main sidebar ("Queue" there is the live queue manager; here it's the rules).
 const SETTINGS_NAV: Array<{
   group: string
-  items: Array<{ id: SubTab; label: string; title: string; description: string }>
+  items: Array<{
+    id: SubTab
+    label: string
+    title: string
+    description: string
+    /** Shown only when at least one of these products is switched on for the shop
+     *  (tenant_modules). Omitted = shared by every shop. The save actions re-check
+     *  this server-side; hiding here is only so owners aren't shown dead controls. */
+    needs?: Array<"booking" | "queue">
+  }>
 }> = [
   {
     group: "Business Info",
@@ -55,18 +64,18 @@ const SETTINGS_NAV: Array<{
         label: "Kiosk",
         title: "Self-service kiosk",
         description: "The touch screen customers use to check in, book or join the queue.",
+        needs: ["booking", "queue"],
       },
       {
         id: "display",
         label: "Public display",
         title: "Public display",
         description: "The screen in your waiting area showing the queue, bookings and menu.",
+        needs: ["queue"],
       },
     ],
   },
 ]
-
-const SETTINGS_PAGES = SETTINGS_NAV.flatMap((g) => g.items)
 
 export function SettingsManager({
   initialPlan,
@@ -84,6 +93,8 @@ export function SettingsManager({
   initialQueueSettings,
   initialBusinessHours,
   onQueueSettingsChange,
+  bookingEnabled = true,
+  queueEnabled = true,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -113,6 +124,10 @@ export function SettingsManager({
   initialBusinessHours: AdminBusinessHours
   /** Tells AdminView when Kiosk > Services saves queue settings, so Live Queue > Queue rules stays current. */
   onQueueSettingsChange?: (next: AdminQueueSettings) => void
+  /** Which products this shop runs (tenant_modules, loaded once in page.tsx). Panels for a
+   *  product that is off are hidden; a group left with no panels is hidden too. */
+  bookingEnabled?: boolean
+  queueEnabled?: boolean
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
 
@@ -121,13 +136,20 @@ export function SettingsManager({
   // each re-opening with the stale server-rendered copy.
   const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
 
-  const activePage = SETTINGS_PAGES.find((p) => p.id === subTab) ?? SETTINGS_PAGES[0]
+  const enabled = { booking: bookingEnabled, queue: queueEnabled }
+  const settingsNav = SETTINGS_NAV.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => !i.needs || i.needs.some((k) => enabled[k])),
+  })).filter((g) => g.items.length > 0)
+  const settingsPages = settingsNav.flatMap((g) => g.items)
+
+  const activePage = settingsPages.find((p) => p.id === subTab) ?? settingsPages[0]
 
   return (
     <div className="md:grid md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8">
       {/* Phone / small tablet: one scrolling row of pills */}
       <div className="mb-4 flex gap-1 overflow-x-auto md:hidden">
-        {SETTINGS_PAGES.map((t) => (
+        {settingsPages.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -147,7 +169,7 @@ export function SettingsManager({
       {/* Desktop: grouped menu, so it's always clear which area you're in */}
       <nav aria-label="Settings sections" className="hidden md:block">
         <div className="sticky top-4 space-y-5">
-          {SETTINGS_NAV.map((group) => (
+          {settingsNav.map((group) => (
             <div key={group.group}>
               <p className="px-3 text-xs font-semibold uppercase tracking-wider text-stone-400">{group.group}</p>
               <ul className="mt-1 space-y-0.5">
@@ -179,14 +201,14 @@ export function SettingsManager({
       <div className="min-w-0 space-y-4">
         <SettingsPageHeader title={activePage.title} description={activePage.description} />
 
-      {subTab === "general" && (
+      {activePage.id === "general" && (
         <div className="space-y-3">
           <BusinessInfoPanel initial={initialSettings} />
           <EmployerDetailsPanel />
           <OpeningHoursPanel initial={initialBusinessHours} />
         </div>
       )}
-      {subTab === "kiosk" && (
+      {activePage.id === "kiosk" && (
         <KioskPanel
           initialEnabled={initialKioskEnabled}
           includedInPlan={kioskIncludedInPlan}
@@ -199,14 +221,14 @@ export function SettingsManager({
           }}
         />
       )}
-      {subTab === "display" && (
+      {activePage.id === "display" && (
         <DisplayPanel
           tenantSlug={tenantSlug}
           initial={initialDisplaySettings}
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
         />
       )}
-      {subTab === "private-label" && (
+      {activePage.id === "private-label" && (
         <PrivateLabelPanel
           plan={initialPlan}
           canRemovePoweredBy={canRemovePoweredBy ?? initialPlan === "business"}
