@@ -77,7 +77,7 @@ import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 
 import { getSmartGreeting } from "@/lib/whatsapp/greeting"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
-import { getTenantWebLink } from "@/lib/whatsapp/utils/tenant-web-link"
+import { describeWebActions, getTenantWebLinkInfo, type TenantWebLinkInfo } from "@/lib/whatsapp/utils/tenant-web-link"
 import { getOpenStatus } from "@/lib/whatsapp/utils/business-hours"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
@@ -322,7 +322,7 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   // (all white-label safe: nothing hardcoded).
   let timeZone: string | undefined
   let shopName: string | null = null
-  let webLink: string | null = null
+  let webLink: TenantWebLinkInfo | null = null
   try {
     const supabase = getSupabaseServerClient()
     if (supabase) {
@@ -330,13 +330,13 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
         getTenantTimezone(supabase, tenantId),
         supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
         supabase.from("tenant_branding").select("display_name").eq("tenant_id", tenantId).maybeSingle(),
-        getTenantWebLink(tenantId),
+        getTenantWebLinkInfo(tenantId),
       ])
       timeZone = tz
       // The Display name owners set under Settings > Branding wins; fall back
       // to the tenant's own name.
       shopName = brandingRow.data?.display_name?.trim() || tenantRow.data?.name || null
-      // Each tenant's own link (null when their web page is not available).
+      // Each tenant's own link (null when their web page is not available, e.g. shisha-only).
       webLink = link
     }
   } catch (error) {
@@ -346,23 +346,22 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   const openStatus = await getOpenStatus(tenantId)
 
   const greeting = getSmartGreeting({ timeZone, isReturning })
-  // Closed: no mention of joining the queue; the note explains it instead.
-  const shishaBit = shishaOn ? " You can also start a shisha session." : ""
-  let canDo: string
-  if (products.booking && products.queue) {
-    canDo = openStatus.isClosed
-      ? `I can help you book an appointment.${shishaBit}`
-      : `I can help you book an appointment or join the walk-in queue.${shishaBit}`
-  } else if (products.booking) {
-    canDo = `I can help you book an appointment.${shishaBit}`
-  } else if (products.queue) {
-    canDo = openStatus.isClosed ? `The walk-in queue is closed right now.${shishaBit}` : `I can help you join the walk-in queue.${shishaBit}`
-  } else {
-    canDo = shishaBit.trim()
-  }
+  // What this shop can do for the customer, built from the products it runs, so
+  // every mix reads naturally (Booking only, Queue + Shisha, Shisha only, ...).
+  // Closed: no mention of joining the queue; the note below explains it instead.
+  const can: string[] = []
+  if (products.booking) can.push("book an appointment")
+  if (products.queue && !openStatus.isClosed) can.push("join the walk-in queue")
+  if (shishaOn) can.push("start a shisha session")
+  const orList = (items: string[]) =>
+    items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`
+  const helpLine = can.length > 0 ? `I can help you ${orList(can)}.` : ""
+  const queueClosedOnly = products.queue && !products.booking && openStatus.isClosed
+  const canDo = queueClosedOnly ? `The walk-in queue is closed right now.${helpLine ? ` ${helpLine}` : ""}` : helpLine
   const welcomeLine = shopName ? `Welcome to *${shopName}*. ${canDo}` : `Welcome! ${canDo}`
   const closedLine = openStatus.isClosed && (products.booking || products.queue) ? `\n\n${openStatus.note}` : ""
-  const webLine = webLink ? `\n\nPrefer to do it online? You can also use ${webLink}` : ""
+  // Only for shops whose web page works, worded for what that page offers.
+  const webLine = webLink ? `\n\nPrefer to ${describeWebActions(webLink)} online? You can also use ${webLink.link}` : ""
 
   return {
     reply: `${greeting} ${firstName}! 👋\n\n${welcomeLine}${closedLine}${webLine}`,
