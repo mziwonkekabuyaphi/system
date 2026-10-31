@@ -813,7 +813,8 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .queue-table td {
           padding: 1.1vh 1.2vw;
-          border-bottom: 1px solid var(--fg-28);
+          /* dotted divider between customers, same style as the Menu / Bookings leaders */
+          border-bottom: 0.3vh dotted var(--fg-28);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -857,14 +858,14 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         .queue-table .group-row.serving td {
           color: var(--accent);
         }
-        /* Divider between "Now serving" and "Up next", in the primary colour. */
+        /* Divider between "Now serving" and "Up next": the same dotted line. */
         .queue-table .group-row.up-next td {
-          border-top: 2px solid var(--accent);
+          border-top: 0.3vh dotted var(--fg-28);
           padding-top: 2.2vh;
         }
+        /* Called customers keep their soft highlight; the divider stays the dotted grey. */
         .queue-table .row.called td {
           background: var(--accent-soft);
-          border-bottom-color: var(--accent);
         }
         .queue-table .row.called .c-name {
           font-weight: 700;
