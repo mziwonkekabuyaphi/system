@@ -83,6 +83,12 @@ const DISPLAY_LAYOUT_OPTIONS: Array<{
   },
 ]
 
+/** Wording for a Booking-only shop: no queue, so no Waiting / Now serving. */
+const BOOKING_ONLY_LAYOUT_DESCRIPTIONS: Partial<Record<AdminDisplaySettings["layout"], string>> = {
+  rotation: "One big screen at a time: menu and bookings. Best for a TV people glance at from across the room.",
+  board: "Everything at once: Upcoming bookings as a ticket column, with your menu scrolling along the bottom.",
+}
+
 const DISPLAY_THEME_OPTIONS: Array<{
   value: AdminDisplaySettings["theme"]
   title: string
@@ -270,10 +276,14 @@ export function DisplayPanel({
   tenantSlug,
   initial,
   canCustomizeBranding,
+  queueEnabled = true,
 }: {
   tenantSlug: string
   initial: AdminDisplaySettings
   canCustomizeBranding: boolean
+  /** false = the shop runs Booking only: queue-only controls (Split screen, Live queue,
+   *  ticket details, call alert, queue wording) are hidden. The public screen applies the same rule. */
+  queueEnabled?: boolean
 }) {
   const form = useCardForm<DisplayDraft>({
     initial: toDisplayDraft(initial),
@@ -282,7 +292,8 @@ export function DisplayPanel({
   const { draft, set } = form
   const busy = form.savingCard !== null
   const isBoard = draft.layout === "board"
-  const isSplit = draft.layout === "split"
+  const isSplit = queueEnabled && draft.layout === "split"
+  const layoutOptions = queueEnabled ? DISPLAY_LAYOUT_OPTIONS : DISPLAY_LAYOUT_OPTIONS.filter((o) => o.value !== "split")
   // Board and split both show everything at once, so neither uses rotation timing.
   const isRotation = !isBoard && !isSplit
 
@@ -343,10 +354,14 @@ export function DisplayPanel({
       >
         <SubSection
           title="Layout"
-          hint="Rotating slides shows one big screen at a time. Live board shows everything at once. Split screen shows Now serving on the left and who is still to come on the right."
+          hint={
+            queueEnabled
+              ? "Rotating slides shows one big screen at a time. Live board shows everything at once. Split screen shows Now serving on the left and who is still to come on the right."
+              : "Rotating slides shows one big screen at a time. Live board shows everything at once."
+          }
         >
-          <div className="grid gap-2 sm:grid-cols-3">
-            {DISPLAY_LAYOUT_OPTIONS.map((option) => {
+          <div className={queueEnabled ? "grid gap-2 sm:grid-cols-3" : "grid gap-2 sm:grid-cols-2"}>
+            {layoutOptions.map((option) => {
               const selected = draft.layout === option.value
               return (
                 <button
@@ -364,7 +379,9 @@ export function DisplayPanel({
                   <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-800"}`}>
                     {option.title}
                   </span>
-                  <span className="text-xs text-stone-500">{option.description}</span>
+                  <span className="text-xs text-stone-500">
+                    {queueEnabled ? option.description : (BOOKING_ONLY_LAYOUT_DESCRIPTIONS[option.value] ?? option.description)}
+                  </span>
                 </button>
               )
             })}
@@ -466,14 +483,16 @@ export function DisplayPanel({
           disabled={busy}
           onChange={(v) => set("showBookings", v)}
         />
-        <ToggleRow
-          title="Live queue"
-          description="Who's being served now and who's waiting."
-          checked={draft.showQueue}
-          disabled={busy}
-          onChange={(v) => set("showQueue", v)}
-        />
-        {isRotation && (
+        {queueEnabled && (
+          <ToggleRow
+            title="Live queue"
+            description="Who's being served now and who's waiting."
+            checked={draft.showQueue}
+            disabled={busy}
+            onChange={(v) => set("showQueue", v)}
+          />
+        )}
+        {queueEnabled && isRotation && (
           <ToggleRow
             title="Split screen"
             description="Full-screen view with Now serving on the left and who's still to come on the right."
@@ -484,90 +503,92 @@ export function DisplayPanel({
         )}
       </SettingsCard>
 
-      <SettingsCard
-        title="Queue ticket details"
-        description="What shows next to each customer's name. A detail is skipped for any ticket that doesn't have it."
-        footer={footer("queue", DISPLAY_QUEUE_KEYS)}
-      >
-        <ToggleRow
-          title="Ticket number"
-          description='e.g. Q014. Fills the first column (headed "Ticket"). When off, that column shows plain positions: 1, 2, 3…'
-          checked={draft.showQueueTicketNumber}
-          disabled={busy}
-          onChange={(v) => set("showQueueTicketNumber", v)}
-        />
-        <ToggleRow
-          title="Service"
-          description="Turn this off if you don't use services, or don't want them shown here."
-          checked={draft.showQueueService}
-          disabled={busy}
-          onChange={(v) => set("showQueueService", v)}
-        />
-        <ToggleRow
-          title="Cellphone number"
-          description="Always shown masked (e.g. 071 *** **34). The raw number is never sent to the TV. Off by default because this screen is public."
-          checked={draft.showQueuePhone}
-          disabled={busy}
-          onChange={(v) => set("showQueuePhone", v)}
-        />
-        <ToggleRow
-          title="Surname"
-          description="Show the surname after the first name. Turn it off to show first names only: the surname is then never sent to the TV."
-          checked={draft.showQueueSurname}
-          disabled={busy}
-          onChange={(v) => set("showQueueSurname", v)}
-        />
-        <ToggleRow
-          title="Email address"
-          description="Always partly hidden (e.g. m***@gmail.com). Only appears for customers who gave an email at the kiosk, so turn email on under Kiosk > Details screen too. Off by default because this screen is public."
-          checked={draft.showQueueEmail}
-          disabled={busy}
-          onChange={(v) => set("showQueueEmail", v)}
-        />
-        <ToggleRow
-          title="Custom question answer"
-          description="The answer to your own kiosk question (e.g. Car registration), shown exactly as typed. Everyone in the waiting area can read it, so only turn this on if that's fine. Only appears for customers who answered."
-          checked={draft.showQueueCustom}
-          disabled={busy}
-          onChange={(v) => set("showQueueCustom", v)}
-        />
-        <ToggleRow
-          title="Estimated wait time"
-          description="How much longer each waiting customer is likely to wait."
-          checked={draft.showQueueWaitEstimate}
-          disabled={busy}
-          onChange={(v) => set("showQueueWaitEstimate", v)}
-        />
-        {draft.showQueueWaitEstimate && (
-          <FieldRow
-            label="Wait range (minutes)"
-            hint="0 shows one number, like ~19 min. Set 5 to show a range ending at the estimate, like 15–19 min. Between 0 and 30."
-          >
-            <input
-              type="number"
-              min={0}
-              max={30}
-              className={inputClass}
-              value={draft.waitRangeMinutes}
-              onChange={(e) => set("waitRangeMinutes", Number(e.target.value))}
-            />
-          </FieldRow>
-        )}
-        <ToggleRow
-          title="Time waited so far"
-          description="How long each customer has already been in the queue."
-          checked={draft.showQueueDuration}
-          disabled={busy}
-          onChange={(v) => set("showQueueDuration", v)}
-        />
-        <ToggleRow
-          title="Booking reference"
-          description="Only appears for tickets that came from a confirmed booking, not walk-ins."
-          checked={draft.showQueueReference}
-          disabled={busy}
-          onChange={(v) => set("showQueueReference", v)}
-        />
-      </SettingsCard>
+      {queueEnabled && (
+        <SettingsCard
+          title="Queue ticket details"
+          description="What shows next to each customer's name. A detail is skipped for any ticket that doesn't have it."
+          footer={footer("queue", DISPLAY_QUEUE_KEYS)}
+        >
+          <ToggleRow
+            title="Ticket number"
+            description='e.g. Q014. Fills the first column (headed "Ticket"). When off, that column shows plain positions: 1, 2, 3…'
+            checked={draft.showQueueTicketNumber}
+            disabled={busy}
+            onChange={(v) => set("showQueueTicketNumber", v)}
+          />
+          <ToggleRow
+            title="Service"
+            description="Turn this off if you don't use services, or don't want them shown here."
+            checked={draft.showQueueService}
+            disabled={busy}
+            onChange={(v) => set("showQueueService", v)}
+          />
+          <ToggleRow
+            title="Cellphone number"
+            description="Always shown masked (e.g. 071 *** **34). The raw number is never sent to the TV. Off by default because this screen is public."
+            checked={draft.showQueuePhone}
+            disabled={busy}
+            onChange={(v) => set("showQueuePhone", v)}
+          />
+          <ToggleRow
+            title="Surname"
+            description="Show the surname after the first name. Turn it off to show first names only: the surname is then never sent to the TV."
+            checked={draft.showQueueSurname}
+            disabled={busy}
+            onChange={(v) => set("showQueueSurname", v)}
+          />
+          <ToggleRow
+            title="Email address"
+            description="Always partly hidden (e.g. m***@gmail.com). Only appears for customers who gave an email at the kiosk, so turn email on under Kiosk > Details screen too. Off by default because this screen is public."
+            checked={draft.showQueueEmail}
+            disabled={busy}
+            onChange={(v) => set("showQueueEmail", v)}
+          />
+          <ToggleRow
+            title="Custom question answer"
+            description="The answer to your own kiosk question (e.g. Car registration), shown exactly as typed. Everyone in the waiting area can read it, so only turn this on if that's fine. Only appears for customers who answered."
+            checked={draft.showQueueCustom}
+            disabled={busy}
+            onChange={(v) => set("showQueueCustom", v)}
+          />
+          <ToggleRow
+            title="Estimated wait time"
+            description="How much longer each waiting customer is likely to wait."
+            checked={draft.showQueueWaitEstimate}
+            disabled={busy}
+            onChange={(v) => set("showQueueWaitEstimate", v)}
+          />
+          {draft.showQueueWaitEstimate && (
+            <FieldRow
+              label="Wait range (minutes)"
+              hint="0 shows one number, like ~19 min. Set 5 to show a range ending at the estimate, like 15–19 min. Between 0 and 30."
+            >
+              <input
+                type="number"
+                min={0}
+                max={30}
+                className={inputClass}
+                value={draft.waitRangeMinutes}
+                onChange={(e) => set("waitRangeMinutes", Number(e.target.value))}
+              />
+            </FieldRow>
+          )}
+          <ToggleRow
+            title="Time waited so far"
+            description="How long each customer has already been in the queue."
+            checked={draft.showQueueDuration}
+            disabled={busy}
+            onChange={(v) => set("showQueueDuration", v)}
+          />
+          <ToggleRow
+            title="Booking reference"
+            description="Only appears for tickets that came from a confirmed booking, not walk-ins."
+            checked={draft.showQueueReference}
+            disabled={busy}
+            onChange={(v) => set("showQueueReference", v)}
+          />
+        </SettingsCard>
+      )}
 
       {isRotation && (
         <SettingsCard
@@ -588,7 +609,7 @@ export function DisplayPanel({
               onChange={(e) => set("welcomeSeconds", Number(e.target.value))}
             />
           </FieldRow>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className={queueEnabled ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-1"}>
             <FieldRow label="Menu & bookings (seconds)" hint="How long each of these screens shows before moving on.">
               <input
                 type="number"
@@ -599,58 +620,64 @@ export function DisplayPanel({
                 onChange={(e) => set("menuBookingsSeconds", Number(e.target.value))}
               />
             </FieldRow>
-            <FieldRow label="Live queue (seconds)" hint="Usually longer, since there's more to read.">
-              <input
-                type="number"
-                min={3}
-                max={300}
-                className={inputClass}
-                value={draft.queueSeconds}
-                onChange={(e) => set("queueSeconds", Number(e.target.value))}
-              />
-            </FieldRow>
-            <FieldRow label="Split screen (seconds)" hint="Only used when Split screen is switched on above.">
-              <input
-                type="number"
-                min={3}
-                max={300}
-                className={inputClass}
-                value={draft.splitSeconds}
-                onChange={(e) => set("splitSeconds", Number(e.target.value))}
-              />
-            </FieldRow>
+            {queueEnabled && (
+              <>
+                <FieldRow label="Live queue (seconds)" hint="Usually longer, since there's more to read.">
+                  <input
+                    type="number"
+                    min={3}
+                    max={300}
+                    className={inputClass}
+                    value={draft.queueSeconds}
+                    onChange={(e) => set("queueSeconds", Number(e.target.value))}
+                  />
+                </FieldRow>
+                <FieldRow label="Split screen (seconds)" hint="Only used when Split screen is switched on above.">
+                  <input
+                    type="number"
+                    min={3}
+                    max={300}
+                    className={inputClass}
+                    value={draft.splitSeconds}
+                    onChange={(e) => set("splitSeconds", Number(e.target.value))}
+                  />
+                </FieldRow>
+              </>
+            )}
           </div>
         </SettingsCard>
       )}
 
-      <SettingsCard
-        title="Call alert"
-        description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to every layout."
-        footer={footer("callAlert", DISPLAY_CALL_ALERT_KEYS)}
-      >
-        <ToggleRow
-          title="Full-screen call alert"
-          description="Show the called ticket full screen. If several customers are called close together, they show one after another."
-          checked={draft.callAlertEnabled}
-          disabled={busy}
-          onChange={(v) => set("callAlertEnabled", v)}
-        />
-        {draft.callAlertEnabled && (
-          <FieldRow
-            label="Alert duration (seconds)"
-            hint="How long each called ticket stays on screen. Between 3 and 60."
-          >
-            <input
-              type="number"
-              min={3}
-              max={60}
-              className={inputClass}
-              value={draft.callAlertSeconds}
-              onChange={(e) => set("callAlertSeconds", Number(e.target.value))}
-            />
-          </FieldRow>
-        )}
-      </SettingsCard>
+      {queueEnabled && (
+        <SettingsCard
+          title="Call alert"
+          description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to every layout."
+          footer={footer("callAlert", DISPLAY_CALL_ALERT_KEYS)}
+        >
+          <ToggleRow
+            title="Full-screen call alert"
+            description="Show the called ticket full screen. If several customers are called close together, they show one after another."
+            checked={draft.callAlertEnabled}
+            disabled={busy}
+            onChange={(v) => set("callAlertEnabled", v)}
+          />
+          {draft.callAlertEnabled && (
+            <FieldRow
+              label="Alert duration (seconds)"
+              hint="How long each called ticket stays on screen. Between 3 and 60."
+            >
+              <input
+                type="number"
+                min={3}
+                max={60}
+                className={inputClass}
+                value={draft.callAlertSeconds}
+                onChange={(e) => set("callAlertSeconds", Number(e.target.value))}
+              />
+            </FieldRow>
+          )}
+        </SettingsCard>
+      )}
 
       <SettingsCard
         title="Local terms"
@@ -661,8 +688,8 @@ export function DisplayPanel({
           <div className="grid gap-4 sm:grid-cols-2">
             {textField("menuTitle", "Menu heading", DEFAULT_DISPLAY_MENU_TITLE, 60)}
             {textField("bookingsTitle", "Bookings heading", DEFAULT_DISPLAY_BOOKINGS_TITLE, 60)}
-            {textField("queueTitle", "Queue heading", DEFAULT_DISPLAY_QUEUE_TITLE, 60)}
-            {textField("nowServingLabel", '"Now serving" label', DEFAULT_DISPLAY_NOW_SERVING_LABEL, 40)}
+            {queueEnabled && textField("queueTitle", "Queue heading", DEFAULT_DISPLAY_QUEUE_TITLE, 60)}
+            {queueEnabled && textField("nowServingLabel", '"Now serving" label', DEFAULT_DISPLAY_NOW_SERVING_LABEL, 40)}
           </div>
         </SubSection>
 
@@ -732,21 +759,25 @@ export function DisplayPanel({
         ) : isBoard ? (
           <SubSection title="Live board" hint="Column heading, empty-column messages and ticket badges.">
             <div className="grid gap-4 sm:grid-cols-2">
-              {textField("waitingLabel", '"Waiting" column heading', DEFAULT_DISPLAY_WAITING_LABEL, 40)}
-              <div className="hidden sm:block" />
-              {textField(
-                "waitingEmptyText",
-                "Waiting column — empty message",
-                DEFAULT_DISPLAY_WAITING_EMPTY,
-                100,
-                "Shown when nobody is waiting.",
-              )}
-              {textField(
-                "servingEmptyText",
-                "Now serving column — empty message",
-                DEFAULT_DISPLAY_SERVING_EMPTY,
-                100,
-                "Shown when nobody is being served.",
+              {queueEnabled && (
+                <>
+                  {textField("waitingLabel", '"Waiting" column heading', DEFAULT_DISPLAY_WAITING_LABEL, 40)}
+                  <div className="hidden sm:block" />
+                  {textField(
+                    "waitingEmptyText",
+                    "Waiting column — empty message",
+                    DEFAULT_DISPLAY_WAITING_EMPTY,
+                    100,
+                    "Shown when nobody is waiting.",
+                  )}
+                  {textField(
+                    "servingEmptyText",
+                    "Now serving column — empty message",
+                    DEFAULT_DISPLAY_SERVING_EMPTY,
+                    100,
+                    "Shown when nobody is being served.",
+                  )}
+                </>
               )}
               {textField(
                 "bookingsEmptyText",
@@ -755,27 +786,32 @@ export function DisplayPanel({
                 100,
                 "Shown when there are no upcoming bookings.",
               )}
-              <div className="hidden sm:block" />
-              {textField(
-                "walkInBadgeLabel",
-                "Walk-in ticket badge",
-                DEFAULT_DISPLAY_WALKIN_BADGE,
-                20,
-                "Small label on tickets from customers who walked in.",
-              )}
-              {textField(
-                "bookingBadgeLabel",
-                "Booking ticket badge",
-                DEFAULT_DISPLAY_BOOKING_BADGE,
-                20,
-                "Small label on tickets that came from a booking.",
+              {queueEnabled && (
+                <>
+                  <div className="hidden sm:block" />
+                  {textField(
+                    "walkInBadgeLabel",
+                    "Walk-in ticket badge",
+                    DEFAULT_DISPLAY_WALKIN_BADGE,
+                    20,
+                    "Small label on tickets from customers who walked in.",
+                  )}
+                  {textField(
+                    "bookingBadgeLabel",
+                    "Booking ticket badge",
+                    DEFAULT_DISPLAY_BOOKING_BADGE,
+                    20,
+                    "Small label on tickets that came from a booking.",
+                  )}
+                </>
               )}
             </div>
           </SubSection>
         ) : (
           <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
-            More local terms (column heading, empty messages, ticket badges) appear here when you choose the Live
-            board or Split screen layout.
+            {queueEnabled
+              ? "More local terms (column heading, empty messages, ticket badges) appear here when you choose the Live board or Split screen layout."
+              : "More local terms (the empty-bookings message) appear here when you choose the Live board layout."}
           </p>
         )}
       </SettingsCard>
