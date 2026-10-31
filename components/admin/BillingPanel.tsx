@@ -32,6 +32,7 @@ import {
   type BillingStatus,
   type TenantInvoice,
   type PlanModuleInfo,
+  type ShishaBillingInfo,
 } from "@/app/admin/billing-actions"
 import { calculateBilling, formatCents, formatCentsCompact, type BillingCalculation } from "@/lib/services/billing-calculator"
 import type { Plan, PlanUsage } from "@/lib/services/plans"
@@ -135,31 +136,64 @@ export function BillingPanel() {
   if (loading) return <p className="text-[#8A8375]">Loading billing information…</p>
   if (error || !summary) return <p className="text-[#7A2E2E]">{error ?? "Couldn't load billing information."}</p>
 
-  const { currentPlan, usage, visitBreakdown, allPlans, planModules, pendingRequest, invoices, billingStatus, outstandingCents } =
-    summary
+  const {
+    currentPlan,
+    usage,
+    visitBreakdown,
+    allPlans,
+    planModules,
+    pendingRequest,
+    invoices,
+    billingStatus,
+    outstandingCents,
+    products,
+    shisha,
+  } = summary
+
+  // Each module is billed on its own. The plan (Free / Growth / Business) only prices Booking & Queue,
+  // so a shop that runs neither (e.g. a shisha-only venue) never sees plan billing at all.
+  const runsBookingQueue = products.booking || products.queue
 
   return (
     <div className="space-y-10">
-      <PanelHeader currentPlan={currentPlan} billingStatus={billingStatus} usage={usage} outstandingCents={outstandingCents} />
+      {runsBookingQueue ? (
+        <PanelHeader currentPlan={currentPlan} billingStatus={billingStatus} usage={usage} outstandingCents={outstandingCents} />
+      ) : (
+        <ModulesOnlyHeader billingStatus={billingStatus} outstandingCents={outstandingCents} currency={shisha?.currency ?? "ZAR"} />
+      )}
 
-      {pendingRequest && (
+      {runsBookingQueue && pendingRequest && (
         <div className="rounded-xl border border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm text-[#1C1A17]">
           Upgrade to <span className="font-semibold capitalize">{pendingRequest.requestedPlanKey}</span> requested — we'll be
           in touch shortly.
         </div>
       )}
 
-      <UsageSection currentPlan={currentPlan} usage={usage} />
+      {runsBookingQueue && (
+        <>
+          <UsageSection currentPlan={currentPlan} usage={usage} />
 
-      <VisitBreakdownSection breakdown={visitBreakdown} />
+          <VisitBreakdownSection breakdown={visitBreakdown} />
+        </>
+      )}
 
-      <PlanComparisonSection
-        allPlans={allPlans}
-        planModules={planModules}
-        currentPlan={currentPlan}
-        pendingRequest={pendingRequest}
-        onSelectUpgrade={setUpgradeTarget}
-      />
+      {shisha && <ShishaSection shisha={shisha} switchedOn={products.shisha} />}
+
+      {runsBookingQueue && (
+        <PlanComparisonSection
+          allPlans={allPlans}
+          planModules={planModules}
+          currentPlan={currentPlan}
+          pendingRequest={pendingRequest}
+          onSelectUpgrade={setUpgradeTarget}
+        />
+      )}
+
+      {!runsBookingQueue && !shisha && (
+        <p className="rounded-xl border border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm text-[#8A8375]">
+          No billable modules are switched on for your shop yet.
+        </p>
+      )}
 
       {invoices.length > 0 && (
         <InvoiceHistorySection
@@ -169,7 +203,7 @@ export function BillingPanel() {
         />
       )}
 
-      {upgradeTarget && (
+      {runsBookingQueue && upgradeTarget && (
         <UpgradeConfirmModal
           targetPlan={upgradeTarget}
           currentPlanName={currentPlan.name}
@@ -219,6 +253,70 @@ function PanelHeader({
         </div>
       )}
     </div>
+  )
+}
+
+// ============================================================================
+// Header for a shop with no Booking/Queue: no plan to show, just what it owes
+// ============================================================================
+
+function ModulesOnlyHeader({
+  billingStatus,
+  outstandingCents,
+  currency,
+}: {
+  billingStatus: BillingStatus
+  outstandingCents: number
+  currency: string
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-semibold text-[#1C1A17]">Billing</h2>
+          <StatusBadge status={billingStatus} />
+        </div>
+        <p className="mt-1 text-sm text-[#8A8375]">Your modules are billed on usage, with no monthly plan fee.</p>
+      </div>
+      {outstandingCents > 0 && (
+        <div className="rounded-xl border border-[#7A2E2E]/30 bg-[#7A2E2E]/5 px-4 py-3 text-right">
+          <p className="text-xs font-medium uppercase tracking-wide text-[#7A2E2E]">Outstanding balance</p>
+          <p className="mt-0.5 text-lg font-semibold text-[#7A2E2E]">{formatCents(outstandingCents, currency)}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Shisha — billed per session and per refill, separately from the plan
+// ============================================================================
+
+function ShishaSection({ shisha, switchedOn }: { shisha: ShishaBillingInfo; switchedOn: boolean }) {
+  const { currency, sessionFeeCents, refillFeeCents, thisMonth, lastMonth } = shisha
+  return (
+    <section className="rounded-xl border border-[#E6E1D4] p-5">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-base font-semibold text-[#1C1A17]">Shisha</h3>
+        <span className="text-sm text-[#8A8375]">Billed monthly on usage</span>
+      </div>
+      <p className="mt-1 text-sm text-[#8A8375]">
+        {formatCents(sessionFeeCents, currency)} per session · {formatCents(refillFeeCents, currency)} per refill
+      </p>
+
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-[#FAF8F3] p-4 sm:grid-cols-4">
+        <UsageStat label="Sessions this month" value={thisMonth.sessions.toLocaleString("en-ZA")} />
+        <UsageStat label="Refills this month" value={thisMonth.refills.toLocaleString("en-ZA")} />
+        <UsageStat label="Last month" value={formatCents(lastMonth.amountCents, currency)} />
+        <div className="border-t border-[#E6E1D4] pt-3 sm:border-t-0 sm:pt-0">
+          <UsageStat label="This month so far" value={formatCents(thisMonth.amountCents, currency)} emphasize />
+        </div>
+      </dl>
+
+      {!switchedOn && (
+        <p className="mt-3 text-sm text-[#8A8375]">Shisha is switched off for your shop. Earlier usage is still billed.</p>
+      )}
+    </section>
   )
 }
 
@@ -681,8 +779,15 @@ function InvoiceHistorySection({
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[#FAF8F3]"
               >
                 <div>
-                  <p className="text-sm font-medium text-[#1C1A17]">{periodLabel(inv.periodStart)}</p>
-                  <p className="text-xs text-[#8A8375]">{inv.visitCount.toLocaleString("en-ZA")} visits</p>
+                  <p className="text-sm font-medium text-[#1C1A17]">
+                    {periodLabel(inv.periodStart)}
+                    <span className="ml-2 rounded-full border border-[#E6E1D4] px-2 py-0.5 text-[11px] font-normal text-[#8A8375]">
+                      {inv.product === "shisha" ? "Shisha" : "Booking & Queue"}
+                    </span>
+                  </p>
+                  <p className="text-xs text-[#8A8375]">
+                    {inv.visitCount.toLocaleString("en-ZA")} {inv.product === "shisha" ? "sessions & refills" : "visits"}
+                  </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
@@ -695,7 +800,19 @@ function InvoiceHistorySection({
                 </div>
               </button>
 
-              {expanded && (
+              {expanded && inv.product === "shisha" && (
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm sm:grid-cols-4">
+                  <UsageStat label="Sessions" value={(inv.detail?.sessions ?? 0).toLocaleString("en-ZA")} />
+                  <UsageStat label="Session fees" value={formatCents(inv.detail?.session_fee_cents ?? 0, inv.currency)} />
+                  <UsageStat label="Refills" value={(inv.detail?.refills ?? 0).toLocaleString("en-ZA")} />
+                  <UsageStat label="Refill fees" value={formatCents(inv.detail?.refill_fee_cents ?? 0, inv.currency)} />
+                  <div className="col-span-2 border-t border-[#E6E1D4] pt-2 sm:col-span-4">
+                    <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
+                  </div>
+                </dl>
+              )}
+
+              {expanded && inv.product !== "shisha" && (
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm sm:grid-cols-4">
                   <UsageStat label="Base subscription" value={formatCents(inv.baseFeeCents, inv.currency)} />
                   <UsageStat label="Included visits" value={inv.includedVisits === null ? "No limit" : inv.includedVisits.toLocaleString("en-ZA")} />
