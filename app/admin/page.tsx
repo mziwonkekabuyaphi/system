@@ -146,7 +146,16 @@ async function getAllServices(supabase: ServerClient, tenantId: string): Promise
 // hourlyRate + payrollDetails ONLY as present-or-absent keys gated on
 // payroll.view (see those fields' doc comments in types.ts) — never sent as
 // `null` to signal "no permission", since a real value can legitimately be
-// null too. employeeNumber/startDate are ordinary staff.view fields.
+// null too.
+//
+// CONTACT DETAILS: phone, email, employee number, start date and "can sign in"
+// are HR/contact data. They are only queried, and only sent to the browser,
+// when includeContactDetails is true (staff.manage or payroll.view). Everyone
+// else (tenant_staff, tenant_manager, queue/shisha operators) gets the
+// directory view: id, name, active and job title. This runs on the
+// service-role client, so the columns are never even selected for them. The
+// names stay available because the queue "served by" and booking pickers, and
+// the shift-swap screens, need to show who a colleague is.
 //
 // payrollDetails comes from staff_payroll_details (a separate table, because
 // RLS is row-level and a column on `staff` would be readable by every
@@ -158,8 +167,11 @@ async function getAllStaff(
   tenantId: string,
   includeHourlyRate: boolean,
   includeClockInPin: boolean,
+  includeContactDetails: boolean,
 ): Promise<AdminStaff[]> {
-  const baseColumns = "id, name, active, job_title, phone, email, clock_in_pin_hash, profile_id, employee_number, start_date"
+  const directoryColumns = "id, name, active, job_title"
+  const contactColumns = "phone, email, clock_in_pin_hash, profile_id, employee_number, start_date"
+  const baseColumns = includeContactDetails ? `${directoryColumns}, ${contactColumns}` : directoryColumns
   const columns = includeHourlyRate ? `${baseColumns}, hourly_rate` : baseColumns
 
   const [staffResult, detailsResult] = await Promise.all([
@@ -183,8 +195,10 @@ async function getAllStaff(
       name: s.name,
       active: s.active,
       jobTitle: s.job_title,
-      phone: s.phone,
-      email: s.email,
+      // null (never selected) for callers without contact access: see the
+      // CONTACT DETAILS note above this function.
+      phone: s.phone ?? null,
+      email: s.email ?? null,
       // PINs are stored hashed and are NEVER sent to the browser. For staff.manage
       // callers this is only a placeholder meaning "has a PIN" (null = no PIN yet),
       // which drives the Reset PIN / Create PIN wording in StaffManager.
@@ -795,7 +809,15 @@ export default async function AdminPage() {
     getBookingsWindow(supabase, tenantId, timezone),
     loadQueueEntries(supabase, tenantId, displayContext),
     permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
-    getAllStaff(supabase, tenantId, permissions.payrollView, permissions.staffManage),
+    // Full contact details only for people who manage staff or payroll; every
+    // other team member gets names and job titles (getAllStaff explains why).
+    getAllStaff(
+      supabase,
+      tenantId,
+      permissions.payrollView,
+      permissions.staffManage,
+      permissions.staffManage || permissions.payrollView,
+    ),
     // Inbox = customer phone numbers, message previews and volume
     // analytics. Owner-only for now (settings.manage is the closest
     // existing owner-only key); swap for a dedicated inbox.view key if
