@@ -475,8 +475,11 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         <section key={key} className={`slide ${key} ${activeKey === key ? "active" : ""}`}>
           {key === "services" && (
             <>
-              <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">{menuTitle}</h2>
+              {/* Menu: the heading takes the top-left spot, the shop name sits top-right */}
+              <div className="slide-head">
+                <h2 className="slide-title">{menuTitle}</h2>
+                <p className="corner-mark">{brandName}</p>
+              </div>
               <ul className="menu-list">
                 {data.services.map((svc) => (
                   <li key={svc.id} className="menu-row">
@@ -491,8 +494,11 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
 
           {key === "bookings" && (
             <>
-              <p className="corner-mark">{brandName}</p>
-              <h2 className="slide-title">{bookingsTitle}</h2>
+              {/* Upcoming bookings: the heading takes the top-left spot, the shop name sits top-right */}
+              <div className="slide-head">
+                <h2 className="slide-title">{bookingsTitle}</h2>
+                <p className="corner-mark">{brandName}</p>
+              </div>
               <ul className="bookings-list">
                 {data.bookings.map((b) => (
                   <li key={b.id} className="booking-row">
@@ -509,7 +515,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           {key === "queue" && (
             <>
               {/* Live queue: the heading takes the top-left spot, the shop name sits top-right */}
-              <div className="queue-head">
+              <div className="slide-head">
                 <h2 className="slide-title">{queueTitle}</h2>
                 <p className="corner-mark">{brandName}</p>
               </div>
@@ -620,17 +626,17 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
           font-weight: 500;
         }
 
-        /* Live queue slide header: title left, shop name right (same grey as on the other slides) */
-        .queue-head {
+        /* Slide header (Menu, Upcoming bookings, Live queue): title left, shop name right, same grey as before */
+        .slide-head {
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
           gap: 2rem;
         }
-        .queue-head .slide-title {
+        .slide-head .slide-title {
           min-width: 0;
         }
-        .queue-head .corner-mark {
+        .slide-head .corner-mark {
           flex: none;
           max-width: 40%;
           margin: 0;
