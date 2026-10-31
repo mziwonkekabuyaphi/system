@@ -6,6 +6,7 @@ import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, resetSt
 import { ConfirmDialog, NoticeModal, type Notice } from "../AdminModals"
 import { StaffClockInDrawer } from "./StaffClockInDrawer"
 import { StaffPayrollDrawer } from "./StaffPayrollDrawer"
+import { StaffShiftsDrawer } from "../shifts/StaffShiftsDrawer"
 import type { AdminClockSettings, AdminStaff, AdminStaffInput, AdminStaffPermissions, AdminStaffShift } from "../types"
 import type {
   AdminBankAccountType,
@@ -309,6 +310,7 @@ export function StaffManager({
   timezone,
   clockSettings,
   canCustomizeBranding,
+  shiftsEnabled,
 }: {
   initialStaff: AdminStaff[]
   initialActiveShifts: AdminStaffShift[]
@@ -325,10 +327,14 @@ export function StaffManager({
   /** null unless the caller has settings.manage (same invariant as page.tsx). */
   clockSettings: AdminClockSettings | null
   canCustomizeBranding: boolean
+  /** Shifts module on the plan (page.tsx). Also needs permissions.shiftsView. */
+  shiftsEnabled: boolean
 }) {
   // Right-hand overlays, same pattern as Shisha's "TV display".
   const [payrollOpen, setPayrollOpen] = useState(false)
   const [clockOpen, setClockOpen] = useState(false)
+  const [shiftsOpen, setShiftsOpen] = useState(false)
+  const canSeeShifts = shiftsEnabled && permissions.shiftsView
   const canSeePayroll = permissions.payrollView
   const canSeeClockSettings = permissions.settingsManage && clockSettings !== null
 
@@ -482,13 +488,18 @@ export function StaffManager({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Staff</h2>
-          <p className="mt-0.5 text-sm text-[#8A8375]">Your team, who&apos;s clocked in, pay and clock-in settings.</p>
+          <p className="mt-0.5 text-sm text-[#8A8375]">Your team, who&apos;s clocked in, shifts, pay and clock-in settings.</p>
         </div>
-        {(canSeePayroll || canSeeClockSettings) && (
+        {(canSeePayroll || canSeeClockSettings || canSeeShifts) && (
           <div className="flex flex-wrap items-center gap-3">
             {canSeeClockSettings && (
               <button type="button" onClick={() => setClockOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
                 Clock-in settings
+              </button>
+            )}
+            {canSeeShifts && (
+              <button type="button" onClick={() => setShiftsOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
+                Shifts
               </button>
             )}
             {canSeePayroll && (
@@ -953,6 +964,7 @@ export function StaffManager({
       {canSeePayroll && (
         <StaffPayrollDrawer open={payrollOpen} onClose={() => setPayrollOpen(false)} timezone={timezone} permissions={permissions} />
       )}
+      {canSeeShifts && <StaffShiftsDrawer open={shiftsOpen} onClose={() => setShiftsOpen(false)} timezone={timezone} />}
       {canSeeClockSettings && (
         <StaffClockInDrawer
           open={clockOpen}
