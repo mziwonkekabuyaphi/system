@@ -364,7 +364,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   const customHeading = data.queue.find((q) => q.customLabel)?.customLabel ?? "Details"
   const colCount = 2 + Object.values(cols).filter(Boolean).length
 
-  function renderQueueRow(q: DisplayData["queue"][number]) {
+  function renderQueueRow(q: DisplayData["queue"][number], dividedBelow = false) {
     const isCalled = q.status === "called"
     // First column: the ticket when that field is on, else the position.
     // displayTicket is the queue ticket, or the booking reference for promoted
@@ -376,7 +376,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
     const waitedFrom = isCalled ? (q.calledAt ?? q.joinedAt) : q.joinedAt
     const waitedMin = nowMs !== null ? Math.max(0, Math.floor((nowMs - new Date(waitedFrom).getTime()) / 60000)) : null
     return (
-      <tr key={q.id} className={isCalled ? "row called" : "row"}>
+      <tr key={q.id} className={isCalled ? (dividedBelow ? "row called called-more" : "row called") : "row"}>
         <td className="c-lead" style={{ color: accent }}>
           {lead}
         </td>
@@ -541,13 +541,13 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
                         <td colSpan={colCount}>{nowServingLabel}</td>
                       </tr>
                     )}
-                    {calledEntries.map(renderQueueRow)}
+                    {calledEntries.map((q, i) => renderQueueRow(q, i < calledEntries.length - 1))}
                     {calledEntries.length > 0 && waitingEntries.length > 0 && (
                       <tr className="group-row up-next">
                         <td colSpan={colCount}>Up next</td>
                       </tr>
                     )}
-                    {waitingEntries.map(renderQueueRow)}
+                    {waitingEntries.map((q) => renderQueueRow(q))}
                   </tbody>
                 </table>
               </div>
@@ -813,8 +813,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         }
         .queue-table td {
           padding: 1.1vh 1.2vw;
-          /* dotted divider between customers, same style as the Menu / Bookings leaders */
-          border-bottom: 0.3vh dotted var(--fg-28);
+          border-bottom: 1px solid var(--fg-28);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -858,14 +857,19 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
         .queue-table .group-row.serving td {
           color: var(--accent);
         }
-        /* Divider between "Now serving" and "Up next": the same dotted line. */
+        /* Divider between "Now serving" and "Up next", in the primary colour. */
         .queue-table .group-row.up-next td {
-          border-top: 0.3vh dotted var(--fg-28);
+          border-top: 2px solid var(--accent);
           padding-top: 2.2vh;
         }
-        /* Called customers keep their soft highlight; the divider stays the dotted grey. */
         .queue-table .row.called td {
           background: var(--accent-soft);
+          border-bottom-color: var(--accent);
+        }
+        /* Several customers being served at once: a dotted divider between them, in the same
+           style as the Menu / Bookings leaders. The last one keeps its primary-colour line below. */
+        .queue-table .row.called.called-more td {
+          border-bottom: 0.3vh dotted var(--fg-28);
         }
         .queue-table .row.called .c-name {
           font-weight: 700;
