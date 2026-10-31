@@ -40,6 +40,7 @@ import {
   getTenantPlan,
   getTenantPlanUsage,
   getTenantVisitBreakdown,
+  getEnabledProducts,
   isBookingQueuePlanKey,
   type Plan,
   type PlanUsage,
@@ -55,8 +56,14 @@ async function getTenantScopedClient() {
   return { supabase, tenantId, error: undefined as string | undefined }
 }
 
+export type InvoiceProduct = "booking_queue" | "shisha"
+
 export interface TenantInvoice {
   id: string
+  /** Which module this invoice bills. Older rows are all Booking & Queue. */
+  product: InvoiceProduct
+  /** Shisha invoices: { sessions, session_fee_cents, refills, refill_fee_cents }. null otherwise. */
+  detail: { sessions?: number; session_fee_cents?: number; refills?: number; refill_fee_cents?: number } | null
   periodStart: string
   periodEnd: string
   visitCount: number
@@ -84,11 +91,21 @@ export interface TenantInvoice {
  *  how alarming it is, for a UI that wants to sort or prioritize by it. */
 export type BillingStatus = "active" | "trial_free" | "payment_due" | "overdue" | "cancelled"
 
-function deriveBillingStatus(tenantStatus: string, planKey: string, latestInvoice: TenantInvoice | null): BillingStatus {
+function deriveBillingStatus(
+  tenantStatus: string,
+  planKey: string,
+  invoices: TenantInvoice[],
+  runsBookingQueue: boolean,
+): BillingStatus {
   if (tenantStatus !== "active") return "cancelled"
-  if (planKey === "free") return "trial_free"
-  if (latestInvoice?.status === "overdue") return "overdue"
-  if (latestInvoice?.status === "issued") return "payment_due"
+  // "Free plan" only describes a shop that actually runs Booking or Queue; a shisha-only shop
+  // sits on the free plan row but is billed through its Shisha invoices.
+  if (planKey === "free" && runsBookingQueue) return "trial_free"
+  // Latest month across ALL products decides: any overdue wins, then any issued.
+  const latestStart = invoices[0]?.periodStart
+  const latest = invoices.filter((inv) => inv.periodStart === latestStart)
+  if (latest.some((inv) => inv.status === "overdue")) return "overdue"
+  if (latest.some((inv) => inv.status === "issued")) return "payment_due"
   return "active"
 }
 
@@ -97,7 +114,26 @@ export interface PlanModuleInfo {
   name: string
 }
 
+export interface ShishaMonth {
+  sessions: number
+  refills: number
+  amountCents: number
+}
+
+export interface ShishaBillingInfo {
+  /** What one session / one refill costs this shop, in cents (shop-specific rate, else the platform default). */
+  sessionFeeCents: number
+  refillFeeCents: number
+  currency: string
+  thisMonth: ShishaMonth
+  lastMonth: ShishaMonth
+}
+
 export interface BillingSummary {
+  /** Which modules are switched on for this shop (tenant_modules). Drives what the panel shows. */
+  products: { booking: boolean; queue: boolean; shisha: boolean }
+  /** Shisha usage and rates. null when the shop has never used Shisha and has it off. */
+  shisha: ShishaBillingInfo | null
   currentPlan: Plan
   usage: PlanUsage
   visitBreakdown: VisitBreakdown
@@ -111,17 +147,77 @@ export interface BillingSummary {
   outstandingCents: number
 }
 
+const SHISHA_BILLING_TZ = "Africa/Johannesburg" // same month boundaries as shisha_usage_monthly and invoicing
+
+function shishaMonthKeys(): { thisMonth: string; lastMonth: string } {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: SHISHA_BILLING_TZ }).format(new Date()) // YYYY-MM-DD
+  const [y, m] = today.split("-").map(Number)
+  const key = (yy: number, mm: number) => `${yy}-${String(mm).padStart(2, "0")}-01`
+  return { thisMonth: key(y, m), lastMonth: m === 1 ? key(y - 1, 12) : key(y, m - 1) }
+}
+
+const toCents = (rands: unknown): number => Math.round(Number(rands) * 100) || 0
+
+async function loadShishaBilling(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+  switchedOn: boolean,
+  hasShishaInvoices: boolean,
+): Promise<ShishaBillingInfo | null> {
+  const { thisMonth, lastMonth } = shishaMonthKeys()
+
+  const [usageRes, ratesRes] = await Promise.all([
+    supabase
+      .from("shisha_usage_monthly")
+      .select("month, sessions, refills, amount, currency")
+      .eq("tenant_id", tenantId)
+      .in("month", [thisMonth, lastMonth]),
+    supabase
+      .from("shisha_billing_rates")
+      .select("tenant_id, session_fee, refill_fee, currency")
+      .eq("is_active", true)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`),
+  ])
+  if (usageRes.error) throw new Error(`Failed to load shisha usage: ${usageRes.error.message}`)
+
+  const usage = (usageRes.data ?? []) as Array<{ month: string; sessions: number; refills: number; amount: number | string; currency: string }>
+  // Nothing to show: Shisha off, never used, never invoiced.
+  if (!switchedOn && usage.length === 0 && !hasShishaInvoices) return null
+
+  const monthOf = (month: string): ShishaMonth => {
+    const rows = usage.filter((u) => u.month === month)
+    return {
+      sessions: rows.reduce((n, r) => n + Number(r.sessions), 0),
+      refills: rows.reduce((n, r) => n + Number(r.refills), 0),
+      amountCents: rows.reduce((n, r) => n + toCents(r.amount), 0),
+    }
+  }
+
+  // The shop's own active rate wins over the platform default (tenant_id null).
+  const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; session_fee: number | string; refill_fee: number | string; currency: string }>
+  const rate = rates.find((r) => r.tenant_id === tenantId) ?? rates.find((r) => r.tenant_id === null)
+
+  return {
+    sessionFeeCents: rate ? toCents(rate.session_fee) : 0,
+    refillFeeCents: rate ? toCents(rate.refill_fee) : 0,
+    currency: rate?.currency ?? usage[0]?.currency ?? "ZAR",
+    thisMonth: monthOf(thisMonth),
+    lastMonth: monthOf(lastMonth),
+  }
+}
+
 export async function getBillingSummary(): Promise<{ ok: true; data: BillingSummary } | { ok: false; error: string }> {
   const { supabase, tenantId, error } = await getTenantScopedClient()
   if (!supabase) return { ok: false, error: error! }
 
   try {
-    const [currentPlan, usage, visitBreakdown, allPlans, tenantRow] = await Promise.all([
+    const [currentPlan, usage, visitBreakdown, allPlans, tenantRow, products] = await Promise.all([
       getTenantPlan(supabase, tenantId!),
       getTenantPlanUsage(supabase, tenantId!),
       getTenantVisitBreakdown(supabase, tenantId!),
       listPlans(supabase),
       supabase.from("tenants").select("status").eq("id", tenantId!).single(),
+      getEnabledProducts(supabase, tenantId!),
     ])
 
     // Real capabilities per plan for the comparison section -- straight
@@ -155,14 +251,16 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
     const { data: invoiceRows } = await supabase
       .from("tenant_invoices")
       .select(
-        "id, period_start, period_end, visit_count, rate_cents, amount_cents, currency, status, base_fee_cents, included_visits, overage_visits, staff_count, included_staff, extra_staff, extra_staff_fee_cents",
+        "id, product, detail, period_start, period_end, visit_count, rate_cents, amount_cents, currency, status, base_fee_cents, included_visits, overage_visits, staff_count, included_staff, extra_staff, extra_staff_fee_cents",
       )
       .eq("tenant_id", tenantId)
       .order("period_start", { ascending: false })
-      .limit(12)
+      .limit(24) // two products per month now
 
     const invoices: TenantInvoice[] = (invoiceRows ?? []).map((row: any) => ({
       id: row.id,
+      product: (row.product === "shisha" ? "shisha" : "booking_queue") as InvoiceProduct,
+      detail: row.detail ?? null,
       periodStart: row.period_start,
       periodEnd: row.period_end,
       visitCount: row.visit_count,
@@ -183,11 +281,15 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
       .filter((inv) => inv.status === "issued" || inv.status === "overdue")
       .reduce((sum, inv) => sum + inv.amountCents, 0)
 
-    const billingStatus = deriveBillingStatus(tenantRow.data?.status ?? "active", currentPlan.key, invoices[0] ?? null)
+    const runsBookingQueue = products.booking || products.queue
+    const billingStatus = deriveBillingStatus(tenantRow.data?.status ?? "active", currentPlan.key, invoices, runsBookingQueue)
+    const shisha = await loadShishaBilling(supabase, tenantId!, products.shisha, invoices.some((inv) => inv.product === "shisha"))
 
     return {
       ok: true,
       data: {
+        products: { booking: products.booking, queue: products.queue, shisha: products.shisha },
+        shisha,
         currentPlan,
         usage,
         visitBreakdown,
