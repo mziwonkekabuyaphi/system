@@ -94,6 +94,57 @@ export async function createShop(input: {
   } catch (e) { return fail(e) }
 }
 
+/** Approves a shop that signed itself up: switches on the chosen modules, then makes it active. */
+export async function approveShop(input: { tenantId: string; modules: NewShopModule[] }): Promise<R> {
+  try {
+    const { supabase } = await ctx()
+
+    const { data: tenant, error } = await supabase.from("tenants").select("id, status").eq("id", input.tenantId).maybeSingle()
+    if (error) return fail(error)
+    if (!tenant) return { success: false, error: "Shop not found." }
+    if (tenant.status !== "pending") return { success: false, error: "That shop isn't waiting for approval any more." }
+
+    // Modules first, then activate: a pending shop has nothing live (isProductEnabled needs status 'active'),
+    // so a failure here leaves it safely pending and the admin can just try again.
+    await enableModulesForNewShop(supabase, tenant.id, cleanModuleKeys(input.modules))
+
+    const { data: claimed, error: claimError } = await supabase
+      .from("tenants")
+      .update({ status: "active" })
+      .eq("id", tenant.id)
+      .eq("status", "pending") // a second admin clicking at the same time can't approve it twice
+      .select("id")
+      .maybeSingle()
+    if (claimError) return fail(claimError)
+    if (!claimed) return { success: false, error: "Someone else already handled that shop." }
+
+    revalidatePath("/platform")
+    revalidatePath("/platform/tenants")
+    revalidatePath("/platform/modules")
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+/** Declines a pending shop. It is kept (status 'inactive') so the owner sees a clear message, not a broken login. */
+export async function declineShop(input: { tenantId: string }): Promise<R> {
+  try {
+    const { supabase } = await ctx()
+    const { data, error } = await supabase
+      .from("tenants")
+      .update({ status: "inactive" })
+      .eq("id", input.tenantId)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle()
+    if (error) return fail(error)
+    if (!data) return { success: false, error: "That shop isn't waiting for approval any more." }
+
+    revalidatePath("/platform")
+    revalidatePath("/platform/tenants")
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
 /** A fresh owner invite for an existing shop (the first one expired, or the owner changed). */
 export async function createOwnerInvite(input: { tenantId: string; ownerEmail: string }): Promise<R<{ inviteCode: string }>> {
   try {

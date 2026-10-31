@@ -2,6 +2,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { SIGNUP_CHOICES } from "@/lib/services/new-shop-modules"
 import { createTenantAction, joinTenantAction } from "./actions"
 
 export function OnboardingForm() {
@@ -38,14 +39,18 @@ export function OnboardingForm() {
             <input id="businessName" name="businessName" type="text" required
               className="mt-1 w-full rounded border border-stone-300 px-3 py-2" />
           </div>
-          <p className="text-xs text-stone-500">You start with Booking and Queue switched on.</p>
-          <label className="flex items-start gap-2 text-sm text-stone-700">
-            <input type="checkbox" name="wantsShisha" className="mt-1" />
-            <span>
-              I also run a shisha lounge
-              <span className="block text-xs text-stone-500">Shisha isn&apos;t switched on automatically. We&apos;ll contact you to set it up.</span>
-            </span>
-          </label>
+          <fieldset>
+            <legend className="block text-sm text-stone-700">What do you need?</legend>
+            <div className="mt-2 space-y-2">
+              {SIGNUP_CHOICES.map((c, i) => (
+                <label key={c.value} className="flex items-center gap-2 text-sm text-stone-800">
+                  <input type="radio" name="need" value={c.value} defaultChecked={i === 0} />
+                  {c.label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-stone-500">We review every new business before it goes live, then switch on what you need.</p>
+          </fieldset>
           {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
           <button type="submit" disabled={isPending} className="w-full rounded bg-stone-900 py-2 text-white">
             {isPending ? "Creating…" : "Create business"}

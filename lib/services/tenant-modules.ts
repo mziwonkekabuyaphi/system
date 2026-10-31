@@ -1,7 +1,8 @@
 // lib/services/tenant-modules.ts
 //
-// Writes a new shop's starting modules. The lists (SELF_SIGNUP_MODULES,
-// CREATABLE_MODULES) live in ./new-shop-modules.ts so client components can use them.
+// Writes a shop's starting modules: used when a platform admin creates a shop or
+// approves a pending one. The lists (CREATABLE_MODULES, SIGNUP_CHOICES) live in
+// ./new-shop-modules.ts so client components can use them.
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 

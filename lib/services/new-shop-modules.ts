@@ -9,15 +9,13 @@
 // shop created with no rows sees an empty dashboard and WhatsApp has nothing to
 // offer. Every place that creates a shop passes an explicit list.
 //
-// Self-signup gets Booking + Queue only. Shisha is deliberately NOT here: a
-// platform admin switches it on (/platform/modules) after the owner asks.
+// Self-signup does NOT switch anything on: the shop starts "pending", the owner says
+// what they need (SIGNUP_CHOICES), and a platform admin approves the shop and picks
+// the modules on /platform/tenants. Requesting a module never turns it on.
 
 import type { AddonKey, ProductKey } from "@/lib/services/plans"
 
 export type NewShopModule = ProductKey | AddonKey
-
-/** What a shop that signs itself up at /onboarding starts with (free plan). */
-export const SELF_SIGNUP_MODULES: NewShopModule[] = ["booking", "queue"]
 
 /** Everything a platform admin may tick when creating a shop. */
 export const CREATABLE_MODULES: Array<{ key: NewShopModule; label: string; defaultOn: boolean }> = [
@@ -34,4 +32,18 @@ const CREATABLE_KEYS = new Set<string>(CREATABLE_MODULES.map((m) => m.key))
 export function cleanModuleKeys(keys: unknown): NewShopModule[] {
   if (!Array.isArray(keys)) return []
   return [...new Set(keys.filter((k): k is NewShopModule => typeof k === "string" && CREATABLE_KEYS.has(k)))]
+}
+
+/** What a self-signup owner says they need. Stored as tenants.requested_modules. */
+export type SignupChoice = "booking_queue" | "shisha" | "all"
+
+export const SIGNUP_CHOICES: Array<{ value: SignupChoice; label: string; modules: NewShopModule[] }> = [
+  { value: "booking_queue", label: "Bookings and a queue", modules: ["booking", "queue"] },
+  { value: "shisha", label: "Shisha lounge", modules: ["shisha"] },
+  { value: "all", label: "All of them", modules: ["booking", "queue", "shisha"] },
+]
+
+/** The modules an owner asked for; anything unrecognised means Booking + Queue. */
+export function modulesForChoice(choice: unknown): NewShopModule[] {
+  return (SIGNUP_CHOICES.find((c) => c.value === choice) ?? SIGNUP_CHOICES[0]).modules
 }

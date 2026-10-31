@@ -43,5 +43,31 @@ export default async function TenantsPage() {
     }))
     .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
 
-  return <Tenants rows={rows} />
+  // Shops waiting for approval (self-signups), oldest first, with who signed up and what they asked for.
+  const waiting = ((tenants.data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at?: string; requested_modules?: string[] | null }>)
+    .filter((t) => t.status === "pending")
+    .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+
+  const pending = await Promise.all(
+    waiting.map(async (t) => {
+      let ownerName: string | null = null
+      let ownerEmail: string | null = null
+      try {
+        const { data: member } = await supabase.from("tenant_members").select("profile_id").eq("tenant_id", t.id).limit(1).maybeSingle()
+        if (member?.profile_id) {
+          const [{ data: profile }, { data: auth }] = await Promise.all([
+            supabase.from("profiles").select("full_name").eq("id", member.profile_id).maybeSingle(),
+            supabase.auth.admin.getUserById(member.profile_id),
+          ])
+          ownerName = profile?.full_name ?? null
+          ownerEmail = auth?.user?.email ?? null
+        }
+      } catch {
+        // The card still works without the owner's details.
+      }
+      return { id: t.id, name: t.name, slug: t.slug, createdAt: t.created_at ?? null, requested: t.requested_modules ?? [], ownerName, ownerEmail }
+    }),
+  )
+
+  return <Tenants rows={rows} pending={pending} />
 }

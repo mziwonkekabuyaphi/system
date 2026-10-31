@@ -14,7 +14,7 @@ export default async function PlatformHome() {
   const supabase = getSupabaseServerClient()
   if (!supabase) redirect("/login")
 
-  const [all, active, people, pending, recent, upgrades, enquiries] = await Promise.all([
+  const [all, active, people, pending, recent, upgrades, enquiries, awaiting] = await Promise.all([
     supabase.from("tenants").select("id", { count: "exact", head: true }),
     supabase.from("tenants").select("id", { count: "exact", head: true }).eq("status", "active"),
     supabase.from("salespeople").select("id", { count: "exact", head: true }).neq("status", "terminated"),
@@ -22,6 +22,7 @@ export default async function PlatformHome() {
     supabase.from("tenants").select("*").limit(200),
     supabase.from("plan_upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("contact_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
+    supabase.from("tenants").select("id", { count: "exact", head: true }).eq("status", "pending"),
   ])
 
   const newest = ((recent.data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at?: string }>)
@@ -29,6 +30,7 @@ export default async function PlatformHome() {
     .slice(0, 8)
 
   const stats: Array<[string, number, string?]> = [
+    ["Shops waiting for approval", awaiting.count ?? 0, "/platform/tenants"],
     ["Shops", all.count ?? 0, "/platform/tenants"],
     ["Active shops", active.count ?? 0, "/platform/tenants"],
     ["Salespeople", people.count ?? 0, "/platform/sales"],
