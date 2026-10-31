@@ -34,7 +34,7 @@
 import { useState, useTransition } from "react"
 
 import { AnalyticsDashboard } from "./AnalyticsDashboard"
-import { CustomersManager } from "./CustomersManager"
+import { CustomersDrawer } from "./CustomersDrawer"
 import { getConversationThread, sendAgentMessage, setConversationAiState } from "./inbox-actions"
 import type { AdminAiState, AdminConversationSummary, AdminInboxStats, AdminMessage, AdminMessageSettings } from "./types"
 import { WhatsAppSettingsDrawer } from "./WhatsAppSettingsDrawer"
@@ -100,7 +100,7 @@ export function InboxManager({
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showAnalytics, setShowAnalytics] = useState(false)
-  const [showCustomers, setShowCustomers] = useState(false)
+  const [customersOpen, setCustomersOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const [messages, setMessages] = useState<AdminMessage[]>([])
@@ -284,23 +284,15 @@ export function InboxManager({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        {showCustomers ? (
-          // The Customers view has its own search box, so keep the row tidy.
-          <div className="flex-1" />
-        ) : (
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search conversations…"
-            className="flex-1 rounded-full border border-stone-300 px-4 py-2 text-sm focus:border-[#7A2E3A] focus:outline-none focus:ring-1 focus:ring-[#7A2E3A]"
-          />
-        )}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search conversations…"
+          className="flex-1 rounded-full border border-stone-300 px-4 py-2 text-sm focus:border-[#7A2E3A] focus:outline-none focus:ring-1 focus:ring-[#7A2E3A]"
+        />
         <button
           type="button"
-          onClick={() => {
-            setShowAnalytics((v) => !v)
-            setShowCustomers(false)
-          }}
+          onClick={() => setShowAnalytics((v) => !v)}
           className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium ${
             showAnalytics ? "bg-[#7A2E3A] text-white" : "border border-stone-300 text-stone-600"
           }`}
@@ -309,13 +301,8 @@ export function InboxManager({
         </button>
         <button
           type="button"
-          onClick={() => {
-            setShowCustomers((v) => !v)
-            setShowAnalytics(false)
-          }}
-          className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium ${
-            showCustomers ? "bg-[#7A2E3A] text-white" : "border border-stone-300 text-stone-600"
-          }`}
+          onClick={() => setCustomersOpen(true)}
+          className="shrink-0 rounded-full border border-stone-300 px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-50"
         >
           Customers
         </button>
@@ -330,10 +317,6 @@ export function InboxManager({
 
       {showAnalytics && <AnalyticsDashboard stats={initialStats} />}
 
-      {showCustomers && <CustomersManager timezone={timezone} />}
-
-      {!showCustomers && (
-      <>
       <div className="flex gap-1 overflow-x-auto">
         {FILTERS.map((f) => (
           <button
@@ -378,8 +361,9 @@ export function InboxManager({
           ))}
         </div>
       )}
-      </>
-      )}
+
+      {/* Customers: right-hand overlay panel, so the Inbox stays right behind it */}
+      <CustomersDrawer open={customersOpen} onClose={() => setCustomersOpen(false)} timezone={timezone} />
 
       {/* WhatsApp settings: right-hand overlay panel */}
       <WhatsAppSettingsDrawer
