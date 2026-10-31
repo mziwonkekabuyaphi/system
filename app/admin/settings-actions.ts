@@ -505,7 +505,7 @@ export async function setModuleSwitch(which: SwitchableModule, enabled: boolean)
   try {
     if (!isSwitchable(which)) return { success: false, error: "Unknown module" }
     const { supabase, tenantId } = await tenantContext()
-    if (which === "display") await requireAnyProduct(supabase, tenantId, ["queue"])
+    if (which === "display") await requireAnyProduct(supabase, tenantId, ["booking", "queue"])
 
     const { data: moduleRow, error: moduleLookupError } = await supabase
       .from("modules")
@@ -1303,7 +1303,7 @@ export async function updateDisplaySettings(input: {
     }
 
     const { supabase, tenantId } = await tenantContext()
-    await requireAnyProduct(supabase, tenantId, ["queue"])
+    await requireAnyProduct(supabase, tenantId, ["booking", "queue"])
 
     // The "custom" theme (your own background colour) is part of the
     // 'branding' module. Dark and Light stay free on every plan. Without the
