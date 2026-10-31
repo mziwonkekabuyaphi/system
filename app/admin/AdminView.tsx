@@ -9,7 +9,6 @@ import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
 import { CustomersManager } from "./CustomersManager"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./queue/QueueManager"
-import { ServicesManager } from "./ServicesManager"
 import { ShishaManager } from "./shisha/ShishaManager"
 import { SettingsManager } from "./SettingsManager"
 import { sidebarStyleVars } from "./sidebar-theme"
@@ -42,7 +41,6 @@ type Tab =
   | "shisha"
   | "customers"
   | "inbox"
-  | "services"
   | "staff"
   | "analytics"
   | "billing"
@@ -80,15 +78,6 @@ function ChatIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />
-    </svg>
-  )
-}
-
-function TagIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M12.4 3H5.8A1.8 1.8 0 0 0 4 4.8v6.6c0 .48.19.93.53 1.27l8.4 8.4a1.8 1.8 0 0 0 2.54 0l6.6-6.6a1.8 1.8 0 0 0 0-2.54l-8.4-8.4A1.8 1.8 0 0 0 12.4 3Z" />
-      <circle cx="8.4" cy="8.4" r="1.3" />
     </svg>
   )
 }
@@ -169,7 +158,6 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "shisha", label: "Shisha", icon: HookahIcon },
   { id: "inbox", label: "Inbox", icon: ChatIcon },
   { id: "customers", label: "Customers", icon: ContactsIcon },
-  { id: "services", label: "Services", icon: TagIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
   { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
@@ -237,8 +225,9 @@ export function AdminView({
   initialBusinessHours: AdminBusinessHours | null
 }) {
   // Which tabs this shop + caller can see. Booking and Queue are optional
-  // products; Services, Customers and Inbox only mean something when at least
-  // one of them is on. Staff, Analytics, Billing and Settings stay available.
+  // products; Customers and Inbox only mean something when at least one of
+  // them is on. Staff, Analytics, Billing and Settings stay available.
+  // (Services now lives in Settings > Customer Journey, next to Kiosk and Display.)
   const hasBookingOrQueue = bookingEnabled || queueEnabled
   const isTabVisible = (id: Tab): boolean => {
     switch (id) {
@@ -246,8 +235,6 @@ export function AdminView({
         return bookingEnabled
       case "queue":
         return queueEnabled
-      case "services":
-        return staffPermissions.servicesManage && hasBookingOrQueue
       case "settings":
         return staffPermissions.settingsManage
       // Module switched on + shisha.view. The actions re-check both server-side.
@@ -499,9 +486,6 @@ export function AdminView({
               initialMessageSettings={initialMessageSettings!}
             />
           )}
-          {tab === "services" && isTabVisible("services") && (
-            <ServicesManager initialServices={initialServices} />
-          )}
           {tab === "staff" && (
             <StaffManager
               initialStaff={initialStaff}
@@ -539,6 +523,8 @@ export function AdminView({
               initialBusinessHours={initialBusinessHours!}
               bookingEnabled={bookingEnabled}
               queueEnabled={queueEnabled}
+              initialServices={initialServices}
+              servicesManage={staffPermissions.servicesManage}
             />
           )}
         </main>
