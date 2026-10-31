@@ -75,6 +75,7 @@
 
 import { NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { isProductEnabled } from "@/lib/services/plans"
 
 export const dynamic = "force-dynamic"
 
@@ -126,6 +127,15 @@ async function promoteEligibleBookings(): Promise<PromotionSummary> {
   const errors: string[] = []
 
   for (const tenant of tenants) {
+    // Promotion turns a booking into a queue entry, so the shop must run BOTH
+    // products (tenant_modules). Same rule as the database job of the same name
+    // (public.promote_bookings_to_queue). Nothing is touched for a shop without them.
+    const [bookingOn, queueOn] = await Promise.all([
+      isProductEnabled(supabase, tenant.tenant_id, "booking"),
+      isProductEnabled(supabase, tenant.tenant_id, "queue"),
+    ])
+    if (!bookingOn || !queueOn) continue
+
     const eligibleBeforeISO = new Date(now + tenant.queue_lead_time_minutes * 60_000).toISOString()
 
     // Confirmed bookings for this tenant whose lead-time window has
