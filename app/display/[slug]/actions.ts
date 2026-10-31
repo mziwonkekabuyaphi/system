@@ -327,9 +327,14 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
 
     const tenantId = await resolveActiveTenantId(slug)
 
-    // The board is the live queue: a shop that doesn't run Queue gets nothing back
-    // (and no queue data is read), even if someone calls this action directly.
-    if (!(await isProductEnabled(supabase, tenantId, "queue"))) {
+    // The screen needs Booking or Queue: a shop running neither gets nothing back, even if
+    // someone calls this action directly. A Booking-only shop gets its bookings and menu, and
+    // no queue data is read for it (limit 0 below).
+    const [queueOn, bookingOn] = await Promise.all([
+      isProductEnabled(supabase, tenantId, "queue"),
+      isProductEnabled(supabase, tenantId, "booking"),
+    ])
+    if (!queueOn && !bookingOn) {
       return { ok: false, error: "This display isn't available." }
     }
 
@@ -377,7 +382,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         .eq("tenant_id", tenantId)
         .in("status", ["waiting", "called"])
         .order("joined_at", { ascending: true })
-        .limit(QUEUE_LIMIT),
+        .limit(queueOn ? QUEUE_LIMIT : 0),
       // Same table the kiosk's own ticket formatting reads from
       // (lib/services/queue.ts's getTicketNumberPrefix) -- kept as its
       // own small query rather than folded into the queue_entries one
@@ -474,9 +479,22 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
     // same as the logo and brand colours. Without it the screen falls back
     // to the built-in dark look; the stored colour is kept for an upgrade.
     // Copied rather than mutated: rawSettings may be the shared defaults.
-    const settings: DisplaySettings = brandingEntitled
+    const themedSettings: DisplaySettings = brandingEntitled
       ? rawSettings
       : { ...rawSettings, theme: rawSettings.theme === "custom" ? "dark" : rawSettings.theme, backgroundColor: null }
+
+    // A Booking-only shop has no queue: leave the queue screens, the split layout and the call
+    // alert out of the screen whatever was saved earlier (the stored values are kept, so they
+    // apply again if Queue is switched on). The board then shows just the bookings column.
+    const settings: DisplaySettings = queueOn
+      ? themedSettings
+      : {
+          ...themedSettings,
+          showQueue: false,
+          showSplit: false,
+          callAlertEnabled: false,
+          layout: themedSettings.layout === "split" ? "rotation" : themedSettings.layout,
+        }
 
     const bookings: DisplayBooking[] = (bookingsResult.data ?? []).map((row) => {
       const customer = unwrapJoin<{ full_name: string | null }>(row.customer as never)
