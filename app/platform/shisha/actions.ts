@@ -8,6 +8,7 @@ import { redirect } from "next/navigation"
 
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { invalidateModuleCache } from "@/lib/tenant/modules"
 
 // Literal on purpose: independent of MODULE_KEYS.shisha existing in plans.ts.
 const SHISHA_MODULE_KEY = "shisha"
@@ -49,6 +50,10 @@ export async function setShishaEnabledAction(formData: FormData): Promise<void> 
     ? await supabase.from("tenant_modules").update({ enabled: enable }).eq("tenant_id", tenantId).eq("module_id", mod.id)
     : await supabase.from("tenant_modules").insert([{ tenant_id: tenantId, module_id: mod.id, enabled: enable }])
   if (error) fail(error.message)
+
+  // WhatsApp caches module lookups for a few seconds; drop this shop's entry so
+  // the instance that handled the toggle sees it straight away.
+  invalidateModuleCache(tenantId, SHISHA_MODULE_KEY)
 
   revalidatePath("/platform/shisha")
 }
