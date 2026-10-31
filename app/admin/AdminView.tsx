@@ -184,6 +184,8 @@ export function AdminView({
   initialStaff,
   initialActiveShifts,
   staffPermissions,
+  bookingEnabled,
+  queueEnabled,
   shishaEnabled,
   shiftsEnabled,
   initialConversations,
@@ -210,6 +212,10 @@ export function AdminView({
   initialActiveShifts: AdminStaffShift[]
   staffPermissions: AdminStaffPermissions
   /** Shisha is switched on for the tenant AND the caller has shisha.view (computed in page.tsx). */
+  /** Booking / Queue / Shisha / Shifts are per-shop switches (tenant_modules). page.tsx
+   *  fails closed and also skips the data load for a product that's off. */
+  bookingEnabled: boolean
+  queueEnabled: boolean
   shishaEnabled: boolean
   /** Shifts module on the tenant's plan AND the caller has shifts.view (computed in page.tsx). */
   shiftsEnabled: boolean
@@ -230,7 +236,41 @@ export function AdminView({
   initialMessageSettings: AdminMessageSettings | null
   initialBusinessHours: AdminBusinessHours | null
 }) {
-  const [tab, setTab] = useState<Tab>("today")
+  // Which tabs this shop + caller can see. Booking and Queue are optional
+  // products; Services, Customers and Inbox only mean something when at least
+  // one of them is on. Staff, Analytics, Billing and Settings stay available.
+  const hasBookingOrQueue = bookingEnabled || queueEnabled
+  const isTabVisible = (id: Tab): boolean => {
+    switch (id) {
+      case "today":
+        return bookingEnabled
+      case "queue":
+        return queueEnabled
+      case "services":
+        return staffPermissions.servicesManage && hasBookingOrQueue
+      case "settings":
+        return staffPermissions.settingsManage
+      // Module switched on + shisha.view. The actions re-check both server-side.
+      case "shisha":
+        return shishaEnabled && staffPermissions.shishaView
+      // Analytics has its own permission key (analytics.view). The server
+      // action in app/admin/analytics/actions.ts re-checks it.
+      case "analytics":
+        return staffPermissions.analyticsView
+      // Billing is owner-only (settings.manage is the closest owner-only key).
+      case "billing":
+        return staffPermissions.settingsManage
+      // Inbox (WhatsApp) and Customers hold phone numbers: owner-only, and only
+      // for shops running Booking or Queue.
+      case "inbox":
+      case "customers":
+        return staffPermissions.settingsManage && hasBookingOrQueue
+      default:
+        return true
+    }
+  }
+  // Land on the first tab the shop actually has (a shisha-only shop has no Appointments).
+  const [tab, setTab] = useState<Tab>(() => TABS.find((t) => isTabVisible(t.id))?.id ?? "staff")
 
   // Queue settings are edited from two places (Live Queue > Queue rules, and
   // Settings > Kiosk > Services). Held here so each always opens with what the
@@ -249,24 +289,7 @@ export function AdminView({
   // in page.tsx: initialServices is already [] and the settings fields
   // are already null for such a caller, so this only controls whether
   // the (now-empty/inapplicable) tab is shown at all.
-  const visibleTabs = TABS.filter((t) => {
-    if (t.id === "services") return staffPermissions.servicesManage
-    if (t.id === "settings") return staffPermissions.settingsManage
-    // Module switched on + shisha.view. The actions re-check both server-side.
-    if (t.id === "shisha") return shishaEnabled && staffPermissions.shishaView
-    // Analytics has its own permission key (analytics.view). The server
-    // action in app/admin/analytics/actions.ts re-checks it, so this only
-    // controls whether the tab is shown.
-    if (t.id === "analytics") return staffPermissions.analyticsView
-    // Billing and Inbox are owner-only for now. settings.manage is the
-    // closest existing owner-only key; swap in dedicated keys
-    // (billing.view / inbox.view) if you add them.
-    if (t.id === "billing") return staffPermissions.settingsManage
-    if (t.id === "inbox") return staffPermissions.settingsManage
-    // Customers lists phone numbers and emails, so it's owner-only too.
-    if (t.id === "customers") return staffPermissions.settingsManage
-    return true
-  })
+  const visibleTabs = TABS.filter((t) => isTabVisible(t.id))
 
   // Branding is lifted into state (seeded from the server-fetched
   // initialBranding) so the sidebar badge and header logo update the
@@ -444,7 +467,7 @@ export function AdminView({
         </header>
 
         <main className="px-6 pb-24 pt-2">
-          {tab === "today" && (
+          {tab === "today" && bookingEnabled && (
             <TodayBookings
               initialBookings={initialBookings}
               timezone={timezone}
@@ -452,7 +475,7 @@ export function AdminView({
               onBookingSettingsSaved={setBookingSettings}
             />
           )}
-          {tab === "queue" && (
+          {tab === "queue" && queueEnabled && (
             <QueueManager
               initialQueue={initialQueue}
               timezone={timezone}
@@ -467,15 +490,15 @@ export function AdminView({
               canManage={staffPermissions.shishaManage}
             />
           )}
-          {tab === "customers" && staffPermissions.settingsManage && <CustomersManager timezone={timezone} />}
-          {tab === "inbox" && staffPermissions.settingsManage && (
+          {tab === "customers" && isTabVisible("customers") && <CustomersManager timezone={timezone} />}
+          {tab === "inbox" && isTabVisible("inbox") && (
             <InboxManager
               initialConversations={initialConversations}
               initialStats={initialInboxStats}
               initialMessageSettings={initialMessageSettings!}
             />
           )}
-          {tab === "services" && staffPermissions.servicesManage && (
+          {tab === "services" && isTabVisible("services") && (
             <ServicesManager initialServices={initialServices} />
           )}
           {tab === "staff" && (
