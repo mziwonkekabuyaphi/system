@@ -936,7 +936,7 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
         }
         .logoSlot {
           display: block;
-          margin-bottom: 12px; /* the ring sits outside the tile, give it room */
+          margin-bottom: 32px; /* the ring and its dot sit outside the tile; this keeps them clear of the shop name */
         }
         h1 {
           font-size: 64px;
