@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
+import { isProductEnabled } from "@/lib/services/plans"
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -21,6 +22,10 @@ export async function authorizePayslipRequest() {
   const supabase = getSupabaseServerClient()
   if (!supabase) {
     return { ok: false as const, response: NextResponse.json({ error: "Supabase isn't configured." }, { status: 500 }) }
+  }
+  // Payroll is a per-shop switch (tenant_modules): payslips stay locked while it's off.
+  if (!(await isProductEnabled(supabase, check.member.tenantId, "payroll"))) {
+    return { ok: false as const, response: NextResponse.json({ error: "Payroll isn't switched on for this shop." }, { status: 403 }) }
   }
   return { ok: true as const, supabase, tenantId: check.member.tenantId, userId: check.member.userId }
 }
