@@ -947,7 +947,7 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
         }
         .tap {
           font-size: 28px;
-          font-weight: 600;
+          font-weight: 700;
           color: var(--accent);
           margin: 0;
         }
