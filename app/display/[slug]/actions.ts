@@ -197,7 +197,7 @@ export interface DisplayQueueEntry {
   displayTicket: string | null
   /** queue_entries.source: "walk_in" | "booking" (shown as a badge on the board). */
   source: string | null
-  /** Masked (e.g. "071 *** **34"). Null unless showQueuePhone is on -- the
+  /** Masked (e.g. "071 ••• ••34"). Null unless showQueuePhone is on -- the
    *  raw number is never sent to this public screen. */
   phoneMasked: string | null
   /** From the linked booking. Null for walk-ins or when showQueueReference is off. */
@@ -273,11 +273,13 @@ function joinNames(
   return names.length ? names.join(" + ") : null
 }
 
-/** "0711234567" -> "071 *** **67". Keeps 3 leading + 2 trailing digits only. */
+/** "0711234567" -> "071 ••• ••67". Keeps 3 leading + 2 trailing digits only.
+ *  The hidden digits are bullets (•), not asterisks: an asterisk is drawn high in the line,
+ *  so next to digits it looked misaligned on the TV. A bullet sits level with the digits. */
 function maskPhone(raw: string | null | undefined): string | null {
   const digits = (raw ?? "").replace(/\D/g, "")
   if (digits.length < 7) return null
-  return `${digits.slice(0, 3)} *** **${digits.slice(-2)}`
+  return `${digits.slice(0, 3)} ••• ••${digits.slice(-2)}`
 }
 
 /** "mziwonke@gmail.com" -> "m***@gmail.com". Keeps the first letter and the domain only. */
