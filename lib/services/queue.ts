@@ -93,7 +93,7 @@ import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 import { startOfTenantDay } from "@/lib/services/shared/queue-day"
-import { assertProductEnabled, assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { assertProductEnabled, assertWithinVisitLimit, isProductEnabled, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { buildServicesListMessage, MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 
@@ -225,6 +225,13 @@ async function isShopClosedNow(tenantId: string): Promise<boolean> {
  * that don't pass it (or any shop that does ask for a service) get the list.
  */
 async function startQueueFlow(tenantId: string, phone?: string): Promise<ActionResult> {
+  // Queue is a per-shop switch. Checked first so every way in (menu tap, typed words,
+  // booking.ts hand-off) gets one friendly reply instead of failing at the join step.
+  const gateClient = getSupabaseServerClient()
+  if (!gateClient || !(await isProductEnabled(gateClient, tenantId, "queue"))) {
+    return { reply: "Sorry, this shop doesn't use a walk-in queue here.", buttons: [], nextState: null }
+  }
+
   if (await isShopClosedNow(tenantId)) {
     return { reply: queueShopClosedMessage(), buttons: [], nextState: null }
   }

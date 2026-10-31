@@ -145,7 +145,7 @@ import type { ConversationState } from "@/lib/services/state"
 import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { queueService } from "@/lib/services/queue"
-import { assertProductEnabled, assertWithinVisitLimit, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
+import { assertProductEnabled, assertWithinVisitLimit, isProductEnabled, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
@@ -1269,7 +1269,11 @@ async function trySmartBooking(
     // "can I come now" in any language -> straight to the walk-in queue.
     // A queue ticket can't be for one staff member: don't drop the request, let the normal
     // flow below ask "Queue or Book?" with it still attached.
-    if (parsed.wantsQueue) return requestedStaff ? null : queueService.startQueueFlow(tenantId, message.from)
+    if (parsed.wantsQueue) {
+      // Queue switched off: ignore the queue wish and let the normal booking flow carry on.
+      if (!(await isProductEnabled(getClientOrThrow(), tenantId, "queue"))) return null
+      return requestedStaff ? null : queueService.startQueueFlow(tenantId, message.from)
+    }
 
     // Without a recognised service there is nothing to pre-fill.
     if (parsed.serviceIndex === null) return null
@@ -1352,6 +1356,9 @@ async function handleBooking(tenantId: string, _intent: RoutedIntent, message: I
   // Only ONE of the two clearly mentioned -> the customer already told us
   // what they want, so skip the "Queue or Book?" question. Both mentioned,
   // or neither (e.g. "I need a haircut"), is genuinely ambiguous -> ask.
+  // Queue switched off: there is no "Queue or Book?" to ask, so go straight to booking.
+  if (!(await isProductEnabled(getClientOrThrow(), tenantId, "queue"))) return presentServices(tenantId, requestedStaff)
+
   if (wantsQueue && !wantsBooking) return queueService.startQueueFlow(tenantId, message.from)
   if (wantsBooking && !wantsQueue) return presentServices(tenantId, requestedStaff)
 
@@ -1509,6 +1516,11 @@ export async function presentServices(
    *  customer the one-tap "Same again?" offer first. Omit it to go straight to the list. */
   customerPhone?: string,
 ): Promise<ActionResult> {
+  // Backstop for entry points that bypass the router (waitlist tap, same-again): Booking is a per-shop switch.
+  if (!(await isProductEnabled(getClientOrThrow(), tenantId, "booking"))) {
+    return { reply: "Sorry, this shop doesn't take bookings here.", buttons: [], nextState: null }
+  }
+
   if (customerPhone && !requestedStaff) {
     const sameAgain = await offerSameAgain(tenantId, customerPhone)
     if (sameAgain) return sameAgain

@@ -588,8 +588,12 @@ export async function getTenantStaffLimit(supabase: SupabaseClient, tenantId: st
 // webhook flip status to 'paid' -- this function's output doesn't change.
 // ============================================================================
 
+export type InvoiceProduct = "booking_queue" | "shisha"
+
 export interface GeneratedInvoice {
   tenantId: string
+  /** Which module this invoice bills. Each product is invoiced separately. */
+  product: InvoiceProduct
   visitCount: number
   amountCents: number
   baseFeeCents: number
@@ -614,11 +618,16 @@ function previousMonthRangeUtc(): { start: Date; end: Date; periodStart: string;
 }
 
 /**
- * Generates (or skips, if already generated) one invoice per tenant on a
- * metered plan for last month's usage. Returns what it created — callers
- * (the cron route) should log this for visibility.
+ * BOOKING & QUEUE invoices: one per tenant on a metered plan for last month.
+ *
+ * A shop is billed only if it actually runs Booking or Queue: either one of
+ * the two is switched ON now (tenant_modules), or it recorded billable visits
+ * in the period (it used the product and switched it off before month end).
+ * A shisha-only shop, or a shop with both switched off and no usage, gets no
+ * Booking & Queue invoice, so it never pays the plan's base fee for a module
+ * it doesn't have. Shisha is invoiced separately (generateShishaInvoices).
  */
-export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
+async function generateBookingQueueInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
   const { periodStart, periodEnd } = previousMonthRangeUtc()
   const billingPeriod = periodStart.slice(0, 7) // "2026-09-01" -> "2026-09", matches billable_visits.billing_period
 
@@ -634,6 +643,16 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
     .not("plans.price_per_visit_cents", "is", null)
 
   if (tenantsError) throw new Error(`Failed to load metered tenants: ${tenantsError.message}`)
+
+  // Tenants with Booking or Queue switched on right now (active shops only).
+  const { data: onRows, error: onError } = await supabase
+    .from("tenant_modules")
+    .select("tenant_id, modules!inner(key), tenants!inner(status)")
+    .eq("enabled", true)
+    .in("modules.key", ["booking", "queue"])
+    .eq("tenants.status", "active")
+  if (onError) throw new Error(`Failed to load Booking/Queue switches: ${onError.message}`)
+  const runsBookingOrQueue = new Set<string>((onRows ?? []).map((row: any) => row.tenant_id as string))
 
   const generated: GeneratedInvoice[] = []
 
@@ -659,6 +678,7 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
       .from("tenant_invoices")
       .select("id")
       .eq("tenant_id", tenantId)
+      .eq("product", "booking_queue")
       .eq("period_start", periodStart)
       .eq("period_end", periodEnd)
       .maybeSingle()
@@ -668,6 +688,9 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
     // Ledger-backed, not a raw COUNT over bookings+queue_entries -- see
     // the header comment above countBillableVisits for why that matters.
     const visitCount = await countBillableVisits(supabase, tenantId, billingPeriod)
+
+    // Not a Booking/Queue customer (module off, no usage this period): nothing to bill.
+    if (!runsBookingOrQueue.has(tenantId) && visitCount === 0) continue
 
     const plan: Plan = rowToPlan({
       key: planRow.key,
@@ -692,6 +715,7 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
     const { error: insertError } = await supabase.from("tenant_invoices").insert([
       {
         tenant_id: tenantId,
+        product: "booking_queue",
         plan_key: planRow.key,
         period_start: periodStart,
         period_end: periodEnd,
@@ -715,6 +739,7 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
 
     generated.push({
       tenantId,
+      product: "booking_queue",
       visitCount,
       amountCents: calc.totalCents,
       baseFeeCents: calc.baseFeeCents,
@@ -724,4 +749,180 @@ export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise
   }
 
   return generated
+}
+
+// ============================================================================
+// SHISHA invoices: per-event fees (session / refill), billed monthly
+// ----------------------------------------------------------------------------
+// Source of truth is shisha_billing_events (written by the shisha service when
+// a session starts or is refilled, each row carrying its own fee_amount in
+// rands). The plan is NOT involved: Shisha is billed on its own, so a shisha
+// shop never pays a Booking & Queue base fee, and a Booking & Queue shop
+// never pays shisha fees.
+//
+// For last month's UNBILLED events, one invoice per tenant is created
+// (product = 'shisha', plan_key = 'shisha', base fee 0), then exactly those
+// events are marked 'billed' and linked via invoice_ref. 'waived' events are
+// never touched. Re-running is safe: tenant_invoices is unique on
+// (tenant_id, product, period_start, period_end).
+// Shops are invoiced for shisha usage even if Shisha was switched off later:
+// the usage happened.
+// ============================================================================
+
+const SHISHA_PAGE_SIZE = 1000
+
+/** Rands (numeric from Postgres, may arrive as string) -> whole cents, rounded per event so sums never drift. */
+function randsToCents(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.round(n * 100) : 0
+}
+
+/** South Africa has no daylight saving: local midnight is always 22:00 UTC the day before. */
+const SAST_OFFSET_MS = 2 * 60 * 60 * 1000
+
+export async function generateShishaInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
+  const { start: utcStart, end: utcEnd, periodStart, periodEnd } = previousMonthRangeUtc()
+  // Shisha months follow South African time, the same as the shisha_usage_monthly view and the
+  // platform Shisha page, so an invoice always matches the "last month" figure people see there.
+  const start = new Date(utcStart.getTime() - SAST_OFFSET_MS)
+  const end = new Date(utcEnd.getTime() - SAST_OFFSET_MS)
+
+  interface ShishaEventRow {
+    id: string
+    tenant_id: string
+    event_type: "session" | "refill"
+    fee_amount: number | string
+    currency: string | null
+  }
+
+  // Page through every unbilled event of the period (PostgREST caps one response at 1000 rows).
+  const events: ShishaEventRow[] = []
+  for (let from = 0; ; from += SHISHA_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("shisha_billing_events")
+      .select("id, tenant_id, event_type, fee_amount, currency")
+      .eq("status", "unbilled")
+      .gte("occurred_at", start.toISOString())
+      .lt("occurred_at", end.toISOString())
+      .order("id", { ascending: true })
+      .range(from, from + SHISHA_PAGE_SIZE - 1)
+
+    if (error) throw new Error(`Failed to load shisha billing events: ${error.message}`)
+    const page = (data ?? []) as ShishaEventRow[]
+    events.push(...page)
+    if (page.length < SHISHA_PAGE_SIZE) break
+  }
+
+  const byTenant = new Map<string, ShishaEventRow[]>()
+  for (const event of events) {
+    const list = byTenant.get(event.tenant_id) ?? []
+    list.push(event)
+    byTenant.set(event.tenant_id, list)
+  }
+
+  const generated: GeneratedInvoice[] = []
+
+  for (const [tenantId, rows] of byTenant) {
+    const { data: existing } = await supabase
+      .from("tenant_invoices")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("product", "shisha")
+      .eq("period_start", periodStart)
+      .eq("period_end", periodEnd)
+      .maybeSingle()
+
+    if (existing) {
+      console.warn("[plans] Shisha invoice already exists for period, leaving events as they are", { tenantId, periodStart })
+      continue
+    }
+
+    const sessions = rows.filter((r) => r.event_type === "session")
+    const refills = rows.filter((r) => r.event_type === "refill")
+    const sessionFeeCents = sessions.reduce((sum, r) => sum + randsToCents(r.fee_amount), 0)
+    const refillFeeCents = refills.reduce((sum, r) => sum + randsToCents(r.fee_amount), 0)
+    const totalCents = sessionFeeCents + refillFeeCents
+    if (totalCents <= 0) continue
+
+    const { data: invoice, error: insertError } = await supabase
+      .from("tenant_invoices")
+      .insert({
+        tenant_id: tenantId,
+        product: "shisha",
+        plan_key: "shisha",
+        period_start: periodStart,
+        period_end: periodEnd,
+        visit_count: rows.length,
+        rate_cents: 0,
+        amount_cents: totalCents,
+        currency: rows[0].currency ?? "ZAR",
+        base_fee_cents: 0,
+        included_visits: null,
+        overage_visits: 0,
+        staff_count: 0,
+        included_staff: 0,
+        extra_staff: 0,
+        extra_staff_fee_cents: 0,
+        detail: {
+          sessions: sessions.length,
+          session_fee_cents: sessionFeeCents,
+          refills: refills.length,
+          refill_fee_cents: refillFeeCents,
+        },
+      })
+      .select("id")
+      .single()
+
+    if (insertError || !invoice) {
+      console.error("[plans] Failed to create shisha invoice", { tenantId, periodStart, error: insertError })
+      continue
+    }
+
+    // Mark exactly the events that went into this invoice (chunked: keeps the URL short).
+    const ids = rows.map((r) => r.id)
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error: markError } = await supabase
+        .from("shisha_billing_events")
+        .update({ status: "billed", billed_at: new Date().toISOString(), invoice_ref: invoice.id })
+        .in("id", ids.slice(i, i + 200))
+        .eq("status", "unbilled")
+      if (markError) {
+        // The invoice exists; these events stay 'unbilled'. Loud on purpose: fix by hand, do not re-run.
+        console.error("[plans] Shisha invoice created but events NOT marked billed", { tenantId, invoiceId: invoice.id, error: markError })
+      }
+    }
+
+    generated.push({
+      tenantId,
+      product: "shisha",
+      visitCount: rows.length,
+      amountCents: totalCents,
+      baseFeeCents: 0,
+      extraStaffFeeCents: 0,
+      overageVisits: 0,
+    })
+  }
+
+  return generated
+}
+
+/**
+ * Monthly cron entry point (unchanged name and signature, so
+ * app/api/cron/generate-invoices/route.ts needs no edit): Booking & Queue
+ * invoices plus Shisha invoices. One product failing never stops the other.
+ */
+export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
+  const all: GeneratedInvoice[] = []
+  const failures: unknown[] = []
+  for (const run of [generateBookingQueueInvoices, generateShishaInvoices]) {
+    try {
+      all.push(...(await run(supabase)))
+    } catch (error) {
+      console.error(`[plans] ${run.name} failed`, error)
+      failures.push(error)
+    }
+  }
+  // Both products had their turn; now surface the failure so the cron run is not reported as clean.
+  if (failures.length > 0) throw failures[0] instanceof Error ? failures[0] : new Error("Invoice generation failed")
+  return all
 }
