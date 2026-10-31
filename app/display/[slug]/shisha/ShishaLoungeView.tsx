@@ -790,7 +790,7 @@ export function ShishaLoungeView({
           flex: none;
           overflow: hidden;
           white-space: nowrap;
-          border-top: 1px solid var(--fg-28);
+          border-top: 1px solid var(--accent-35);
           padding-top: 1.6vh;
           mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
           -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
@@ -807,7 +807,7 @@ export function ShishaLoungeView({
           font-size: clamp(1rem, 1.6vw, 1.5rem);
         }
         .t-msg {
-          color: var(--fg);
+          color: var(--accent);
           font-weight: 600;
         }
         .t-item {

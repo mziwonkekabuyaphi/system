@@ -241,9 +241,15 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
     "--fg-55": hexToRgba(theme.fg, 0.55),
     "--fg-28": hexToRgba(theme.fg, 0.28),
     "--accent": accent,
+    "--secondary": secondary,
+    "--accent-14": hexToRgba(accent, 0.14),
+    "--accent-35": hexToRgba(accent, 0.35),
+    "--secondary-10": hexToRgba(secondary, 0.1),
     "--card": cardBg,
     "--track": hexToRgba(theme.fg, 0.12),
-    "--c-active": statusColor("active"),
+    // A running session wears the shop's primary colour; every other state keeps its fixed
+    // status colour (refill / overdue / paused / free / maintenance) so it reads at a glance.
+    "--c-active": accent,
     "--c-refill": statusColor("refill"),
     "--c-expired": statusColor("expired"),
     "--c-paused": statusColor("paused"),
@@ -434,9 +440,23 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           padding: 4vh 4vw;
           box-sizing: border-box;
           overflow: hidden;
-          background: var(--bg);
+          /* Soft brand glows in two corners, over the chosen background. */
+          background:
+            radial-gradient(60vw 50vh at 100% 0%, var(--accent-14), transparent 70%),
+            radial-gradient(50vw 45vh at 0% 100%, var(--secondary-10), transparent 70%),
+            var(--bg);
           color: var(--fg);
           font-family: "Inter", -apple-system, sans-serif;
+        }
+        /* A thin brand-colour bar across the top. */
+        .stage::before {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 0.7vh;
+          background: linear-gradient(90deg, var(--secondary), var(--accent));
         }
         .blocked {
           margin: auto;
@@ -504,7 +524,8 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
         .brand-text p {
           margin: 0.4vh 0 0;
           font-size: clamp(0.95rem, 1.5vw, 1.4rem);
-          color: var(--fg-70);
+          color: var(--accent);
+          font-weight: 500;
         }
         .head-right {
           display: flex;
@@ -557,8 +578,8 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
         .stats {
           display: flex;
           flex: none;
-          border-top: 1px solid var(--fg-28);
-          border-bottom: 1px solid var(--fg-28);
+          border-top: 1px solid var(--accent-35);
+          border-bottom: 1px solid var(--accent-35);
         }
         .stat {
           flex: 1;
@@ -609,8 +630,11 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           box-sizing: border-box;
           overflow: hidden;
           text-align: center;
-          background: var(--card);
-          border: 1px solid var(--fg-28);
+          /* Brand-tinted card: the primary and secondary colours wash in from the corner. */
+          background:
+            linear-gradient(150deg, var(--accent-14) 0%, var(--secondary-10) 55%, transparent 100%),
+            var(--card);
+          border: 1px solid var(--accent-35);
           border-radius: calc(var(--ring) * 0.18);
         }
         .card.side {
@@ -686,6 +710,10 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           border-radius: 50%;
           background: var(--card);
         }
+        /* A running session sweeps from the secondary into the primary colour. */
+        .card.active .ring {
+          background: conic-gradient(var(--secondary) 0%, var(--accent) calc(var(--pct) * 1%), var(--track) 0);
+        }
         .card.expired .ring {
           animation: emberPulse 1.4s ease-in-out infinite;
         }
@@ -729,7 +757,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           flex: none;
           overflow: hidden;
           white-space: nowrap;
-          border-top: 1px solid var(--fg-28);
+          border-top: 1px solid var(--accent-35);
           padding-top: 1.6vh;
           mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
           -webkit-mask-image: linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
@@ -746,7 +774,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           font-size: clamp(1rem, 1.6vw, 1.5rem);
         }
         .t-msg {
-          color: var(--fg);
+          color: var(--accent);
           font-weight: 600;
         }
         .t-item {
