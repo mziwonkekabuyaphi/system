@@ -50,7 +50,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { last4 } from "@/lib/payroll/staff-details"
-import { tenantHasModule, isTenantModuleEnabled, MODULE_KEYS } from "@/lib/services/plans"
+import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
 import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
@@ -67,6 +67,7 @@ import type {
   AdminKioskSettings,
   AdminMessageSettings,
   AdminPlan,
+  AdminQueueEntry,
   AdminQueueSettings,
   AdminService,
   AdminStaff,
@@ -797,6 +798,16 @@ export default async function AdminPage() {
     }
   }
 
+  // Which products/add-ons this shop runs (tenant_modules, switched by the
+  // platform admin). A module that's OFF takes its permissions away for this
+  // request, so its tab, buttons and data never reach the browser, even for an
+  // owner. Fails closed: a lookup error means everything optional is off.
+  // Booking and Queue also skip their data loads below.
+  const products = await getEnabledProducts(supabase, tenantId)
+  if (!products.payroll) permissions = { ...permissions, payrollView: false, payrollManage: false }
+  if (!products.shisha) permissions = { ...permissions, shishaView: false, shishaOperate: false, shishaManage: false }
+  if (!products.shifts) permissions = { ...permissions, shiftsView: false }
+
   // Services and full Settings data are owner-only. A tenant_staff caller
   // never triggers getAllServices()/getSettingsData() at all for this
   // request — not just "doesn't receive the data" but "the data is never
@@ -809,8 +820,8 @@ export default async function AdminPage() {
   const { timezone } = displayContext
 
   const [bookings, queue, services, staff, inbox, settingsData] = await Promise.all([
-    getBookingsWindow(supabase, tenantId, timezone),
-    loadQueueEntries(supabase, tenantId, displayContext),
+    products.booking ? getBookingsWindow(supabase, tenantId, timezone) : Promise.resolve<AdminBooking[]>([]),
+    products.queue ? loadQueueEntries(supabase, tenantId, displayContext) : Promise.resolve<AdminQueueEntry[]>([]),
     permissions.servicesManage ? getAllServices(supabase, tenantId) : Promise.resolve<AdminService[]>([]),
     // Full contact details only for people who manage staff or payroll; every
     // other team member gets names and job titles (getAllStaff explains why).
@@ -845,18 +856,11 @@ export default async function AdminPage() {
   // Custom sidebar colours need the 'branding' plan module, same as the kiosk's
   // brand colours: stored values are ignored (not deleted) without it.
   const brandingEntitled = await tenantHasModule(supabase, tenantId, MODULE_KEYS.branding).catch(() => false)
-  // The Shisha tab needs the module switched ON for the tenant (tenant_modules,
-  // opt-in; NOT plan-gated, shisha is billed separately) and shisha.view. Fails
-  // closed; every shisha action re-checks both.
+  // Shisha and Shifts: the tenant_modules switch was applied to `permissions`
+  // above (products.shisha / products.shifts), so permission == switch AND permission.
+  // Every action re-checks both server-side.
   const shishaEnabled = permissions.shishaView
-    ? await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.shisha, { defaultOn: false, requirePlan: false })
-    : false
-
-  // Shifts is plan-gated (growth/business) and needs shifts.view. Fails closed;
-  // every action in shifts/shifts-actions.ts re-checks the permission.
   const shiftsEnabled = permissions.shiftsView
-    ? await tenantHasModule(supabase, tenantId, "shifts" as typeof MODULE_KEYS.branding).catch(() => false)
-    : false
 
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
@@ -871,6 +875,8 @@ export default async function AdminPage() {
       initialStaff={staff}
       initialActiveShifts={activeShifts}
       staffPermissions={permissions}
+      bookingEnabled={products.booking}
+      queueEnabled={products.queue}
       shishaEnabled={shishaEnabled}
       shiftsEnabled={shiftsEnabled}
       initialConversations={inbox.conversations}
