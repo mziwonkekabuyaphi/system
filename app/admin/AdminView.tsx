@@ -6,7 +6,6 @@ import type { SVGProps } from "react"
 import { LogoutButton } from "@/components/admin/LogoutButton"
 import { BillingPanel } from "@/components/admin/BillingPanel"
 import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
-import { CustomersManager } from "./CustomersManager"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./queue/QueueManager"
 import { ShishaManager } from "./shisha/ShishaManager"
@@ -39,7 +38,6 @@ type Tab =
   | "today"
   | "queue"
   | "shisha"
-  | "customers"
   | "inbox"
   | "staff"
   | "analytics"
@@ -89,17 +87,6 @@ function UsersIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M3.3 20c0-3.4 2.6-6.1 5.7-6.1s5.7 2.7 5.7 6.1" />
       <circle cx="17.2" cy="8.4" r="2.5" />
       <path d="M15.6 14.3c2.4.5 4.2 2.9 4.2 5.7" />
-    </svg>
-  )
-}
-
-function ContactsIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="4.5" width="18" height="15" rx="2.2" />
-      <circle cx="9" cy="10.5" r="2.2" />
-      <path d="M5.5 16.2c.6-1.6 1.9-2.5 3.5-2.5s2.9.9 3.5 2.5" />
-      <path d="M15 9.5h3M15 12.5h3" />
     </svg>
   )
 }
@@ -157,7 +144,6 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "queue", label: "Live Queue", icon: TicketIcon },
   { id: "shisha", label: "Shisha", icon: HookahIcon },
   { id: "inbox", label: "Inbox", icon: ChatIcon },
-  { id: "customers", label: "Customers", icon: ContactsIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
   { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
@@ -225,9 +211,10 @@ export function AdminView({
   initialBusinessHours: AdminBusinessHours | null
 }) {
   // Which tabs this shop + caller can see. Booking and Queue are optional
-  // products; Customers and Inbox only mean something when at least one of
-  // them is on. Staff, Analytics, Billing and Settings stay available.
-  // (Services now lives in Settings > Customer Journey, next to Kiosk and Display.)
+  // products; Inbox only means something when at least one of them is on.
+  // Staff, Analytics, Billing and Settings stay available.
+  // (Services now lives in Settings > Customer Journey, next to Kiosk and Display.
+  //  Customers now lives on the Inbox page, next to Analytics and WhatsApp settings.)
   const hasBookingOrQueue = bookingEnabled || queueEnabled
   const isTabVisible = (id: Tab): boolean => {
     switch (id) {
@@ -247,10 +234,9 @@ export function AdminView({
       // Billing is owner-only (settings.manage is the closest owner-only key).
       case "billing":
         return staffPermissions.settingsManage
-      // Inbox (WhatsApp) and Customers hold phone numbers: owner-only, and only
-      // for shops running Booking or Queue.
+      // Inbox (WhatsApp, with Customers inside) holds phone numbers: owner-only,
+      // and only for shops running Booking or Queue.
       case "inbox":
-      case "customers":
         return staffPermissions.settingsManage && hasBookingOrQueue
       default:
         return true
@@ -478,12 +464,12 @@ export function AdminView({
               canManage={staffPermissions.shishaManage}
             />
           )}
-          {tab === "customers" && isTabVisible("customers") && <CustomersManager timezone={timezone} />}
           {tab === "inbox" && isTabVisible("inbox") && (
             <InboxManager
               initialConversations={initialConversations}
               initialStats={initialInboxStats}
               initialMessageSettings={initialMessageSettings!}
+              timezone={timezone}
             />
           )}
           {tab === "staff" && (
