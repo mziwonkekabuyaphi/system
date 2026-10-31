@@ -33,7 +33,7 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
-import { staffLimitError } from "@/lib/services/plans"
+import { isProductEnabled, staffLimitError, type AddonKey, type ProductKey } from "@/lib/services/plans"
 import { calculatePeriodDeductions, inclusiveDayCount } from "@/lib/payroll/paye"
 import {
   completeBooking as completeBookingRecord,
@@ -72,25 +72,23 @@ type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 // hard-fails for a tenant that hasn't touched Settings > Booking.
 const DEFAULT_CANCELLATION_WINDOW_MINUTES = 60
 
-/** Unpermissioned variant — kept only for actions that intentionally rely
- *  purely on membership (none currently do; new actions should prefer
- *  the permissioned overload below). Left as a fallback so this file
- *  doesn't need a second helper name for every call site. */
-async function getTenantScopedClient(): Promise<{
+/** Signed-in tenant member -> service-role client, with two optional gates:
+ *  - `permission`: required on the user's membership (error result, never throws).
+ *  - `product`: the shop must have this product/add-on switched ON in
+ *    tenant_modules (Booking, Queue, Payroll...). Without it the action is
+ *    refused even for an owner, so a shop can't reach a product it doesn't run
+ *    by calling the action directly. Fails closed.
+ *  Returns an error result so callers can `return` it directly, matching every
+ *  other ActionResult in this file. Passing neither = membership only
+ *  (kept for the few actions that rely purely on membership). */
+async function getTenantScopedClient(
+  permission?: PermissionKey,
+  product?: ProductKey | AddonKey,
+): Promise<{
   supabase: ServerClient | null
   tenantId: string | null
   error?: string
-}>
-/** Requires `permission` on the signed-in user's membership before
- *  handing back the service-role client. Returns an error result (never
- *  throws) so callers can `return` it directly, matching every other
- *  ActionResult in this file. */
-async function getTenantScopedClient(permission: PermissionKey): Promise<{
-  supabase: ServerClient | null
-  tenantId: string | null
-  error?: string
-}>
-async function getTenantScopedClient(permission?: PermissionKey) {
+}> {
   let tenantId: string
   if (permission) {
     const check = await requireTenantPermission(permission)
@@ -102,7 +100,19 @@ async function getTenantScopedClient(permission?: PermissionKey) {
 
   const supabase = getSupabaseServerClient()
   if (!supabase) return { supabase: null as const, tenantId: null, error: "Supabase isn't configured." }
+
+  if (product && !(await isProductEnabled(supabase, tenantId, product))) {
+    return { supabase: null as const, tenantId: null, error: `${PRODUCT_LABELS[product]} isn't switched on for this shop.` }
+  }
   return { supabase, tenantId, error: undefined as string | undefined }
+}
+
+const PRODUCT_LABELS: Record<ProductKey | AddonKey, string> = {
+  booking: "Booking",
+  queue: "Queue",
+  shisha: "Shisha",
+  shifts: "Shifts",
+  payroll: "Payroll",
 }
 
 /** Appends one row to staff_activity_logs. Best-effort: a logging failure
@@ -132,7 +142,7 @@ async function logActivity(
 // ============================================================================
 
 export async function cancelBooking(bookingId: string): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
 
   // Load the booking and this tenant's cancellation window together —
@@ -207,7 +217,7 @@ export async function cancelBooking(bookingId: string): Promise<ActionResult> {
  * exists, it's just unused today.
  */
 export async function completeBooking(bookingId: string): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
 
   try {
@@ -253,7 +263,7 @@ export interface AdminBookableService {
 export async function getAdminBookableServices(): Promise<
   { ok: true; services: AdminBookableService[] } | { ok: false; error: string }
 > {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
   try {
     const services = await getBookableServices(tenantId!)
@@ -269,7 +279,7 @@ export async function getAdminBookableServices(): Promise<
 export async function getAdminBookingDates(): Promise<
   { ok: true; dates: Array<{ date: string; label: string }> } | { ok: false; error: string }
 > {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
   try {
     return { ok: true, dates: await buildDateOptions(tenantId!) }
@@ -283,7 +293,7 @@ export async function getAdminBookingSlots(
   serviceId: string,
   dateISO: string,
 ): Promise<{ ok: true; slots: Array<{ start: string; label: string }> } | { ok: false; error: string }> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
   try {
     const service = (await getBookableServices(tenantId!)).find((s) => s.id === serviceId)
@@ -307,7 +317,7 @@ export async function createAdminBooking(input: {
   phone: string
   name?: string
 }): Promise<{ ok: true; bookingReference: string; startTime: string } | { ok: false; error: string }> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
 
   const phone = input.phone.trim()
@@ -556,7 +566,7 @@ async function resolveServedBy(
 
 /** @param servedByStaffId Optional. Who is serving this customer; see resolveServedBy(). */
 export async function callQueueEntry(id: string, servedByStaffId?: string | null): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
   if (!supabase) return { ok: false, error: error! }
 
   const servedBy = await resolveServedBy(supabase, tenantId!, servedByStaffId)
@@ -588,7 +598,7 @@ export async function callQueueEntry(id: string, servedByStaffId?: string | null
  *  record, and an entry that already has someone keeps them. Staff must be settled
  *  BEFORE the status flips to done, because the commission trigger runs on that flip. */
 export async function markQueueEntryDone(id: string, servedByStaffId?: string | null): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
   if (!supabase) return { ok: false, error: error! }
 
   const servedBy = await resolveServedBy(supabase, tenantId!, servedByStaffId)
@@ -624,7 +634,7 @@ export async function markQueueEntryDone(id: string, servedByStaffId?: string | 
 }
 
 export async function removeFromQueue(id: string): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
   if (!supabase) return { ok: false, error: error! }
 
   // Still a hard delete, exactly as before — but only for entries that are
@@ -662,7 +672,7 @@ export async function getWalkInOptions(): Promise<
   | { ok: true; services: AdminBookableService[]; requireServiceSelection: boolean }
   | { ok: false; error: string }
 > {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
   if (!supabase) return { ok: false, error: error! }
   try {
     const [services, settings] = await Promise.all([
@@ -689,7 +699,7 @@ export async function addWalkIn(input: {
   | { ok: true; ticketLabel: string; position: number; etaMinutes: number }
   | { ok: false; error: string }
 > {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
   if (!supabase) return { ok: false, error: error! }
 
   const phone = input.phone.trim()
@@ -763,7 +773,7 @@ export async function addWalkIn(input: {
 export async function refreshQueue(): Promise<
   { ok: true; entries: AdminQueueEntry[] } | { ok: false; error: string }
 > {
-  const { supabase, tenantId, error } = await getTenantScopedClient()
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
   if (!supabase) return { ok: false, error: error! }
 
   try {
@@ -860,7 +870,7 @@ function describePayType(row: PayProfileRow): string {
 export async function getStaffPayProfiles(): Promise<
   { ok: true; profiles: Record<string, AdminStaffPayProfile> } | { ok: false; error: string }
 > {
-  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view")
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view", "payroll")
   if (!supabase) return { ok: false, error: error! }
 
   const { data, error: fetchError } = await supabase
@@ -1542,7 +1552,7 @@ function payslipStaffRow(row: { id: string; name: string; job_title: string | nu
  *  used by the Payroll tab's table and by the payslip PDF generator.
  *  Does NOT recalculate; use calculatePayroll() for that. */
 export async function getPayrollForPeriod(periodStart: string, periodEnd: string) {
-  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view")
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view", "payroll")
   if (!supabase) return { ok: false as const, error: error! }
 
   const { data, error: fetchError } = await supabase
@@ -1597,7 +1607,7 @@ export async function getPayrollForPeriod(periodStart: string, periodEnd: string
  *  are left out of the pay until someone clocks out (or Force clock out). The
  *  Payroll tab shows this as a warning before you calculate or pay. */
 export async function getPayrollPeriodWarnings(periodStart: string, periodEnd: string) {
-  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view")
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view", "payroll")
   if (!supabase) return { ok: false as const, error: error! }
 
   const bounds = await periodBoundsUtc(supabase, tenantId!, periodStart, periodEnd)
@@ -1646,7 +1656,7 @@ export async function getPayrollPeriodWarnings(periodStart: string, periodEnd: s
  *  recalculating doesn't duplicate rows; 'paid' rows are left untouched and
  *  recalculating never un-pays something already marked paid. */
 export async function calculatePayroll(periodStart: string, periodEnd: string): Promise<ActionResult> {
-  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.manage")
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.manage", "payroll")
   if (!supabase) return { ok: false, error: error! }
 
   if (!periodStart || !periodEnd) return { ok: false, error: "Select both a start and end date." }
@@ -1882,7 +1892,7 @@ export async function markAllPayrollPaid(periodStart: string, periodEnd: string)
 // ============================================================================
 
 export async function getActivityLog(limit = 100) {
-  const { supabase, tenantId, error } = await getTenantScopedClient("staff.view")
+  const { supabase, tenantId, error } = await getTenantScopedClient("staff.view", "payroll", "payroll")
   if (!supabase) return { ok: false as const, error: error! }
 
   const { data, error: fetchError } = await supabase
@@ -1919,7 +1929,7 @@ export async function getActivityLog(limit = 100) {
  *  payroll" invariant is a property of which function you call, not a
  *  runtime branch that could be gotten wrong. */
 export async function getPayrollActivityLog(limit = 50) {
-  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view")
+  const { supabase, tenantId, error } = await getTenantScopedClient("payroll.view", "payroll")
   if (!supabase) return { ok: false as const, error: error! }
 
   const { data, error: fetchError } = await supabase
