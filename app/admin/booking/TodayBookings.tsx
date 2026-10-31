@@ -78,12 +78,15 @@ export function TodayBookings({
   timezone,
   bookingSettings,
   onBookingSettingsSaved,
+  queueEnabled = true,
 }: {
   initialBookings: AdminBooking[]
   timezone: string
   /** null unless the caller has settings.manage (same invariant as page.tsx), which hides the Booking rules button. */
   bookingSettings: AdminBookingSettings | null
   onBookingSettingsSaved: (next: AdminBookingSettings) => void
+  /** Whether the shop runs Queue. Off hides the "Queue link" tab in Booking rules. */
+  queueEnabled?: boolean
 }) {
   // Right-hand overlay, same pattern as Shisha's "TV display".
   const [rulesOpen, setRulesOpen] = useState(false)
@@ -618,6 +621,7 @@ export function TodayBookings({
           onClose={() => setRulesOpen(false)}
           settings={bookingSettings}
           onSaved={onBookingSettingsSaved}
+          queueEnabled={queueEnabled}
         />
       )}
     </div>

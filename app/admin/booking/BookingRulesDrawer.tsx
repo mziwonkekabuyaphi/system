@@ -80,7 +80,7 @@ const isInt = (n: unknown, min: number, max = Number.MAX_SAFE_INTEGER): n is num
   typeof n === "number" && Number.isInteger(n) && n >= min && n <= max
 
 /** First problem per tab (so the tab can show a dot). The server re-validates everything. */
-function validate(s: BookingForm): Partial<Record<Tab, string>> {
+function validate(s: BookingForm, queueEnabled: boolean): Partial<Record<Tab, string>> {
   const e: Partial<Record<Tab, string>> = {}
   if (!isInt(s.minNoticeMinutes, 0)) e.timing = "Minimum notice must be a whole number of minutes, 0 or more."
   else if (!isInt(s.maxAdvanceDays, 0)) e.timing = "Advance booking window must be a whole number of days, 0 or more."
@@ -94,7 +94,8 @@ function validate(s: BookingForm): Partial<Record<Tab, string>> {
   if (s.bookingRemindersEnabled && !isInt(s.bookingReminderLeadMinutes, 30, 1440))
     e.reminders = "Reminder time must be a whole number of minutes from 30 to 1440."
 
-  if (!isInt(s.queueLeadTimeMinutes, 0)) e.queue = "Queue lead time must be a whole number of minutes, 0 or more."
+  // The Queue link tab is hidden when the shop doesn't run Queue, so its fields can't block a save.
+  if (queueEnabled && !isInt(s.queueLeadTimeMinutes, 0)) e.queue = "Queue lead time must be a whole number of minutes, 0 or more."
   return e
 }
 
@@ -103,11 +104,14 @@ export function BookingRulesDrawer({
   onClose,
   settings,
   onSaved,
+  queueEnabled = true,
 }: {
   open: boolean
   onClose: () => void
   settings: AdminBookingSettings
   onSaved: (next: AdminBookingSettings) => void
+  /** false = the shop doesn't run Queue, so the "Queue link" tab is hidden. */
+  queueEnabled?: boolean
 }) {
   const [baseline, setBaseline] = useState<BookingForm>(() => withDefaults(settings))
   const [draft, setDraft] = useState<BookingForm>(() => withDefaults(settings))
@@ -127,7 +131,7 @@ export function BookingRulesDrawer({
   }, [open])
 
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline])
-  const errors = useMemo(() => validate(draft), [draft])
+  const errors = useMemo(() => validate(draft, queueEnabled), [draft, queueEnabled])
   const firstError = errors.timing ?? errors.services ?? errors.reminders ?? errors.queue
   const canSave = dirty && !saving && !firstError
 
@@ -165,7 +169,7 @@ export function BookingRulesDrawer({
 
   const num = (n: number | undefined) => (n === undefined || Number.isNaN(n) ? "" : n)
   const onNum = (v: string) => (v === "" ? Number.NaN : Number(v))
-  const tabsWithFlags = TABS.map((t) => ({ ...t, label: errors[t.id] ? `${t.label} •` : t.label }))
+  const tabsWithFlags = TABS.filter((t) => queueEnabled || t.id !== "queue").map((t) => ({ ...t, label: errors[t.id] ? `${t.label} •` : t.label }))
   const remindersOn = draft.bookingRemindersEnabled ?? true
   const reminderLead = draft.bookingReminderLeadMinutes ?? 120
 
@@ -328,7 +332,7 @@ export function BookingRulesDrawer({
           </div>
         )}
 
-        {tab === "queue" && (
+        {tab === "queue" && queueEnabled && (
           <div className="space-y-6">
             <DrawerGroup title="Link bookings to the queue">
               <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">

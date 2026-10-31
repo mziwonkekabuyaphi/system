@@ -35,7 +35,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
 import { formatQueueTicketNumber } from "@/lib/services/queue"
-import { tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
+import { tenantHasModule, isProductEnabled, MODULE_KEYS } from "@/lib/services/plans"
 
 export interface DisplayBranding {
   displayName: string | null
@@ -326,6 +326,13 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
     if (!supabase) throw new Error("Supabase server client is unavailable")
 
     const tenantId = await resolveActiveTenantId(slug)
+
+    // The board is the live queue: a shop that doesn't run Queue gets nothing back
+    // (and no queue data is read), even if someone calls this action directly.
+    if (!(await isProductEnabled(supabase, tenantId, "queue"))) {
+      return { ok: false, error: "This display isn't available." }
+    }
+
     const now = new Date()
     const bookingsWindowEnd = new Date(now.getTime() + BOOKINGS_WINDOW_HOURS * 60 * 60 * 1000)
 
