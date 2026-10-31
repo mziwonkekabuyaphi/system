@@ -147,13 +147,40 @@ export interface Payroll {
   by_staff: { staff_id: string; name: string; hours: number; gross: number; final: number }[]
 }
 
+/** Which modules are switched on for this shop (tenant_modules), same source Billing uses. */
+export interface EnabledProducts { booking: boolean; queue: boolean; shisha: boolean }
+
+/** Shisha activity for one reporting window. Built from shisha_sessions. */
+export interface ShishaStats {
+  sessions_started: number
+  sessions_completed: number
+  /** Started in the window and still open (active / refill / paused). */
+  sessions_open: number
+  refills: number
+  /** Sum of total_amount on COMPLETED sessions (refill charges are already inside total_amount). */
+  revenue: number
+  /** Refill charges on completed sessions (a part of revenue, shown separately). */
+  refill_revenue: number
+  avg_session_value: number | null
+  by_day: { date: string; sessions: number; refills: number }[]
+  by_hour: { hour: number; count: number }[]
+  by_weekday: { dow: number; count: number }[]
+  by_payment: { method: string; count: number; amount: number }[]
+  by_product: { name: string; sessions: number; amount: number }[]
+}
+
 export interface AnalyticsData {
   timezone: string
   currency: string
   range: Range
   prevRange: Range | null
+  /** Modules switched on for this shop. Drives which tabs and figures are shown. */
+  products: EnabledProducts
   current: Ops
   previous: Ops | null
+  /** null = Shisha is off for this shop, or the caller lacks shisha.view (or it failed: see warnings). */
+  shisha: ShishaStats | null
+  shishaPrevious: ShishaStats | null
   /** null = caller lacks billing.view (or the section failed: see warnings). */
   billing: Billing | null
   /** null = caller lacks payroll.view (or the section failed: see warnings). */

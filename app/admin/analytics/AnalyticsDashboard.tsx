@@ -9,7 +9,7 @@ import {
   type AnalyticsData, type Preset,
 } from "./model"
 
-type TabId = "overview" | "bookings" | "queue" | "customers" | "services" | "staff" | "messaging" | "billing" | "payroll"
+type TabId = "overview" | "bookings" | "queue" | "shisha" | "customers" | "services" | "staff" | "messaging" | "billing" | "payroll"
 
 const PRESETS: { id: Preset; label: string }[] = [
   { id: "7d", label: "Last 7 days" },
@@ -121,10 +121,21 @@ export function AnalyticsDashboard() {
 
   useEffect(() => { void load() }, [load])
 
+  // Tabs follow the modules switched on for the shop (same idea as Billing):
+  // Bookings needs Booking, Queue needs Queue, Shisha needs Shisha, and the
+  // customer-facing tabs (Customers, Services, Messaging) need Booking or Queue.
+  const pr = data?.products
+  const runsBookingQueue = !!pr && (pr.booking || pr.queue)
   const tabs: { id: TabId; label: string }[] = [
-    { id: "overview", label: "Overview" }, { id: "bookings", label: "Bookings" }, { id: "queue", label: "Queue" },
-    { id: "customers", label: "Customers" }, { id: "services", label: "Services" }, { id: "staff", label: "Staff" },
-    { id: "messaging", label: "Messaging" },
+    { id: "overview", label: "Overview" },
+    ...(pr?.booking ? [{ id: "bookings" as const, label: "Bookings" }] : []),
+    ...(pr?.queue ? [{ id: "queue" as const, label: "Queue" }] : []),
+    ...(pr?.shisha && data?.shisha ? [{ id: "shisha" as const, label: "Shisha" }] : []),
+    ...(runsBookingQueue
+      ? [{ id: "customers" as const, label: "Customers" }, { id: "services" as const, label: "Services" }]
+      : []),
+    { id: "staff", label: "Staff" },
+    ...(runsBookingQueue ? [{ id: "messaging" as const, label: "Messaging" }] : []),
     ...(data?.billing ? [{ id: "billing" as const, label: "Invoices" }] : []),
     ...(data?.payroll ? [{ id: "payroll" as const, label: "Payroll" }] : []),
   ]
@@ -220,22 +231,44 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
     <Kpi label={label} value={extra?.fmt ?? formatNum(cur)} cur={cur} prev={prev} compare={compare} hint={extra?.hint} lowerIsBetter={extra?.lowerIsBetter} />
   )
 
+  // Which modules this shop runs. Everything below only draws figures for modules that are on.
+  const { booking, queue, shisha } = d.products
+  const bq = booking || queue
+  const sh = d.shisha
+  const shp = d.shishaPrevious
+  const money = (v: number) => formatMoney(v, d.currency)
+  // Shisha KPI: same as K, but compared against the previous Shisha window.
+  const KS = (label: string, cur: number | null, prev: number | null | undefined, extra?: { hint?: string; fmt?: string }) => (
+    <Kpi label={label} value={extra?.fmt ?? formatNum(cur)} cur={cur} prev={prev} compare={compare && !!shp} hint={extra?.hint} />
+  )
+
   if (tab === "overview") {
     const outstanding = d.billing?.outstanding_all_time ?? []
+    const activitySeries = [
+      ...(booking ? [{ name: "Appointments scheduled", values: daily("appointments_scheduled") }] : []),
+      ...(queue ? [{ name: "Walk-ins", values: daily("walk_ins") }] : []),
+      ...(bq ? [{ name: "Completed visits", values: daily("completed_visits") }] : []),
+    ]
     return (
       <>
+        {!bq && !sh && (
+          <Note>No Booking, Queue or Shisha module is switched on for your shop yet, so there are no activity figures to show.</Note>
+        )}
         <Grid>
-          {K("Bookings created", c.bookings.created, p?.bookings.created, { hint: "By creation date" })}
-          {K("Appointments scheduled", c.bookings.scheduled, p?.bookings.scheduled, { hint: "By appointment date, excl. cancelled" })}
-          {K("Completed visits", c.customers.completed_visits, p?.customers.completed_visits, { hint: "Done queue entries + completed bookings, no double count" })}
-          {K("Cancelled (of created)", c.bookings.created_cancelled, p?.bookings.created_cancelled, { lowerIsBetter: true, hint: "Bookings created in period, now cancelled" })}
-          {K("Walk-in queue entries", c.queue.walk_in, p?.queue.walk_in)}
-          {K("Queue entries done", c.queue.done, p?.queue.done, { hint: "Joined in period, now done" })}
-          {K("Unique customers served", c.customers.served, p?.customers.served, { hint: "Distinct customers with a completed visit" })}
+          {booking && K("Bookings created", c.bookings.created, p?.bookings.created, { hint: "By creation date" })}
+          {booking && K("Appointments scheduled", c.bookings.scheduled, p?.bookings.scheduled, { hint: "By appointment date, excl. cancelled" })}
+          {bq && K("Completed visits", c.customers.completed_visits, p?.customers.completed_visits, { hint: "Done queue entries + completed bookings, no double count" })}
+          {booking && K("Cancelled (of created)", c.bookings.created_cancelled, p?.bookings.created_cancelled, { lowerIsBetter: true, hint: "Bookings created in period, now cancelled" })}
+          {queue && K("Walk-in queue entries", c.queue.walk_in, p?.queue.walk_in)}
+          {queue && K("Queue entries done", c.queue.done, p?.queue.done, { hint: "Joined in period, now done" })}
+          {bq && K("Unique customers served", c.customers.served, p?.customers.served, { hint: "Distinct customers with a completed visit" })}
+          {sh && KS("Shisha sessions", sh.sessions_started, shp?.sessions_started, { hint: "Started in period" })}
+          {sh && KS("Shisha refills", sh.refills, shp?.refills)}
+          {sh && KS("Shisha revenue", sh.revenue, shp?.revenue, { fmt: money(sh.revenue), hint: "Completed sessions, incl. refills" })}
           {K("Active staff", c.staff.active_count, null, { hint: "Current snapshot" })}
-          {K("Conversations created", c.messaging.conversations_created, p?.messaging.conversations_created)}
-          {K("Incoming messages", c.messaging.incoming, p?.messaging.incoming)}
-          {K("Outgoing messages", c.messaging.outgoing, p?.messaging.outgoing, { hint: "Sent, not confirmed delivered" })}
+          {bq && K("Conversations created", c.messaging.conversations_created, p?.messaging.conversations_created)}
+          {bq && K("Incoming messages", c.messaging.incoming, p?.messaging.incoming)}
+          {bq && K("Outgoing messages", c.messaging.outgoing, p?.messaging.outgoing, { hint: "Sent, not confirmed delivered" })}
           {d.billing && (
             <div className="rounded-xl border border-stone-200 bg-white p-4">
               <p className="text-xs text-stone-500">Outstanding invoices</p>
@@ -256,28 +289,40 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
           )}
         </Grid>
         <Grid cols={2}>
-          <Card title="Activity per day" note="Appointments by appointment date; walk-ins and completed visits by event time.">
-            <LineChart label="Activity per day" labels={dates} series={[
-              { name: "Appointments scheduled", values: daily("appointments_scheduled") },
-              { name: "Walk-ins", values: daily("walk_ins") },
-              { name: "Completed visits", values: daily("completed_visits") },
-            ]} />
-          </Card>
-          <Card title="Messages per day">
-            <LineChart label="Messages per day" labels={dates} series={[
-              { name: "Incoming", values: daily("messages_in") }, { name: "Outgoing", values: daily("messages_out") },
-            ]} />
-          </Card>
-          <Card title="Booking status" note="Bookings created in this period, by current status.">
-            <Donut label="Booking status" data={[
-              { label: "Confirmed", value: c.bookings.created_confirmed },
-              { label: "Completed", value: c.bookings.created_completed },
-              { label: "Cancelled", value: c.bookings.created_cancelled },
-            ]} />
-          </Card>
-          <Card title="Top services" note="Appointments + walk-ins, excl. cancelled.">
-            <HBars data={c.services.items.slice(0, 6).map((s) => ({ label: s.name, value: s.bookings + s.walk_ins }))} />
-          </Card>
+          {bq && (
+            <Card title="Activity per day" note="Appointments by appointment date; walk-ins and completed visits by event time.">
+              <LineChart label="Activity per day" labels={dates} series={activitySeries} />
+            </Card>
+          )}
+          {bq && (
+            <Card title="Messages per day">
+              <LineChart label="Messages per day" labels={dates} series={[
+                { name: "Incoming", values: daily("messages_in") }, { name: "Outgoing", values: daily("messages_out") },
+              ]} />
+            </Card>
+          )}
+          {booking && (
+            <Card title="Booking status" note="Bookings created in this period, by current status.">
+              <Donut label="Booking status" data={[
+                { label: "Confirmed", value: c.bookings.created_confirmed },
+                { label: "Completed", value: c.bookings.created_completed },
+                { label: "Cancelled", value: c.bookings.created_cancelled },
+              ]} />
+            </Card>
+          )}
+          {bq && (
+            <Card title="Top services" note="Appointments + walk-ins, excl. cancelled.">
+              <HBars data={c.services.items.slice(0, 6).map((s) => ({ label: s.name, value: (booking ? s.bookings : 0) + (queue ? s.walk_ins : 0) }))} />
+            </Card>
+          )}
+          {sh && (
+            <Card title="Shisha sessions per day" note="Sessions and refills, by the day the session started.">
+              <LineChart label="Shisha sessions per day" labels={sh.by_day.map((r) => r.date)} series={[
+                { name: "Sessions", values: sh.by_day.map((r) => r.sessions) },
+                { name: "Refills", values: sh.by_day.map((r) => r.refills) },
+              ]} />
+            </Card>
+          )}
         </Grid>
       </>
     )
@@ -340,6 +385,41 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
     )
   }
 
+  if (tab === "shisha" && sh) {
+    const paymentLabel = (m: string) => (m === "tab" ? "On account" : m === "not recorded" ? "Not recorded" : m.charAt(0).toUpperCase() + m.slice(1))
+    return (
+      <>
+        <Grid>
+          {KS("Sessions started", sh.sessions_started, shp?.sessions_started, { hint: "Started in period" })}
+          {KS("Completed", sh.sessions_completed, shp?.sessions_completed)}
+          <Kpi label="Still open" value={formatNum(sh.sessions_open)} compare={false} hint="Started in period, not yet ended" />
+          {KS("Refills", sh.refills, shp?.refills)}
+          {KS("Revenue", sh.revenue, shp?.revenue, { fmt: money(sh.revenue), hint: "Completed sessions, refills included" })}
+          {KS("Refill revenue", sh.refill_revenue, shp?.refill_revenue, { fmt: money(sh.refill_revenue), hint: "Part of revenue" })}
+          {KS("Average per session", sh.avg_session_value, shp?.avg_session_value, { fmt: sh.avg_session_value == null ? "–" : money(sh.avg_session_value), hint: "Completed sessions" })}
+        </Grid>
+        <Grid cols={2}>
+          <Card title="Sessions and refills per day" note="By the day the session started.">
+            <LineChart label="Sessions and refills per day" labels={sh.by_day.map((r) => r.date)} series={[
+              { name: "Sessions", values: sh.by_day.map((r) => r.sessions) },
+              { name: "Refills", values: sh.by_day.map((r) => r.refills) },
+            ]} />
+          </Card>
+          <Card title="Top flavours" note="Completed sessions.">
+            <HBars data={sh.by_product.slice(0, 6).map((x) => ({ label: x.name, value: x.sessions }))} />
+          </Card>
+          <Card title="Busiest hours" note={`Session start, ${d.timezone}`}><BarChart label="Shisha sessions by hour" data={hours(sh.by_hour)} /></Card>
+          <Card title="Busiest days"><BarChart label="Shisha sessions by weekday" data={days(sh.by_weekday)} /></Card>
+        </Grid>
+        <Card title="Payment methods" note="Completed sessions.">
+          <Table cols={[{ h: "Method" }, { h: "Sessions", align: "right" }, { h: "Amount", align: "right" }]}
+            rows={sh.by_payment.map((x) => [paymentLabel(x.method), x.count, money(x.amount)])} empty="No completed sessions in this period." />
+        </Card>
+        <Note>Sessions are counted by the day they started. Revenue is the total on completed sessions and already includes refill charges. It is sales taken at your venue, not what you owe the platform.</Note>
+      </>
+    )
+  }
+
   if (tab === "customers") {
     const u = c.customers
     let running = u.registered_before_window
@@ -372,14 +452,27 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
         <Grid cols={3}>
           <Kpi label="Active services" value={formatNum(s.active_count)} compare={false} />
           <Kpi label="Inactive services" value={formatNum(s.inactive_count)} compare={false} />
-          <Kpi label="No service selected" value={formatNum(s.no_service.bookings + s.no_service.walk_ins)} compare={false} hint="Bookings + walk-ins without a service" />
+          <Kpi label="No service selected" value={formatNum((booking ? s.no_service.bookings : 0) + (queue ? s.no_service.walk_ins : 0))} compare={false}
+            hint={booking && queue ? "Bookings + walk-ins without a service" : booking ? "Bookings without a service" : "Walk-ins without a service"} />
         </Grid>
         <Card title="Demand by service" note="Excl. cancelled. Prices are the configured list price, not money collected.">
-          <Table cols={[{ h: "Service" }, { h: "Status" }, { h: "Configured price", align: "right" }, { h: "Duration", align: "right" }, { h: "Bookings", align: "right" }, { h: "Walk-ins", align: "right" }, { h: "All queue entries", align: "right" }]}
-            rows={s.items.map((i) => [i.name, i.active ? "Active" : "Inactive", formatMoney(i.configured_price, d.currency), `${i.duration_minutes} min`, i.bookings, i.walk_ins, i.queue_entries])} />
+          <Table
+            cols={[
+              { h: "Service" }, { h: "Status" }, { h: "Configured price", align: "right" }, { h: "Duration", align: "right" },
+              ...(booking ? [{ h: "Bookings", align: "right" as const }] : []),
+              ...(queue ? [{ h: "Walk-ins", align: "right" as const }, { h: "All queue entries", align: "right" as const }] : []),
+            ]}
+            rows={s.items.map((i) => [
+              i.name, i.active ? "Active" : "Inactive", formatMoney(i.configured_price, d.currency), `${i.duration_minutes} min`,
+              ...(booking ? [i.bookings] : []),
+              ...(queue ? [i.walk_ins, i.queue_entries] : []),
+            ])} />
         </Card>
-        <Card title="Demand per day" note="Appointments + walk-ins. Per-service daily trends are not broken out.">
-          <LineChart label="Demand per day" labels={dates} series={[{ name: "Appointments scheduled", values: daily("appointments_scheduled") }, { name: "Walk-ins", values: daily("walk_ins") }]} />
+        <Card title="Demand per day" note={`${booking && queue ? "Appointments + walk-ins" : booking ? "Appointments" : "Walk-ins"}. Per-service daily trends are not broken out.`}>
+          <LineChart label="Demand per day" labels={dates} series={[
+            ...(booking ? [{ name: "Appointments scheduled", values: daily("appointments_scheduled") }] : []),
+            ...(queue ? [{ name: "Walk-ins", values: daily("walk_ins") }] : []),
+          ]} />
         </Card>
       </>
     )
@@ -388,6 +481,9 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
   if (tab === "staff") {
     const s = c.staff
     const perf = new Map(c.bookings.by_staff.map((x) => [x.staff_id, x]))
+    // Admin activity from a module that is off is left out ("bookings" / "queue" areas).
+    const areaVisible = (category: string) => !((category === "bookings" && !booking) || (category === "queue" && !queue))
+    const activity = s.activity_by_category.filter((a) => areaVisible(a.category))
     return (
       <>
         <Grid>
@@ -397,19 +493,26 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
           {K("Shift hours", s.shift_hours, p?.staff.shift_hours, { fmt: String(s.shift_hours) })}
           <Kpi label="Average shift" value={s.avg_shift_hours == null ? "–" : `${s.avg_shift_hours} h`} compare={false} />
         </Grid>
-        <Card title="Staff hours and appointments" note="Hours use logout − login on completed shifts.">
-          <Table cols={[{ h: "Staff" }, { h: "Shifts", align: "right" }, { h: "Hours", align: "right" }, { h: "Appointments", align: "right" }, { h: "Completed", align: "right" }]}
-            rows={s.hours_by_staff.map((h) => [h.name, h.shifts, h.hours, perf.get(h.staff_id)?.scheduled ?? 0, perf.get(h.staff_id)?.completed ?? 0])} />
+        <Card title={booking ? "Staff hours and appointments" : "Staff hours"} note="Hours use logout − login on completed shifts.">
+          <Table
+            cols={[
+              { h: "Staff" }, { h: "Shifts", align: "right" }, { h: "Hours", align: "right" },
+              ...(booking ? [{ h: "Appointments", align: "right" as const }, { h: "Completed", align: "right" as const }] : []),
+            ]}
+            rows={s.hours_by_staff.map((h) => [
+              h.name, h.shifts, h.hours,
+              ...(booking ? [perf.get(h.staff_id)?.scheduled ?? 0, perf.get(h.staff_id)?.completed ?? 0] : []),
+            ])} />
         </Card>
         <Grid cols={2}>
-          <Card title="Admin activity by area"><HBars data={s.activity_by_category.map((a) => ({ label: a.category, value: a.count }))} /></Card>
+          <Card title="Admin activity by area"><HBars data={activity.map((a) => ({ label: a.category, value: a.count }))} /></Card>
           <Card title="Recent activity">
             <Table cols={[{ h: "When" }, { h: "Area" }, { h: "Action" }]}
-              rows={s.recent_activity.map((a) => [new Date(a.at).toLocaleString(undefined, { timeZone: d.timezone }), a.category, a.action])} />
+              rows={s.recent_activity.filter((a) => areaVisible(a.category)).map((a) => [new Date(a.at).toLocaleString(undefined, { timeZone: d.timezone }), a.category, a.action])} />
           </Card>
         </Grid>
         {s.shifts_using_fallback_hours > 0 && <Note>{s.shifts_using_fallback_hours} shift(s) had no valid logout time, so their stored hours_worked value was used.</Note>}
-        <Note>Appointment counts come from bookings only: walk-in queue entries don't record which staff member served them.</Note>
+        {booking && <Note>Appointment counts come from bookings only: walk-in queue entries don't record which staff member served them.</Note>}
       </>
     )
   }
@@ -453,7 +556,7 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
     return (
       <>
         <Grid cols={3}>
-          {b.plan && (
+          {bq && b.plan && (
             <Card title="Current plan">
               <p className="text-lg font-semibold text-stone-900">{b.plan.name}</p>
               <p className="text-xs text-stone-500">
@@ -463,7 +566,7 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
               </p>
             </Card>
           )}
-          <Kpi label="Billable visits in period" value={formatNum(b.visits.total)} compare={false} hint="Billing ledger, by visit date" />
+          {bq && <Kpi label="Billable visits in period" value={formatNum(b.visits.total)} compare={false} hint="Billing ledger, by visit date" />}
           <Kpi label="Paid invoice amount" value={paid.length ? paid.map((x) => formatCents(x.amount_cents, x.currency)).join(" · ") : "–"} compare={false} hint="Invoices for billing periods in range" />
         </Grid>
         <Card title="Invoices by status" note="Billing periods starting in range. Void invoices are never counted as owed.">
