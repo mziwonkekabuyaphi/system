@@ -31,6 +31,7 @@ import type { CSSProperties } from "react"
 import type { ShishaDisplayLabelKey } from "@/app/admin/shisha/shisha-display-types"
 import { hexToRgba, mixHex, type ThemeTokens } from "../displayTheme"
 import type { ShishaDisplayData, ShishaDisplayFailure } from "./actions"
+import { HookahIcon, hookahCss } from "./HookahIcon"
 import { timerText, type CardState, type CardView } from "./shisha-display-shared"
 
 // Fixed, computed positions: no Math.random(), so server and client render the same markup.
@@ -216,14 +217,18 @@ export function ShishaLoungeView({
                 <div className="ring">
                   <div className="disc">
                     {allViews.length === 0 ? (
-                      <span className="flame" aria-hidden="true" />
+                      <span className="hookah" aria-hidden="true">
+                        <HookahIcon />
+                      </span>
                     ) : hero ? (
                       <>
                         <span className="h-timer">{heroTimer}</span>
                         <span className="h-chip">{label(heroState)}</span>
                       </>
                     ) : (
-                      <span className="flame" aria-hidden="true" />
+                      <span className="hookah" aria-hidden="true">
+                        <HookahIcon />
+                      </span>
                     )}
                   </div>
                 </div>
@@ -324,6 +329,7 @@ export function ShishaLoungeView({
           padding: 0;
           background: ${theme.bgSolid};
         }
+        ${hookahCss}
       `}</style>
 
       <style jsx>{`
@@ -617,12 +623,11 @@ export function ShishaLoungeView({
           font-weight: 600;
           color: var(--fg-70);
         }
-        .flame {
-          width: 24%;
-          height: 28%;
-          background: linear-gradient(160deg, var(--accent), var(--secondary));
-          clip-path: polygon(50% 0%, 78% 35%, 68% 100%, 32% 100%, 22% 35%);
-          animation: flicker 2.6s ease-in-out infinite;
+        /* A free device (or an empty floor): a small hookah in the accent colour (see HookahIcon.tsx). */
+        .hookah {
+          height: 62%;
+          aspect-ratio: 2 / 3;
+          color: var(--accent);
         }
 
         .h-info {
@@ -888,7 +893,6 @@ export function ShishaLoungeView({
           .smoke,
           .orbit,
           .track,
-          .flame,
           .hero.expired .ring,
           .row.expired,
           .pill.on .pill-dot {

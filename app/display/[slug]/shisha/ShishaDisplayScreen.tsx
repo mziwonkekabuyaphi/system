@@ -31,6 +31,7 @@ import {
 import { deriveDisplayStatus, type ShishaDisplayStatus } from "@/app/admin/shisha/shisha-types"
 import { CallAlertOverlay, type CallAlertEntry } from "../CallAlertOverlay"
 import { DEFAULT_ACCENT, DEFAULT_SECONDARY, ensureContrast, hexToRgba, mixHex, resolveThemeTokens } from "../displayTheme"
+import { HookahIcon, hookahCss } from "./HookahIcon"
 import { ShishaLoungeView } from "./ShishaLoungeView"
 import {
   STATUS_BASE,
@@ -371,7 +372,9 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
                     {timer !== null ? (
                       <span className="timer">{timer}</span>
                     ) : state === "available" ? (
-                      <span className="flame" aria-hidden="true" />
+                      <span className="hookah" aria-hidden="true">
+                        <HookahIcon />
+                      </span>
                     ) : (
                       <span className="dash" aria-hidden="true" />
                     )}
@@ -418,6 +421,7 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           padding: 0;
           background: ${theme.bgSolid};
         }
+        ${hookahCss}
       `}</style>
 
       <style jsx>{`
@@ -707,12 +711,11 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           font-variant-numeric: tabular-nums;
           color: var(--sc);
         }
-        .flame {
-          width: 26%;
-          height: 30%;
-          background: var(--sc);
-          clip-path: polygon(50% 0%, 78% 35%, 68% 100%, 32% 100%, 22% 35%);
-          animation: flicker 2.6s ease-in-out infinite;
+        /* A free device: a small hookah in the state colour (see HookahIcon.tsx). */
+        .hookah {
+          height: 62%;
+          aspect-ratio: 2 / 3;
+          color: var(--sc);
         }
         .dash {
           width: 26%;
@@ -797,7 +800,6 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
           .track,
           .card.refill,
           .card.expired .ring,
-          .flame,
           .pill.on .pill-dot {
             animation: none;
           }
