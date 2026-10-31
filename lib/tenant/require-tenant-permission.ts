@@ -53,6 +53,8 @@ export type PermissionKey =
   | "shisha.view"
   | "shisha.operate"
   | "shisha.manage"
+  | "shifts.view"
+  | "shifts.manage"
 
 
 export type PermissionCheckResult =
