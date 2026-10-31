@@ -10,6 +10,8 @@ import { revalidatePath } from "next/cache"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
+import { cleanModuleKeys, type NewShopModule } from "@/lib/services/new-shop-modules"
+import { enableModulesForNewShop } from "@/lib/services/tenant-modules"
 
 type R<T = object> = ({ success: true } & T) | { success: false; error: string }
 
@@ -45,7 +47,13 @@ async function newOwnerInvite(
 }
 
 /** Creates a shop and an owner invite code. The owner signs up, then redeems the code. */
-export async function createShop(input: { name: string; slug: string; ownerEmail: string }): Promise<R<{ slug: string; inviteCode: string }>> {
+export async function createShop(input: {
+  name: string
+  slug: string
+  ownerEmail: string
+  /** Modules to switch on from day one (booking, queue, shisha, shifts, payroll). */
+  modules: NewShopModule[]
+}): Promise<R<{ slug: string; inviteCode: string }>> {
   try {
     const { actor, supabase } = await ctx()
     const name = input.name.trim()
@@ -63,6 +71,14 @@ export async function createShop(input: { name: string; slug: string; ownerEmail
     // trg_handle_new_tenant creates the shop's settings rows in the same transaction.
     const { data: tenant, error: tenantError } = await supabase.from("tenants").insert({ name, slug }).select("id").single()
     if (tenantError || !tenant) return { success: false, error: `Failed to create shop: ${tenantError?.message}` }
+
+    // No tenant_modules row means OFF, so write the chosen modules now (the form defaults to Booking + Queue).
+    try {
+      await enableModulesForNewShop(supabase, tenant.id, cleanModuleKeys(input.modules))
+    } catch (e) {
+      await supabase.from("tenants").delete().eq("id", tenant.id) // don't leave a shop with nothing on
+      return fail(e)
+    }
 
     let inviteCode: string
     try {

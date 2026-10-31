@@ -38,6 +38,14 @@ export function OnboardingForm() {
             <input id="businessName" name="businessName" type="text" required
               className="mt-1 w-full rounded border border-stone-300 px-3 py-2" />
           </div>
+          <p className="text-xs text-stone-500">You start with Booking and Queue switched on.</p>
+          <label className="flex items-start gap-2 text-sm text-stone-700">
+            <input type="checkbox" name="wantsShisha" className="mt-1" />
+            <span>
+              I also run a shisha lounge
+              <span className="block text-xs text-stone-500">Shisha isn&apos;t switched on automatically. We&apos;ll contact you to set it up.</span>
+            </span>
+          </label>
           {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
           <button type="submit" disabled={isPending} className="w-full rounded bg-stone-900 py-2 text-white">
             {isPending ? "Creating…" : "Create business"}

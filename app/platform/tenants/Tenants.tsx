@@ -3,6 +3,7 @@
 
 import { useState, useTransition } from "react"
 
+import { CREATABLE_MODULES, type NewShopModule } from "@/lib/services/new-shop-modules"
 import { createOwnerInvite, createShop } from "./actions"
 
 type Row = { id: string; name: string; slug: string; status: string; createdAt: string | null; members: number; referredBy: string | null }
@@ -84,6 +85,7 @@ function NewShop({ busy, start, setMsg, setInvite }: {
   const [slug, setSlug] = useState("")
   const [slugEdited, setSlugEdited] = useState(false)
   const [email, setEmail] = useState("")
+  const [modules, setModules] = useState<NewShopModule[]>(CREATABLE_MODULES.filter((m) => m.defaultOn).map((m) => m.key))
 
   return (
     <div className={card}>
@@ -92,6 +94,19 @@ function NewShop({ busy, start, setMsg, setInvite }: {
         <input className={input} placeholder="Business name" value={name} onChange={(e) => { setName(e.target.value); if (!slugEdited) setSlug(slugify(e.target.value)) }} />
         <input className={input} placeholder="web-address" value={slug} onChange={(e) => { setSlug(e.target.value); setSlugEdited(true) }} />
         <input className={input} type="email" placeholder="Owner email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-sm text-stone-700">
+          <span className="text-xs uppercase text-stone-400">Switched on from day one</span>
+          {CREATABLE_MODULES.map((m) => (
+            <label key={m.key} className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={modules.includes(m.key)}
+                onChange={(e) => setModules((cur) => (e.target.checked ? [...cur, m.key] : cur.filter((k) => k !== m.key)))}
+              />
+              {m.label}
+            </label>
+          ))}
+        </div>
         <button
           className={btn}
           disabled={busy}
@@ -99,7 +114,7 @@ function NewShop({ busy, start, setMsg, setInvite }: {
             setMsg(null)
             setInvite(null)
             start(async () => {
-              const res = await createShop({ name, slug, ownerEmail: email })
+              const res = await createShop({ name, slug, ownerEmail: email, modules })
               if (res.success) {
                 setMsg({ ok: true, text: `Shop created at /web/${res.slug}.` })
                 setInvite({ shop: name, code: res.inviteCode })

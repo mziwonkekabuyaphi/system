@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSessionClient } from "@/lib/supabase/session-server";
 import { getSupabaseServerClient } from "@/lib/supabase/admin";
+import { SELF_SIGNUP_MODULES } from "@/lib/services/new-shop-modules";
+import { enableModulesForNewShop } from "@/lib/services/tenant-modules";
 
 const TENANT_OWNER_ROLE_KEY = "tenant_owner";
 
@@ -96,6 +98,29 @@ export async function createTenantAction(formData: FormData) {
   if (memberError) {
     await admin.from("tenants").delete().eq("id", tenant.id);
     return { error: `Failed to link you to the business: ${memberError.message}` };
+  }
+
+  // A missing tenant_modules row means OFF, so a new shop needs its starting modules written
+  // here or it lands on an empty dashboard. Booking + Queue only: Shisha is never self-served.
+  // Roll the whole shop back on failure (members and modules cascade with the tenant).
+  try {
+    await enableModulesForNewShop(admin, tenant.id, SELF_SIGNUP_MODULES);
+  } catch (e) {
+    await admin.from("tenants").delete().eq("id", tenant.id);
+    return { error: `Failed to set up your business: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  // "I also run a shisha lounge": shisha stays OFF. Leave a note in Leads so the platform
+  // admin knows to follow up and can switch it on at /platform/modules. Best-effort.
+  if (formData.get("wantsShisha") === "on" && user.email) {
+    const { error: leadError } = await admin.from("contact_requests").insert({
+      kind: "contact",
+      name: businessName.slice(0, 120),
+      business_name: businessName.slice(0, 160),
+      email: user.email.slice(0, 254),
+      message: "SHISHA REQUEST (from sign-up). Shisha is OFF until you switch it on at /platform/modules.",
+    });
+    if (leadError) console.error("[onboarding] Couldn't save the shisha request", { tenantId: tenant.id, error: leadError.message });
   }
 
   revalidatePath("/admin");
