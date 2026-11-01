@@ -17,11 +17,11 @@ import type {
 } from "./types"
 import { ServicesManager } from "./ServicesManager"
 import { PrivateLabelPanel } from "./settings/BrandingPanels"
-import { BusinessInfoPanel, OpeningHoursPanel } from "./settings/BusinessPanels"
+import { BusinessInfoPanel, OpeningHoursPanel, todayIndex } from "./settings/BusinessPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
-import { SettingsPageHeader } from "./settings/ui"
+import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 
 type SubTab = "general" | "services" | "kiosk" | "display" | "private-label"
 
@@ -149,6 +149,21 @@ const SETTINGS_NAV: Array<{
   },
 ]
 
+/** Four quick facts at the top of Shop details. */
+function ShopSummaryTiles({ info, hours }: { info: AdminTenantSettings; hours: AdminBusinessHours }) {
+  const openDays = hours.filter((d) => !d.isClosed).length
+  const today = hours.find((d) => d.dayOfWeek === todayIndex(info.timezone))
+  const todayLine = !today ? "Not set" : today.isClosed ? "Closed" : `${today.openTime ?? "?"} – ${today.closeTime ?? "?"}`
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <SettingsStatTile label="Timezone" value={info.timezone ? (info.timezone.split("/").pop() ?? info.timezone).replace(/_/g, " ") : "Not set"} hint={info.timezone || "Times shown to customers"} icon={<RailIcon className="h-[18px] w-[18px]"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></RailIcon>} />
+      <SettingsStatTile label="Currency" value={info.currency || "Not set"} hint="Prices and invoices" icon={<RailIcon className="h-[18px] w-[18px]"><circle cx="12" cy="12" r="9" /><path d="M14.5 9.5c-.5-.8-1.4-1.2-2.5-1.2-1.4 0-2.5.7-2.5 1.8s1 1.5 2.5 1.9 2.5.8 2.5 2-1.1 1.8-2.5 1.8c-1.1 0-2-.4-2.5-1.2M12 6.5v1.8M12 15.9v1.6" /></RailIcon>} />
+      <SettingsStatTile label="Open days" value={`${openDays} / 7`} hint="Days customers can book or queue" icon={<RailIcon className="h-[18px] w-[18px]"><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" /></RailIcon>} />
+      <SettingsStatTile label="Today" value={todayLine} hint="Opening hours" icon={<RailIcon className="h-[18px] w-[18px]"><path d="M3 9l1.5-5h15L21 9M4 9v11h16V9" /></RailIcon>} />
+    </div>
+  )
+}
+
 export function SettingsManager({
   initialPlan,
   tenantSlug,
@@ -208,6 +223,9 @@ export function SettingsManager({
   servicesManage?: boolean
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
+  // Kept here (not only inside the panels) so the summary tiles on Shop details follow a save.
+  const [shopInfo, setShopInfo] = useState(initialSettings)
+  const [shopHours, setShopHours] = useState(initialBusinessHours)
   const [railHovered, setRailHovered] = useState(false)
   const railExpanded = railHovered
 
@@ -227,6 +245,7 @@ export function SettingsManager({
   const settingsPages = settingsNav.flatMap((g) => g.items)
 
   const activePage = settingsPages.find((p) => p.id === subTab) ?? settingsPages[0]
+  const ActiveIcon = SETTINGS_ICONS[activePage.id]
 
   return (
     <div className="md:flex md:gap-6">
@@ -324,13 +343,18 @@ export function SettingsManager({
       </div>
 
       <div className="min-w-0 flex-1 space-y-4">
-        <SettingsPageHeader title={activePage.title} description={activePage.description} />
+        <SettingsPageHeader title={activePage.title} description={activePage.description} icon={<ActiveIcon className="h-5 w-5" />} />
 
       {activePage.id === "general" && (
-        <div className="space-y-3">
-          <BusinessInfoPanel initial={initialSettings} />
-          <EmployerDetailsPanel />
-          <OpeningHoursPanel initial={initialBusinessHours} />
+        <div className="space-y-4">
+          <ShopSummaryTiles info={shopInfo} hours={shopHours} />
+          <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <div className="space-y-4">
+              <BusinessInfoPanel initial={initialSettings} onSaved={setShopInfo} />
+              <EmployerDetailsPanel />
+            </div>
+            <OpeningHoursPanel initial={initialBusinessHours} timezone={shopInfo.timezone} onSaved={setShopHours} />
+          </div>
         </div>
       )}
       {activePage.id === "services" && <ServicesManager initialServices={initialServices} />}
