@@ -31,9 +31,10 @@ type Notice = { kind: "success" | "error"; text: string }
 
 const FIELD =
   `rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none ${BRAND_FOCUS_BORDER}`
+// Dark theme only: hover gives a red edge + glow, and the main button is red (not near-black on near-black).
 const BTN =
-  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
-const BTN_CALL = `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink transition-shadow hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
+const BTN_CALL = `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium transition-shadow hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:bg-accent [[data-admin-theme=dark]_&]:text-on-color [[data-admin-theme=dark]_&]:shadow-[0_4px_16px_rgba(227,6,19,0.35)]`
 const BTN_DONE =
   "rounded-md bg-success px-3 py-1.5 text-sm font-medium text-on-color hover:bg-success-hover disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_GHOST =
@@ -54,7 +55,7 @@ function byPosition(a: AdminQueueEntry, b: AdminQueueEntry) {
 
 function SummaryCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (
-    <div className="rounded-lg border border-line bg-card px-4 py-3">
+    <div className="rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
       <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
       <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
       {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}

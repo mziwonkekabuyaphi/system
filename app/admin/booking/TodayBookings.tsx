@@ -48,10 +48,11 @@ const STATUS_BADGE: Record<Status, string> = {
 
 const FIELD =
   "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-accent"
+// Dark theme only: hover gives a red edge + glow, and the primary button glows red.
 const BTN =
-  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink transition-shadow hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
 const BTN_PRIMARY =
-  "rounded-md bg-primary px-3 py-1.5 text-sm text-on-primary hover:bg-primary-hover-strong disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-primary px-3 py-1.5 text-sm text-on-primary transition-shadow hover:bg-primary-hover-strong disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:shadow-[0_4px_16px_rgba(227,6,19,0.35)]"
 const BTN_DANGER =
   "rounded-md bg-accent px-3 py-1.5 text-sm text-on-color hover:bg-accent-alt-hover disabled:cursor-not-allowed disabled:opacity-50"
 
@@ -65,7 +66,7 @@ function StatusBadge({ status }: { status: Status }) {
 
 function SummaryCard({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
-    <div className="rounded-lg border border-line bg-card px-4 py-3">
+    <div className="rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
       <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
       <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
       <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>
