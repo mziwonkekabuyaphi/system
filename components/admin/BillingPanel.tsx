@@ -17,14 +17,12 @@
  * figure, including the live upgrade-preview modal, so the dashboard and
  * the actual invoice can never show different math for the same usage.
  *
- * Design tokens are the ones this app already uses (see TodayBookings.tsx):
- * #1C1A17 ink, #8A8375 muted, #E6E1D4 line, #7A2E2E accent, #2B6F5C success.
- * Two additions, both because usage now has a third state Growth can be
- * in ("near the included limit" -- not yet billing overage, but close):
- * #A66A1E amber, and #FAF8F3 canvas for section backgrounds.
+ * Styling uses the named admin theme colours (app/theme-admin.css), so it works in both the
+ * cream and the dark look, and the same building blocks as Staff / Shisha / Queue: stat tiles
+ * with a red left edge, card sections, and a red glow on buttons in the dark theme.
  */
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   getBillingSummary,
   requestPlanUpgrade,
@@ -43,6 +41,44 @@ const LINE = "var(--color-line)"
 const ACCENT = "var(--color-accent)"
 const SUCCESS = "var(--color-success-alt)"
 const AMBER = "var(--color-warn-alt)"
+
+// Same look as Staff / Shisha / Queue: cards, stat tiles with a red left edge, and (dark theme only)
+// a red glow on buttons and on hover.
+const CARD = "rounded-lg border border-line bg-card shadow-sm"
+const BTN =
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink transition-shadow hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
+const BTN_PRIMARY =
+  "rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-on-primary transition-shadow hover:bg-primary-hover-strong disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:shadow-[0_4px_16px_rgba(227,6,19,0.35)]"
+const NOTICE = "rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 text-sm shadow-sm"
+
+const iconProps = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const
+const IconCard = () => (<svg {...iconProps}><rect x="2" y="5" width="20" height="14" rx="2.5" /><path d="M2 10h20M6 15h4" /></svg>)
+const IconTag = () => (<svg {...iconProps}><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="7.5" cy="7.5" r="1.2" /></svg>)
+const IconPulse = () => (<svg {...iconProps}><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>)
+const IconWallet = () => (<svg {...iconProps}><path d="M4 7a2 2 0 0 1 2-2h12v4" /><path d="M4 7v10a2 2 0 0 0 2 2h14V9H6a2 2 0 0 1-2-2Z" /><circle cx="16.5" cy="14" r="1.1" /></svg>)
+
+function StatTile({ label, value, hint, icon }: { label: string; value: string | number; hint?: string; icon: ReactNode }) {
+  return (
+    <div className="relative rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
+      <span className="absolute right-3 top-3 text-ink-muted/60">{icon}</span>
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
+    </div>
+  )
+}
+
+function SectionTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="flex items-center gap-2 font-[family-name:var(--font-admin-serif)] text-lg text-ink">
+        <span className="h-4 w-[3px] rounded-full bg-accent" aria-hidden />
+        {children}
+      </h3>
+      {aside}
+    </div>
+  )
+}
 
 type UsageState = "normal" | "near" | "overage" | "blocked"
 
@@ -83,7 +119,7 @@ function StatusBadge({ status }: { status: BillingStatus }) {
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
-      style={{ borderColor: color, color }}
+      style={{ borderColor: color, color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {BILLING_STATUS_LABEL[status]}
@@ -155,15 +191,20 @@ export function BillingPanel() {
   const runsBookingQueue = products.booking || products.queue
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       {runsBookingQueue ? (
         <PanelHeader currentPlan={currentPlan} billingStatus={billingStatus} usage={usage} outstandingCents={outstandingCents} />
       ) : (
-        <ModulesOnlyHeader billingStatus={billingStatus} outstandingCents={outstandingCents} currency={shisha?.currency ?? "ZAR"} />
+        <ModulesOnlyHeader
+          billingStatus={billingStatus}
+          outstandingCents={outstandingCents}
+          currency={shisha?.currency ?? "ZAR"}
+          shisha={shisha}
+        />
       )}
 
       {runsBookingQueue && pendingRequest && (
-        <div className="rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink">
+        <div className={`${NOTICE} text-ink`}>
           Upgrade to <span className="font-semibold capitalize">{pendingRequest.requestedPlanKey}</span> requested — we'll be
           in touch shortly.
         </div>
@@ -190,7 +231,7 @@ export function BillingPanel() {
       )}
 
       {!runsBookingQueue && !shisha && (
-        <p className="rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink-muted">
+        <p className={`${NOTICE} text-ink-muted`}>
           No billable modules are switched on for your shop yet.
         </p>
       )}
@@ -222,6 +263,23 @@ export function BillingPanel() {
 // Header: plan name, billing status, current billing, outstanding balance
 // ============================================================================
 
+function PageHeader({ billingStatus, subtitle }: { billingStatus: BillingStatus; subtitle: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h2 className="flex items-center gap-2 font-[family-name:var(--font-admin-serif)] text-xl text-ink">
+          <span className="text-accent">
+            <IconCard />
+          </span>
+          Billing &amp; Plans
+        </h2>
+        <p className="mt-0.5 text-sm text-ink-muted">{subtitle}</p>
+      </div>
+      <StatusBadge status={billingStatus} />
+    </div>
+  )
+}
+
 function PanelHeader({
   currentPlan,
   billingStatus,
@@ -235,23 +293,32 @@ function PanelHeader({
 }) {
   const billingLine =
     currentPlan.priceCents === 0 ? "Free" : `${formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month`
+  const calc = usage.currentBilling
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <p className="text-sm text-ink-muted">Current plan</p>
-        <div className="mt-1 flex items-center gap-3">
-          <h2 className="text-2xl font-semibold text-ink">{currentPlan.name}</h2>
-          <StatusBadge status={billingStatus} />
-        </div>
-        <p className="mt-1 text-sm text-ink-muted">{billingLine}</p>
+    <div className="space-y-5">
+      <PageHeader billingStatus={billingStatus} subtitle="Your plan, this month's usage, upgrades and invoices." />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Current plan" value={currentPlan.name} hint={billingLine} icon={<IconTag />} />
+        <StatTile
+          label="Estimated bill"
+          value={formatCents(calc.totalCents, currentPlan.currency)}
+          hint="This month so far"
+          icon={<IconCard />}
+        />
+        <StatTile
+          label="Visits"
+          value={calc.actualVisits.toLocaleString("en-ZA")}
+          hint={calc.includedVisits === null ? "No visit limit" : `of ${calc.includedVisits.toLocaleString("en-ZA")} included`}
+          icon={<IconPulse />}
+        />
+        <StatTile
+          label="Outstanding"
+          value={formatCents(outstandingCents, currentPlan.currency)}
+          hint={outstandingCents > 0 ? "Please settle this balance" : "Nothing owing"}
+          icon={<IconWallet />}
+        />
       </div>
-      {outstandingCents > 0 && (
-        <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-right">
-          <p className="text-xs font-medium uppercase tracking-wide text-accent">Outstanding balance</p>
-          <p className="mt-0.5 text-lg font-semibold text-accent">{formatCents(outstandingCents, currentPlan.currency)}</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -264,26 +331,36 @@ function ModulesOnlyHeader({
   billingStatus,
   outstandingCents,
   currency,
+  shisha,
 }: {
   billingStatus: BillingStatus
   outstandingCents: number
   currency: string
+  shisha: ShishaBillingInfo | null
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-semibold text-ink">Billing</h2>
-          <StatusBadge status={billingStatus} />
-        </div>
-        <p className="mt-1 text-sm text-ink-muted">Your modules are billed on usage, with no monthly plan fee.</p>
+    <div className="space-y-5">
+      <PageHeader billingStatus={billingStatus} subtitle="Your modules are billed on usage, with no monthly plan fee." />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Billing" value={BILLING_STATUS_LABEL[billingStatus]} hint="Usage based" icon={<IconTag />} />
+        <StatTile
+          label="This month"
+          value={shisha ? formatCents(shisha.thisMonth.amountCents, currency) : "—"}
+          hint="So far"
+          icon={<IconPulse />}
+        />
+        <StatTile
+          label="Last month"
+          value={shisha ? formatCents(shisha.lastMonth.amountCents, currency) : "—"}
+          icon={<IconCard />}
+        />
+        <StatTile
+          label="Outstanding"
+          value={formatCents(outstandingCents, currency)}
+          hint={outstandingCents > 0 ? "Please settle this balance" : "Nothing owing"}
+          icon={<IconWallet />}
+        />
       </div>
-      {outstandingCents > 0 && (
-        <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-right">
-          <p className="text-xs font-medium uppercase tracking-wide text-accent">Outstanding balance</p>
-          <p className="mt-0.5 text-lg font-semibold text-accent">{formatCents(outstandingCents, currency)}</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -295,16 +372,16 @@ function ModulesOnlyHeader({
 function ShishaSection({ shisha, switchedOn }: { shisha: ShishaBillingInfo; switchedOn: boolean }) {
   const { currency, sessionFeeCents, refillFeeCents, thisMonth, lastMonth } = shisha
   return (
-    <section className="rounded-xl border border-line p-5">
+    <section className={`${CARD} p-5`}>
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-ink">Shisha</h3>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Shisha</h3>
         <span className="text-sm text-ink-muted">Billed monthly on usage</span>
       </div>
       <p className="mt-1 text-sm text-ink-muted">
         {formatCents(sessionFeeCents, currency)} per session · {formatCents(refillFeeCents, currency)} per refill
       </p>
 
-      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-canvas p-4 sm:grid-cols-4">
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-4">
         <UsageStat label="Sessions this month" value={thisMonth.sessions.toLocaleString("en-ZA")} />
         <UsageStat label="Refills this month" value={thisMonth.refills.toLocaleString("en-ZA")} />
         <UsageStat label="Last month" value={formatCents(lastMonth.amountCents, currency)} />
@@ -333,7 +410,7 @@ function UsageSection({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUs
 function UsageProgressBar({ used, total, state }: { used: number; total: number; state: UsageState }) {
   const pct = Math.min((used / total) * 100, 100)
   return (
-    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-line">
+    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-tint-3">
       <div className="h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: USAGE_STATE_COLOR[state] }} />
     </div>
   )
@@ -345,9 +422,9 @@ function FreeUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage
   const remaining = usage.visitsRemaining ?? 0
 
   return (
-    <section className="rounded-xl border border-line p-5">
+    <section className={`${CARD} p-5`}>
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-ink">Free — {total} visits, once off</h3>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Free — {total} visits, once off</h3>
         <span className="text-sm text-ink-muted">R0 / month</span>
       </div>
 
@@ -362,7 +439,7 @@ function FreeUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage
       </div>
 
       {state === "blocked" ? (
-        <div className="mt-4 rounded-lg border border-accent/30 bg-accent/5 p-3">
+        <div className="mt-4 rounded-lg border border-accent/30 border-l-[3px] border-l-accent bg-accent/5 p-3">
           <p className="text-sm font-semibold text-accent">Your free visits have been used.</p>
           <p className="mt-0.5 text-sm text-accent">Upgrade to continue serving customers.</p>
         </div>
@@ -398,9 +475,9 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
   const included = calc.includedVisits ?? 0
 
   return (
-    <section className="rounded-xl border border-line p-5">
+    <section className={`${CARD} p-5`}>
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-ink">{currentPlan.name}</h3>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">{currentPlan.name}</h3>
         <span className="text-sm text-ink-muted">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
       </div>
       <p className="mt-1 text-sm text-ink-muted">{growthSummary(currentPlan, calc.perVisitRateCents, included)}</p>
@@ -416,7 +493,7 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
       </div>
 
       {state === "overage" || calc.extraStaff > 0 ? (
-        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-canvas p-4 sm:grid-cols-4">
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-4">
           <UsageStat label="Visits used" value={calc.actualVisits.toLocaleString("en-ZA")} />
           <UsageStat label="Included" value={included.toLocaleString("en-ZA")} />
           <UsageStat label="Additional" value={calc.overageVisits.toLocaleString("en-ZA")} />
@@ -446,16 +523,16 @@ function BusinessUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanU
   const calc = usage.currentBilling
 
   return (
-    <section className="rounded-xl border border-line p-5">
+    <section className={`${CARD} p-5`}>
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-ink">{currentPlan.name}</h3>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">{currentPlan.name}</h3>
         <span className="text-sm text-ink-muted">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
       </div>
       <p className="mt-1 text-sm text-ink-muted">
         No visit limit · {formatCents(calc.perVisitRateCents ?? 0, currentPlan.currency)} per completed visit
       </p>
 
-      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-canvas p-4 sm:grid-cols-4">
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-4">
         <UsageStat label="Visits this period" value={calc.actualVisits.toLocaleString("en-ZA")} />
         <UsageStat label="Usage cost" value={formatCents(calc.usageChargeCents, currentPlan.currency)} />
         <UsageStat label="Platform fee" value={formatCents(calc.baseFeeCents, currentPlan.currency)} />
@@ -521,8 +598,8 @@ function VisitBreakdownSection({ breakdown }: { breakdown: { queueVisits: number
   if (breakdown.total === 0) return null
   return (
     <section>
-      <h3 className="text-base font-semibold text-ink">Visit usage</h3>
-      <div className="mt-3 rounded-xl border border-line">
+      <SectionTitle>Visit usage</SectionTitle>
+      <div className={`mt-3 ${CARD}`}>
         <div className="flex items-center justify-between border-b border-line px-4 py-3 text-sm">
           <span className="text-ink">Completed queue visits</span>
           <span className="font-medium text-ink">{breakdown.queueVisits.toLocaleString("en-ZA")}</span>
@@ -583,7 +660,7 @@ function PlanComparisonSection({
 }) {
   return (
     <section>
-      <h3 className="text-base font-semibold text-ink">Plans</h3>
+      <SectionTitle>Plans</SectionTitle>
       <div className="mt-3 grid gap-4 sm:grid-cols-3">
         {allPlans.map((plan) => {
           const isCurrent = plan.key === currentPlan.key
@@ -591,9 +668,16 @@ function PlanComparisonSection({
           const modules = planModules[plan.key] ?? []
 
           return (
-            <div key={plan.key} className={`flex flex-col rounded-xl border p-4 ${isCurrent ? "border-accent" : "border-line"}`}>
-              <p className="text-lg font-semibold text-ink">{plan.name}</p>
-              <p className="mt-1 text-sm text-ink-muted">
+            <div
+              key={plan.key}
+              className={`${CARD} flex flex-col p-4 transition-shadow ${
+                isCurrent
+                  ? "border-accent border-l-[3px] [[data-admin-theme=dark]_&]:shadow-[0_0_24px_rgba(227,6,19,0.18)]"
+                  : "[[data-admin-theme=dark]_&]:hover:border-accent/40 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_18px_rgba(227,6,19,0.12)]"
+              }`}
+            >
+              <p className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">{plan.name}</p>
+              <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-2xl tabular-nums text-ink">
                 {plan.priceCents === 0 ? "Free" : `${formatCentsCompact(plan.priceCents, plan.currency)}/month`}
               </p>
 
@@ -614,12 +698,12 @@ function PlanComparisonSection({
               )}
 
               {isCurrent ? (
-                <p className="mt-4 text-sm font-semibold text-accent">Current plan</p>
+                <p className="mt-4 w-fit rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs font-semibold text-accent">Current plan</p>
               ) : isUpgrade ? (
                 <button
                   onClick={() => onSelectUpgrade(plan)}
                   disabled={Boolean(pendingRequest)}
-                  className="mt-4 w-full rounded-lg border border-accent py-2 text-sm font-semibold text-accent hover:bg-accent/5 disabled:opacity-40"
+                  className={`mt-4 w-full py-2 ${BTN_PRIMARY}`}
                   type="button"
                 >
                   Upgrade to {plan.name}
@@ -629,7 +713,7 @@ function PlanComparisonSection({
           )
         })}
       </div>
-      <div className="mt-4 rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink">
+      <div className={`mt-4 ${NOTICE} text-ink`}>
         <p className="font-semibold">Using your own WhatsApp number?</p>
         <p className="mt-0.5 text-ink-muted">
           You can connect your own WhatsApp number from WhatsApp settings in your admin. Meta charges its own WhatsApp
@@ -668,12 +752,12 @@ function UpgradeConfirmModal({
   const preview: BillingCalculation = useMemo(() => calculateBilling(targetPlan, visitsThisMonth, staffCount), [targetPlan, visitsThisMonth, staffCount])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-md rounded-xl border border-line bg-card p-6">
-        <h3 className="text-lg font-semibold text-ink">Upgrade to {targetPlan.name}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-lg border border-line bg-card p-6 shadow-xl [[data-admin-theme=dark]_&]:shadow-[0_0_40px_rgba(227,6,19,0.15)]">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Upgrade to {targetPlan.name}</h3>
         <p className="mt-1 text-sm text-ink-muted">From {currentPlanName}. This files a request — a platform admin confirms it.</p>
 
-        <dl className="mt-4 space-y-2 rounded-lg bg-canvas p-4 text-sm">
+        <dl className="mt-4 space-y-2 rounded-lg border border-line bg-canvas p-4 text-sm">
           <div className="flex justify-between">
             <dt className="text-ink-muted">Base fee</dt>
             <dd className="font-medium text-ink">{formatCentsCompact(targetPlan.priceCents, targetPlan.currency)}/mo</dd>
@@ -717,7 +801,7 @@ function UpgradeConfirmModal({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            className="mt-1 w-full rounded-lg border border-line p-2 text-sm text-ink"
+            className="mt-1 w-full rounded-md border border-line-strong bg-card p-2 text-sm text-ink outline-none focus:border-accent"
           />
         </label>
 
@@ -726,7 +810,7 @@ function UpgradeConfirmModal({
             type="button"
             onClick={onCancel}
             disabled={submitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-ink-muted hover:bg-canvas disabled:opacity-40"
+            className={BTN}
           >
             Cancel
           </button>
@@ -734,7 +818,7 @@ function UpgradeConfirmModal({
             type="button"
             onClick={() => onConfirm(note)}
             disabled={submitting}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-color hover:bg-accent/90 disabled:opacity-40"
+            className={BTN_PRIMARY}
           >
             {submitting ? "Requesting…" : "Confirm request"}
           </button>
@@ -766,8 +850,8 @@ function InvoiceHistorySection({
 }) {
   return (
     <section>
-      <h3 className="text-base font-semibold text-ink">Invoice history</h3>
-      <div className="mt-3 divide-y divide-line rounded-xl border border-line">
+      <SectionTitle>Invoice history</SectionTitle>
+      <div className={`mt-3 divide-y divide-line overflow-hidden ${CARD}`}>
         {invoices.map((inv) => {
           const expanded = expandedInvoiceId === inv.id
           const color = INVOICE_STATUS_COLOR[inv.status] ?? MUTED
@@ -776,7 +860,7 @@ function InvoiceHistorySection({
               <button
                 type="button"
                 onClick={() => onToggle(inv.id)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-canvas"
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-tint"
               >
                 <div>
                   <p className="text-sm font-medium text-ink">
@@ -792,11 +876,11 @@ function InvoiceHistorySection({
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <p className="text-sm font-semibold text-ink">{formatCents(inv.amountCents, inv.currency)}</p>
-                    <p className="text-xs font-medium" style={{ color }}>
+                    <p className="text-xs font-medium capitalize" style={{ color }}>
                       {inv.status}
                     </p>
                   </div>
-                  <span className="text-xs text-ink-muted">{expanded ? "Hide" : "View"}</span>
+                  <span className="text-xs font-medium text-accent">{expanded ? "Hide" : "View"}</span>
                 </div>
               </button>
 
