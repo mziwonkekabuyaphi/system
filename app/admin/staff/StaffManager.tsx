@@ -1,7 +1,7 @@
 // app/admin/staff/StaffManager.tsx
 "use client"
 
-import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useState, useTransition, type FormEvent, type ReactNode } from "react"
 import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, resetStaffClockInPin, toggleStaffActive, updateStaff } from "../actions"
 import { ConfirmDialog, NoticeModal, type Notice } from "../AdminModals"
 import { StaffClockInDrawer } from "./StaffClockInDrawer"
@@ -184,6 +184,76 @@ function formatClockTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
+// ---- Page chrome (Rands-style layout) ---------------------------------------
+// Dark theme only: hover gives a red edge + glow and primary buttons glow red.
+const BTN =
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink transition-shadow hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
+const BTN_PRIMARY =
+  "rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-on-primary transition-shadow hover:bg-primary-hover-strong disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:shadow-[0_4px_16px_rgba(227,6,19,0.35)]"
+const FILTER =
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-accent"
+const ROW_BTN =
+  "rounded-md border border-line px-2 py-1 text-xs text-ink-muted transition-colors hover:bg-tint hover:text-ink disabled:opacity-50"
+
+type StaffTab = "accounts" | "attendance"
+
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
+const IconUsers = () => (
+  <Icon>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3.5 19.5c0-3.2 2.4-5.5 5.5-5.5s5.5 2.3 5.5 5.5" />
+    <circle cx="17" cy="9" r="2.4" />
+    <path d="M16 14.2c2.6.3 4.5 2.3 4.5 5.3" />
+  </Icon>
+)
+const IconUserCheck = () => (
+  <Icon>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3.5 19.5c0-3.2 2.4-5.5 5.5-5.5s5.5 2.3 5.5 5.5" />
+    <path d="m16 11 2 2 3.5-4" />
+  </Icon>
+)
+const IconClock = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5V12l3 2" />
+  </Icon>
+)
+const IconTag = () => (
+  <Icon>
+    <path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7a1 1 0 0 1 .7.3l7.6 7.6a1 1 0 0 1 0 1.4l-7.7 7.7a1 1 0 0 1-1.4 0l-7.6-7.6a1 1 0 0 1-.3-.7Z" />
+    <circle cx="8" cy="8" r="1.2" />
+  </Icon>
+)
+const IconSearch = () => (
+  <Icon>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4-4" />
+  </Icon>
+)
+
+function StatTile({ label, value, icon }: { label: string; value: string | number; icon: ReactNode }) {
+  return (
+    <div className="relative rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
+      <span className="absolute right-3 top-3 text-ink-muted/60">{icon}</span>
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
+    </div>
+  )
+}
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return "?"
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase()
+}
+
 // ---- Staff clock-in URL + QR code ------------------------------------------
 // Same idea as SettingsManager.tsx's KioskUrlPanel: the public, unauthenticated
 // URL staff hit to clock in/out (PIN-gated on that page itself), at
@@ -364,6 +434,30 @@ export function StaffManager({
   const [isDeleting, startDelete] = useTransition()
   const [notice, setNotice] = useState<Notice | null>(null)
 
+  // Page chrome: tab, list filters and the add/edit pop-up.
+  const [staffTab, setStaffTab] = useState<StaffTab>("accounts")
+  const [search, setSearch] = useState("")
+  const [roleFilter, setRoleFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("")
+  const [formOpen, setFormOpen] = useState(false)
+
+  const clockedInIds = useMemo(() => new Set(activeShifts.map((sh) => sh.staffId)), [activeShifts])
+  const roleOptions = useMemo(
+    () => Array.from(new Set(staff.map((m) => m.jobTitle?.trim()).filter((r): r is string => !!r))).sort((a, b) => a.localeCompare(b)),
+    [staff],
+  )
+  const filteredStaff = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return staff.filter((m) => {
+      if (roleFilter && (m.jobTitle?.trim() ?? "") !== roleFilter) return false
+      if (statusFilter === "active" && !m.active) return false
+      if (statusFilter === "inactive" && m.active) return false
+      if (!q) return true
+      return [m.name, m.email, m.phone, m.jobTitle, m.employeeNumber].some((v) => v?.toLowerCase().includes(q))
+    })
+  }, [staff, search, roleFilter, statusFilter])
+  const filtersActive = search.trim() !== "" || roleFilter !== "" || statusFilter !== ""
+
   const isEditing = editingId !== null
   const editingMember = editingId ? (staff.find((m) => m.id === editingId) ?? null) : null
 
@@ -383,16 +477,36 @@ export function StaffManager({
     })
   }
 
+  useEffect(() => {
+    if (!formOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !isSaving) cancelEdit()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // cancelEdit only sets state, so it is safe to leave out of the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formOpen, isSaving])
+
   function startEdit(member: AdminStaff) {
     setEditingId(member.id)
     setForm(formFromStaff(member, payProfiles[member.id]))
     setFormError(null)
+    setFormOpen(true)
+  }
+
+  function openAdd() {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setFormError(null)
+    setFormOpen(true)
   }
 
   function cancelEdit() {
     setEditingId(null)
     setForm(EMPTY_FORM)
     setFormError(null)
+    setFormOpen(false)
   }
 
   function submit(e: FormEvent) {
@@ -442,6 +556,7 @@ export function StaffManager({
       if (result.ok) {
         setForm(EMPTY_FORM)
         setEditingId(null)
+        setFormOpen(false)
         void refreshPayProfiles()
       } else {
         setFormError(result.error)
@@ -483,27 +598,54 @@ export function StaffManager({
     })
   }
 
+  const tabBtn = (id: StaffTab, label: string, count?: number) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={staffTab === id}
+      onClick={() => setStaffTab(id)}
+      className={`-mb-px border-b-2 px-4 py-2 text-sm transition-colors ${
+        staffTab === id
+          ? "border-accent font-semibold text-ink"
+          : "border-transparent font-medium text-ink-muted hover:text-ink"
+      }`}
+    >
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className="ml-2 inline-block min-w-[1.25rem] rounded-full bg-accent px-1.5 text-center text-xs font-semibold text-on-color">
+          {count}
+        </span>
+      )}
+    </button>
+  )
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-5">
+      {/* ================= Header ================= */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Staff</h2>
+          <h2 className="flex items-center gap-2 font-[family-name:var(--font-admin-serif)] text-xl text-ink">
+            <span className="text-accent">
+              <IconUsers />
+            </span>
+            Staff Management
+          </h2>
           <p className="mt-0.5 text-sm text-ink-muted">Your team, who&apos;s clocked in, shifts, pay and clock-in settings.</p>
         </div>
         {(canSeePayroll || canSeeClockSettings || canSeeShifts) && (
           <div className="flex flex-wrap items-center gap-3">
             {canSeeClockSettings && (
-              <button type="button" onClick={() => setClockOpen(true)} className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint">
+              <button type="button" onClick={() => setClockOpen(true)} className={BTN}>
                 Clock-in settings
               </button>
             )}
             {canSeeShifts && (
-              <button type="button" onClick={() => setShiftsOpen(true)} className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint">
+              <button type="button" onClick={() => setShiftsOpen(true)} className={BTN}>
                 Shifts
               </button>
             )}
             {canSeePayroll && (
-              <button type="button" onClick={() => setPayrollOpen(true)} className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint">
+              <button type="button" onClick={() => setPayrollOpen(true)} className={BTN}>
                 Payroll
               </button>
             )}
@@ -511,126 +653,277 @@ export function StaffManager({
         )}
       </div>
 
-      <StaffClockInUrlPanel tenantSlug={tenantSlug} />
+      {/* ================= Stats ================= */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Total staff" value={staff.length} icon={<IconUsers />} />
+        <StatTile label="Active" value={staff.filter((m) => m.active).length} icon={<IconUserCheck />} />
+        {/* Active shifts are only loaded for staff.manage (see page.tsx). */}
+        <StatTile label="Clocked in" value={permissions.staffManage ? activeShifts.length : "—"} icon={<IconClock />} />
+        <StatTile label="Roles" value={roleOptions.length} icon={<IconTag />} />
+      </div>
 
-      {/* ================= Currently clocked in =================
-          staff.manage only — matches page.tsx, which doesn't even fetch
-          active shifts for anyone else. */}
-      {permissions.staffManage && (
-      <section>
-        <h3 className="text-sm font-semibold text-ink">Currently clocked in</h3>
-        {activeShifts.length === 0 ? (
-          <p className="mt-2 text-sm text-ink-muted">No one's clocked in right now.</p>
-        ) : (
-          <ul className="mt-3 divide-y divide-line rounded-lg border border-line">
-            {activeShifts.map((shift) => (
-              <li key={shift.id} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-ink">{shift.staffName}</p>
-                  <p className="text-xs text-ink-muted">
-                    Since {formatClockTime(shift.loginTime)} · {elapsedSince(shift.loginTime)}
-                  </p>
-                </div>
-                {permissions.staffManage && (
-                  <button
-                    onClick={() => clockOut(shift)}
-                    disabled={isClockingOut && clockingOutId === shift.id}
-                    className="text-sm text-accent disabled:opacity-50"
-                  >
-                    {isClockingOut && clockingOutId === shift.id ? "Clocking out…" : "Force clock out"}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* ================= Tabs ================= */}
+      <div role="tablist" aria-label="Staff sections" className="flex flex-wrap border-b border-line">
+        {tabBtn("accounts", "Staff Accounts")}
+        {tabBtn("attendance", "Live Attendance", permissions.staffManage ? activeShifts.length : undefined)}
+      </div>
+
+      {/* ================= Staff accounts ================= */}
+      {staffTab === "accounts" && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[14rem] flex-1">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted">
+                <IconSearch />
+              </span>
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search name, email, phone…"
+                aria-label="Search staff"
+                className={`${FILTER} w-full pl-10`}
+              />
+            </div>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role" className={FILTER}>
+              <option value="">All roles</option>
+              {roleOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as "" | "active" | "inactive")}
+              aria-label="Filter by status"
+              className={FILTER}
+            >
+              <option value="">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("")
+                  setRoleFilter("")
+                  setStatusFilter("")
+                }}
+                className="text-sm text-accent underline underline-offset-4"
+              >
+                Clear filters
+              </button>
+            )}
+            {/* staff.view-only viewers get the read-only directory and nothing else. */}
+            {permissions.staffManage && (
+              <button type="button" onClick={openAdd} className={BTN_PRIMARY}>
+                + Add staff
+              </button>
+            )}
+          </div>
+
+          {staff.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-line-strong px-5 py-10 text-center text-ink-muted">
+              No staff yet{permissions.staffManage ? " — add your first one." : "."}
+            </p>
+          ) : filteredStaff.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-line-strong px-5 py-10 text-center text-ink-muted">
+              No one matches these filters.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-line bg-card">
+              <table className="w-full min-w-[40rem] text-left text-sm">
+                <thead className="bg-tint-2 text-xs uppercase tracking-wide text-ink-muted">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Staff</th>
+                    <th className="px-4 py-2.5 font-medium">Job title</th>
+                    {canSeePayroll && <th className="px-4 py-2.5 font-medium">Pay</th>}
+                    <th className="px-4 py-2.5 font-medium">Status</th>
+                    {permissions.staffManage && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {filteredStaff.map((member) => {
+                    const clockedIn = clockedInIds.has(member.id)
+                    return (
+                      <tr key={member.id} className="transition-colors hover:bg-tint-2">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <span
+                              aria-hidden="true"
+                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-xs font-semibold text-accent ${
+                                member.active ? "" : "opacity-50"
+                              }`}
+                            >
+                              {initialsOf(member.name)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className={`truncate font-medium ${member.active ? "text-ink" : "text-ink-muted"}`}>
+                                {member.name}
+                                {member.hasLogin && <span className="ml-2 text-xs font-normal text-ink-muted">· can sign in</span>}
+                              </p>
+                              <p className="truncate text-xs text-ink-muted">
+                                {[member.email, member.phone].filter(Boolean).join(" · ") || "No contact details"}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-ink">
+                          {member.jobTitle || <span className="text-ink-muted">No job title</span>}
+                          {member.employeeNumber && <p className="text-xs text-ink-muted">Emp. no. {member.employeeNumber}</p>}
+                        </td>
+                        {canSeePayroll && (
+                          <td className="px-4 py-3 text-ink">
+                            {/* "hourlyRate" in member: the key is only present at all when the caller has
+                                payroll.view, so a staff.view-only caller's rows never carry it. */}
+                            {paySummary(member, payProfiles[member.id]) ?? <span className="text-ink-muted">Not set</span>}
+                            {/* Masked on purpose: only the last 4 characters of the ID and bank account ever
+                                reach the browser. The key is absent unless the caller has payroll.view. */}
+                            {"payrollDetails" in member &&
+                              (member.payrollDetails?.idNumberLast4 || member.payrollDetails?.bankAccountLast4) && (
+                                <p className="text-xs text-ink-muted">
+                                  {[
+                                    member.payrollDetails?.idNumberLast4 ? `ID ****${member.payrollDetails.idNumberLast4}` : null,
+                                    member.payrollDetails?.bankAccountLast4 ? `Account ****${member.payrollDetails.bankAccountLast4}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </p>
+                              )}
+                          </td>
+                        )}
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            <span
+                              className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                member.active ? "bg-success/10 text-success" : "bg-ink/[0.07] text-ink-soft"
+                              }`}
+                            >
+                              {member.active ? "Active" : "Inactive"}
+                            </span>
+                            {clockedIn && (
+                              <span className="inline-block rounded-full bg-info/10 px-2.5 py-0.5 text-xs font-medium text-info">
+                                Clocked in
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {permissions.staffManage && (
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                              <button onClick={() => startEdit(member)} className={ROW_BTN}>
+                                Edit
+                              </button>
+                              <button onClick={() => setResetTarget(member)} className={ROW_BTN}>
+                                {member.clockInPin != null ? "Reset PIN" : "Create PIN"}
+                              </button>
+                              <button
+                                onClick={() => toggle(member)}
+                                disabled={isToggling && togglingId === member.id}
+                                className={ROW_BTN}
+                              >
+                                {member.active ? "Deactivate" : "Activate"}
+                              </button>
+                              <button
+                                onClick={() => setDeleteTarget(member)}
+                                className="rounded-md border border-accent/30 px-2 py-1 text-xs text-accent transition-colors hover:bg-accent/10"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
-      {/* ================= Staff list ================= */}
-      <section>
-        <h3 className="text-sm font-semibold text-ink">Staff</h3>
-        {staff.length === 0 ? (
-          <p className="mt-2 text-ink-muted">No staff yet — add your first one below.</p>
-        ) : (
-          <ul className="mt-3 divide-y divide-line">
-            {staff.map((member) => (
-              <li key={member.id} className="flex items-center justify-between gap-4 py-4">
-                <div>
-                  <p className={`text-[1.05rem] ${member.active ? "text-ink" : "text-ink-muted"}`}>
-                    {member.name}
-                    {member.hasLogin && <span className="ml-2 text-xs text-ink-muted">· can sign in</span>}
-                  </p>
-                  <p className="text-sm text-ink-muted">
-                    {[
-                      member.jobTitle,
-                      member.employeeNumber ? `Emp. no. ${member.employeeNumber}` : null,
-                      // "hourlyRate" in member: the key is only present at
-                      // all when this render's payrollView was true (see
-                      // AdminStaff's doc comment) — a staff.view-only
-                      // caller's member objects never carry it, so there's
-                      // nothing to accidentally leak here.
-                      paySummary(member, payProfiles[member.id]),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "No job title or rate set"}
-                  </p>
-                  {/* Masked on purpose: only the last 4 characters of the ID and
-                      bank account ever reach the browser. The key is absent
-                      unless the caller has payroll.view. */}
-                  {"payrollDetails" in member && (member.payrollDetails?.idNumberLast4 || member.payrollDetails?.bankAccountLast4) && (
-                    <p className="text-xs text-ink-muted">
-                      {[
-                        member.payrollDetails?.idNumberLast4 ? `ID ****${member.payrollDetails.idNumberLast4}` : null,
-                        member.payrollDetails?.bankAccountLast4 ? `Account ****${member.payrollDetails.bankAccountLast4}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
-                {permissions.staffManage && (
-                  <div className="flex shrink-0 items-center gap-4">
-                    <button onClick={() => startEdit(member)} className="text-sm text-ink-muted">
-                      Edit
-                    </button>
-                    <button onClick={() => setResetTarget(member)} className="text-sm text-ink-muted">
-                      {member.clockInPin != null ? "Reset PIN" : "Create PIN"}
-                    </button>
-                    <button
-                      onClick={() => toggle(member)}
-                      disabled={isToggling && togglingId === member.id}
-                      className="text-sm text-ink-muted disabled:opacity-50"
+      {/* ================= Live attendance ================= */}
+      {staffTab === "attendance" && (
+        <section className="space-y-4">
+          <StaffClockInUrlPanel tenantSlug={tenantSlug} />
+
+          {/* Currently clocked in: staff.manage only. It matches page.tsx, which doesn't even fetch
+              active shifts for anyone else. */}
+          {permissions.staffManage && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-ink">
+                Currently clocked in
+                <span className="ml-2 font-normal text-ink-muted">{activeShifts.length}</span>
+              </h3>
+              {activeShifts.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-line-strong px-5 py-8 text-center text-ink-muted">
+                  No one&apos;s clocked in right now.
+                </p>
+              ) : (
+                <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {activeShifts.map((shift) => (
+                    <li
+                      key={shift.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-line border-l-[3px] border-l-success bg-card px-4 py-3 shadow-sm"
                     >
-                      {member.active ? "Deactivate" : "Activate"}
-                    </button>
-                    <button onClick={() => setDeleteTarget(member)} className="text-sm text-accent">
-                      Delete
-                    </button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* ================= Add / edit form =================
-          staff.view-only viewers (Tenant Staff, by default) never see
-          this at all — they get the read-only directory above and
-          nothing else, matching "must not modify staff records". */}
-      {permissions.staffManage && (
-      <section className="border-t border-line pt-6">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ink">{isEditing ? `Editing ${form.name}` : "Add staff"}</h3>
-          {isEditing && (
-            <button type="button" onClick={cancelEdit} className="text-sm text-ink-muted">
-              Cancel
-            </button>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-success" />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-ink">{shift.staffName}</p>
+                          <p className="text-xs text-ink-muted">
+                            Since {formatClockTime(shift.loginTime)} · {elapsedSince(shift.loginTime)}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => clockOut(shift)}
+                        disabled={isClockingOut && clockingOutId === shift.id}
+                        className="shrink-0 rounded-md border border-accent/30 px-2.5 py-1 text-xs text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
+                      >
+                        {isClockingOut && clockingOutId === shift.id ? "Clocking out…" : "Force clock out"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
-        </div>
+        </section>
+      )}
 
-        <form onSubmit={submit} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* ================= Add / edit pop-up =================
+          staff.manage only. The form itself is unchanged: same fields, same permission gates. */}
+      {permissions.staffManage && formOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 backdrop-blur-sm sm:items-center"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !isSaving) cancelEdit()
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={isEditing ? `Editing ${form.name}` : "Add staff"}
+            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-line bg-dialog p-5 shadow-2xl"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
+                {isEditing ? `Editing ${form.name}` : "Add new staff"}
+              </h3>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                disabled={isSaving}
+                aria-label="Close"
+                className="rounded-md px-2 text-2xl leading-none text-ink-muted hover:text-ink disabled:opacity-50"
+              >
+                &times;
+              </button>
+            </div>
+        <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="block text-sm text-ink-muted">Name</label>
             <input
@@ -912,17 +1205,17 @@ export function StaffManager({
 
           {formError && <p className="sm:col-span-2 text-sm text-accent">{formError}</p>}
 
-          <div className="sm:col-span-2">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="bg-primary px-4 py-2 text-sm text-on-primary disabled:opacity-50"
-            >
+          <div className="flex items-center justify-end gap-2 sm:col-span-2">
+            <button type="button" onClick={cancelEdit} disabled={isSaving} className={BTN}>
+              Cancel
+            </button>
+            <button type="submit" disabled={isSaving} className={BTN_PRIMARY}>
               {isSaving ? "Saving…" : isEditing ? "Save changes" : "Add staff"}
             </button>
           </div>
         </form>
-      </section>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog
