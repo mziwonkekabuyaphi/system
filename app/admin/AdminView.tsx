@@ -150,6 +150,13 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "settings", label: "Settings", icon: GearIcon },
 ]
 
+// Sidebar sections, in the same spirit as Rands: day-to-day work, then analytics on its own, then system.
+const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
+  { label: "Control Centre", ids: ["today", "queue", "shisha", "inbox", "staff"] },
+  { label: "Analytics", ids: ["analytics"] },
+  { label: "System", ids: ["billing", "settings"] },
+]
+
 export function AdminView({
   initialBookings,
   initialQueue,
@@ -393,30 +400,57 @@ export function AdminView({
         </div>
 
         {/* Nav */}
-        <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-          {visibleTabs.map((t) => {
-            const Icon = t.icon
-            const active = tab === t.id
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+          {NAV_GROUPS.map((group, gi) => {
+            const items = group.ids
+              .map((id) => visibleTabs.find((t) => t.id === id))
+              .filter((t): t is (typeof TABS)[number] => !!t)
+            if (items.length === 0) return null
             return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                aria-current={active ? "page" : undefined}
-                title={t.label}
-                className={`flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm transition-colors ${
-                  active ? SB.navActive : SB.navIdle
-                }`}
-              >
-                <Icon className={`h-5 w-5 shrink-0 ${active ? SB.navActiveIcon : ""}`} />
-                <span
-                  className={`whitespace-nowrap transition-opacity duration-150 ${
-                    expanded ? "opacity-100 delay-100" : "opacity-0"
-                  }`}
-                >
-                  {t.label}
-                </span>
-              </button>
+              <div key={group.label} className="flex flex-col gap-1">
+                {gi > 0 && <div className={`mx-1 my-2 border-t ${SB.line}`} />}
+                {/* Collapsed: a small dot over the icons. Expanded: the section name. */}
+                <div className="relative h-5 px-3">
+                  <span
+                    aria-hidden="true"
+                    className={`absolute left-[22px] top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current opacity-30 transition-opacity duration-150 ${SB.text} ${
+                      expanded ? "!opacity-0" : ""
+                    }`}
+                  />
+                  <p
+                    className={`whitespace-nowrap text-[0.65rem] font-bold uppercase tracking-[0.1em] opacity-0 transition-opacity duration-150 ${SB.text} ${
+                      expanded ? "!opacity-50 delay-100" : ""
+                    }`}
+                  >
+                    {group.label}
+                  </p>
+                </div>
+                {items.map((t) => {
+                  const Icon = t.icon
+                  const active = tab === t.id
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTab(t.id)}
+                      aria-current={active ? "page" : undefined}
+                      title={t.label}
+                      className={`flex items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm transition-colors ${
+                        active ? SB.navActive : SB.navIdle
+                      }`}
+                    >
+                      <Icon className={`h-5 w-5 shrink-0 ${active ? SB.navActiveIcon : ""}`} />
+                      <span
+                        className={`whitespace-nowrap transition-opacity duration-150 ${
+                          expanded ? "opacity-100 delay-100" : "opacity-0"
+                        }`}
+                      >
+                        {t.label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             )
           })}
         </nav>
