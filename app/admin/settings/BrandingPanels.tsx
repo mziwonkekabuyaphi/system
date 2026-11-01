@@ -307,10 +307,13 @@ function BrandingFields({
                     style={{ backgroundColor: "var(--sb-accent)", color: "var(--sb-on-accent)" }}
                     className="rounded-lg px-3 py-2"
                   >
-                    Appointments
+                    Staff
                   </span>
                   <span style={{ color: "var(--sb-text-muted)" }} className="px-3 py-2">
-                    Queue
+                    Analytics
+                  </span>
+                  <span style={{ color: "var(--sb-text-muted)" }} className="px-3 py-2">
+                    Billing &amp; Plans
                   </span>
                   <span style={{ color: "var(--sb-text-muted)" }} className="px-3 py-2">
                     Settings
