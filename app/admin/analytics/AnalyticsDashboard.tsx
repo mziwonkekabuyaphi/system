@@ -19,12 +19,40 @@ const PRESETS: { id: Preset; label: string }[] = [
 ]
 
 // ------------------------------------------------------------------ primitives
+// Same look as the stat cards on Appointments and Queue: a 3px accent edge on the
+// left, a soft shadow, an uppercase label and a big serif number. In the dark theme
+// the cards pick up the red glow on hover, like the buttons do.
+const STAT_CARD =
+  "rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm transition-shadow [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
+const STAT_LABEL = "text-xs uppercase tracking-wide text-ink-muted"
+const STAT_NUMBER = "font-[family-name:var(--font-admin-serif)] tabular-nums text-ink"
+
+// Shared with the Appointments and Queue toolbars.
+const FIELD =
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-accent"
+const BTN =
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink transition-shadow hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50 [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
+
+function StatShell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={STAT_CARD}>
+      <p className={STAT_LABEL}>{label}</p>
+      {children}
+    </div>
+  )
+}
+
 function Card({ title, note, children, className = "" }: { title: string; note?: string; children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-xl border border-stone-200 bg-card p-4 ${className}`}>
-      <h3 className="text-sm font-medium text-stone-900">{title}</h3>
-      {note && <p className="mt-0.5 text-xs text-stone-500">{note}</p>}
-      <div className="mt-3">{children}</div>
+    <section className={`rounded-lg border border-line bg-card p-4 shadow-sm ${className}`}>
+      <div className="flex items-start gap-2.5">
+        <span aria-hidden className="mt-1 h-4 w-[3px] shrink-0 rounded-full bg-accent" />
+        <div>
+          <h3 className="font-[family-name:var(--font-admin-serif)] text-base text-ink">{title}</h3>
+          {note && <p className="mt-0.5 text-xs text-ink-muted">{note}</p>}
+        </div>
+      </div>
+      <div className="mt-4">{children}</div>
     </section>
   )
 }
@@ -34,19 +62,28 @@ function Kpi({
 }: { label: string; value: string; cur?: number | null; prev?: number | null; hint?: string; lowerIsBetter?: boolean; compare: boolean }) {
   const change = compare ? pctChange(cur, prev) : null
   const good = change == null || change === 0 ? null : lowerIsBetter ? change < 0 : change > 0
+  // Long values (money, "R 1 234,00 · USD 12") step down a size so they never overflow the card.
+  const size = value.length <= 8 ? "text-3xl" : value.length <= 14 ? "text-2xl" : "text-xl"
+  const chip =
+    good == null ? "bg-tint text-ink-muted" : good ? "bg-success-soft text-success-strong" : "bg-danger-soft text-danger"
   return (
-    <div className="rounded-xl border border-stone-200 bg-card p-4">
-      <p className="text-xs text-stone-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{value}</p>
+    <StatShell label={label}>
+      <p className={`mt-1 break-words ${STAT_NUMBER} ${size}`}>{value}</p>
       {compare && (
-        <p className={`mt-1 text-xs ${good == null ? "text-stone-500" : good ? "text-emerald-700" : "text-red-700"}`}>
-          {change == null
-            ? prev === 0 ? "No prior-period base" : "–"
-            : `${change > 0 ? "▲" : change < 0 ? "▼" : "•"} ${Math.abs(change).toFixed(1)}% vs previous`}
+        <p className="mt-1.5">
+          {change == null && prev !== 0 ? (
+            <span className="text-xs text-ink-muted">–</span>
+          ) : (
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${chip}`}>
+              {change == null
+                ? "No prior-period base"
+                : `${change > 0 ? "▲" : change < 0 ? "▼" : "•"} ${Math.abs(change).toFixed(1)}% vs previous`}
+            </span>
+          )}
         </p>
       )}
-      {hint && <p className="mt-1 text-xs text-stone-500">{hint}</p>}
-    </div>
+      {hint && <p className="mt-1 text-xs text-ink-muted">{hint}</p>}
+    </StatShell>
   )
 }
 
@@ -58,19 +95,21 @@ function Grid({ children, cols = 4 }: { children: ReactNode; cols?: 2 | 3 | 4 })
 function Table({ cols, rows, empty = "Nothing to show for this period." }: {
   cols: { h: string; align?: "right" }[]; rows: ReactNode[][]; empty?: string
 }) {
-  if (rows.length === 0) return <p className="py-6 text-center text-sm text-stone-500">{empty}</p>
+  if (rows.length === 0) {
+    return <p className="rounded-lg border border-dashed border-line-strong px-4 py-6 text-center text-sm text-ink-muted">{empty}</p>
+  }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
+      <table className="w-full text-left text-sm text-ink">
         <thead>
-          <tr className="border-b border-stone-200 text-xs text-stone-500">
+          <tr className="border-b border-line text-xs uppercase tracking-wide text-ink-muted">
             {cols.map((c) => <th key={c.h} scope="col" className={`py-2 pr-4 font-medium ${c.align === "right" ? "text-right" : ""}`}>{c.h}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className="border-b border-stone-100 last:border-0">
-              {r.map((cell, j) => <td key={j} className={`py-2 pr-4 tabular-nums ${cols[j].align === "right" ? "text-right" : ""}`}>{cell}</td>)}
+            <tr key={i} className="border-b border-line transition-colors last:border-0 hover:bg-tint">
+              {r.map((cell, j) => <td key={j} className={`py-2.5 pr-4 tabular-nums ${cols[j].align === "right" ? "text-right" : ""}`}>{cell}</td>)}
             </tr>
           ))}
         </tbody>
@@ -80,14 +119,14 @@ function Table({ cols, rows, empty = "Nothing to show for this period." }: {
 }
 
 const Note = ({ children }: { children: ReactNode }) => (
-  <p className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">{children}</p>
+  <p className="rounded-lg border border-line border-l-[3px] border-l-line-strong bg-tint px-3 py-2 text-xs text-ink-soft">{children}</p>
 )
 
 function Skeleton() {
   return (
     <div className="animate-pulse space-y-4" aria-busy="true" aria-label="Loading analytics">
-      <Grid>{Array.from({ length: 8 }, (_, i) => <div key={i} className="h-24 rounded-xl bg-stone-200/70" />)}</Grid>
-      <div className="h-64 rounded-xl bg-stone-200/70" />
+      <Grid>{Array.from({ length: 8 }, (_, i) => <div key={i} className="h-24 rounded-lg border border-line border-l-[3px] border-l-line-strong bg-tint" />)}</Grid>
+      <div className="h-64 rounded-lg bg-tint" />
     </div>
   )
 }
@@ -143,40 +182,46 @@ export function AnalyticsDashboard() {
 
   return (
     <div className="space-y-5">
+      <div>
+        <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Analytics</h2>
+        <p className="mt-0.5 text-sm text-ink-muted">
+          How your shop is doing. Figures cover the products switched on for your shop, for the period you pick.
+        </p>
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
-        <div role="group" aria-label="Reporting period" className="inline-flex overflow-hidden rounded-lg border border-stone-200 bg-card">
+        <div role="group" aria-label="Reporting period" className="flex overflow-hidden rounded-md border border-line-strong">
           {PRESETS.map((p) => (
             <button key={p.id} type="button" onClick={() => setPreset(p.id)} aria-pressed={preset === p.id}
-              className={`px-3 py-2 text-sm transition-colors ${preset === p.id ? "bg-admin-accent text-admin-on-accent" : "text-stone-700 hover:bg-stone-50"}`}>
+              className={`px-3 py-1.5 text-sm transition-colors ${preset === p.id ? "bg-primary text-on-primary" : "bg-card text-ink hover:bg-tint"}`}>
               {p.label}
             </button>
           ))}
         </div>
         {preset === "custom" && (
           <>
-            <label className="text-xs text-stone-500">From
+            <label className="text-xs uppercase tracking-wide text-ink-muted">From
               <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)}
-                className="mt-1 block rounded-lg border border-stone-200 bg-card px-2 py-1.5 text-sm text-stone-900" />
+                className={`mt-1 block normal-case tracking-normal ${FIELD}`} />
             </label>
-            <label className="text-xs text-stone-500">To (inclusive)
+            <label className="text-xs uppercase tracking-wide text-ink-muted">To (inclusive)
               <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)}
-                className="mt-1 block rounded-lg border border-stone-200 bg-card px-2 py-1.5 text-sm text-stone-900" />
+                className={`mt-1 block normal-case tracking-normal ${FIELD}`} />
             </label>
           </>
         )}
-        <label className="flex items-center gap-2 pb-2 text-sm text-stone-700">
-          <input type="checkbox" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
+        <label className="flex items-center gap-2 pb-1.5 text-sm text-ink">
+          <input type="checkbox" className="accent-accent" checked={compare} onChange={(e) => setCompare(e.target.checked)} />
           Compare with previous period
         </label>
-        <button type="button" onClick={() => void load()} disabled={loading}
-          className="mb-0.5 rounded-lg border border-stone-200 bg-card px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 disabled:opacity-50">
-          Refresh
+        <button type="button" onClick={() => void load()} disabled={loading} className={BTN}>
+          {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
       {data && (
-        <p className="text-xs text-stone-500">
+        <p className="text-xs text-ink-muted">
           {data.range.start} to {lastDay(data.range.end)} ({data.timezone})
           {data.prevRange && ` · compared with ${data.prevRange.start} to ${lastDay(data.prevRange.end)}`}
         </p>
@@ -185,9 +230,9 @@ export function AnalyticsDashboard() {
       {preset === "custom" && !(from && to) && <Note>Choose a start and end date to load a custom period.</Note>}
 
       {error && (
-        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-danger-line border-l-[3px] border-l-danger bg-danger-soft px-4 py-3 text-sm text-danger">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="rounded-md border border-red-300 bg-card px-3 py-1 text-red-800 hover:bg-red-100">Retry</button>
+          <button type="button" onClick={() => void load()} className="rounded-md border border-danger-line bg-card px-3 py-1 text-danger hover:bg-danger-soft">Retry</button>
         </div>
       )}
       {data?.warnings.map((w) => <Note key={w}>{w}</Note>)}
@@ -196,10 +241,10 @@ export function AnalyticsDashboard() {
 
       {data && (
         <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"} aria-busy={loading}>
-          <div role="tablist" aria-label="Analytics sections" className="mb-5 flex gap-1 overflow-x-auto border-b border-stone-200">
+          <div role="tablist" aria-label="Analytics sections" className="mb-5 flex gap-1 overflow-x-auto border-b border-line">
             {tabs.map((t) => (
               <button key={t.id} role="tab" type="button" aria-selected={activeTab === t.id} onClick={() => setTab(t.id)}
-                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${activeTab === t.id ? "border-admin-accent font-medium text-stone-900" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+                className={`whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm transition-colors ${activeTab === t.id ? "border-accent font-medium text-ink" : "border-transparent text-ink-muted hover:border-line-strong hover:text-ink"}`}>
                 {t.label}
               </button>
             ))}
@@ -270,18 +315,17 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
           {bq && K("Incoming messages", c.messaging.incoming, p?.messaging.incoming)}
           {bq && K("Outgoing messages", c.messaging.outgoing, p?.messaging.outgoing, { hint: "Sent, not confirmed delivered" })}
           {d.billing && (
-            <div className="rounded-xl border border-stone-200 bg-card p-4">
-              <p className="text-xs text-stone-500">Outstanding invoices</p>
+            <StatShell label="Outstanding invoices">
               {outstanding.length === 0
-                ? <p className="mt-1 text-2xl font-semibold text-stone-900">None</p>
+                ? <p className={`mt-1 text-3xl ${STAT_NUMBER}`}>None</p>
                 : outstanding.map((o) => (
-                    <p key={o.currency} className="mt-1 text-lg font-semibold tabular-nums text-stone-900">
-                      {formatCents(o.amount_cents, o.currency)}
-                      <span className="ml-1 text-xs font-normal text-stone-500">{o.count} issued/overdue</span>
-                    </p>
+                    <div key={o.currency} className="mt-1">
+                      <p className={`text-xl ${STAT_NUMBER}`}>{formatCents(o.amount_cents, o.currency)}</p>
+                      <p className="text-xs text-ink-muted">{o.count} issued/overdue</p>
+                    </div>
                   ))}
-              <p className="mt-1 text-xs text-stone-500">All time, excl. void</p>
-            </div>
+              <p className="mt-1 text-xs text-ink-muted">All time, excl. void</p>
+            </StatShell>
           )}
           {d.payroll && (
             <Kpi label="Payroll (final pay)" value={formatMoney(d.payroll.final, d.payroll.currency ?? d.currency)} compare={false}
@@ -529,11 +573,10 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
           <Kpi label="AI-enabled conversations" value={formatNum(m.ai_enabled)} compare={false} hint={`${m.ai_disabled} with AI off · all conversations`} />
           <Kpi label="Needs a person" value={formatNum(m.by_handling.handoff)} compare={false} hint="Handed off · current" />
           <Kpi label="Last conversation activity" value={m.last_activity ? new Date(m.last_activity).toLocaleDateString(undefined, { timeZone: d.timezone }) : "–"} compare={false} />
-          <div className="rounded-xl border border-stone-200 bg-card p-4">
-            <p className="text-xs text-stone-500">WhatsApp integration</p>
-            {m.integrations.length === 0 ? <p className="mt-1 text-lg font-semibold text-stone-900">Not connected</p>
-              : m.integrations.map((i, k) => <p key={k} className="mt-1 text-lg font-semibold capitalize text-stone-900">{i.status.replace(/_/g, " ")}</p>)}
-          </div>
+          <StatShell label="WhatsApp integration">
+            {m.integrations.length === 0 ? <p className={`mt-1 text-xl ${STAT_NUMBER}`}>Not connected</p>
+              : m.integrations.map((i, k) => <p key={k} className={`mt-1 text-xl capitalize ${STAT_NUMBER}`}>{i.status.replace(/_/g, " ")}</p>)}
+          </StatShell>
         </Grid>
         <Grid cols={2}>
           <Card title="Messages per day"><LineChart label="Messages per day" labels={dates} series={[{ name: "Incoming", values: daily("messages_in") }, { name: "Outgoing", values: daily("messages_out") }]} /></Card>
@@ -558,8 +601,8 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
         <Grid cols={3}>
           {bq && b.plan && (
             <Card title="Current plan">
-              <p className="text-lg font-semibold text-stone-900">{b.plan.name}</p>
-              <p className="text-xs text-stone-500">
+              <p className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">{b.plan.name}</p>
+              <p className="text-xs text-ink-muted">
                 Base {formatCents(b.plan.price_cents, b.plan.currency)}/month
                 {b.plan.visit_limit != null && ` · ${b.plan.visit_limit} visits ${b.plan.visit_limit_period}`}
                 {b.plan.price_per_visit_cents != null && ` · ${formatCents(b.plan.price_per_visit_cents, b.plan.currency)} per extra visit`}
