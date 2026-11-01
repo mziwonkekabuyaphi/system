@@ -18,17 +18,20 @@ export const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // opacity, so "off"/disabled never means "blends into the page."
 // ---------------------------------------------------------------------------
 export const inputClass =
-  "w-full rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 " +
-  `placeholder:text-stone-400 ${BRAND_FOCUS_BORDER} focus:bg-card focus:outline-none focus:ring-1 ${BRAND_FOCUS_RING} ` +
-  "disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
+  "w-full rounded-md border border-line-strong bg-canvas px-3 py-2 text-sm text-ink " +
+  `placeholder:text-ink-muted ${BRAND_FOCUS_BORDER} focus:bg-card focus:outline-none focus:ring-1 ${BRAND_FOCUS_RING} ` +
+  "[[data-admin-theme=dark]_&]:focus:border-accent [[data-admin-theme=dark]_&]:focus:ring-accent " +
+  "disabled:cursor-not-allowed disabled:border-line disabled:bg-tint disabled:text-ink-muted"
 
 export const secondaryButtonClass =
-  "rounded-full border border-stone-300 bg-card px-3 py-1.5 text-sm font-medium text-stone-700 " +
-  "hover:bg-stone-50 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400 disabled:hover:bg-stone-100"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink transition-shadow " +
+  "hover:bg-tint [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)] " +
+  "disabled:cursor-not-allowed disabled:border-line disabled:bg-tint disabled:text-ink-muted disabled:hover:bg-tint disabled:hover:shadow-none"
 
 export const primaryButtonClass =
-  `rounded-full ${BRAND_BG} px-4 py-2 text-sm font-medium ${BRAND_ON} hover:brightness-90 ` +
-  `disabled:cursor-not-allowed ${BRAND_BTN_DISABLED} disabled:hover:brightness-100`
+  `rounded-md ${BRAND_BG} px-4 py-2 text-sm font-medium ${BRAND_ON} transition-shadow hover:brightness-90 ` +
+  "[[data-admin-theme=dark]_&]:bg-accent [[data-admin-theme=dark]_&]:text-on-color [[data-admin-theme=dark]_&]:shadow-[0_4px_16px_rgba(227,6,19,0.35)] " +
+  `disabled:cursor-not-allowed ${BRAND_BTN_DISABLED} disabled:shadow-none disabled:hover:brightness-100`
 
 
 
@@ -40,12 +43,45 @@ export const primaryButtonClass =
 // look and behave the same: a page header, then cards. One card = one topic.
 // ---------------------------------------------------------------------------
 
-export function SettingsPageHeader({ title, description }: { title: string; description: string }) {
+export function SettingsPageHeader({
+  title,
+  description,
+  icon,
+}: {
+  title: string
+  description: string
+  icon?: React.ReactNode
+}) {
   return (
-    <header className="border-b border-stone-200 pb-4">
-      <h2 className="font-[family-name:var(--font-admin-serif)] text-2xl tracking-tight text-stone-900">{title}</h2>
-      <p className="mt-1 text-sm text-stone-500">{description}</p>
+    <header className="border-b border-line pb-4">
+      <h2 className="flex items-center gap-2 font-[family-name:var(--font-admin-serif)] text-xl text-ink">
+        {icon && <span className="text-accent">{icon}</span>}
+        {title}
+      </h2>
+      <p className="mt-0.5 text-sm text-ink-muted">{description}</p>
     </header>
+  )
+}
+
+/** A number or short value with a red left edge, like the stat tiles on Staff / Shisha / Queue. */
+export function SettingsStatTile({
+  label,
+  value,
+  hint,
+  icon,
+}: {
+  label: string
+  value: string | number
+  hint?: string
+  icon?: React.ReactNode
+}) {
+  return (
+    <div className="relative rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
+      {icon && <span className="absolute right-3 top-3 text-ink-muted/60">{icon}</span>}
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 truncate font-[family-name:var(--font-admin-serif)] text-2xl tabular-nums text-ink">{value}</p>
+      {hint && <p className="mt-0.5 truncate text-xs text-ink-muted">{hint}</p>}
+    </div>
   )
 }
 
@@ -61,10 +97,13 @@ export function SettingsCard({
   footer?: React.ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm sm:p-5">
+    <section className="rounded-lg border border-line bg-card p-4 shadow-sm sm:p-5">
       <header className="mb-4">
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</h3>
-        {description && <p className="mt-0.5 text-sm text-stone-500">{description}</p>}
+        <h3 className="flex items-center gap-2 font-[family-name:var(--font-admin-serif)] text-lg text-ink">
+          <span className="h-4 w-[3px] rounded-full bg-accent" aria-hidden />
+          {title}
+        </h3>
+        {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
       </header>
       <div className="space-y-4">{children}</div>
       {footer}
@@ -84,10 +123,10 @@ export function SubSection({
   children: React.ReactNode
 }) {
   return (
-    <div className="space-y-3 border-t border-stone-100 pt-4 first:border-t-0 first:pt-0">
+    <div className="space-y-3 border-t border-line pt-4 first:border-t-0 first:pt-0">
       <div>
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-500">{title}</h4>
-        {hint && <p className="mt-1 text-xs text-stone-400">{hint}</p>}
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-soft">{title}</h4>
+        {hint && <p className="mt-1 text-xs text-ink-muted">{hint}</p>}
       </div>
       {children}
     </div>
@@ -108,10 +147,10 @@ export function ToggleRow({
   onChange: (next: boolean) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 p-3">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
       <div>
-        <p className="text-sm font-medium text-stone-800">{title}</p>
-        <p className="text-xs text-stone-500">{description}</p>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        <p className="text-xs text-ink-muted">{description}</p>
       </div>
       <Toggle checked={checked} disabled={disabled} onChange={onChange} />
     </div>
@@ -133,7 +172,7 @@ export function CardSaveRow({
   message: { ok: boolean; text: string } | null
 }) {
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-stone-100 pt-4">
+    <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-4">
       <button type="button" onClick={onSave} disabled={!dirty || isPending} className={primaryButtonClass}>
         {isPending ? "Saving…" : "Save changes"}
       </button>
@@ -210,8 +249,8 @@ export function useCardForm<T extends Record<string, unknown>>({
 export function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-stone-700">{label}</span>
-      {hint && <span className="mb-1.5 block text-xs text-stone-400">{hint}</span>}
+      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
+      {hint && <span className="mb-1.5 block text-xs text-ink-muted">{hint}</span>}
       {children}
     </label>
   )
@@ -239,7 +278,7 @@ export function ColorField({
       <div className="flex items-center gap-2">
         <input
           type="color"
-          className="h-10 w-10 shrink-0 rounded-lg border border-stone-300 bg-card p-0.5"
+          className="h-10 w-10 shrink-0 rounded-md border border-line-strong bg-card p-0.5"
           value={isValid ? draft : value}
           onChange={(e) => {
             setDraft(e.target.value)
@@ -268,7 +307,7 @@ export function SaveRow({
   message: { ok: boolean; text: string } | null
 }) {
   return (
-    <div className="mt-4 flex items-center gap-3 border-t border-stone-100 pt-4">
+    <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
       <button type="button" onClick={onSave} disabled={isPending} className={primaryButtonClass}>
         {isPending ? "Saving…" : "Save"}
       </button>
@@ -310,7 +349,9 @@ export function Toggle({
     >
       <span
         className={`relative inline-block h-6 w-11 rounded-full border-2 transition-colors ${
-          checked ? `${BRAND_BORDER} ${BRAND_BG}` : "border-stone-400 bg-stone-300"
+          checked
+            ? `${BRAND_BORDER} ${BRAND_BG} [[data-admin-theme=dark]_&]:border-accent [[data-admin-theme=dark]_&]:bg-accent [[data-admin-theme=dark]_&]:shadow-[0_0_10px_rgba(227,6,19,0.45)]`
+            : "border-stone-400 bg-stone-300"
         }`}
       >
         <span
@@ -320,7 +361,7 @@ export function Toggle({
         />
       </span>
       {showState && (
-        <span className={`w-6 text-xs font-semibold ${checked ? BRAND_TEXT : "text-stone-500"}`}>
+        <span className={`w-6 text-xs font-semibold ${checked ? `${BRAND_TEXT} [[data-admin-theme=dark]_&]:text-accent` : "text-stone-500"}`}>
           {checked ? "On" : "Off"}
         </span>
       )}

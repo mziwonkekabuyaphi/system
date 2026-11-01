@@ -15,7 +15,7 @@ import { useEffect, useState, useTransition } from "react"
 
 import { getEmployerDetails, updateEmployerDetails } from "../settings-actions"
 import type { AdminEmployerDetails } from "../payroll-types"
-import { FieldRow, SaveRow, inputClass } from "./ui"
+import { FieldRow, SaveRow, SettingsCard, inputClass } from "./ui"
 
 const EMPTY: AdminEmployerDetails = {
   legalName: null,
@@ -64,22 +64,19 @@ export function EmployerDetailsPanel() {
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Employer details</p>
-      <p className="text-sm text-stone-500">
-        Printed on staff payslips. Your address, phone and email come from the contact details above. Only people with
-        payroll or settings access can see these.
-      </p>
-
+    <SettingsCard
+      title="Employer details"
+      description="Printed on staff payslips. Your address, phone and email come from the contact details above. Only people with payroll or settings access can see these."
+    >
       {loading ? (
-        <p className="mt-4 text-sm text-stone-500">Loading…</p>
+        <p className="text-sm text-ink-muted">Loading…</p>
       ) : loadError ? (
-        <p role="alert" className="mt-4 text-sm text-red-700">
+        <p role="alert" className="text-sm text-danger">
           {loadError}
         </p>
       ) : (
         <>
-          <div className="mt-4 space-y-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             {FIELDS.map((f) => (
               <FieldRow key={f.key} label={f.label}>
                 <input
@@ -96,6 +93,6 @@ export function EmployerDetailsPanel() {
           <SaveRow isPending={isPending} onSave={save} message={message} />
         </>
       )}
-    </div>
+    </SettingsCard>
   )
 }
