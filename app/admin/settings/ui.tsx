@@ -71,7 +71,7 @@ export function SettingsStatTile({
   icon,
 }: {
   label: string
-  value: string | number
+  value: React.ReactNode
   hint?: string
   icon?: React.ReactNode
 }) {
@@ -79,7 +79,7 @@ export function SettingsStatTile({
     <div className="relative rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
       {icon && <span className="absolute right-3 top-3 text-ink-muted/60">{icon}</span>}
       <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className="mt-1 truncate font-[family-name:var(--font-admin-serif)] text-2xl tabular-nums text-ink">{value}</p>
+      <div className="mt-1 truncate font-[family-name:var(--font-admin-serif)] text-2xl tabular-nums text-ink">{value}</div>
       {hint && <p className="mt-0.5 truncate text-xs text-ink-muted">{hint}</p>}
     </div>
   )
