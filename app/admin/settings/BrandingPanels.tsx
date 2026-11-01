@@ -338,7 +338,7 @@ function BrandingFields({
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-medium text-stone-800">Remove &quot;Powered by&quot;</p>
+            <p className="text-sm font-medium text-stone-800">Hide &quot;zozoQ&quot; Branding</p>
             <p className="text-sm text-stone-500">
               Hide the platform footer from customer-facing experiences. This is a Business plan feature.
             </p>
