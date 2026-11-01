@@ -72,11 +72,13 @@ function TicketIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-function ChatIcon(props: SVGProps<SVGSVGElement>) {
+// The Inbox is the WhatsApp inbox, so it uses Font Awesome's own WhatsApp icon (the same one the
+// Rands dashboard uses). Font Awesome's stylesheet is loaded in app/admin/layout.tsx.
+function WhatsAppIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z" />
-    </svg>
+    <span className={`flex items-center justify-center ${className ?? ""}`} aria-hidden="true">
+      <i className="fa-brands fa-whatsapp text-[1.35rem] leading-none" />
+    </span>
   )
 }
 
@@ -143,7 +145,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "today", label: "Appointments", icon: CalendarIcon },
   { id: "queue", label: "Live Queue", icon: TicketIcon },
   { id: "shisha", label: "Shisha", icon: HookahIcon },
-  { id: "inbox", label: "Inbox", icon: ChatIcon },
+  { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
   { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },

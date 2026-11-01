@@ -60,6 +60,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       data-admin-theme={dark ? "dark" : "cream"}
       className={`${fraunces.variable} ${inter.variable} ${spaceGrotesk.variable} min-h-screen bg-admin-body [font-family:var(--font-inter)] antialiased`}
     >
+      {/* Font Awesome, for the WhatsApp icon on the Inbox tab (same CDN + version the Rands dashboard uses). */}
+      <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        precedence="default"
+      />
       {children}
     </div>
   )
