@@ -68,9 +68,9 @@ const SORTS: Array<{ value: ShishaDisplaySort; title: string; description: strin
 ]
 
 const FIELD =
-  `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER} disabled:bg-[#F3EEE2]`
+  `w-full rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none ${BRAND_FOCUS_BORDER} disabled:bg-tint`
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
   `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 
@@ -92,8 +92,8 @@ function Switch({
   return (
     <div className="flex items-start justify-between gap-4 py-2.5">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-[#1C1A17]">{title}</p>
-        {description && <p className="mt-0.5 text-xs text-[#8A8375]">{description}</p>}
+        <p className="text-sm font-medium text-ink">{title}</p>
+        {description && <p className="mt-0.5 text-xs text-ink-muted">{description}</p>}
       </div>
       <button
         type="button"
@@ -103,11 +103,11 @@ function Switch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          checked ? BRAND_BG : "bg-[#D9D3C3]"
+          checked ? BRAND_BG : "bg-line-strong"
         }`}
       >
         <span
-          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${
+          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-card shadow transition-transform motion-reduce:transition-none ${
             checked ? "translate-x-4" : ""
           }`}
         />
@@ -127,9 +127,9 @@ function Field({
 }) {
   return (
     <label className="block space-y-1 text-sm">
-      <span className="text-[#1C1A17]">{label}</span>
+      <span className="text-ink">{label}</span>
       {children}
-      {hint && <span className="block text-xs text-[#8A8375]">{hint}</span>}
+      {hint && <span className="block text-xs text-ink-muted">{hint}</span>}
     </label>
   )
 }
@@ -152,7 +152,7 @@ function OptionCard({
       disabled={disabled}
       onClick={onClick}
       className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        selected ? `${BRAND_SELECTED} bg-white` : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
+        selected ? `${BRAND_SELECTED} bg-card` : "border-line-strong bg-card hover:bg-tint"
       }`}
     >
       {children}
@@ -163,8 +163,8 @@ function OptionCard({
 const Group = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
   <section className="space-y-3">
     <div>
-      <h3 className="text-sm font-semibold text-[#1C1A17]">{title}</h3>
-      {hint && <p className="mt-0.5 text-xs text-[#8A8375]">{hint}</p>}
+      <h3 className="text-sm font-semibold text-ink">{title}</h3>
+      {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
     </div>
     {children}
   </section>
@@ -325,19 +325,19 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
         role="dialog"
         aria-modal="true"
         aria-labelledby="shisha-display-title"
-        className={`absolute right-0 top-0 flex h-full w-full max-w-[460px] flex-col bg-[#FBF9F3] shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        className={`absolute right-0 top-0 flex h-full w-full max-w-[460px] flex-col bg-panel shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
           shown ? "translate-x-0" : "translate-x-full"
         }`}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-[#E6E1D4] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 id="shisha-display-title" className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+            <h2 id="shisha-display-title" className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
               TV display
             </h2>
-            <p className="mt-0.5 text-sm text-[#8A8375]">The status board for a screen in your lounge.</p>
+            <p className="mt-0.5 text-sm text-ink-muted">The status board for a screen in your lounge.</p>
           </div>
-          <button type="button" onClick={requestClose} aria-label="Close" className="rounded-md px-2 py-1 text-lg leading-none text-[#8A8375] hover:bg-[#F3EEE2]">
+          <button type="button" onClick={requestClose} aria-label="Close" className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-tint">
             ×
           </button>
         </div>
@@ -346,18 +346,18 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
           {!draft ? (
             loadError ? (
-              <div className="space-y-3 rounded-lg border border-[#E6E1D4] bg-white px-4 py-6 text-center">
-                <p className="text-sm text-[#7A2E2E]">{loadError}</p>
+              <div className="space-y-3 rounded-lg border border-line bg-card px-4 py-6 text-center">
+                <p className="text-sm text-accent">{loadError}</p>
                 <button type="button" onClick={() => void load()} className={BTN}>
                   Try again
                 </button>
               </div>
             ) : (
-              <p className="py-10 text-center text-sm text-[#8A8375]">{loading ? "Loading settings…" : ""}</p>
+              <p className="py-10 text-center text-sm text-ink-muted">{loading ? "Loading settings…" : ""}</p>
             )
           ) : (
             <>
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <Switch
                   title="Screen switched on"
                   description={
@@ -372,9 +372,9 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
               </div>
 
               {/* Address + QR */}
-              <div className="space-y-2 rounded-lg border border-[#E6E1D4] bg-white p-4">
-                <p className="text-sm font-medium text-[#1C1A17]">Screen address</p>
-                <p className="text-xs text-[#8A8375]">Open this in the TV's browser and leave the tab open. No login needed.</p>
+              <div className="space-y-2 rounded-lg border border-line bg-card p-4">
+                <p className="text-sm font-medium text-ink">Screen address</p>
+                <p className="text-xs text-ink-muted">Open this in the TV's browser and leave the tab open. No login needed.</p>
                 <div className="flex gap-2">
                   <input className={FIELD} readOnly value={displayUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
                   <button type="button" className={BTN} onClick={() => void copyUrl()} disabled={!displayUrl}>
@@ -395,7 +395,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                       alt="QR code linking to the shisha display"
                       width={96}
                       height={96}
-                      className="rounded border border-[#E6E1D4]"
+                      className="rounded border border-line"
                     />
                   )}
                 </div>
@@ -423,8 +423,8 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                     <div className="space-y-2">
                       {LAYOUTS.map((o) => (
                         <OptionCard key={o.value} selected={draft.layout === o.value} disabled={saving} onClick={() => set("layout", o.value)}>
-                          <span className="text-sm font-semibold text-[#1C1A17]">{o.title}</span>
-                          <span className="text-xs text-[#8A8375]">{o.description}</span>
+                          <span className="text-sm font-semibold text-ink">{o.title}</span>
+                          <span className="text-xs text-ink-muted">{o.description}</span>
                         </OptionCard>
                       ))}
                     </div>
@@ -469,11 +469,11 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                             disabled={saving || locked}
                             onClick={() => set("theme", o.value)}
                           >
-                            <span className="flex items-center gap-2 text-sm font-semibold text-[#1C1A17]">
-                              <span className="h-4 w-4 rounded-full border border-[#D9D3C3]" style={{ background: swatch }} />
+                            <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                              <span className="h-4 w-4 rounded-full border border-line-strong" style={{ background: swatch }} />
                               {o.title}
                             </span>
-                            <span className="text-xs text-[#8A8375]">
+                            <span className="text-xs text-ink-muted">
                               {locked ? "Custom background colours are a Business plan feature." : o.description}
                             </span>
                           </OptionCard>
@@ -491,7 +491,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                             aria-label="Pick background colour"
                             value={isHex6(draft.backgroundColor) ? draft.backgroundColor : "#15110D"}
                             onChange={(e) => set("backgroundColor", e.target.value.toUpperCase())}
-                            className="h-9 w-12 cursor-pointer rounded border border-[#D9D3C3] bg-white p-0.5"
+                            className="h-9 w-12 cursor-pointer rounded border border-line-strong bg-card p-0.5"
                           />
                           <input
                             className={FIELD}
@@ -521,8 +521,8 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                     <div className="space-y-2">
                       {SORTS.map((o) => (
                         <OptionCard key={o.value} selected={draft.sort === o.value} disabled={saving} onClick={() => set("sort", o.value)}>
-                          <span className="text-sm font-semibold text-[#1C1A17]">{o.title}</span>
-                          <span className="text-xs text-[#8A8375]">{o.description}</span>
+                          <span className="text-sm font-semibold text-ink">{o.title}</span>
+                          <span className="text-xs text-ink-muted">{o.description}</span>
                         </OptionCard>
                       ))}
                     </div>
@@ -533,7 +533,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
               {tab === "show" && (
                 <div className="space-y-6">
                   <Group title="On each device card" hint="This is a public screen, so only turn on what you're happy for the whole lounge to read.">
-                    <div className="divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4] bg-white px-4">
+                    <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
                       <Switch title="Flavour" description="The flavour being smoked." checked={draft.showFlavour} disabled={saving} onChange={(v) => set("showFlavour", v)} />
                       <Switch title="Station" description="The area the device is in, e.g. Terrace." checked={draft.showStation} disabled={saving} onChange={(v) => set("showStation", v)} />
                       <Switch
@@ -547,7 +547,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                   </Group>
 
                   <Group title="On the screen">
-                    <div className="divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4] bg-white px-4">
+                    <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
                       <Switch title="Summary strip" description="Counts of running, refill-due, overdue, paused and free devices." checked={draft.showStats} disabled={saving} onChange={(v) => set("showStats", v)} />
                       <Switch title="Free devices" description="Turn off to show only devices in use." checked={draft.showFreeDevices} disabled={saving} onChange={(v) => set("showFreeDevices", v)} />
                       <Switch title="Clock" checked={draft.showClock} disabled={saving} onChange={(v) => set("showClock", v)} />
@@ -564,7 +564,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                             maxLength={DISPLAY_TICKER_MAX}
                           />
                         </Field>
-                        <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+                        <div className="rounded-lg border border-line bg-card px-4">
                           <Switch
                             title="Flavours and prices in the ticker"
                             description="Your available flavours scroll after the message. Out-of-stock flavours are left out."
@@ -602,7 +602,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                   title="Time-up alert"
                   hint="When a session runs out, the TV takes over the whole screen with that device's code, then goes back to the board."
                 >
-                  <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+                  <div className="rounded-lg border border-line bg-card px-4">
                     <Switch
                       title="Full-screen alert"
                       description="If several sessions run out close together, they show one after another."
@@ -634,17 +634,17 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
 
         {/* Footer */}
         {draft && (
-          <div className="space-y-2 border-t border-[#E6E1D4] bg-white px-5 py-3">
+          <div className="space-y-2 border-t border-line bg-card px-5 py-3">
             {message && (
               <p
                 role={message.kind === "error" ? "alert" : "status"}
-                className={`text-sm ${message.kind === "error" ? "text-[#7A2E2E]" : "text-[#4B6B54]"}`}
+                className={`text-sm ${message.kind === "error" ? "text-accent" : "text-success"}`}
               >
                 {message.text}
               </p>
             )}
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-[#8A8375]">{dirty ? "You have unsaved changes." : "All changes saved."}</p>
+              <p className="text-xs text-ink-muted">{dirty ? "You have unsaved changes." : "All changes saved."}</p>
               <div className="flex gap-2">
                 <button
                   type="button"

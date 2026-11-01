@@ -88,22 +88,22 @@ export function AdminDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`absolute right-0 top-0 flex h-full w-full ${WIDTHS[width]} flex-col bg-[#FBF9F3] shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        className={`absolute right-0 top-0 flex h-full w-full ${WIDTHS[width]} flex-col bg-panel shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
           shown ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-[#E6E1D4] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 id={titleId} className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+            <h2 id={titleId} className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
               {title}
             </h2>
-            {subtitle && <p className="mt-0.5 text-sm text-[#8A8375]">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 text-sm text-ink-muted">{subtitle}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-md px-2 py-1 text-lg leading-none text-[#8A8375] hover:bg-[#F3EEE2]"
+            className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-tint"
           >
             ×
           </button>
@@ -111,7 +111,7 @@ export function AdminDrawer({
 
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
-        {footer && <div className="space-y-2 border-t border-[#E6E1D4] bg-white px-5 py-3">{footer}</div>}
+        {footer && <div className="space-y-2 border-t border-line bg-card px-5 py-3">{footer}</div>}
       </aside>
     </div>
   )
@@ -119,9 +119,9 @@ export function AdminDrawer({
 
 // ---- shared building blocks (same look as ShishaDisplayDrawer) --------------
 
-export const DRAWER_FIELD = `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER} disabled:bg-[#F3EEE2]`
+export const DRAWER_FIELD = `w-full rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none ${BRAND_FOCUS_BORDER} disabled:bg-tint`
 export const DRAWER_BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 export const DRAWER_BTN_PRIMARY = `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 
 export function DrawerTabs<T extends string>({
@@ -169,8 +169,8 @@ export function DrawerSwitch({
   return (
     <div className="flex items-start justify-between gap-4 py-2.5">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-[#1C1A17]">{title}</p>
-        {description && <p className="mt-0.5 text-xs text-[#8A8375]">{description}</p>}
+        <p className="text-sm font-medium text-ink">{title}</p>
+        {description && <p className="mt-0.5 text-xs text-ink-muted">{description}</p>}
       </div>
       <button
         type="button"
@@ -180,11 +180,11 @@ export function DrawerSwitch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          checked ? BRAND_BG : "bg-[#D9D3C3]"
+          checked ? BRAND_BG : "bg-line-strong"
         }`}
       >
         <span
-          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${
+          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-card shadow transition-transform motion-reduce:transition-none ${
             checked ? "translate-x-4" : ""
           }`}
         />
@@ -196,9 +196,9 @@ export function DrawerSwitch({
 export function DrawerField({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block space-y-1 text-sm">
-      <span className="text-[#1C1A17]">{label}</span>
+      <span className="text-ink">{label}</span>
       {children}
-      {hint && <span className="block text-xs text-[#8A8375]">{hint}</span>}
+      {hint && <span className="block text-xs text-ink-muted">{hint}</span>}
     </label>
   )
 }
@@ -207,8 +207,8 @@ export function DrawerGroup({ title, hint, children }: { title: string; hint?: s
   return (
     <section className="space-y-3">
       <div>
-        <h3 className="text-sm font-semibold text-[#1C1A17]">{title}</h3>
-        {hint && <p className="mt-0.5 text-xs text-[#8A8375]">{hint}</p>}
+        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
       </div>
       {children}
     </section>
@@ -233,7 +233,7 @@ export function DrawerOptionCard({
       disabled={disabled}
       onClick={onClick}
       className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        selected ? `${BRAND_SELECTED} bg-white` : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"
+        selected ? `${BRAND_SELECTED} bg-card` : "border-line-strong bg-card hover:bg-tint"
       }`}
     >
       {children}

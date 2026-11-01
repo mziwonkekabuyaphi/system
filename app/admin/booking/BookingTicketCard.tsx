@@ -86,14 +86,14 @@ export function BookingTicketCard() {
 
   if (loadError) {
     return (
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>
       </div>
     )
   }
   if (!config || !form) {
     return (
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
         <p className="text-sm text-stone-400">Loading booking ticket…</p>
       </div>
     )
@@ -115,7 +115,7 @@ export function BookingTicketCard() {
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Booking ticket</p>
@@ -148,7 +148,7 @@ export function BookingTicketCard() {
                     aria-pressed={selected}
                     className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
                       selected
-                        ? `${BRAND_SELECTED} bg-white`
+                        ? `${BRAND_SELECTED} bg-card`
                         : "border-stone-300 bg-stone-50 hover:bg-stone-100"
                     }`}
                   >

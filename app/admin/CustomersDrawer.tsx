@@ -75,22 +75,22 @@ export function CustomersDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="customers-title"
-        className={`absolute right-0 top-0 flex h-full w-full max-w-[760px] flex-col bg-[#FBF9F3] shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        className={`absolute right-0 top-0 flex h-full w-full max-w-[760px] flex-col bg-panel shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
           shown ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-[#E6E1D4] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 id="customers-title" className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+            <h2 id="customers-title" className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
               Customers
             </h2>
-            <p className="mt-0.5 text-sm text-[#8A8375]">Everyone who has booked or joined your queue.</p>
+            <p className="mt-0.5 text-sm text-ink-muted">Everyone who has booked or joined your queue.</p>
           </div>
           <button
             type="button"
             onClick={requestClose}
             aria-label="Close"
-            className="rounded-md px-2 py-1 text-lg leading-none text-[#8A8375] hover:bg-[#F3EEE2]"
+            className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-tint"
           >
             ×
           </button>

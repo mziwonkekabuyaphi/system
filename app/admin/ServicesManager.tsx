@@ -51,7 +51,7 @@ function ServiceRow({ service }: { service: AdminService }) {
         title="Delete this service?"
         message={
           <>
-            <span className="font-medium text-[#1C1A17]">{service.name}</span> will be removed for good. This
+            <span className="font-medium text-ink">{service.name}</span> will be removed for good. This
             can&apos;t be undone. If you only want to hide it from customers, use Deactivate instead.
           </>
         }
@@ -72,26 +72,26 @@ function ServiceRow({ service }: { service: AdminService }) {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="min-w-[10rem] flex-1 border-b border-[#D9D3C3] bg-transparent pb-1 text-[1.05rem] text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            className="min-w-[10rem] flex-1 border-b border-line-strong bg-transparent pb-1 text-[1.05rem] text-ink outline-none focus:border-accent"
           />
           <input
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             inputMode="decimal"
             aria-label="Price"
-            className="w-20 border-b border-[#D9D3C3] bg-transparent pb-1 text-right tabular-nums outline-none focus:border-[#7A2E2E]"
+            className="w-20 border-b border-line-strong bg-transparent pb-1 text-right tabular-nums outline-none focus:border-accent"
           />
           <input
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
             inputMode="numeric"
             aria-label="Duration in minutes"
-            className="w-16 border-b border-[#D9D3C3] bg-transparent pb-1 text-right tabular-nums outline-none focus:border-[#7A2E2E]"
+            className="w-16 border-b border-line-strong bg-transparent pb-1 text-right tabular-nums outline-none focus:border-accent"
           />
-          <button onClick={save} disabled={isSaving} className="text-sm text-[#7A2E2E] disabled:opacity-50">
+          <button onClick={save} disabled={isSaving} className="text-sm text-accent disabled:opacity-50">
             {isSaving ? "Saving…" : "Save"}
           </button>
-          <button onClick={() => setEditing(false)} className="text-sm text-[#8A8375]">
+          <button onClick={() => setEditing(false)} className="text-sm text-ink-muted">
             Cancel
           </button>
         </li>
@@ -104,19 +104,19 @@ function ServiceRow({ service }: { service: AdminService }) {
     <>
       <li className="flex items-center justify-between gap-4 py-4">
         <div>
-          <p className={`text-[1.05rem] ${service.active ? "text-[#1C1A17]" : "text-[#8A8375]"}`}>{service.name}</p>
-          <p className="mt-0.5 text-sm text-[#8A8375]">
+          <p className={`text-[1.05rem] ${service.active ? "text-ink" : "text-ink-muted"}`}>{service.name}</p>
+          <p className="mt-0.5 text-sm text-ink-muted">
             R{service.price} · {service.durationMinutes} min
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-4 text-sm">
-          <button onClick={() => setEditing(true)} className="text-[#1C1A17] underline underline-offset-4">
+          <button onClick={() => setEditing(true)} className="text-ink underline underline-offset-4">
             Edit
           </button>
-          <button onClick={toggleActive} disabled={isToggling} className="text-[#8A8375] disabled:opacity-50">
+          <button onClick={toggleActive} disabled={isToggling} className="text-ink-muted disabled:opacity-50">
             {service.active ? "Deactivate" : "Activate"}
           </button>
-          <button onClick={() => setConfirmOpen(true)} className="text-[#7A2E2E]">
+          <button onClick={() => setConfirmOpen(true)} className="text-accent">
             Delete
           </button>
         </div>
@@ -150,47 +150,47 @@ export function ServicesManager({ initialServices: services }: { initialServices
   return (
     <div>
       {services.length === 0 ? (
-        <p className="text-[#8A8375]">No services yet — add your first one below.</p>
+        <p className="text-ink-muted">No services yet — add your first one below.</p>
       ) : (
-        <ul className="divide-y divide-[#E6E1D4]">
+        <ul className="divide-y divide-line">
           {services.map((s) => (
             <ServiceRow key={s.id} service={s} />
           ))}
         </ul>
       )}
 
-      <form onSubmit={submit} className="mt-8 flex flex-wrap items-end gap-3 border-t border-[#E6E1D4] pt-6">
+      <form onSubmit={submit} className="mt-8 flex flex-wrap items-end gap-3 border-t border-line pt-6">
         <div className="min-w-[10rem] flex-1">
-          <label className="block text-sm text-[#8A8375]">Service name</label>
+          <label className="block text-sm text-ink-muted">Service name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Skin fade"
-            className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
           />
         </div>
         <div>
-          <label className="block text-sm text-[#8A8375]">Price (R)</label>
+          <label className="block text-sm text-ink-muted">Price (R)</label>
           <input
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             inputMode="decimal"
-            className="mt-1 w-20 border-b border-[#D9D3C3] bg-transparent pb-1 text-right tabular-nums text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            className="mt-1 w-20 border-b border-line-strong bg-transparent pb-1 text-right tabular-nums text-ink outline-none focus:border-accent"
           />
         </div>
         <div>
-          <label className="block text-sm text-[#8A8375]">Minutes</label>
+          <label className="block text-sm text-ink-muted">Minutes</label>
           <input
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
             inputMode="numeric"
-            className="mt-1 w-16 border-b border-[#D9D3C3] bg-transparent pb-1 text-right tabular-nums text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            className="mt-1 w-16 border-b border-line-strong bg-transparent pb-1 text-right tabular-nums text-ink outline-none focus:border-accent"
           />
         </div>
         <button
           type="submit"
           disabled={isPending}
-          className="ml-auto bg-[#1C1A17] px-4 py-2 text-sm text-[#FAF6EE] disabled:opacity-50"
+          className="ml-auto bg-primary px-4 py-2 text-sm text-on-primary disabled:opacity-50"
         >
           {isPending ? "Adding…" : "Add service"}
         </button>

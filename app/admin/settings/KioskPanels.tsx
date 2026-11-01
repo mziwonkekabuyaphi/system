@@ -75,7 +75,7 @@ export function KioskPanel({
   // hidden too -- the public kiosk page is unavailable on this plan.
   if (!includedInPlan) {
     return (
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
         <p className="mt-1 text-sm text-stone-500">
           The self-service kiosk isn&apos;t included in your current plan. Upgrade from Plans &amp; Billing to give
@@ -87,7 +87,7 @@ export function KioskPanel({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
@@ -136,7 +136,7 @@ function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
       <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk address</p>
       <p className="text-sm text-stone-500">The registration URL used for your kiosk.</p>
 
@@ -153,7 +153,7 @@ function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               href={kioskUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-block text-sm font-medium text-[color:var(--sb-bg,#7A2E3A)] hover:underline"
+              className="inline-block text-sm font-medium text-[color:var(--sb-bg,var(--color-accent-alt))] hover:underline"
             >
               Open the kiosk ↗
             </a>
@@ -427,11 +427,11 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
                 aria-pressed={selected}
                 className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
                   selected
-                    ? "border-[color:var(--sb-bg,#7A2E3A)] bg-[color-mix(in_srgb,var(--sb-bg,#7A2E3A)_6%,transparent)] ring-1 ring-[color:var(--sb-bg,#7A2E3A)]"
+                    ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))]"
                     : "border-stone-300 bg-stone-50 hover:bg-stone-100"
                 }`}
               >
-                <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-800"}`}>
+                <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-stone-800"}`}>
                   {option.title}
                 </span>
                 <span className="text-xs text-stone-500">{option.description}</span>

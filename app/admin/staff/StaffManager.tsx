@@ -213,9 +213,9 @@ function StaffClockInUrlPanel({ tenantSlug }: { tenantSlug: string }) {
   }
 
   return (
-    <section className="rounded-lg border border-[#E6E1D4] p-4">
-      <h3 className="text-sm font-semibold text-[#1C1A17]">Staff clock-in URL</h3>
-      <p className="mt-1 text-sm text-[#8A8375]">Where staff clock in and out for a shift, PIN-protected on that page.</p>
+    <section className="rounded-lg border border-line p-4">
+      <h3 className="text-sm font-semibold text-ink">Staff clock-in URL</h3>
+      <p className="mt-1 text-sm text-ink-muted">Where staff clock in and out for a shift, PIN-protected on that page.</p>
 
       <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="flex-1 space-y-2">
@@ -224,21 +224,21 @@ function StaffClockInUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               readOnly
               value={clockInUrl ?? "Loading…"}
               onFocus={(e) => e.target.select()}
-              className="w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none"
+              className="w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none"
             />
             <button
               type="button"
               onClick={copyUrl}
               disabled={!clockInUrl}
-              className="shrink-0 border border-[#D9D3C3] px-3 py-1.5 text-sm text-[#1C1A17] disabled:opacity-50"
+              className="shrink-0 border border-line-strong px-3 py-1.5 text-sm text-ink disabled:opacity-50"
             >
               {copied ? "Copied!" : "Copy"}
             </button>
           </div>
-          <p className="text-xs text-[#8A8375]">Print this by the staff entrance, or bookmark it on a shared tablet.</p>
+          <p className="text-xs text-ink-muted">Print this by the staff entrance, or bookmark it on a shared tablet.</p>
         </div>
 
-        <div className="flex flex-col items-center gap-2 border border-[#E6E1D4] p-3">
+        <div className="flex flex-col items-center gap-2 border border-line p-3">
           {clockInUrl ? (
             // Same third-party QR generator as the kiosk URL panel — the
             // clock-in URL isn't sensitive on its own (the PIN gate is on
@@ -251,7 +251,7 @@ function StaffClockInUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               height={160}
             />
           ) : (
-            <div className="flex h-40 w-40 items-center justify-center text-xs text-[#8A8375]">Loading…</div>
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-ink-muted">Loading…</div>
           )}
         </div>
       </div>
@@ -276,14 +276,14 @@ function PinRevealModal({ reveal, onClose }: { reveal: { name: string; pin: stri
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-sm rounded-lg bg-[#FAF6EE] p-6 shadow-xl">
-        <h3 className="text-base font-semibold text-[#1C1A17]">New PIN for {reveal.name}</h3>
-        <p className="mt-4 text-center font-mono text-4xl tracking-[0.3em] text-[#1C1A17]">{reveal.pin}</p>
-        <p className="mt-4 text-sm text-[#7A2E2E]">
+      <div className="w-full max-w-sm rounded-lg bg-dialog p-6 shadow-xl">
+        <h3 className="text-base font-semibold text-ink">New PIN for {reveal.name}</h3>
+        <p className="mt-4 text-center font-mono text-4xl tracking-[0.3em] text-ink">{reveal.pin}</p>
+        <p className="mt-4 text-sm text-accent">
           This is the only time you will see it. It isn&apos;t stored anywhere readable. If it&apos;s lost, reset it again.
         </p>
         <div className="mt-6 flex items-center justify-between">
-          <button type="button" onClick={copyPin} className="border border-[#D9D3C3] px-3 py-1.5 text-sm text-[#1C1A17]">
+          <button type="button" onClick={copyPin} className="border border-line-strong px-3 py-1.5 text-sm text-ink">
             {copied ? "Copied!" : "Copy"}
           </button>
           <button
@@ -292,7 +292,7 @@ function PinRevealModal({ reveal, onClose }: { reveal: { name: string; pin: stri
               setCopied(false)
               onClose()
             }}
-            className="bg-[#1C1A17] px-4 py-2 text-sm text-[#FAF6EE]"
+            className="bg-primary px-4 py-2 text-sm text-on-primary"
           >
             I&apos;ve noted it
           </button>
@@ -487,23 +487,23 @@ export function StaffManager({
     <div className="space-y-10">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Staff</h2>
-          <p className="mt-0.5 text-sm text-[#8A8375]">Your team, who&apos;s clocked in, shifts, pay and clock-in settings.</p>
+          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Staff</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">Your team, who&apos;s clocked in, shifts, pay and clock-in settings.</p>
         </div>
         {(canSeePayroll || canSeeClockSettings || canSeeShifts) && (
           <div className="flex flex-wrap items-center gap-3">
             {canSeeClockSettings && (
-              <button type="button" onClick={() => setClockOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
+              <button type="button" onClick={() => setClockOpen(true)} className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint">
                 Clock-in settings
               </button>
             )}
             {canSeeShifts && (
-              <button type="button" onClick={() => setShiftsOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
+              <button type="button" onClick={() => setShiftsOpen(true)} className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint">
                 Shifts
               </button>
             )}
             {canSeePayroll && (
-              <button type="button" onClick={() => setPayrollOpen(true)} className="rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]">
+              <button type="button" onClick={() => setPayrollOpen(true)} className="rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint">
                 Payroll
               </button>
             )}
@@ -518,16 +518,16 @@ export function StaffManager({
           active shifts for anyone else. */}
       {permissions.staffManage && (
       <section>
-        <h3 className="text-sm font-semibold text-[#1C1A17]">Currently clocked in</h3>
+        <h3 className="text-sm font-semibold text-ink">Currently clocked in</h3>
         {activeShifts.length === 0 ? (
-          <p className="mt-2 text-sm text-[#8A8375]">No one's clocked in right now.</p>
+          <p className="mt-2 text-sm text-ink-muted">No one's clocked in right now.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4]">
+          <ul className="mt-3 divide-y divide-line rounded-lg border border-line">
             {activeShifts.map((shift) => (
               <li key={shift.id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium text-[#1C1A17]">{shift.staffName}</p>
-                  <p className="text-xs text-[#8A8375]">
+                  <p className="text-sm font-medium text-ink">{shift.staffName}</p>
+                  <p className="text-xs text-ink-muted">
                     Since {formatClockTime(shift.loginTime)} · {elapsedSince(shift.loginTime)}
                   </p>
                 </div>
@@ -535,7 +535,7 @@ export function StaffManager({
                   <button
                     onClick={() => clockOut(shift)}
                     disabled={isClockingOut && clockingOutId === shift.id}
-                    className="text-sm text-[#7A2E2E] disabled:opacity-50"
+                    className="text-sm text-accent disabled:opacity-50"
                   >
                     {isClockingOut && clockingOutId === shift.id ? "Clocking out…" : "Force clock out"}
                   </button>
@@ -549,19 +549,19 @@ export function StaffManager({
 
       {/* ================= Staff list ================= */}
       <section>
-        <h3 className="text-sm font-semibold text-[#1C1A17]">Staff</h3>
+        <h3 className="text-sm font-semibold text-ink">Staff</h3>
         {staff.length === 0 ? (
-          <p className="mt-2 text-[#8A8375]">No staff yet — add your first one below.</p>
+          <p className="mt-2 text-ink-muted">No staff yet — add your first one below.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-[#E6E1D4]">
+          <ul className="mt-3 divide-y divide-line">
             {staff.map((member) => (
               <li key={member.id} className="flex items-center justify-between gap-4 py-4">
                 <div>
-                  <p className={`text-[1.05rem] ${member.active ? "text-[#1C1A17]" : "text-[#8A8375]"}`}>
+                  <p className={`text-[1.05rem] ${member.active ? "text-ink" : "text-ink-muted"}`}>
                     {member.name}
-                    {member.hasLogin && <span className="ml-2 text-xs text-[#8A8375]">· can sign in</span>}
+                    {member.hasLogin && <span className="ml-2 text-xs text-ink-muted">· can sign in</span>}
                   </p>
-                  <p className="text-sm text-[#8A8375]">
+                  <p className="text-sm text-ink-muted">
                     {[
                       member.jobTitle,
                       member.employeeNumber ? `Emp. no. ${member.employeeNumber}` : null,
@@ -579,7 +579,7 @@ export function StaffManager({
                       bank account ever reach the browser. The key is absent
                       unless the caller has payroll.view. */}
                   {"payrollDetails" in member && (member.payrollDetails?.idNumberLast4 || member.payrollDetails?.bankAccountLast4) && (
-                    <p className="text-xs text-[#8A8375]">
+                    <p className="text-xs text-ink-muted">
                       {[
                         member.payrollDetails?.idNumberLast4 ? `ID ****${member.payrollDetails.idNumberLast4}` : null,
                         member.payrollDetails?.bankAccountLast4 ? `Account ****${member.payrollDetails.bankAccountLast4}` : null,
@@ -591,20 +591,20 @@ export function StaffManager({
                 </div>
                 {permissions.staffManage && (
                   <div className="flex shrink-0 items-center gap-4">
-                    <button onClick={() => startEdit(member)} className="text-sm text-[#8A8375]">
+                    <button onClick={() => startEdit(member)} className="text-sm text-ink-muted">
                       Edit
                     </button>
-                    <button onClick={() => setResetTarget(member)} className="text-sm text-[#8A8375]">
+                    <button onClick={() => setResetTarget(member)} className="text-sm text-ink-muted">
                       {member.clockInPin != null ? "Reset PIN" : "Create PIN"}
                     </button>
                     <button
                       onClick={() => toggle(member)}
                       disabled={isToggling && togglingId === member.id}
-                      className="text-sm text-[#8A8375] disabled:opacity-50"
+                      className="text-sm text-ink-muted disabled:opacity-50"
                     >
                       {member.active ? "Deactivate" : "Activate"}
                     </button>
-                    <button onClick={() => setDeleteTarget(member)} className="text-sm text-[#7A2E2E]">
+                    <button onClick={() => setDeleteTarget(member)} className="text-sm text-accent">
                       Delete
                     </button>
                   </div>
@@ -620,11 +620,11 @@ export function StaffManager({
           this at all — they get the read-only directory above and
           nothing else, matching "must not modify staff records". */}
       {permissions.staffManage && (
-      <section className="border-t border-[#E6E1D4] pt-6">
+      <section className="border-t border-line pt-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[#1C1A17]">{isEditing ? `Editing ${form.name}` : "Add staff"}</h3>
+          <h3 className="text-sm font-semibold text-ink">{isEditing ? `Editing ${form.name}` : "Add staff"}</h3>
           {isEditing && (
-            <button type="button" onClick={cancelEdit} className="text-sm text-[#8A8375]">
+            <button type="button" onClick={cancelEdit} className="text-sm text-ink-muted">
               Cancel
             </button>
           )}
@@ -632,50 +632,50 @@ export function StaffManager({
 
         <form onSubmit={submit} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm text-[#8A8375]">Name</label>
+            <label className="block text-sm text-ink-muted">Name</label>
             <input
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="Thabo"
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Job title</label>
+            <label className="block text-sm text-ink-muted">Job title</label>
             <input
               value={form.jobTitle}
               onChange={(e) => setForm((f) => ({ ...f, jobTitle: e.target.value }))}
               placeholder="Stylist"
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Employee number</label>
+            <label className="block text-sm text-ink-muted">Employee number</label>
             <input
               value={form.employeeNumber}
               onChange={(e) => setForm((f) => ({ ...f, employeeNumber: e.target.value }))}
               placeholder="001"
               maxLength={30}
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Start date</label>
+            <label className="block text-sm text-ink-muted">Start date</label>
             <input
               type="date"
               value={form.startDate}
               onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
           {permissions.payrollManage && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-[#8A8375]">How are they paid?</label>
+                <label className="block text-sm text-ink-muted">How are they paid?</label>
                 <div role="radiogroup" aria-label="How are they paid?" className="mt-1 flex flex-wrap gap-2">
                   {PAY_TYPE_OPTIONS.map((opt) => (
                     <button
@@ -686,20 +686,20 @@ export function StaffManager({
                       onClick={() => setForm((f) => ({ ...f, payType: opt.value }))}
                       className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                         form.payType === opt.value
-                          ? "border-[#1C1A17] bg-[#1C1A17] text-[#FAF6EE]"
-                          : "border-[#D9D3C3] text-[#1C1A17] hover:bg-[#F1ECDF]"
+                          ? "border-ink bg-primary text-on-primary"
+                          : "border-line-strong text-ink hover:bg-tint-2"
                       }`}
                     >
                       {opt.label}
                     </button>
                   ))}
                 </div>
-                <p className="mt-1 text-xs text-[#8A8375]">{PAY_TYPE_OPTIONS.find((o) => o.value === form.payType)?.help}</p>
+                <p className="mt-1 text-xs text-ink-muted">{PAY_TYPE_OPTIONS.find((o) => o.value === form.payType)?.help}</p>
               </div>
 
               {form.payType !== "commission" && (
                 <div>
-                  <label className="block text-sm text-[#8A8375]">
+                  <label className="block text-sm text-ink-muted">
                     {form.payType === "hybrid" ? "Hourly rate (ZAR), the base part" : "Hourly rate (ZAR)"}
                   </label>
                   <input
@@ -711,14 +711,14 @@ export function StaffManager({
                       setForm((f) => ({ ...f, hourlyRate: e.target.value === "" ? null : Number(e.target.value) }))
                     }
                     placeholder="120"
-                    className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                    className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                   />
                 </div>
               )}
 
               {form.payType !== "hourly" && (
                 <div>
-                  <label className="block text-sm text-[#8A8375]">Commission (% of the service price)</label>
+                  <label className="block text-sm text-ink-muted">Commission (% of the service price)</label>
                   <input
                     type="number"
                     step="0.5"
@@ -727,9 +727,9 @@ export function StaffManager({
                     value={form.commissionRate}
                     onChange={(e) => setForm((f) => ({ ...f, commissionRate: e.target.value }))}
                     placeholder="40"
-                    className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                    className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                   />
-                  <p className="mt-1 text-xs text-[#8A8375]">
+                  <p className="mt-1 text-xs text-ink-muted">
                     Worked out on the price you list for each service, when the customer is marked as served. Tips and
                     discounts aren&apos;t included. Walk-ins only count once a staff member is recorded as serving them.
                   </p>
@@ -738,14 +738,14 @@ export function StaffManager({
 
               {form.payType === "hybrid" && (
                 <fieldset>
-                  <legend className="text-sm text-[#8A8375]">How do hourly and commission combine?</legend>
+                  <legend className="text-sm text-ink-muted">How do hourly and commission combine?</legend>
                   {(
                     [
                       ["base_plus_commission", "Both: hourly pay, plus commission on top"],
                       ["higher_of", "Whichever is higher: hourly pay works as a guaranteed minimum"],
                     ] as Array<[AdminHybridMode, string]>
                   ).map(([value, label]) => (
-                    <label key={value} className="mt-1 flex items-start gap-2 text-sm text-[#1C1A17]">
+                    <label key={value} className="mt-1 flex items-start gap-2 text-sm text-ink">
                       <input
                         type="radio"
                         name="hybridMode"
@@ -760,7 +760,7 @@ export function StaffManager({
               )}
 
               {form.payType === "commission" && (
-                <p className="rounded-lg bg-[#FBF3DC] px-3 py-2 text-xs text-[#5C4A12]">
+                <p className="rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn-strong">
                   Employees paid only on commission must still receive at least the national minimum wage. To guarantee
                   a floor, choose Hybrid with &ldquo;whichever is higher&rdquo; and set the hourly rate. Check the rules
                   with your accountant.
@@ -770,48 +770,48 @@ export function StaffManager({
           )}
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Clock-in PIN</label>
+            <label className="block text-sm text-ink-muted">Clock-in PIN</label>
             {editingMember ? (
               <div className="mt-1 flex items-center gap-3">
-                <span className="text-sm text-[#1C1A17]">{editingMember.clockInPin != null ? "6 digits, hidden" : "No PIN yet"}</span>
-                <button type="button" onClick={() => setResetTarget(editingMember)} className="text-sm text-[#7A2E2E]">
+                <span className="text-sm text-ink">{editingMember.clockInPin != null ? "6 digits, hidden" : "No PIN yet"}</span>
+                <button type="button" onClick={() => setResetTarget(editingMember)} className="text-sm text-accent">
                   {editingMember.clockInPin != null ? "Reset PIN" : "Create PIN"}
                 </button>
               </div>
             ) : (
-              <p className="mt-1 text-sm text-[#8A8375]">Add the person first, then create their PIN. You&apos;ll see it once.</p>
+              <p className="mt-1 text-sm text-ink-muted">Add the person first, then create their PIN. You&apos;ll see it once.</p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Phone</label>
+            <label className="block text-sm text-ink-muted">Phone</label>
             <input
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
               placeholder="082 123 4567"
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-[#8A8375]">Email</label>
+            <label className="block text-sm text-ink-muted">Email</label>
             <input
               type="email"
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               placeholder="thabo@example.com"
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
           {/* Sensitive payroll details: payroll.manage only, and the
               server re-checks it. Nothing here renders for anyone else. */}
           {permissions.payrollManage && (
-            <fieldset className="sm:col-span-2 grid grid-cols-1 gap-4 rounded-lg border border-[#E6E1D4] p-4 sm:grid-cols-2">
-              <legend className="px-1 text-sm font-semibold text-[#1C1A17]">Payroll details</legend>
+            <fieldset className="sm:col-span-2 grid grid-cols-1 gap-4 rounded-lg border border-line p-4 sm:grid-cols-2">
+              <legend className="px-1 text-sm font-semibold text-ink">Payroll details</legend>
 
               <div>
-                <label className="block text-sm text-[#8A8375]">ID or passport number</label>
+                <label className="block text-sm text-ink-muted">ID or passport number</label>
                 <input
                   value={form.idNumber}
                   onChange={(e) => setForm((f) => ({ ...f, idNumber: e.target.value }))}
@@ -821,39 +821,39 @@ export function StaffManager({
                       : "13-digit ID or passport"
                   }
                   autoComplete="off"
-                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-[#8A8375]">SARS income tax number</label>
+                <label className="block text-sm text-ink-muted">SARS income tax number</label>
                 <input
                   value={form.taxNumber}
                   onChange={(e) => setForm((f) => ({ ...f, taxNumber: e.target.value.replace(/[^\d\s]/g, "") }))}
                   placeholder="10 digits"
                   inputMode="numeric"
                   autoComplete="off"
-                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-[#8A8375]">Bank</label>
+                <label className="block text-sm text-ink-muted">Bank</label>
                 <input
                   value={form.bankName}
                   onChange={(e) => setForm((f) => ({ ...f, bankName: e.target.value }))}
                   placeholder="e.g. Capitec"
                   maxLength={60}
-                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-[#8A8375]">Account type</label>
+                <label className="block text-sm text-ink-muted">Account type</label>
                 <select
                   value={form.bankAccountType}
                   onChange={(e) => setForm((f) => ({ ...f, bankAccountType: e.target.value as AdminBankAccountType | "" }))}
-                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                 >
                   <option value="">Not set</option>
                   <option value="cheque">Cheque / current</option>
@@ -863,7 +863,7 @@ export function StaffManager({
               </div>
 
               <div>
-                <label className="block text-sm text-[#8A8375]">Account number</label>
+                <label className="block text-sm text-ink-muted">Account number</label>
                 <input
                   value={form.bankAccountNumber}
                   onChange={(e) => setForm((f) => ({ ...f, bankAccountNumber: e.target.value.replace(/[^\d\s-]/g, "") }))}
@@ -874,12 +874,12 @@ export function StaffManager({
                   }
                   inputMode="numeric"
                   autoComplete="off"
-                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-[#8A8375]">Branch code</label>
+                <label className="block text-sm text-ink-muted">Branch code</label>
                 <input
                   value={form.bankBranchCode}
                   onChange={(e) => setForm((f) => ({ ...f, bankBranchCode: e.target.value.replace(/[^\d\s]/g, "") }))}
@@ -887,14 +887,14 @@ export function StaffManager({
                   inputMode="numeric"
                   maxLength={7}
                   autoComplete="off"
-                  className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+                  className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
                 />
               </div>
             </fieldset>
           )}
 
           <div className="sm:col-span-2">
-            <label className="block text-sm text-[#8A8375]">
+            <label className="block text-sm text-ink-muted">
               {editingId && staff.find((m) => m.id === editingId)?.hasLogin
                 ? "New login password (leave blank to keep current)"
                 : "Login password (optional: lets them sign in with the email above)"}
@@ -906,17 +906,17 @@ export function StaffManager({
               value={form.loginPassword}
               onChange={(e) => setForm((f) => ({ ...f, loginPassword: e.target.value }))}
               placeholder="At least 8 characters"
-              className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
 
-          {formError && <p className="sm:col-span-2 text-sm text-[#7A2E2E]">{formError}</p>}
+          {formError && <p className="sm:col-span-2 text-sm text-accent">{formError}</p>}
 
           <div className="sm:col-span-2">
             <button
               type="submit"
               disabled={isSaving}
-              className="bg-[#1C1A17] px-4 py-2 text-sm text-[#FAF6EE] disabled:opacity-50"
+              className="bg-primary px-4 py-2 text-sm text-on-primary disabled:opacity-50"
             >
               {isSaving ? "Saving…" : isEditing ? "Save changes" : "Add staff"}
             </button>
@@ -930,7 +930,7 @@ export function StaffManager({
         title="Delete this staff member?"
         message={
           <>
-            <span className="font-medium text-[#1C1A17]">{deleteTarget?.name}</span> will be removed for good, and
+            <span className="font-medium text-ink">{deleteTarget?.name}</span> will be removed for good, and
             their sign-in (if they have one) will be removed too. This can&apos;t be undone. If you only want to stop
             them working, use Deactivate instead.
           </>
@@ -946,7 +946,7 @@ export function StaffManager({
         title={resetTarget?.clockInPin != null ? "Reset this PIN?" : "Create a PIN?"}
         message={
           <>
-            A new 6-digit PIN will be made for <span className="font-medium text-[#1C1A17]">{resetTarget?.name}</span>
+            A new 6-digit PIN will be made for <span className="font-medium text-ink">{resetTarget?.name}</span>
             {resetTarget?.clockInPin != null ? ", and their old PIN stops working straight away" : ""}. You will see it once, so
             have a pen ready or tell them right away.
           </>

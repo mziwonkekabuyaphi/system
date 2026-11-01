@@ -215,7 +215,7 @@ function BrandingFields({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Brand identity</p>
         <p className="text-sm text-stone-500">Set the name, logo, and colors customers see when interacting with your business.</p>
         {!canCustomizeBranding && (
@@ -259,7 +259,7 @@ function BrandingFields({
                       type="button"
                       onClick={handleRemoveLogo}
                       disabled={isLogoPending}
-                      className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-300"
+                      className="rounded-full border border-stone-200 bg-card px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-300"
                     >
                       Remove
                     </button>
@@ -328,7 +328,7 @@ function BrandingFields({
                       className={`flex flex-col items-start gap-2 rounded-xl border p-2 text-left text-xs transition ${
                         selected
                           ? "border-stone-900 bg-stone-50 ring-1 ring-stone-900"
-                          : "border-stone-200 bg-white hover:bg-stone-50"
+                          : "border-stone-200 bg-card hover:bg-stone-50"
                       }`}
                     >
                       <span className="flex w-full overflow-hidden rounded-lg">
@@ -422,7 +422,7 @@ function BrandingFields({
         <SaveRow isPending={isPending} onSave={save} message={message} />
       </div>
 
-      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
         <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Platform branding</p>
         <p className="text-sm text-stone-500">Control whether your customers see attribution to the platform.</p>
 

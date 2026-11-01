@@ -210,7 +210,7 @@ export function WhatsAppTemplatesPanel() {
                       }`}
                     >
                       <span
-                        className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        className={`inline-block h-5 w-5 rounded-full bg-card shadow transition-transform ${
                           t.enabled ? "translate-x-5" : "translate-x-0.5"
                         }`}
                       />

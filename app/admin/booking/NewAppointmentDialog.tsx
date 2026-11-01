@@ -20,11 +20,11 @@ import {
 } from "../actions"
 
 const FIELD =
-  "mt-1 w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+  "mt-1 w-full rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-accent"
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
-  "rounded-md bg-[#1C1A17] px-3 py-1.5 text-sm text-[#FAF6EE] hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-primary px-3 py-1.5 text-sm text-on-primary hover:bg-primary-hover-strong disabled:cursor-not-allowed disabled:opacity-50"
 
 export function NewAppointmentForm({
   onClose,
@@ -112,7 +112,7 @@ export function NewAppointmentForm({
   if (loadError) {
     return (
       <div className="space-y-4">
-        <p role="alert" className="rounded-md bg-[#7A2E2E]/10 px-3 py-2 text-[#7A2E2E]">
+        <p role="alert" className="rounded-md bg-accent/10 px-3 py-2 text-accent">
           {loadError}
         </p>
         <div className="flex justify-end">
@@ -124,12 +124,12 @@ export function NewAppointmentForm({
     )
   }
 
-  if (services === null) return <p className="text-[#8A8375]">Loading…</p>
+  if (services === null) return <p className="text-ink-muted">Loading…</p>
 
   if (services.length === 0) {
     return (
       <div className="space-y-4">
-        <p className="text-[#8A8375]">There are no active services to book yet.</p>
+        <p className="text-ink-muted">There are no active services to book yet.</p>
         <div className="flex justify-end">
           <button type="button" onClick={onClose} className={BTN}>
             Close
@@ -141,7 +141,7 @@ export function NewAppointmentForm({
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <label className="block text-[#8A8375]">
+      <label className="block text-ink-muted">
         Service
         <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className={FIELD} required>
           <option value="">Choose a service…</option>
@@ -153,7 +153,7 @@ export function NewAppointmentForm({
         </select>
       </label>
 
-      <label className="block text-[#8A8375]">
+      <label className="block text-ink-muted">
         Day
         <select value={date} onChange={(e) => setDate(e.target.value)} className={FIELD} required>
           {dates.map((d) => (
@@ -165,18 +165,18 @@ export function NewAppointmentForm({
       </label>
 
       <fieldset>
-        <legend className="text-[#8A8375]">Time</legend>
+        <legend className="text-ink-muted">Time</legend>
         <div className="mt-1" aria-live="polite">
           {!serviceId ? (
-            <p className="text-[#8A8375]">Choose a service to see free times.</p>
+            <p className="text-ink-muted">Choose a service to see free times.</p>
           ) : slotsLoading ? (
-            <p className="text-[#8A8375]">Checking availability…</p>
+            <p className="text-ink-muted">Checking availability…</p>
           ) : slotsError ? (
-            <p role="alert" className="text-[#7A2E2E]">
+            <p role="alert" className="text-accent">
               {slotsError}
             </p>
           ) : slots && slots.length === 0 ? (
-            <p className="text-[#8A8375]">No free times that day (closed, fully booked, or outside your booking rules).</p>
+            <p className="text-ink-muted">No free times that day (closed, fully booked, or outside your booking rules).</p>
           ) : (
             <div className="grid grid-cols-4 gap-2">
               {slots?.map((s) => (
@@ -187,8 +187,8 @@ export function NewAppointmentForm({
                   aria-pressed={slotStart === s.start}
                   className={`rounded-md border px-2 py-1.5 text-sm tabular-nums ${
                     slotStart === s.start
-                      ? "border-[#1C1A17] bg-[#1C1A17] text-[#FAF6EE]"
-                      : "border-[#D9D3C3] bg-white text-[#1C1A17] hover:bg-[#F3EEE2]"
+                      ? "border-ink bg-primary text-on-primary"
+                      : "border-line-strong bg-card text-ink hover:bg-tint"
                   }`}
                 >
                   {s.label}
@@ -199,7 +199,7 @@ export function NewAppointmentForm({
         </div>
       </fieldset>
 
-      <label className="block text-[#8A8375]">
+      <label className="block text-ink-muted">
         Customer phone
         <input
           value={phone}
@@ -212,13 +212,13 @@ export function NewAppointmentForm({
         />
       </label>
 
-      <label className="block text-[#8A8375]">
+      <label className="block text-ink-muted">
         Customer name (optional)
         <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" className={FIELD} />
       </label>
 
       {error && (
-        <p role="alert" className="rounded-md bg-[#7A2E2E]/10 px-3 py-2 text-[#7A2E2E]">
+        <p role="alert" className="rounded-md bg-accent/10 px-3 py-2 text-accent">
           {error}
         </p>
       )}

@@ -131,7 +131,7 @@ function ClockUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               href={clockUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-block text-sm font-medium text-[color:var(--sb-bg,#7A2E3A)] hover:underline"
+              className="inline-block text-sm font-medium text-[color:var(--sb-bg,var(--color-accent-alt))] hover:underline"
             >
               Open the clock-in pad ↗
             </a>
@@ -245,13 +245,13 @@ export function ClockPanel({
                     locked ? "cursor-not-allowed opacity-60 " : ""
                   }${
                     selected
-                      ? "border-[color:var(--sb-bg,#7A2E3A)] bg-[color-mix(in_srgb,var(--sb-bg,#7A2E3A)_6%,transparent)] ring-1 ring-[color:var(--sb-bg,#7A2E3A)]"
+                      ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))]"
                       : "border-stone-300 bg-stone-50 hover:bg-stone-100"
                   }`}
                 >
                   <span className="flex items-center gap-2">
                     <span className="h-4 w-4 shrink-0 rounded-full border border-stone-300" style={{ background: swatch }} />
-                    <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,#7A2E3A)]" : "text-stone-800"}`}>
+                    <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-stone-800"}`}>
                       {option.title}
                     </span>
                   </span>

@@ -95,14 +95,14 @@ export function CustomersManager({ timezone }: { timezone: string }) {
   }
 
   if (loading && !customers) {
-    return <p className="text-sm text-[#8A8375]">Loading your customers…</p>
+    return <p className="text-sm text-ink-muted">Loading your customers…</p>
   }
 
   if (error && !customers) {
     return (
       <div>
-        <p className="text-sm text-[#7A2E2E]">{error}</p>
-        <button onClick={() => setReloadKey((k) => k + 1)} className="mt-3 text-sm text-[#1C1A17] underline underline-offset-4">
+        <p className="text-sm text-accent">{error}</p>
+        <button onClick={() => setReloadKey((k) => k + 1)} className="mt-3 text-sm text-ink underline underline-offset-4">
           Try again
         </button>
       </div>
@@ -113,7 +113,7 @@ export function CustomersManager({ timezone }: { timezone: string }) {
 
   if (total === 0) {
     return (
-      <p className="text-[#8A8375]">
+      <p className="text-ink-muted">
         No customers yet. They appear here automatically when someone books or joins your queue.
       </p>
     )
@@ -123,7 +123,7 @@ export function CustomersManager({ timezone }: { timezone: string }) {
     <div>
       <div className="flex flex-wrap items-end gap-4">
         <div className="min-w-[12rem] flex-1">
-          <label className="block text-sm text-[#8A8375]">Search</label>
+          <label className="block text-sm text-ink-muted">Search</label>
           <input
             value={query}
             onChange={(e) => {
@@ -131,15 +131,15 @@ export function CustomersManager({ timezone }: { timezone: string }) {
               setVisible(PAGE_SIZE)
             }}
             placeholder="Name, phone or email"
-            className="mt-1 w-full border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
           />
         </div>
         <div>
-          <label className="block text-sm text-[#8A8375]">Sort by</label>
+          <label className="block text-sm text-ink-muted">Sort by</label>
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
-            className="mt-1 border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+            className="mt-1 border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
           >
             <option value="name">Name (A–Z)</option>
             <option value="bookings">Most visits</option>
@@ -149,49 +149,49 @@ export function CustomersManager({ timezone }: { timezone: string }) {
         <button
           onClick={() => setReloadKey((k) => k + 1)}
           disabled={loading}
-          className="pb-1 text-sm text-[#8A8375] disabled:opacity-50"
+          className="pb-1 text-sm text-ink-muted disabled:opacity-50"
         >
           {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
-      <p className="mt-4 text-sm text-[#8A8375]">
+      <p className="mt-4 text-sm text-ink-muted">
         {query.trim()
           ? `${filtered.length} of ${total} customers`
           : `${total} ${total === 1 ? "customer" : "customers"}`}
       </p>
 
       {filtered.length === 0 ? (
-        <p className="mt-6 text-[#8A8375]">No customers match &ldquo;{query.trim()}&rdquo;.</p>
+        <p className="mt-6 text-ink-muted">No customers match &ldquo;{query.trim()}&rdquo;.</p>
       ) : (
-        <ul className="mt-2 divide-y divide-[#E6E1D4]">
+        <ul className="mt-2 divide-y divide-line">
           {filtered.slice(0, visible).map((c) => (
             <li key={c.id} className="flex items-center justify-between gap-4 py-4">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#E6E1D4] text-sm font-medium text-[#1C1A17]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-line text-sm font-medium text-ink">
                   {initialOf(c)}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-[1.05rem] text-[#1C1A17]">{displayName(c)}</p>
-                  <p className="truncate text-sm text-[#8A8375]">
+                  <p className="truncate text-[1.05rem] text-ink">{displayName(c)}</p>
+                  <p className="truncate text-sm text-ink-muted">
                     {[c.name?.trim() ? c.phone : null, c.email].filter(Boolean).join(" · ") || "No contact details"}
                   </p>
                 </div>
               </div>
               <div className="shrink-0 text-right text-sm">
-                <p className="text-[#1C1A17]">
+                <p className="text-ink">
                   {c.bookingCount} {c.bookingCount === 1 ? "booking" : "bookings"}
                   {c.queueCount > 0 && (
-                    <span className="text-[#8A8375]">
+                    <span className="text-ink-muted">
                       {" "}
                       · {c.queueCount} walk-in{c.queueCount === 1 ? "" : "s"}
                     </span>
                   )}
                 </p>
                 {c.latestBookingAt && (
-                  <p className="mt-0.5 text-xs text-[#8A8375]">Latest: {formatDate(c.latestBookingAt)}</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">Latest: {formatDate(c.latestBookingAt)}</p>
                 )}
-                <button onClick={() => setDeleteTarget(c)} className="mt-1 text-xs text-[#7A2E2E]">
+                <button onClick={() => setDeleteTarget(c)} className="mt-1 text-xs text-accent">
                   Delete
                 </button>
               </div>
@@ -203,7 +203,7 @@ export function CustomersManager({ timezone }: { timezone: string }) {
       {filtered.length > visible && (
         <button
           onClick={() => setVisible((v) => v + PAGE_SIZE)}
-          className="mt-4 text-sm text-[#1C1A17] underline underline-offset-4"
+          className="mt-4 text-sm text-ink underline underline-offset-4"
         >
           Show more ({filtered.length - visible} left)
         </button>
@@ -214,7 +214,7 @@ export function CustomersManager({ timezone }: { timezone: string }) {
         title="Delete this customer?"
         message={
           <>
-            <span className="font-medium text-[#1C1A17]">{deleteTarget ? displayName(deleteTarget) : ""}</span> and
+            <span className="font-medium text-ink">{deleteTarget ? displayName(deleteTarget) : ""}</span> and
             their booking and queue history will be deleted for good. Your billing records are kept. This can&apos;t be
             undone.
           </>

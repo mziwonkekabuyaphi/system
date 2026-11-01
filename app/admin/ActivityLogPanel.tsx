@@ -88,7 +88,7 @@ export function ActivityLogPanel({
             key={c}
             onClick={() => setFilter(c)}
             className={`rounded px-3 py-1 text-xs capitalize ${
-              filter === c ? "bg-[#1C1A17] text-[#FAF6EE]" : "bg-[#F1ECDF] text-[#1C1A17]"
+              filter === c ? "bg-primary text-on-primary" : "bg-tint-2 text-ink"
             }`}
           >
             {c === "all" ? "All" : CATEGORY_LABELS[c]}
@@ -97,26 +97,26 @@ export function ActivityLogPanel({
         <button
           onClick={refresh}
           disabled={isRefreshing}
-          className="ml-auto text-xs text-[#8A8375] disabled:opacity-50"
+          className="ml-auto text-xs text-ink-muted disabled:opacity-50"
         >
           {isRefreshing ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
-      {error && <p className="text-sm text-[#7A2E2E]">{error}</p>}
+      {error && <p className="text-sm text-accent">{error}</p>}
 
       {visible.length === 0 ? (
-        <p className="text-sm text-[#8A8375]">No activity yet.</p>
+        <p className="text-sm text-ink-muted">No activity yet.</p>
       ) : (
-        <ul className="divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4]">
+        <ul className="divide-y divide-line rounded-lg border border-line">
           {visible.map((e) => (
             <li key={e.id} className="flex items-start justify-between gap-4 px-4 py-3">
               <div>
-                <p className="text-sm text-[#1C1A17]">
+                <p className="text-sm text-ink">
                   {e.action}
-                  {e.staffName && <span className="text-[#8A8375]"> · {e.staffName}</span>}
+                  {e.staffName && <span className="text-ink-muted"> · {e.staffName}</span>}
                 </p>
-                <p className="text-xs text-[#8A8375]">
+                <p className="text-xs text-ink-muted">
                   {CATEGORY_LABELS[e.category]} · {e.actorName ?? "Unknown"} · {timeAgo(e.createdAt)}
                 </p>
               </div>

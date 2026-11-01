@@ -38,17 +38,17 @@ export interface CounterStartInput {
 // Small shared bits (same look as ShishaManager)
 // --------------------------------------------------------------------------
 const FIELD =
-  `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER}`
+  `w-full rounded-md border border-line-strong bg-card px-3 py-2 text-sm text-ink outline-none ${BRAND_FOCUS_BORDER}`
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-2 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-2 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
   `rounded-md ${BRAND_BG} ${BRAND_ON} px-4 py-3 text-base font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 const BTN_DANGER =
-  "rounded-md bg-[#7A2E2E] px-3 py-2 text-sm font-medium text-white hover:bg-[#651F1F] disabled:cursor-not-allowed disabled:opacity-50"
-const CARD = "rounded-lg border border-[#E6E1D4] bg-white"
+  "rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-color hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+const CARD = "rounded-lg border border-line bg-card"
 const TILE_BASE =
   "min-h-[56px] rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-const TILE_OFF = "border-[#D9D3C3] bg-white text-[#1C1A17] hover:bg-[#F3EEE2]"
+const TILE_OFF = "border-line-strong bg-card text-ink hover:bg-tint"
 const TILE_ON = `${BRAND_BORDER} ${BRAND_BG} ${BRAND_ON}`
 
 const STATUS_LABEL: Record<ShishaDisplayStatus, string> = {
@@ -58,10 +58,10 @@ const STATUS_LABEL: Record<ShishaDisplayStatus, string> = {
   expired: "Time's up",
 }
 const STATUS_BADGE: Record<ShishaDisplayStatus, string> = {
-  active: "bg-[#4B6B54]/10 text-[#4B6B54]",
-  refill: "bg-[#9A6A12]/10 text-[#9A6A12]",
-  paused: "bg-[#1C1A17]/[0.07] text-[#6B6558]",
-  expired: "bg-[#7A2E2E]/10 text-[#7A2E2E]",
+  active: "bg-success/10 text-success",
+  refill: "bg-warn/10 text-warn",
+  paused: "bg-ink/[0.07] text-ink-soft",
+  expired: "bg-accent/10 text-accent",
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -98,9 +98,9 @@ const paymentLabel = paymentMethodLabel
  *  "No station" so the gap is visible rather than silently blank. */
 export function StationTag({ name, className = "" }: { name: string | null; className?: string }) {
   return name ? (
-    <span className={`font-semibold text-[#1C1A17] ${className}`}> · {name}</span>
+    <span className={`font-semibold text-ink ${className}`}> · {name}</span>
   ) : (
-    <span className={`font-normal text-[#8A8375] ${className}`}> · No station</span>
+    <span className={`font-normal text-ink-muted ${className}`}> · No station</span>
   )
 }
 
@@ -401,9 +401,9 @@ function QrScanner({ onResult, onClose }: { onResult: (raw: string) => void; onC
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Scan device QR code" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/85 p-4">
-      <p className="text-sm text-white">Point the camera at the QR code on the device.</p>
+      <p className="text-sm text-on-color">Point the camera at the QR code on the device.</p>
       <video ref={videoRef} playsInline muted className="max-h-[60vh] w-full max-w-md rounded-lg bg-black object-cover" />
-      {error && <p className="max-w-md rounded-md bg-[#7A2E2E] px-3 py-2 text-center text-sm text-white">{error}</p>}
+      {error && <p className="max-w-md rounded-md bg-accent px-3 py-2 text-center text-sm text-on-color">{error}</p>}
       <button type="button" onClick={onClose} className={BTN}>
         Cancel
       </button>
@@ -627,27 +627,27 @@ export function ShishaCounter({
       {/* ---------------- Needs attention ---------------- */}
       {attention.length > 0 && (
         <section
-          className="space-y-2 rounded-lg border border-[#7A2E2E]/30 bg-[#7A2E2E]/[0.06] p-3 lg:col-span-2"
+          className="space-y-2 rounded-lg border border-accent/30 bg-accent/[0.06] p-3 lg:col-span-2"
           aria-label="Needs attention"
         >
-          <h3 className="text-sm font-semibold text-[#7A2E2E]">
+          <h3 className="text-sm font-semibold text-accent">
             Needs attention <span className="font-normal">({attention.length})</span>
           </h3>
           <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {attention.map(({ s, remaining, signed, status }) => (
               <li
                 key={s.id}
-                className={`flex items-center justify-between gap-3 rounded-md border bg-white px-3 py-2 ${
-                  status === "expired" ? "border-[#7A2E2E]/40" : "border-[#9A6A12]/40"
+                className={`flex items-center justify-between gap-3 rounded-md border bg-card px-3 py-2 ${
+                  status === "expired" ? "border-accent/40" : "border-warn/40"
                 }`}
               >
                 <p className="min-w-0 truncate text-sm">
-                  <span className="font-semibold text-[#1C1A17]">{s.deviceCode}</span>
+                  <span className="font-semibold text-ink">{s.deviceCode}</span>
                   <StationTag name={s.stationName} />
                 </p>
                 <p
                   className={`shrink-0 text-sm font-semibold tabular-nums ${
-                    status === "expired" ? "text-[#7A2E2E]" : "text-[#9A6A12]"
+                    status === "expired" ? "text-accent" : "text-warn"
                   }`}
                 >
                   {status === "expired" ? `${formatCountdown(-signed)} over` : `${formatCountdown(remaining)} left`}
@@ -661,7 +661,7 @@ export function ShishaCounter({
       {/* ---------------- New session ---------------- */}
       <section className={`${CARD} space-y-5 p-4`} aria-label="New session">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">New session</h3>
+          <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">New session</h3>
           <button type="button" onClick={() => setScanOpen(true)} disabled={busy || snap.devices.length === 0} className={BTN}>
             Scan QR
           </button>
@@ -670,14 +670,14 @@ export function ShishaCounter({
         {flash && (
           <p
             role={flash.kind === "error" ? "alert" : "status"}
-            className={`rounded-md px-3 py-2 text-sm ${flash.kind === "error" ? "bg-[#7A2E2E]/10 text-[#7A2E2E]" : "bg-[#4B6B54]/10 text-[#4B6B54]"}`}
+            className={`rounded-md px-3 py-2 text-sm ${flash.kind === "error" ? "bg-accent/10 text-accent" : "bg-success/10 text-success"}`}
           >
             {flash.text}
           </p>
         )}
 
         {noSetup ? (
-          <p className="text-sm text-[#8A8375]">
+          <p className="text-sm text-ink-muted">
             {flavours.length === 0
               ? "No flavours are in stock yet. A manager needs to add one first."
               : "No devices have been added yet. A manager needs to add one first."}
@@ -685,7 +685,7 @@ export function ShishaCounter({
         ) : (
           <>
             <div className="space-y-2">
-              <p className="text-sm text-[#8A8375]">Flavour</p>
+              <p className="text-sm text-ink-muted">Flavour</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {flavours.map((f) => (
                   <button
@@ -704,12 +704,12 @@ export function ShishaCounter({
 
             {activeStations.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm text-[#8A8375]">
+                <p className="text-sm text-ink-muted">
                   Station
                   {stationRequired && (
                     <>
                       {" "}
-                      <span className="font-medium text-[#7A2E2E]" aria-hidden>
+                      <span className="font-medium text-accent" aria-hidden>
                         * required
                       </span>
                       <span className="sr-only">(required)</span>
@@ -739,15 +739,15 @@ export function ShishaCounter({
                   })}
                 </div>
                 {stationMissing && flavour && device && (
-                  <p className="text-xs text-[#7A2E2E]">Pick where this customer is sitting to start the session.</p>
+                  <p className="text-xs text-accent">Pick where this customer is sitting to start the session.</p>
                 )}
               </div>
             )}
 
             <div className="space-y-2">
-              <p className="text-sm text-[#8A8375]">Device</p>
+              <p className="text-sm text-ink-muted">Device</p>
               {freeDevices.length === 0 ? (
-                <p className="text-sm text-[#7A2E2E]">Every device is in use or under maintenance.</p>
+                <p className="text-sm text-accent">Every device is in use or under maintenance.</p>
               ) : (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {freeDevices.map((d) => (
@@ -767,7 +767,7 @@ export function ShishaCounter({
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-[#8A8375]">Paid by</p>
+              <p className="text-sm text-ink-muted">Paid by</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {PAYMENT_METHODS.map((m) => (
                   <button
@@ -784,7 +784,7 @@ export function ShishaCounter({
             </div>
 
             <label className="block space-y-1 text-sm">
-              <span className="text-[#8A8375]">Customer cellphone (optional)</span>
+              <span className="text-ink-muted">Customer cellphone (optional)</span>
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -804,8 +804,8 @@ export function ShishaCounter({
                   : "Pick a flavour and a device"}
             </button>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E6E1D4] pt-3 text-sm">
-              <label className="flex items-center gap-2 text-[#1C1A17]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">
+              <label className="flex items-center gap-2 text-ink">
                 <input type="checkbox" checked={autoPrint} onChange={(e) => changeAutoPrint(e.target.checked)} />
                 Print receipt when a session starts
               </label>
@@ -824,23 +824,23 @@ export function ShishaCounter({
 
       {/* ---------------- Live sessions ---------------- */}
       <section className="space-y-3" aria-label="Live sessions">
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
-          Live now <span className="text-sm text-[#8A8375]">({rows.length})</span>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
+          Live now <span className="text-sm text-ink-muted">({rows.length})</span>
         </h3>
 
         {rows.length === 0 && (
-          <div className={`${CARD} px-4 py-8 text-center text-sm text-[#8A8375]`}>No live sessions. Start one on the left.</div>
+          <div className={`${CARD} px-4 py-8 text-center text-sm text-ink-muted`}>No live sessions. Start one on the left.</div>
         )}
 
         {rows.map(({ s, remaining, status }) => (
           <article key={s.id} className={`${CARD} p-4`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-base font-medium text-[#1C1A17]">
+                <p className="text-base font-medium text-ink">
                   {s.deviceCode}
                   <StationTag name={s.stationName} />
                 </p>
-                <p className="truncate text-sm text-[#8A8375]">
+                <p className="truncate text-sm text-ink-muted">
                   {s.flavourName} · {formatMoney(s.totalAmount, snap.currency)}
                   {s.refillCount > 0
                     ? ` · ${s.refillCount} refill${s.refillCount === 1 ? "" : "s"}${
@@ -848,13 +848,13 @@ export function ShishaCounter({
                       }`
                     : ""}
                 </p>
-                <p className="truncate text-xs text-[#8A8375]">
+                <p className="truncate text-xs text-ink-muted">
                   {s.customerName || s.customerPhone || "Walk-in"}
                   {s.paymentMethod ? ` · ${paymentLabel(s.paymentMethod)}` : " · payment not recorded"}
                 </p>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-2xl font-semibold tabular-nums text-[#1C1A17]">{formatCountdown(remaining)}</p>
+                <p className="text-2xl font-semibold tabular-nums text-ink">{formatCountdown(remaining)}</p>
                 <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[status]}`}>{STATUS_LABEL[status]}</span>
               </div>
             </div>
@@ -898,8 +898,8 @@ export function ShishaCounter({
             </div>
 
             {refillConfirmId === s.id && (
-              <div className="mt-3 space-y-3 rounded-md bg-[#F3EEE2] p-3">
-                <p className="text-sm text-[#1C1A17]">
+              <div className="mt-3 space-y-3 rounded-md bg-tint p-3">
+                <p className="text-sm text-ink">
                   A refill adds {formatMoney(s.refillPrice, snap.currency)} (total becomes{" "}
                   {formatMoney(s.totalAmount + s.refillPrice, snap.currency)}). Collect it from the customer.
                 </p>
@@ -923,16 +923,16 @@ export function ShishaCounter({
             )}
 
             {endingId === s.id && (
-              <div className="mt-3 space-y-3 rounded-md bg-[#F3EEE2] p-3">
+              <div className="mt-3 space-y-3 rounded-md bg-tint p-3">
                 {s.paymentMethod ? (
-                  <p className="text-sm text-[#1C1A17]">
+                  <p className="text-sm text-ink">
                     Already paid by {paymentLabel(s.paymentMethod)}.
                     {s.refillTotal > 0 ? ` Refills added since (${formatMoney(s.refillTotal, snap.currency)}): make sure that was collected.` : ""}{" "}
                     The device becomes available again.
                   </p>
                 ) : (
                   <label className="block space-y-1 text-sm">
-                    <span className="text-[#8A8375]">Paid by</span>
+                    <span className="text-ink-muted">Paid by</span>
                     <select value={endMethod} onChange={(e) => setEndMethod(e.target.value)} className={FIELD}>
                       {PAYMENT_METHODS.map((m) => (
                         <option key={m.value} value={m.value}>

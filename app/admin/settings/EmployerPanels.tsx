@@ -64,7 +64,7 @@ export function EmployerDetailsPanel() {
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
       <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Employer details</p>
       <p className="text-sm text-stone-500">
         Printed on staff payslips. Your address, phone and email come from the contact details above. Only people with

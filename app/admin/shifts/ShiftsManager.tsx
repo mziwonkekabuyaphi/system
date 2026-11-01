@@ -65,8 +65,8 @@ function SubDrawer(props: ComponentProps<typeof AdminDrawer>) {
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-const CARD = "rounded-lg border border-[#E6E1D4] bg-white"
-const MUTED = "text-sm text-[#8A8375]"
+const CARD = "rounded-lg border border-line bg-card"
+const MUTED = "text-sm text-ink-muted"
 
 const addDays = (key: string, n: number) => {
   const d = new Date(`${key}T00:00:00Z`)
@@ -123,7 +123,7 @@ export function ShiftsManager({ timezone, embedded = false }: { timezone: string
   return (
     <div className={embedded ? "space-y-4" : "space-y-4 pt-4"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {!embedded && <h1 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Shifts</h1>}
+        {!embedded && <h1 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Shifts</h1>}
         <DrawerTabs
           label="Shifts sections"
           value={tab}
@@ -265,10 +265,10 @@ function Rota({
         <div className={`${CARD} overflow-x-auto`}>
           <table className="min-w-full border-collapse text-xs">
             <thead>
-              <tr className="bg-[#F3EEE2] text-left text-[#1C1A17]">
-                <th className="sticky left-0 z-10 min-w-[120px] bg-[#F3EEE2] px-3 py-2">Staff</th>
+              <tr className="bg-tint text-left text-ink">
+                <th className="sticky left-0 z-10 min-w-[120px] bg-tint px-3 py-2">Staff</th>
                 {days.map((d) => (
-                  <th key={d} className={`min-w-[96px] px-2 py-2 font-medium ${d === today ? "text-[#1C1A17] underline" : ""}`}>
+                  <th key={d} className={`min-w-[96px] px-2 py-2 font-medium ${d === today ? "text-ink underline" : ""}`}>
                     {prettyDate(d)}
                   </th>
                 ))}
@@ -276,17 +276,17 @@ function Rota({
             </thead>
             <tbody>
               {data.staff.map((st) => (
-                <tr key={st.id} className="border-t border-[#E6E1D4] align-top">
-                  <td className="sticky left-0 bg-white px-3 py-2">
-                    <div className="font-medium text-[#1C1A17]">{st.name}</div>
-                    {st.jobTitle && <div className="text-[#8A8375]">{st.jobTitle}</div>}
+                <tr key={st.id} className="border-t border-line align-top">
+                  <td className="sticky left-0 bg-card px-3 py-2">
+                    <div className="font-medium text-ink">{st.name}</div>
+                    {st.jobTitle && <div className="text-ink-muted">{st.jobTitle}</div>}
                   </td>
                   {days.map((d) => {
                     const cell = shifts.filter((s) => s.staffId === st.id && s.date === d)
                     return (
                       <td
                         key={d}
-                        className="cursor-pointer px-1.5 py-1.5 hover:bg-[#FBF9F3]"
+                        className="cursor-pointer px-1.5 py-1.5 hover:bg-panel"
                         onClick={() => setEditing({ staffId: st.id, date: d })}
                       >
                         <div className="space-y-1">
@@ -301,13 +301,13 @@ function Rota({
                                   setEditing({ shift: s, staffId: st.id, date: d })
                                 }}
                                 className="block w-full rounded border px-1.5 py-1 text-left"
-                                style={{ borderColor: tpl?.color ?? "#D9D3C3", background: tpl?.color ? `${tpl.color}22` : "#F3EEE2" }}
+                                style={{ borderColor: tpl?.color ?? "var(--color-line-strong)", background: tpl?.color ? `${tpl.color}22` : "var(--color-tint)" }}
                               >
                                 <div className="font-medium">
                                   {s.startTime}–{s.endTime}
                                 </div>
-                                {tpl && <div className="text-[#8A8375]">{tpl.name}</div>}
-                                {s.status === "swapped" && <div className="text-[#8A8375]">swapped</div>}
+                                {tpl && <div className="text-ink-muted">{tpl.name}</div>}
+                                {s.status === "swapped" && <div className="text-ink-muted">swapped</div>}
                                 {attendanceBadge(attByShift.get(s.id))}
                               </button>
                             )
@@ -634,7 +634,7 @@ function MyShifts({ data, timezone, onChange }: { data: ShiftsData; timezone: st
       {mine.map((s) => (
         <div key={s.id} className={`${CARD} flex items-center justify-between gap-3 px-4 py-3`}>
           <div>
-            <p className="text-sm font-medium text-[#1C1A17]">{prettyDate(s.date)}</p>
+            <p className="text-sm font-medium text-ink">{prettyDate(s.date)}</p>
             <p className={MUTED}>
               {s.startTime}–{s.endTime}
               {s.note ? ` · ${s.note}` : ""}
@@ -700,10 +700,10 @@ function SwapRequestDrawer({ shift, onClose, onDone }: { shift: ScheduledShift; 
               type="button"
               aria-pressed={selected}
               onClick={() => setPick(c)}
-              className={`w-full rounded-lg border p-3 text-left text-sm ${selected ? "border-[#1C1A17] bg-white" : "border-[#D9D3C3] bg-white hover:bg-[#F3EEE2]"}`}
+              className={`w-full rounded-lg border p-3 text-left text-sm ${selected ? "border-ink bg-card" : "border-line-strong bg-card hover:bg-tint"}`}
             >
               <span className="font-medium">{c.staffName}</span>
-              <span className="block text-xs text-[#8A8375]">
+              <span className="block text-xs text-ink-muted">
                 {c.shiftId && c.date ? `Swap for their ${prettyDate(c.date)} ${c.startTime}–${c.endTime}` : "Just take my shift"}
               </span>
             </button>
@@ -749,11 +749,11 @@ function Swaps({ data, onChange }: { data: ShiftsData; onChange: () => Promise<v
         return (
           <div key={s.id} className={`${CARD} space-y-2 px-4 py-3`}>
             <div className="flex items-start justify-between gap-3">
-              <p className="text-sm text-[#1C1A17]">
+              <p className="text-sm text-ink">
                 <span className="font-medium">{name(s.requesterStaffId)}</span> wants <span className="font-medium">{name(s.targetStaffId)}</span> to take {shiftText(s.shiftId)}
                 {s.targetShiftId ? ` in exchange for ${shiftText(s.targetShiftId)}` : ""}.
               </p>
-              <span className="shrink-0 rounded bg-[#F3EEE2] px-2 py-0.5 text-xs">{SWAP_LABEL[s.status]}</span>
+              <span className="shrink-0 rounded bg-tint px-2 py-0.5 text-xs">{SWAP_LABEL[s.status]}</span>
             </div>
             {s.requesterNote && <p className={MUTED}>“{s.requesterNote}”</p>}
             {s.reviewNote && <p className={MUTED}>Manager: {s.reviewNote}</p>}
@@ -809,7 +809,7 @@ function Setup({ data, onChange }: { data: ShiftsData; onChange: () => Promise<v
     <div className="grid gap-4 lg:grid-cols-2">
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[#1C1A17]">Shift types</h2>
+          <h2 className="text-sm font-semibold text-ink">Shift types</h2>
           <button className={DRAWER_BTN_PRIMARY} onClick={() => setEditing("new")}>
             Add shift type
           </button>
@@ -819,7 +819,7 @@ function Setup({ data, onChange }: { data: ShiftsData; onChange: () => Promise<v
         {data.templates.map((t) => (
           <div key={t.id} className={`${CARD} flex items-center justify-between gap-3 px-4 py-2.5 ${t.active ? "" : "opacity-60"}`}>
             <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full border border-[#D9D3C3]" style={{ background: t.color ?? "#F3EEE2" }} />
+              <span className="h-3 w-3 rounded-full border border-line-strong" style={{ background: t.color ?? "var(--color-tint)" }} />
               <div>
                 <p className="text-sm font-medium">{t.name}</p>
                 <p className={MUTED}>
@@ -876,7 +876,7 @@ function TemplateDrawer({ template, onClose, onDone }: { template: ShiftTemplate
           </DrawerField>
         </div>
         <DrawerField label="Colour">
-          <input type="color" className="h-9 w-16 rounded border border-[#D9D3C3]" value={color} onChange={(e) => setColor(e.target.value)} />
+          <input type="color" className="h-9 w-16 rounded border border-line-strong" value={color} onChange={(e) => setColor(e.target.value)} />
         </DrawerField>
         <Msg text={act.msg} />
       </div>
@@ -894,7 +894,7 @@ function SettingsCard({ settings, onChange }: { settings: ShiftSettings; onChang
   )
   return (
     <section className={`${CARD} space-y-3 p-4`}>
-      <h2 className="text-sm font-semibold text-[#1C1A17]">Attendance & swap rules</h2>
+      <h2 className="text-sm font-semibold text-ink">Attendance & swap rules</h2>
       {num("lateGraceMinutes", "Late after (minutes)", "Clocking in later than this after the start counts as late.")}
       {num("noShowAfterMinutes", "No-show after (minutes)", "No clock-in by then marks the shift a no-show.")}
       {num("earlyClockInMinutes", "Early clock-in allowed (minutes)", "How early before the start someone can clock in for the shift.")}

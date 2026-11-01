@@ -18,7 +18,7 @@ import type { AdminInboxStats } from "./types"
 
 function MetricCard({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-stone-400">{label}</p>
       <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-2xl text-stone-900">{value}</p>
     </div>
@@ -33,7 +33,7 @@ function VolumeChart({ volumeByDay }: { volumeByDay: AdminInboxStats["volumeByDa
   const max = Math.max(1, ...volumeByDay.map((d) => d.incoming + d.outgoing))
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4">
       <p className="mb-3 text-sm font-medium text-stone-700">Messages, last 7 days</p>
       <div className="flex items-end justify-between gap-2" style={{ height: 120 }}>
         {volumeByDay.map((d) => {
@@ -42,8 +42,8 @@ function VolumeChart({ volumeByDay }: { volumeByDay: AdminInboxStats["volumeByDa
           return (
             <div key={d.date} className="flex flex-1 flex-col items-center gap-1">
               <div className="flex h-24 w-full items-end justify-center gap-0.5">
-                <div className="w-2.5 rounded-t bg-[#7A2E3A]" style={{ height: `${incomingHeight}%` }} />
-                <div className="w-2.5 rounded-t bg-[#4B6B54]" style={{ height: `${outgoingHeight}%` }} />
+                <div className="w-2.5 rounded-t bg-accent-alt" style={{ height: `${incomingHeight}%` }} />
+                <div className="w-2.5 rounded-t bg-success" style={{ height: `${outgoingHeight}%` }} />
               </div>
               <span className="text-[11px] text-stone-400">{formatDayLabel(d.date)}</span>
             </div>
@@ -52,10 +52,10 @@ function VolumeChart({ volumeByDay }: { volumeByDay: AdminInboxStats["volumeByDa
       </div>
       <div className="mt-3 flex items-center gap-4 text-xs text-stone-500">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full bg-[#7A2E3A]" /> Incoming
+          <span className="inline-block h-2 w-2 rounded-full bg-accent-alt" /> Incoming
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full bg-[#4B6B54]" /> Outgoing
+          <span className="inline-block h-2 w-2 rounded-full bg-success" /> Outgoing
         </span>
       </div>
     </div>
@@ -65,7 +65,7 @@ function VolumeChart({ volumeByDay }: { volumeByDay: AdminInboxStats["volumeByDa
 function TopCustomers({ topCustomers }: { topCustomers: AdminInboxStats["topCustomers"] }) {
   if (topCustomers.length === 0) {
     return (
-      <div className="rounded-2xl border border-stone-200 bg-white p-4">
+      <div className="rounded-2xl border border-stone-200 bg-card p-4">
         <p className="text-sm font-medium text-stone-700">Most active customers</p>
         <p className="mt-2 text-sm text-stone-400">No messages in the recent sample yet.</p>
       </div>
@@ -75,7 +75,7 @@ function TopCustomers({ topCustomers }: { topCustomers: AdminInboxStats["topCust
   const max = topCustomers[0].messageCount
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4">
       <p className="mb-3 text-sm font-medium text-stone-700">Most active customers</p>
       <div className="space-y-2">
         {topCustomers.map((c) => (
@@ -83,7 +83,7 @@ function TopCustomers({ topCustomers }: { topCustomers: AdminInboxStats["topCust
             <span className="w-24 shrink-0 truncate text-sm text-stone-700">{c.name}</span>
             <div className="h-2 flex-1 rounded-full bg-stone-100">
               <div
-                className="h-2 rounded-full bg-[#7A2E3A]"
+                className="h-2 rounded-full bg-accent-alt"
                 style={{ width: `${(c.messageCount / max) * 100}%` }}
               />
             </div>

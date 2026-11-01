@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Admin theme colours — the cream theme (the current look).
+   Every value is the EXACT colour it replaced, so nothing changes visually.
+   A second theme (Rands dark) overrides these same names; see step 2.
+   Used as Tailwind colours: text-ink, bg-card, border-line, ring-accent, ...
+   ========================================================================== */
+@theme {
+  /* text */
+  --color-ink: #1c1a17;            /* main text */
+  --color-ink-soft: #6b6558;       /* secondary text */
+  --color-ink-muted: #8a8375;      /* captions, hints */
+  --color-on-primary: #faf6ee;     /* text on a primary (dark) button */
+  --color-on-color: #ffffff;       /* text on a coloured button */
+
+  /* surfaces */
+  --color-card: #ffffff;           /* cards, inputs, tables */
+  --color-panel: #fbf9f3;          /* drawer panels */
+  --color-dialog: #faf6ee;         /* modal dialogs */
+  --color-canvas: #faf8f3;         /* quiet section backgrounds */
+  --color-tint: #f3eee2;           /* hover rows, chips */
+  --color-tint-2: #f1ecdf;
+  --color-tint-3: #ede8da;
+
+  /* lines */
+  --color-line: #e6e1d4;           /* dividers, card borders */
+  --color-line-strong: #d9d3c3;    /* input borders */
+
+  /* primary button */
+  --color-primary: #1c1a17;
+  --color-primary-hover: #33302a;
+  --color-primary-hover-strong: #000000;
+
+  /* brand accent (burgundy) and its alternate */
+  --color-accent: #7a2e2e;
+  --color-accent-hover: #651f1f;
+  --color-accent-hover-2: #662525;
+  --color-accent-alt: #7a2e3a;
+  --color-accent-alt-hover: #651f2a;
+
+  /* status */
+  --color-success: #4b6b54;
+  --color-success-hover: #3d5745;
+  --color-success-soft: #e1ede0;
+  --color-success-strong: #2f5d2e;
+  --color-success-alt: #2b6f5c;
+  --color-warn: #9a6a12;
+  --color-warn-strong: #5c4a12;
+  --color-warn-soft: #fbf3dc;
+  --color-warn-soft-2: #fbf5e8;
+  --color-warn-line: #e3c98a;
+  --color-warn-alt: #a66a1e;
+  --color-danger: #b3402a;
+  --color-danger-soft: #f3e3e0;
+  --color-danger-line: #e0b4ad;
+  --color-info: #2557a7;
+}

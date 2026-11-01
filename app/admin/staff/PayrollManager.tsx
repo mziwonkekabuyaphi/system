@@ -69,9 +69,9 @@ type Banner = { tone: "info" | "error"; text: string }
 type Confirm = { kind: "one"; record: AdminPayrollRecord } | { kind: "all" } | null
 
 const btnPrimary =
-  "rounded-lg bg-[#1C1A17] px-4 py-2 text-sm text-[#FAF6EE] transition-colors hover:bg-[#33302A] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-lg bg-primary px-4 py-2 text-sm text-on-primary transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
 const btnSecondary =
-  "rounded-lg border border-[#D9D3C3] px-3 py-2 text-sm text-[#1C1A17] transition-colors hover:bg-[#F1ECDF] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-lg border border-line-strong px-3 py-2 text-sm text-ink transition-colors hover:bg-tint-2 disabled:cursor-not-allowed disabled:opacity-50"
 
 export function PayrollManager({
   timezone,
@@ -218,10 +218,10 @@ export function PayrollManager({
   return (
     <div className="space-y-5">
       {/* ---- Period ---- */}
-      <section className="rounded-xl border border-[#E6E1D4] bg-[#FAF6EE] p-4">
+      <section className="rounded-xl border border-line bg-dialog p-4">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <p className="text-sm text-[#8A8375]">Pay period</p>
+            <p className="text-sm text-ink-muted">Pay period</p>
             <div className="mt-1 flex flex-wrap gap-1" role="group" aria-label="Pay period">
               {PRESETS.map((p) => (
                 <button
@@ -231,8 +231,8 @@ export function PayrollManager({
                   aria-pressed={preset === p.id}
                   className={`rounded-full border px-3 py-1.5 text-sm ${
                     preset === p.id
-                      ? "border-[#1C1A17] bg-[#1C1A17] text-[#FAF6EE]"
-                      : "border-[#D9D3C3] text-[#1C1A17] hover:bg-[#F1ECDF]"
+                      ? "border-ink bg-primary text-on-primary"
+                      : "border-line-strong text-ink hover:bg-tint-2"
                   }`}
                 >
                   {p.label}
@@ -241,7 +241,7 @@ export function PayrollManager({
             </div>
           </div>
 
-          <label className="text-sm text-[#8A8375]">
+          <label className="text-sm text-ink-muted">
             From
             <input
               type="date"
@@ -250,10 +250,10 @@ export function PayrollManager({
                 setPreset("custom")
                 setStart(e.target.value)
               }}
-              className="mt-1 block border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 block border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </label>
-          <label className="text-sm text-[#8A8375]">
+          <label className="text-sm text-ink-muted">
             To
             <input
               type="date"
@@ -262,7 +262,7 @@ export function PayrollManager({
                 setPreset("custom")
                 setEnd(e.target.value)
               }}
-              className="mt-1 block border-b border-[#D9D3C3] bg-transparent pb-1 text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+              className="mt-1 block border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </label>
 
@@ -272,7 +272,7 @@ export function PayrollManager({
             </button>
           )}
         </div>
-        <p className="mt-3 text-xs text-[#8A8375]">
+        <p className="mt-3 text-xs text-ink-muted">
           {rangeValid ? `${fmtDay(start)} to ${fmtDay(end)}` : "Choose a valid start and end date."} Hours are counted from
           completed shifts whose clock-in falls in this period (shop time). Commission is counted on services completed in
           this period, at each service&apos;s list price. Recalculating replaces unpaid rows; rows already marked paid are kept.
@@ -281,7 +281,7 @@ export function PayrollManager({
 
       {/* ---- Warnings / messages ---- */}
       {openShifts.length > 0 && (
-        <div role="alert" className="rounded-lg border border-[#E3C98A] bg-[#FBF3DC] p-4 text-sm text-[#5C4A12]">
+        <div role="alert" className="rounded-lg border border-warn-line bg-warn-soft p-4 text-sm text-warn-strong">
           <p className="font-semibold">
             {openShifts.length === 1 ? "1 shift is still open" : `${openShifts.length} shifts are still open`} in this period
           </p>
@@ -296,7 +296,7 @@ export function PayrollManager({
       )}
 
       {unattributed > 0 && (
-        <div role="alert" className="rounded-lg border border-[#E3C98A] bg-[#FBF3DC] p-4 text-sm text-[#5C4A12]">
+        <div role="alert" className="rounded-lg border border-warn-line bg-warn-soft p-4 text-sm text-warn-strong">
           <p className="font-semibold">
             {unattributed === 1 ? "1 walk-in has" : `${unattributed} walk-ins have`} no staff member recorded
           </p>
@@ -312,7 +312,7 @@ export function PayrollManager({
         <div
           role={banner.tone === "error" ? "alert" : "status"}
           className={`rounded-lg border p-4 text-sm ${
-            banner.tone === "error" ? "border-[#E0B4AD] bg-[#F3E3E0] text-[#7A2E2E]" : "border-[#D9D3C3] bg-[#F1ECDF] text-[#1C1A17]"
+            banner.tone === "error" ? "border-danger-line bg-danger-soft text-accent" : "border-line-strong bg-tint-2 text-ink"
           }`}
         >
           {banner.text}
@@ -320,7 +320,7 @@ export function PayrollManager({
       )}
 
       {loadError && (
-        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-[#E0B4AD] bg-[#F3E3E0] p-4 text-sm text-[#7A2E2E]">
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-danger-line bg-danger-soft p-4 text-sm text-accent">
           <span>{loadError}</span>
           {rangeValid && (
             <button type="button" onClick={() => void load()} className={btnSecondary}>
@@ -331,12 +331,12 @@ export function PayrollManager({
       )}
 
       {/* ---- Table ---- */}
-      {loading && records === null && !loadError && <p className="text-sm text-[#8A8375]">Loading payroll…</p>}
+      {loading && records === null && !loadError && <p className="text-sm text-ink-muted">Loading payroll…</p>}
 
       {!loading && !loadError && rangeValid && rows.length === 0 && (
-        <div className="rounded-xl border border-dashed border-[#D9D3C3] p-8 text-center">
-          <p className="text-[#1C1A17]">No payroll calculated for this period yet.</p>
-          <p className="mt-1 text-sm text-[#8A8375]">
+        <div className="rounded-xl border border-dashed border-line-strong p-8 text-center">
+          <p className="text-ink">No payroll calculated for this period yet.</p>
+          <p className="mt-1 text-sm text-ink-muted">
             {permissions.payrollManage
               ? "Choose “Calculate payroll” to work it out from completed shifts and commission. If nobody has pay due in these dates, you'll be told."
               : "Someone with payroll management access needs to calculate it first."}
@@ -347,7 +347,7 @@ export function PayrollManager({
       {rows.length > 0 && (
         <section>
           <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
-            <label className="flex items-center gap-2 text-sm text-[#8A8375]">
+            <label className="flex items-center gap-2 text-sm text-ink-muted">
               <input type="checkbox" checked={includeBank} onChange={(e) => setIncludeBank(e.target.checked)} />
               Show bank details on unpaid payslips (last 4 digits only; paid payslips always include them)
             </label>
@@ -373,9 +373,9 @@ export function PayrollManager({
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-[#E6E1D4]">
+          <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full min-w-[940px] text-sm">
-              <thead className="bg-[#F1ECDF] text-left text-xs uppercase tracking-wide text-[#8A8375]">
+              <thead className="bg-tint-2 text-left text-xs uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-3 py-2.5 font-medium">Staff</th>
                   <th className="px-3 py-2.5 text-right font-medium">Hours</th>
@@ -390,15 +390,15 @@ export function PayrollManager({
                   <th className="px-3 py-2.5 text-right font-medium">Payslip</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E6E1D4] bg-white/50">
+              <tbody className="divide-y divide-line bg-white/50">
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td className="px-3 py-2.5">
-                      <p className="text-[#1C1A17]">{r.staffName}</p>
-                      {r.jobTitle && <p className="text-xs text-[#8A8375]">{r.jobTitle}</p>}
-                      {payBasisLine(r) && <p className="max-w-[260px] text-xs text-[#8A8375]">{payBasisLine(r)}</p>}
+                      <p className="text-ink">{r.staffName}</p>
+                      {r.jobTitle && <p className="text-xs text-ink-muted">{r.jobTitle}</p>}
+                      {payBasisLine(r) && <p className="max-w-[260px] text-xs text-ink-muted">{payBasisLine(r)}</p>}
                       {(r.payType ?? "hourly") !== "commission" && r.hourlyRate === 0 && (
-                        <p className="text-xs text-[#7A2E2E]">No hourly rate set</p>
+                        <p className="text-xs text-accent">No hourly rate set</p>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
@@ -417,11 +417,11 @@ export function PayrollManager({
                     <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{rand.format(r.finalPay)}</td>
                     <td className="px-3 py-2.5">
                       {r.paymentStatus === "paid" ? (
-                        <span className="inline-block rounded-full bg-[#E1EDE0] px-2 py-0.5 text-xs text-[#2F5D2E]">
+                        <span className="inline-block rounded-full bg-success-soft px-2 py-0.5 text-xs text-success-strong">
                           Paid{r.paidAt ? ` ${fmtDay(dateKeyInTz(r.paidAt, timezone))}` : ""}
                         </span>
                       ) : (
-                        <span className="inline-block rounded-full bg-[#FBF3DC] px-2 py-0.5 text-xs text-[#5C4A12]">Pending</span>
+                        <span className="inline-block rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn-strong">Pending</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5">
@@ -444,7 +444,7 @@ export function PayrollManager({
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-[#F1ECDF] font-semibold">
+              <tfoot className="bg-tint-2 font-semibold">
                 <tr>
                   <td className="px-3 py-2.5">Total</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{num.format(totals.hours)}</td>
@@ -460,7 +460,7 @@ export function PayrollManager({
               </tfoot>
             </table>
           </div>
-          <p className="mt-2 text-xs text-[#8A8375]">
+          <p className="mt-2 text-xs text-ink-muted">
             * PAYE and UIF are estimates (SARS tables, annualised method, single taxpayer under 65, no medical-aid or retirement
             deductions), not official SARS figures. Commission makes pay vary from month to month, which this method
             doesn&apos;t account for, so PAYE can be over- or under-estimated in unusual months. Confirm with your

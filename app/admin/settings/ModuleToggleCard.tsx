@@ -55,7 +55,7 @@ export function ModuleToggleCard({
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</p>

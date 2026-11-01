@@ -37,12 +37,12 @@ import {
 import { calculateBilling, formatCents, formatCentsCompact, type BillingCalculation } from "@/lib/services/billing-calculator"
 import type { Plan, PlanUsage } from "@/lib/services/plans"
 
-const INK = "#1C1A17"
-const MUTED = "#8A8375"
-const LINE = "#E6E1D4"
-const ACCENT = "#7A2E2E"
-const SUCCESS = "#2B6F5C"
-const AMBER = "#A66A1E"
+const INK = "var(--color-ink)"
+const MUTED = "var(--color-ink-muted)"
+const LINE = "var(--color-line)"
+const ACCENT = "var(--color-accent)"
+const SUCCESS = "var(--color-success-alt)"
+const AMBER = "var(--color-warn-alt)"
 
 type UsageState = "normal" | "near" | "overage" | "blocked"
 
@@ -133,8 +133,8 @@ export function BillingPanel() {
     await load()
   }
 
-  if (loading) return <p className="text-[#8A8375]">Loading billing information…</p>
-  if (error || !summary) return <p className="text-[#7A2E2E]">{error ?? "Couldn't load billing information."}</p>
+  if (loading) return <p className="text-ink-muted">Loading billing information…</p>
+  if (error || !summary) return <p className="text-accent">{error ?? "Couldn't load billing information."}</p>
 
   const {
     currentPlan,
@@ -163,7 +163,7 @@ export function BillingPanel() {
       )}
 
       {runsBookingQueue && pendingRequest && (
-        <div className="rounded-xl border border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm text-[#1C1A17]">
+        <div className="rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink">
           Upgrade to <span className="font-semibold capitalize">{pendingRequest.requestedPlanKey}</span> requested — we'll be
           in touch shortly.
         </div>
@@ -190,7 +190,7 @@ export function BillingPanel() {
       )}
 
       {!runsBookingQueue && !shisha && (
-        <p className="rounded-xl border border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm text-[#8A8375]">
+        <p className="rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink-muted">
           No billable modules are switched on for your shop yet.
         </p>
       )}
@@ -239,17 +239,17 @@ function PanelHeader({
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p className="text-sm text-[#8A8375]">Current plan</p>
+        <p className="text-sm text-ink-muted">Current plan</p>
         <div className="mt-1 flex items-center gap-3">
-          <h2 className="text-2xl font-semibold text-[#1C1A17]">{currentPlan.name}</h2>
+          <h2 className="text-2xl font-semibold text-ink">{currentPlan.name}</h2>
           <StatusBadge status={billingStatus} />
         </div>
-        <p className="mt-1 text-sm text-[#8A8375]">{billingLine}</p>
+        <p className="mt-1 text-sm text-ink-muted">{billingLine}</p>
       </div>
       {outstandingCents > 0 && (
-        <div className="rounded-xl border border-[#7A2E2E]/30 bg-[#7A2E2E]/5 px-4 py-3 text-right">
-          <p className="text-xs font-medium uppercase tracking-wide text-[#7A2E2E]">Outstanding balance</p>
-          <p className="mt-0.5 text-lg font-semibold text-[#7A2E2E]">{formatCents(outstandingCents, currentPlan.currency)}</p>
+        <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-right">
+          <p className="text-xs font-medium uppercase tracking-wide text-accent">Outstanding balance</p>
+          <p className="mt-0.5 text-lg font-semibold text-accent">{formatCents(outstandingCents, currentPlan.currency)}</p>
         </div>
       )}
     </div>
@@ -273,15 +273,15 @@ function ModulesOnlyHeader({
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
         <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-semibold text-[#1C1A17]">Billing</h2>
+          <h2 className="text-2xl font-semibold text-ink">Billing</h2>
           <StatusBadge status={billingStatus} />
         </div>
-        <p className="mt-1 text-sm text-[#8A8375]">Your modules are billed on usage, with no monthly plan fee.</p>
+        <p className="mt-1 text-sm text-ink-muted">Your modules are billed on usage, with no monthly plan fee.</p>
       </div>
       {outstandingCents > 0 && (
-        <div className="rounded-xl border border-[#7A2E2E]/30 bg-[#7A2E2E]/5 px-4 py-3 text-right">
-          <p className="text-xs font-medium uppercase tracking-wide text-[#7A2E2E]">Outstanding balance</p>
-          <p className="mt-0.5 text-lg font-semibold text-[#7A2E2E]">{formatCents(outstandingCents, currency)}</p>
+        <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-right">
+          <p className="text-xs font-medium uppercase tracking-wide text-accent">Outstanding balance</p>
+          <p className="mt-0.5 text-lg font-semibold text-accent">{formatCents(outstandingCents, currency)}</p>
         </div>
       )}
     </div>
@@ -295,26 +295,26 @@ function ModulesOnlyHeader({
 function ShishaSection({ shisha, switchedOn }: { shisha: ShishaBillingInfo; switchedOn: boolean }) {
   const { currency, sessionFeeCents, refillFeeCents, thisMonth, lastMonth } = shisha
   return (
-    <section className="rounded-xl border border-[#E6E1D4] p-5">
+    <section className="rounded-xl border border-line p-5">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-[#1C1A17]">Shisha</h3>
-        <span className="text-sm text-[#8A8375]">Billed monthly on usage</span>
+        <h3 className="text-base font-semibold text-ink">Shisha</h3>
+        <span className="text-sm text-ink-muted">Billed monthly on usage</span>
       </div>
-      <p className="mt-1 text-sm text-[#8A8375]">
+      <p className="mt-1 text-sm text-ink-muted">
         {formatCents(sessionFeeCents, currency)} per session · {formatCents(refillFeeCents, currency)} per refill
       </p>
 
-      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-[#FAF8F3] p-4 sm:grid-cols-4">
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-canvas p-4 sm:grid-cols-4">
         <UsageStat label="Sessions this month" value={thisMonth.sessions.toLocaleString("en-ZA")} />
         <UsageStat label="Refills this month" value={thisMonth.refills.toLocaleString("en-ZA")} />
         <UsageStat label="Last month" value={formatCents(lastMonth.amountCents, currency)} />
-        <div className="border-t border-[#E6E1D4] pt-3 sm:border-t-0 sm:pt-0">
+        <div className="border-t border-line pt-3 sm:border-t-0 sm:pt-0">
           <UsageStat label="This month so far" value={formatCents(thisMonth.amountCents, currency)} emphasize />
         </div>
       </dl>
 
       {!switchedOn && (
-        <p className="mt-3 text-sm text-[#8A8375]">Shisha is switched off for your shop. Earlier usage is still billed.</p>
+        <p className="mt-3 text-sm text-ink-muted">Shisha is switched off for your shop. Earlier usage is still billed.</p>
       )}
     </section>
   )
@@ -333,7 +333,7 @@ function UsageSection({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUs
 function UsageProgressBar({ used, total, state }: { used: number; total: number; state: UsageState }) {
   const pct = Math.min((used / total) * 100, 100)
   return (
-    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#E6E1D4]">
+    <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-line">
       <div className="h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: USAGE_STATE_COLOR[state] }} />
     </div>
   )
@@ -345,16 +345,16 @@ function FreeUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage
   const remaining = usage.visitsRemaining ?? 0
 
   return (
-    <section className="rounded-xl border border-[#E6E1D4] p-5">
+    <section className="rounded-xl border border-line p-5">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-[#1C1A17]">Free — {total} visits, once off</h3>
-        <span className="text-sm text-[#8A8375]">R0 / month</span>
+        <h3 className="text-base font-semibold text-ink">Free — {total} visits, once off</h3>
+        <span className="text-sm text-ink-muted">R0 / month</span>
       </div>
 
       <div className="mt-4">
-        <div className="flex items-baseline justify-between text-sm text-[#8A8375]">
+        <div className="flex items-baseline justify-between text-sm text-ink-muted">
           <span>Visits used</span>
-          <span className="font-medium text-[#1C1A17]">
+          <span className="font-medium text-ink">
             {usage.visitsUsed} / {total}
           </span>
         </div>
@@ -362,13 +362,13 @@ function FreeUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsage
       </div>
 
       {state === "blocked" ? (
-        <div className="mt-4 rounded-lg border border-[#7A2E2E]/30 bg-[#7A2E2E]/5 p-3">
-          <p className="text-sm font-semibold text-[#7A2E2E]">Your free visits have been used.</p>
-          <p className="mt-0.5 text-sm text-[#7A2E2E]">Upgrade to continue serving customers.</p>
+        <div className="mt-4 rounded-lg border border-accent/30 bg-accent/5 p-3">
+          <p className="text-sm font-semibold text-accent">Your free visits have been used.</p>
+          <p className="mt-0.5 text-sm text-accent">Upgrade to continue serving customers.</p>
         </div>
       ) : (
-        <p className="mt-3 text-sm text-[#8A8375]">
-          You have <span className="font-medium text-[#1C1A17]">{remaining}</span> free visit{remaining === 1 ? "" : "s"}{" "}
+        <p className="mt-3 text-sm text-ink-muted">
+          You have <span className="font-medium text-ink">{remaining}</span> free visit{remaining === 1 ? "" : "s"}{" "}
           remaining.
         </p>
       )}
@@ -398,17 +398,17 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
   const included = calc.includedVisits ?? 0
 
   return (
-    <section className="rounded-xl border border-[#E6E1D4] p-5">
+    <section className="rounded-xl border border-line p-5">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-[#1C1A17]">{currentPlan.name}</h3>
-        <span className="text-sm text-[#8A8375]">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
+        <h3 className="text-base font-semibold text-ink">{currentPlan.name}</h3>
+        <span className="text-sm text-ink-muted">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
       </div>
-      <p className="mt-1 text-sm text-[#8A8375]">{growthSummary(currentPlan, calc.perVisitRateCents, included)}</p>
+      <p className="mt-1 text-sm text-ink-muted">{growthSummary(currentPlan, calc.perVisitRateCents, included)}</p>
 
       <div className="mt-4">
-        <div className="flex items-baseline justify-between text-sm text-[#8A8375]">
+        <div className="flex items-baseline justify-between text-sm text-ink-muted">
           <span>Visits used</span>
-          <span className="font-medium text-[#1C1A17]">
+          <span className="font-medium text-ink">
             {calc.actualVisits.toLocaleString("en-ZA")} / {included.toLocaleString("en-ZA")}
           </span>
         </div>
@@ -416,7 +416,7 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
       </div>
 
       {state === "overage" || calc.extraStaff > 0 ? (
-        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-[#FAF8F3] p-4 sm:grid-cols-4">
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-canvas p-4 sm:grid-cols-4">
           <UsageStat label="Visits used" value={calc.actualVisits.toLocaleString("en-ZA")} />
           <UsageStat label="Included" value={included.toLocaleString("en-ZA")} />
           <UsageStat label="Additional" value={calc.overageVisits.toLocaleString("en-ZA")} />
@@ -425,15 +425,15 @@ function GrowthUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanUsa
             label={`Extra staff (${calc.extraStaff})`}
             value={formatCents(calc.extraStaffFeeCents, currentPlan.currency)}
           />
-          <div className="col-span-2 border-t border-[#E6E1D4] pt-3 sm:col-span-4">
+          <div className="col-span-2 border-t border-line pt-3 sm:col-span-4">
             <UsageStat label="Current estimated bill" value={formatCents(calc.totalCents, currentPlan.currency)} emphasize />
           </div>
         </dl>
       ) : (
-        <p className="mt-3 text-sm text-[#8A8375]">
+        <p className="mt-3 text-sm text-ink-muted">
           {state === "near" ? "Getting close to your included visits. " : ""}
           Current estimated bill:{" "}
-          <span className="font-medium text-[#1C1A17]">{formatCents(calc.totalCents, currentPlan.currency)}</span>
+          <span className="font-medium text-ink">{formatCents(calc.totalCents, currentPlan.currency)}</span>
         </p>
       )}
 
@@ -446,20 +446,20 @@ function BusinessUsage({ currentPlan, usage }: { currentPlan: Plan; usage: PlanU
   const calc = usage.currentBilling
 
   return (
-    <section className="rounded-xl border border-[#E6E1D4] p-5">
+    <section className="rounded-xl border border-line p-5">
       <div className="flex items-baseline justify-between">
-        <h3 className="text-base font-semibold text-[#1C1A17]">{currentPlan.name}</h3>
-        <span className="text-sm text-[#8A8375]">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
+        <h3 className="text-base font-semibold text-ink">{currentPlan.name}</h3>
+        <span className="text-sm text-ink-muted">{formatCentsCompact(currentPlan.priceCents, currentPlan.currency)} / month</span>
       </div>
-      <p className="mt-1 text-sm text-[#8A8375]">
+      <p className="mt-1 text-sm text-ink-muted">
         No visit limit · {formatCents(calc.perVisitRateCents ?? 0, currentPlan.currency)} per completed visit
       </p>
 
-      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-[#FAF8F3] p-4 sm:grid-cols-4">
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg bg-canvas p-4 sm:grid-cols-4">
         <UsageStat label="Visits this period" value={calc.actualVisits.toLocaleString("en-ZA")} />
         <UsageStat label="Usage cost" value={formatCents(calc.usageChargeCents, currentPlan.currency)} />
         <UsageStat label="Platform fee" value={formatCents(calc.baseFeeCents, currentPlan.currency)} />
-        <div className="border-t border-[#E6E1D4] pt-3 sm:border-t-0 sm:pt-0">
+        <div className="border-t border-line pt-3 sm:border-t-0 sm:pt-0">
           <UsageStat label="Estimated total" value={formatCents(calc.totalCents, currentPlan.currency)} emphasize />
         </div>
       </dl>
@@ -475,16 +475,16 @@ function StaffUsageRow({ usage }: { usage: PlanUsage }) {
 
   return (
     <div className="mt-4">
-      <div className="flex items-baseline justify-between text-sm text-[#8A8375]">
+      <div className="flex items-baseline justify-between text-sm text-ink-muted">
         <span>Active staff</span>
-        <span className="font-medium text-[#1C1A17]">
+        <span className="font-medium text-ink">
           {staffCount}
           {staffLimit !== null ? ` / ${staffLimit}` : ""}
         </span>
       </div>
       {staffLimit !== null && <UsageProgressBar used={staffCount} total={staffLimit} state={state} />}
       {state === "blocked" ? (
-        <p className="mt-2 text-sm text-[#7A2E2E]">
+        <p className="mt-2 text-sm text-accent">
           You have more active staff than this plan allows. Deactivate some, or upgrade to add more.
         </p>
       ) : state === "near" ? (
@@ -493,9 +493,9 @@ function StaffUsageRow({ usage }: { usage: PlanUsage }) {
         </p>
       ) : null}
       {plan.extraStaffPriceCents !== null && extra > 0 && (
-        <p className="mt-2 text-sm text-[#8A8375]">
+        <p className="mt-2 text-sm text-ink-muted">
           {extra} extra staff × {formatCents(plan.extraStaffPriceCents, plan.currency)} ={" "}
-          <span className="font-medium text-[#1C1A17]">{formatCents(extra * plan.extraStaffPriceCents, plan.currency)}</span> / month
+          <span className="font-medium text-ink">{formatCents(extra * plan.extraStaffPriceCents, plan.currency)}</span> / month
         </p>
       )}
     </div>
@@ -505,8 +505,8 @@ function StaffUsageRow({ usage }: { usage: PlanUsage }) {
 function UsageStat({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
   return (
     <div>
-      <dt className="text-xs text-[#8A8375]">{label}</dt>
-      <dd className={emphasize ? "mt-0.5 text-lg font-semibold text-[#1C1A17]" : "mt-0.5 text-sm font-medium text-[#1C1A17]"}>
+      <dt className="text-xs text-ink-muted">{label}</dt>
+      <dd className={emphasize ? "mt-0.5 text-lg font-semibold text-ink" : "mt-0.5 text-sm font-medium text-ink"}>
         {value}
       </dd>
     </div>
@@ -521,19 +521,19 @@ function VisitBreakdownSection({ breakdown }: { breakdown: { queueVisits: number
   if (breakdown.total === 0) return null
   return (
     <section>
-      <h3 className="text-base font-semibold text-[#1C1A17]">Visit usage</h3>
-      <div className="mt-3 rounded-xl border border-[#E6E1D4]">
-        <div className="flex items-center justify-between border-b border-[#E6E1D4] px-4 py-3 text-sm">
-          <span className="text-[#1C1A17]">Completed queue visits</span>
-          <span className="font-medium text-[#1C1A17]">{breakdown.queueVisits.toLocaleString("en-ZA")}</span>
+      <h3 className="text-base font-semibold text-ink">Visit usage</h3>
+      <div className="mt-3 rounded-xl border border-line">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3 text-sm">
+          <span className="text-ink">Completed queue visits</span>
+          <span className="font-medium text-ink">{breakdown.queueVisits.toLocaleString("en-ZA")}</span>
         </div>
-        <div className="flex items-center justify-between border-b border-[#E6E1D4] px-4 py-3 text-sm">
-          <span className="text-[#1C1A17]">Completed bookings</span>
-          <span className="font-medium text-[#1C1A17]">{breakdown.bookingVisits.toLocaleString("en-ZA")}</span>
+        <div className="flex items-center justify-between border-b border-line px-4 py-3 text-sm">
+          <span className="text-ink">Completed bookings</span>
+          <span className="font-medium text-ink">{breakdown.bookingVisits.toLocaleString("en-ZA")}</span>
         </div>
         <div className="flex items-center justify-between px-4 py-3 text-sm">
-          <span className="font-semibold text-[#1C1A17]">Total billable visits</span>
-          <span className="font-semibold text-[#1C1A17]">{breakdown.total.toLocaleString("en-ZA")}</span>
+          <span className="font-semibold text-ink">Total billable visits</span>
+          <span className="font-semibold text-ink">{breakdown.total.toLocaleString("en-ZA")}</span>
         </div>
       </div>
     </section>
@@ -583,7 +583,7 @@ function PlanComparisonSection({
 }) {
   return (
     <section>
-      <h3 className="text-base font-semibold text-[#1C1A17]">Plans</h3>
+      <h3 className="text-base font-semibold text-ink">Plans</h3>
       <div className="mt-3 grid gap-4 sm:grid-cols-3">
         {allPlans.map((plan) => {
           const isCurrent = plan.key === currentPlan.key
@@ -591,13 +591,13 @@ function PlanComparisonSection({
           const modules = planModules[plan.key] ?? []
 
           return (
-            <div key={plan.key} className={`flex flex-col rounded-xl border p-4 ${isCurrent ? "border-[#7A2E2E]" : "border-[#E6E1D4]"}`}>
-              <p className="text-lg font-semibold text-[#1C1A17]">{plan.name}</p>
-              <p className="mt-1 text-sm text-[#8A8375]">
+            <div key={plan.key} className={`flex flex-col rounded-xl border p-4 ${isCurrent ? "border-accent" : "border-line"}`}>
+              <p className="text-lg font-semibold text-ink">{plan.name}</p>
+              <p className="mt-1 text-sm text-ink-muted">
                 {plan.priceCents === 0 ? "Free" : `${formatCentsCompact(plan.priceCents, plan.currency)}/month`}
               </p>
 
-              <ul className="mt-3 space-y-1 text-sm text-[#1C1A17]">
+              <ul className="mt-3 space-y-1 text-sm text-ink">
                 {planStaffLines(plan).map((line) => (
                   <li key={line}>{line}</li>
                 ))}
@@ -606,7 +606,7 @@ function PlanComparisonSection({
               </ul>
 
               {modules.length > 0 && (
-                <ul className="mt-4 flex-1 space-y-1.5 border-t border-[#E6E1D4] pt-3 text-sm text-[#8A8375]">
+                <ul className="mt-4 flex-1 space-y-1.5 border-t border-line pt-3 text-sm text-ink-muted">
                   {modules.map((m) => (
                     <li key={m.key}>{m.name}</li>
                   ))}
@@ -614,12 +614,12 @@ function PlanComparisonSection({
               )}
 
               {isCurrent ? (
-                <p className="mt-4 text-sm font-semibold text-[#7A2E2E]">Current plan</p>
+                <p className="mt-4 text-sm font-semibold text-accent">Current plan</p>
               ) : isUpgrade ? (
                 <button
                   onClick={() => onSelectUpgrade(plan)}
                   disabled={Boolean(pendingRequest)}
-                  className="mt-4 w-full rounded-lg border border-[#7A2E2E] py-2 text-sm font-semibold text-[#7A2E2E] hover:bg-[#7A2E2E]/5 disabled:opacity-40"
+                  className="mt-4 w-full rounded-lg border border-accent py-2 text-sm font-semibold text-accent hover:bg-accent/5 disabled:opacity-40"
                   type="button"
                 >
                   Upgrade to {plan.name}
@@ -629,9 +629,9 @@ function PlanComparisonSection({
           )
         })}
       </div>
-      <div className="mt-4 rounded-xl border border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm text-[#1C1A17]">
+      <div className="mt-4 rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink">
         <p className="font-semibold">Using your own WhatsApp number?</p>
-        <p className="mt-0.5 text-[#8A8375]">
+        <p className="mt-0.5 text-ink-muted">
           You can connect your own WhatsApp number from WhatsApp settings in your admin. Meta charges its own WhatsApp
           messaging fees for that number, and you pay Meta directly. Those fees are separate from your plan and never
           appear on your ZozoQueue invoices.
@@ -668,56 +668,56 @@ function UpgradeConfirmModal({
   const preview: BillingCalculation = useMemo(() => calculateBilling(targetPlan, visitsThisMonth, staffCount), [targetPlan, visitsThisMonth, staffCount])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C1A17]/40 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-md rounded-xl border border-[#E6E1D4] bg-white p-6">
-        <h3 className="text-lg font-semibold text-[#1C1A17]">Upgrade to {targetPlan.name}</h3>
-        <p className="mt-1 text-sm text-[#8A8375]">From {currentPlanName}. This files a request — a platform admin confirms it.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-xl border border-line bg-card p-6">
+        <h3 className="text-lg font-semibold text-ink">Upgrade to {targetPlan.name}</h3>
+        <p className="mt-1 text-sm text-ink-muted">From {currentPlanName}. This files a request — a platform admin confirms it.</p>
 
-        <dl className="mt-4 space-y-2 rounded-lg bg-[#FAF8F3] p-4 text-sm">
+        <dl className="mt-4 space-y-2 rounded-lg bg-canvas p-4 text-sm">
           <div className="flex justify-between">
-            <dt className="text-[#8A8375]">Base fee</dt>
-            <dd className="font-medium text-[#1C1A17]">{formatCentsCompact(targetPlan.priceCents, targetPlan.currency)}/mo</dd>
+            <dt className="text-ink-muted">Base fee</dt>
+            <dd className="font-medium text-ink">{formatCentsCompact(targetPlan.priceCents, targetPlan.currency)}/mo</dd>
           </div>
           {preview.extraStaff > 0 && (
             <div className="flex justify-between">
-              <dt className="text-[#8A8375]">
+              <dt className="text-ink-muted">
                 Extra staff ({preview.extraStaff} × {formatCents(targetPlan.extraStaffPriceCents ?? 0, targetPlan.currency)})
               </dt>
-              <dd className="font-medium text-[#1C1A17]">{formatCents(preview.extraStaffFeeCents, targetPlan.currency)}/mo</dd>
+              <dd className="font-medium text-ink">{formatCents(preview.extraStaffFeeCents, targetPlan.currency)}/mo</dd>
             </div>
           )}
           <div className="flex justify-between">
-            <dt className="text-[#8A8375]">Included visits</dt>
-            <dd className="font-medium text-[#1C1A17]">
+            <dt className="text-ink-muted">Included visits</dt>
+            <dd className="font-medium text-ink">
               {preview.includedVisits === null ? "No limit" : preview.includedVisits.toLocaleString("en-ZA")}
             </dd>
           </div>
           {targetPlan.pricePerVisitCents !== null && (
             <div className="flex justify-between">
-              <dt className="text-[#8A8375]">{targetPlan.visitLimit === null ? "Per visit" : "Per additional visit"}</dt>
-              <dd className="font-medium text-[#1C1A17]">{formatCents(targetPlan.pricePerVisitCents, targetPlan.currency)}</dd>
+              <dt className="text-ink-muted">{targetPlan.visitLimit === null ? "Per visit" : "Per additional visit"}</dt>
+              <dd className="font-medium text-ink">{formatCents(targetPlan.pricePerVisitCents, targetPlan.currency)}</dd>
             </div>
           )}
-          <div className="flex justify-between border-t border-[#E6E1D4] pt-2">
-            <dt className="text-[#8A8375]">At this month's usage ({visitsThisMonth.toLocaleString("en-ZA")} visits)</dt>
-            <dd className="font-semibold text-[#1C1A17]">{formatCents(preview.totalCents, targetPlan.currency)}</dd>
+          <div className="flex justify-between border-t border-line pt-2">
+            <dt className="text-ink-muted">At this month's usage ({visitsThisMonth.toLocaleString("en-ZA")} visits)</dt>
+            <dd className="font-semibold text-ink">{formatCents(preview.totalCents, targetPlan.currency)}</dd>
           </div>
         </dl>
 
         {targetPlan.staffLimit !== null && staffCount > targetPlan.staffLimit && (
-          <p className="mt-3 text-sm text-[#7A2E2E]">
+          <p className="mt-3 text-sm text-accent">
             You have {staffCount} active staff, but {targetPlan.name} allows {targetPlan.staffLimit}. Deactivate some before
             switching.
           </p>
         )}
 
-        <label className="mt-4 block text-sm text-[#8A8375]">
+        <label className="mt-4 block text-sm text-ink-muted">
           Note for the platform team (optional)
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={2}
-            className="mt-1 w-full rounded-lg border border-[#E6E1D4] p-2 text-sm text-[#1C1A17]"
+            className="mt-1 w-full rounded-lg border border-line p-2 text-sm text-ink"
           />
         </label>
 
@@ -726,7 +726,7 @@ function UpgradeConfirmModal({
             type="button"
             onClick={onCancel}
             disabled={submitting}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-[#8A8375] hover:bg-[#FAF8F3] disabled:opacity-40"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-ink-muted hover:bg-canvas disabled:opacity-40"
           >
             Cancel
           </button>
@@ -734,7 +734,7 @@ function UpgradeConfirmModal({
             type="button"
             onClick={() => onConfirm(note)}
             disabled={submitting}
-            className="rounded-lg bg-[#7A2E2E] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7A2E2E]/90 disabled:opacity-40"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-color hover:bg-accent/90 disabled:opacity-40"
           >
             {submitting ? "Requesting…" : "Confirm request"}
           </button>
@@ -766,8 +766,8 @@ function InvoiceHistorySection({
 }) {
   return (
     <section>
-      <h3 className="text-base font-semibold text-[#1C1A17]">Invoice history</h3>
-      <div className="mt-3 divide-y divide-[#E6E1D4] rounded-xl border border-[#E6E1D4]">
+      <h3 className="text-base font-semibold text-ink">Invoice history</h3>
+      <div className="mt-3 divide-y divide-line rounded-xl border border-line">
         {invoices.map((inv) => {
           const expanded = expandedInvoiceId === inv.id
           const color = INVOICE_STATUS_COLOR[inv.status] ?? MUTED
@@ -776,51 +776,51 @@ function InvoiceHistorySection({
               <button
                 type="button"
                 onClick={() => onToggle(inv.id)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-[#FAF8F3]"
+                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-canvas"
               >
                 <div>
-                  <p className="text-sm font-medium text-[#1C1A17]">
+                  <p className="text-sm font-medium text-ink">
                     {periodLabel(inv.periodStart)}
-                    <span className="ml-2 rounded-full border border-[#E6E1D4] px-2 py-0.5 text-[11px] font-normal text-[#8A8375]">
+                    <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-normal text-ink-muted">
                       {inv.product === "shisha" ? "Shisha" : "Booking & Queue"}
                     </span>
                   </p>
-                  <p className="text-xs text-[#8A8375]">
+                  <p className="text-xs text-ink-muted">
                     {inv.visitCount.toLocaleString("en-ZA")} {inv.product === "shisha" ? "sessions & refills" : "visits"}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-[#1C1A17]">{formatCents(inv.amountCents, inv.currency)}</p>
+                    <p className="text-sm font-semibold text-ink">{formatCents(inv.amountCents, inv.currency)}</p>
                     <p className="text-xs font-medium" style={{ color }}>
                       {inv.status}
                     </p>
                   </div>
-                  <span className="text-xs text-[#8A8375]">{expanded ? "Hide" : "View"}</span>
+                  <span className="text-xs text-ink-muted">{expanded ? "Hide" : "View"}</span>
                 </div>
               </button>
 
               {expanded && inv.product === "shisha" && (
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm sm:grid-cols-4">
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line bg-canvas px-4 py-3 text-sm sm:grid-cols-4">
                   <UsageStat label="Sessions" value={(inv.detail?.sessions ?? 0).toLocaleString("en-ZA")} />
                   <UsageStat label="Session fees" value={formatCents(inv.detail?.session_fee_cents ?? 0, inv.currency)} />
                   <UsageStat label="Refills" value={(inv.detail?.refills ?? 0).toLocaleString("en-ZA")} />
                   <UsageStat label="Refill fees" value={formatCents(inv.detail?.refill_fee_cents ?? 0, inv.currency)} />
-                  <div className="col-span-2 border-t border-[#E6E1D4] pt-2 sm:col-span-4">
+                  <div className="col-span-2 border-t border-line pt-2 sm:col-span-4">
                     <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
                   </div>
                 </dl>
               )}
 
               {expanded && inv.product !== "shisha" && (
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-[#E6E1D4] bg-[#FAF8F3] px-4 py-3 text-sm sm:grid-cols-4">
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line bg-canvas px-4 py-3 text-sm sm:grid-cols-4">
                   <UsageStat label="Base subscription" value={formatCents(inv.baseFeeCents, inv.currency)} />
                   <UsageStat label="Included visits" value={inv.includedVisits === null ? "No limit" : inv.includedVisits.toLocaleString("en-ZA")} />
                   <UsageStat label="Additional visits" value={inv.overageVisits.toLocaleString("en-ZA")} />
                   <UsageStat label="Rate" value={formatCents(inv.rateCents, inv.currency)} />
                   <UsageStat label="Staff billed" value={`${inv.staffCount} (${inv.includedStaff} included)`} />
                   <UsageStat label="Extra staff" value={formatCents(inv.extraStaffFeeCents, inv.currency)} />
-                  <div className="col-span-2 border-t border-[#E6E1D4] pt-2 sm:col-span-4">
+                  <div className="col-span-2 border-t border-line pt-2 sm:col-span-4">
                     <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
                   </div>
                 </dl>

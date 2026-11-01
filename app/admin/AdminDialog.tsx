@@ -82,12 +82,12 @@ export function AdminDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-[#FAF6EE] p-5 shadow-xl outline-none"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-dialog p-5 shadow-xl outline-none"
       >
-        <h2 id={titleId} className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">
+        <h2 id={titleId} className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">
           {title}
         </h2>
-        <div className="mt-3 text-sm text-[#1C1A17]">{children}</div>
+        <div className="mt-3 text-sm text-ink">{children}</div>
         {footer && <div className="mt-5 flex flex-wrap justify-end gap-2">{footer}</div>}
       </div>
     </div>
