@@ -44,7 +44,7 @@ type Tab =
   | "billing"
   | "settings"
 
-const SIDEBAR_COLLAPSED = 55 // px
+const SIDEBAR_COLLAPSED = 65 // px
 const SIDEBAR_EXPANDED = 240 // px
 
 // ============================================================================
