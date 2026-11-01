@@ -1,27 +1,18 @@
 // lib/services/shisha-notify.ts
 /**
- * Sends the customer a WhatsApp message when staff accept or reject a shisha request.
+ * Sends the customer a WhatsApp message when staff accept or reject a shisha request
+ * (session started, refill accepted, session ended, issue received, or rejected).
  *
- * >>> ONE THING LEFT TO WIRE <<<
- * The files this was built from don't include the app's outbound WhatsApp sender
- * (the code that resolves a tenant's WhatsApp credentials and calls the Cloud API),
- * so `deliver()` below throws until you connect it. Until then every accept/reject
- * still WORKS; staff just see the warning "couldn't send the WhatsApp message".
- * That is intentional: a missing sender must never silently look like a delivered message.
- *
- * To wire it, replace the body of `deliver()` with a call to your existing helper,
- * e.g. `await sendWhatsAppText(tenantId, phone, text)`. Keep it per-tenant: the message
- * must go out from THIS tenant's WhatsApp number, never a shared one.
+ * It sends through the tenant's OWN WhatsApp number (the same sender the rest of the
+ * app uses for replies), never a shared one.
  *
  * Outside the 24-hour customer-service window WhatsApp only allows approved templates.
  * Customers are replying to a request they sent minutes ago, so plain text is normally
- * fine; if a request sat unanswered for over 24h, the send can fail. That failure
- * comes back as the same staff warning and never undoes the accept/reject.
+ * fine; if a request sat unanswered for over 24h, the send can fail. That failure comes
+ * back as a staff warning and never undoes the accept/reject.
  */
 
-async function deliver(_tenantId: string, _phone: string, _text: string): Promise<void> {
-  throw new Error("Outbound WhatsApp sender not wired: see lib/services/shisha-notify.ts")
-}
+import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 
 /**
  * Best-effort customer notification. Never throws. Returns a staff-facing warning
@@ -34,7 +25,7 @@ export async function notifyShishaCustomer(
 ): Promise<string | null> {
   if (!phone) return "Done, but this customer has no phone number on file, so they weren't messaged."
   try {
-    await deliver(tenantId, phone, text)
+    await sendWhatsAppTextMessage(tenantId, phone, text)
     return null
   } catch (err) {
     console.error("[shisha] customer notification failed", {
