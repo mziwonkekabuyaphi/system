@@ -10,6 +10,7 @@ const LINKS: Array<[string, string]> = [
   ["/platform/modules", "Modules"],
   ["/platform/upgrades", "Upgrade requests"],
   ["/platform/shisha", "Shisha"],
+  ["/platform/ads", "Kiosk ads"],
   ["/platform/sales", "Sales & commissions"],
 ]
 
