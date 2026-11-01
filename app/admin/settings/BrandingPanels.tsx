@@ -32,6 +32,22 @@ import {
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
 
+// Ready-made primary + secondary pairs for tenants who don't have brand
+// colours yet. Chosen to read well on the dark customer-facing screens and
+// to avoid reds, ambers, purples and greens (reserved for status colours).
+const SUGGESTED_PALETTES: { name: string; primary: string; secondary: string }[] = [
+  { name: "Ocean + coral", primary: "#2EC4B6", secondary: "#FF7F6B" },
+  { name: "Sky blue + lime", primary: "#4DA3FF", secondary: "#A6D96A" },
+  { name: "Hot pink + aqua", primary: "#FF4D8D", secondary: "#2ED1C2" },
+  { name: "Indigo + cyan", primary: "#6C8CFF", secondary: "#3DD6D0" },
+  { name: "Rose gold + cream", primary: "#D98B7A", secondary: "#F0D9C4" },
+  { name: "Teal + blush", primary: "#2BB5C0", secondary: "#F28BA8" },
+  { name: "Silver + ice blue", primary: "#C9D1D9", secondary: "#7CC4F0" },
+  { name: "Copper + sand", primary: "#C9825B", secondary: "#E8D2A6" },
+  { name: "Neon lime + deep teal", primary: "#9BE564", secondary: "#2F9E8F" },
+  { name: "Magenta + sky", primary: "#D94FA0", secondary: "#5AC8E8" },
+]
+
 // ---------------------------------------------------------------------------
 // Private Label — the SINGLE place branding is edited. Controls how the
 // business appears across every customer-facing surface (kiosk, booking &
@@ -267,6 +283,44 @@ function BrandingFields({
                 value={form.secondaryColor ?? "#4B6B54"}
                 onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
               />
+            </div>
+
+            <div
+              className={canCustomizeBranding ? "" : "pointer-events-none opacity-50"}
+              aria-disabled={!canCustomizeBranding}
+            >
+              <p className="text-sm font-medium text-stone-800">Don&apos;t have brand colours yet?</p>
+              <p className="text-sm text-stone-500">
+                Pick a ready-made combination. You can still fine-tune either colour afterwards.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+                {SUGGESTED_PALETTES.map((palette) => {
+                  const selected =
+                    form.primaryColor?.toLowerCase() === palette.primary.toLowerCase() &&
+                    form.secondaryColor?.toLowerCase() === palette.secondary.toLowerCase()
+                  return (
+                    <button
+                      key={palette.name}
+                      type="button"
+                      onClick={() =>
+                        setForm({ ...form, primaryColor: palette.primary, secondaryColor: palette.secondary })
+                      }
+                      aria-pressed={selected}
+                      className={`flex flex-col items-start gap-2 rounded-xl border p-2 text-left text-xs transition ${
+                        selected
+                          ? "border-stone-900 bg-stone-50 ring-1 ring-stone-900"
+                          : "border-stone-200 bg-white hover:bg-stone-50"
+                      }`}
+                    >
+                      <span className="flex w-full overflow-hidden rounded-lg">
+                        <span className="h-8 flex-1" style={{ backgroundColor: palette.primary }} />
+                        <span className="h-8 flex-1" style={{ backgroundColor: palette.secondary }} />
+                      </span>
+                      <span className="font-medium text-stone-700">{palette.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>
