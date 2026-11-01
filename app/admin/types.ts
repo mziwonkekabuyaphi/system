@@ -248,6 +248,8 @@ export interface AdminBranding {
   sidebarColor?: string | null
   sidebarTextColor?: string | null
   accentColor?: string | null
+  /** Dashboard look: 'cream' (default) or 'dark' (Rands). tenant_branding.admin_theme. */
+  adminTheme?: "cream" | "dark" | null
 }
 
 /** Which paths the public kiosk offers. Mirrors

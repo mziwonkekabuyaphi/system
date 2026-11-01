@@ -324,7 +324,7 @@ export function InboxManager({
             type="button"
             onClick={() => setFilter(f.id)}
             className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium ${
-              filter === f.id ? "bg-stone-800 text-on-color" : "border border-stone-300 text-stone-600"
+              filter === f.id ? "bg-selected text-on-color" : "border border-stone-300 text-stone-600"
             }`}
           >
             {f.label}
