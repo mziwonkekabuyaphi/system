@@ -309,10 +309,11 @@ export function AdminView({
         line: "border-[color:var(--sb-line)]",
         text: "text-[color:var(--sb-text)]",
         badge: "bg-[var(--sb-accent)] text-[color:var(--sb-on-accent)]",
-        // Soft see-through tint + thin border + glow, like the Rands sidebar (not a solid fill).
+        // Matches the Rands admin sidebar: see-through tint, thin border, accent-coloured text + icon,
+        // and a small glowing bar on the left edge (not a solid fill).
         navActive:
-          "border-[color-mix(in_srgb,var(--sb-accent)_18%,transparent)] bg-[color-mix(in_srgb,var(--sb-accent)_12%,transparent)] text-[color:var(--sb-text)] shadow-[0_4px_14px_color-mix(in_srgb,var(--sb-accent)_15%,transparent)]",
-        navActiveIcon: "text-[color:var(--sb-accent)]",
+          "relative border-[color-mix(in_srgb,var(--sb-accent)_25%,transparent)] bg-[color-mix(in_srgb,var(--sb-accent)_12%,transparent)] text-[color-mix(in_srgb,var(--sb-accent)_75%,white)] before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-0.5 before:rounded-full before:bg-[var(--sb-accent)] before:shadow-[0_0_8px_var(--sb-accent)]",
+        navActiveIcon: "",
         navIdle:
           "text-[color:var(--sb-text-muted)] hover:bg-[var(--sb-hover)] hover:text-[color:var(--sb-text)]",
       }
@@ -321,10 +322,11 @@ export function AdminView({
         line: "border-admin-on-sidebar/10",
         text: "text-admin-on-sidebar",
         badge: "bg-admin-accent text-admin-on-accent",
-        // Soft see-through tint + thin border + glow, like the Rands sidebar (not a solid fill).
+        // Matches the Rands admin sidebar: see-through tint, thin border, red text + icon,
+        // and a small glowing bar on the left edge (not a solid fill).
         navActive:
-          "border-admin-accent/[0.18] bg-admin-accent/[0.12] text-admin-on-sidebar shadow-[0_4px_14px_color-mix(in_srgb,var(--color-admin-accent)_15%,transparent)]",
-        navActiveIcon: "text-admin-accent",
+          "relative border-admin-accent/25 bg-admin-accent/[0.12] text-[#ff3344] before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-0.5 before:rounded-full before:bg-admin-accent before:shadow-[0_0_8px_var(--color-admin-accent)]",
+        navActiveIcon: "",
         navIdle: "text-admin-on-sidebar/60 hover:bg-admin-on-sidebar/[0.07] hover:text-admin-on-sidebar",
       }
 
