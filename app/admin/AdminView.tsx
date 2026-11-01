@@ -358,6 +358,17 @@ export function AdminView({
           expanded ? "shadow-2xl" : ""
         }`}
       >
+        {/* Dark theme only: the thin glowing line down the sidebar's left edge (as in Rands).
+            Fades in while the sidebar is open, in the shop's accent colour when one is set. */}
+        {branding.adminTheme === "dark" && (
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute bottom-[20%] left-0 top-[20%] w-0.5 bg-[linear-gradient(180deg,transparent,var(--sb-accent,var(--color-admin-accent))_50%,transparent)] transition-opacity duration-200 ease-out ${
+              expanded ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        )}
+
         {/* Brand */}
         <div className={`flex h-16 shrink-0 items-center gap-3 border-b ${SB.line} px-4`}>
           {branding.logoUrl ? (
