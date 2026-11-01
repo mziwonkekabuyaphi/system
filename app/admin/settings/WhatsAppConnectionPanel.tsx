@@ -87,6 +87,11 @@ function ConnectionBody({
       <div className="flex flex-wrap items-center gap-3">
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${badge.className}`}>{badge.label}</span>
         {numberText && <span className="text-sm text-stone-700">{numberText}</span>}
+        {status.displayPhone && !status.displayPhoneVerified && (
+          <span className="text-xs text-amber-700" title="We couldn't check this number with WhatsApp just now, so it may be out of date.">
+            Not confirmed with WhatsApp
+          </span>
+        )}
         {status.state === "connected" && !status.connectedVia && (
           <span className="text-xs text-stone-400">Set up for you by ZozoQueue</span>
         )}
