@@ -110,6 +110,11 @@ function BrandingFields({
 
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
 
+  // Bumped whenever colours are set programmatically (palette pick, "Use my
+  // brand colours", sidebar toggle) so the hex inputs remount and show the
+  // new values instead of whatever was typed before.
+  const [colorSyncKey, setColorSyncKey] = useState(0)
+
 
   function save() {
     setMessage(null)
@@ -138,6 +143,7 @@ function BrandingFields({
   }
 
   function toggleCustomSidebar(next: boolean) {
+    setColorSyncKey((k) => k + 1)
     setForm({
       ...form,
       ...(next ? brandSidebarColors() : { sidebarColor: null, sidebarTextColor: null, accentColor: null }),
@@ -274,11 +280,13 @@ function BrandingFields({
               aria-disabled={!canCustomizeBranding}
             >
               <ColorField
+                key={`primary-${colorSyncKey}`}
                 label="Primary color"
                 value={form.primaryColor ?? "#7A2E3A"}
                 onChange={(hex) => setForm({ ...form, primaryColor: hex })}
               />
               <ColorField
+                key={`secondary-${colorSyncKey}`}
                 label="Secondary color"
                 value={form.secondaryColor ?? "#4B6B54"}
                 onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
@@ -302,9 +310,10 @@ function BrandingFields({
                     <button
                       key={palette.name}
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        setColorSyncKey((k) => k + 1)
                         setForm({ ...form, primaryColor: palette.primary, secondaryColor: palette.secondary })
-                      }
+                      }}
                       aria-pressed={selected}
                       className={`flex flex-col items-start gap-2 rounded-xl border p-2 text-left text-xs transition ${
                         selected
@@ -343,16 +352,19 @@ function BrandingFields({
             <>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <ColorField
+                  key={`sidebar-${colorSyncKey}`}
                   label="Sidebar"
                   value={form.sidebarColor ?? "#1F2937"}
                   onChange={(hex) => setForm({ ...form, sidebarColor: hex })}
                 />
                 <ColorField
+                  key={`sidebar-text-${colorSyncKey}`}
                   label="Sidebar text"
                   value={form.sidebarTextColor ?? readableTextOn(form.sidebarColor ?? "#1F2937")}
                   onChange={(hex) => setForm({ ...form, sidebarTextColor: hex })}
                 />
                 <ColorField
+                  key={`accent-${colorSyncKey}`}
                   label="Active item"
                   value={form.accentColor ?? "#D4A017"}
                   onChange={(hex) => setForm({ ...form, accentColor: hex })}
@@ -385,7 +397,10 @@ function BrandingFields({
 
               <button
                 type="button"
-                onClick={() => setForm({ ...form, ...brandSidebarColors() })}
+                onClick={() => {
+                  setColorSyncKey((k) => k + 1)
+                  setForm({ ...form, ...brandSidebarColors() })
+                }}
                 className={secondaryButtonClass}
               >
                 Use my brand colours
