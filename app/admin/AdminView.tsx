@@ -311,7 +311,7 @@ export function AdminView({
         badge: "bg-[var(--sb-accent)] text-[color:var(--sb-on-accent)]",
         // Soft see-through tint + thin border + glow, like the Rands sidebar (not a solid fill).
         navActive:
-          "border-[color-mix(in_srgb,var(--sb-accent)_18%,transparent)] bg-[color-mix(in_srgb,var(--sb-accent)_6%,transparent)] text-[color:var(--sb-text)] shadow-[0_4px_14px_color-mix(in_srgb,var(--sb-accent)_15%,transparent)]",
+          "border-[color-mix(in_srgb,var(--sb-accent)_18%,transparent)] bg-[color-mix(in_srgb,var(--sb-accent)_12%,transparent)] text-[color:var(--sb-text)] shadow-[0_4px_14px_color-mix(in_srgb,var(--sb-accent)_15%,transparent)]",
         navActiveIcon: "text-[color:var(--sb-accent)]",
         navIdle:
           "text-[color:var(--sb-text-muted)] hover:bg-[var(--sb-hover)] hover:text-[color:var(--sb-text)]",
@@ -323,7 +323,7 @@ export function AdminView({
         badge: "bg-admin-accent text-admin-on-accent",
         // Soft see-through tint + thin border + glow, like the Rands sidebar (not a solid fill).
         navActive:
-          "border-admin-accent/[0.18] bg-admin-accent/[0.06] text-admin-on-sidebar shadow-[0_4px_14px_color-mix(in_srgb,var(--color-admin-accent)_15%,transparent)]",
+          "border-admin-accent/[0.18] bg-admin-accent/[0.12] text-admin-on-sidebar shadow-[0_4px_14px_color-mix(in_srgb,var(--color-admin-accent)_15%,transparent)]",
         navActiveIcon: "text-admin-accent",
         navIdle: "text-admin-on-sidebar/60 hover:bg-admin-on-sidebar/[0.07] hover:text-admin-on-sidebar",
       }
