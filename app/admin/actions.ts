@@ -45,7 +45,7 @@ import {
   BOOKING_SLOT_NO_LONGER_AVAILABLE,
   BOOKING_OUTSIDE_ALLOWED_WINDOW,
 } from "@/lib/services/booking"
-import { joinQueue, formatQueueTicketNumber } from "@/lib/services/queue"
+import { joinQueue, formatQueueTicketNumber, getQueueSimulation } from "@/lib/services/queue"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
 import { PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
@@ -566,6 +566,65 @@ async function resolveServedBy(
   return { ok: true, staffId: (data?.id as string | undefined) ?? null, explicit: false }
 }
 
+/** queue_settings.auto_call_next. Runs after a slot frees up (a called customer is marked
+ *  done or removed). If the tenant has it on, and fewer people are being served than there
+ *  are active staff, the next waiting customer is called — "next" per getQueueSimulation(),
+ *  so it honours the tenant's fifo / priority / hybrid mode, same as the list on screen.
+ *
+ *  Never throws and never fails the caller: marking someone done has already succeeded, so
+ *  a problem here is logged and the admin can still press "Call next" by hand.
+ *  The customer is called with no staff_id; whoever marks them done is credited then
+ *  (see markQueueEntryDone), same as a manual call from a login without a staff record. */
+async function autoCallNextIfEnabled(supabase: ServerClient, tenantId: string): Promise<void> {
+  try {
+    const { data: settings, error: settingsError } = await supabase
+      .from("queue_settings")
+      .select("auto_call_next")
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (settingsError || !settings?.auto_call_next) return
+
+    const [calledRes, staffRes, waitingRes] = await Promise.all([
+      supabase.from("queue_entries").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("status", "called"),
+      supabase.from("staff").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("active", true),
+      supabase.from("queue_entries").select("id").eq("tenant_id", tenantId).eq("status", "waiting"),
+    ])
+    if (calledRes.error || staffRes.error || waitingRes.error) return
+
+    // A "slot" is one active staff member who isn't already serving someone.
+    // (At least 1, so a shop with no staff records can still use auto-call.)
+    const capacity = Math.max(1, staffRes.count ?? 0)
+    if ((calledRes.count ?? 0) >= capacity) return
+
+    const waitingIds = new Set((waitingRes.data ?? []).map((r: { id: string }) => r.id))
+    if (waitingIds.size === 0) return
+
+    const simulation = await getQueueSimulation(tenantId)
+    let nextId: string | null = null
+    let nextPosition = Number.MAX_SAFE_INTEGER
+    for (const [id, entry] of simulation) {
+      if (waitingIds.has(id) && entry.position < nextPosition) {
+        nextId = id
+        nextPosition = entry.position
+      }
+    }
+    if (!nextId) return
+
+    const { data: updated, error: updateError } = await supabase
+      .from("queue_entries")
+      .update({ status: "called", called_at: new Date().toISOString() })
+      .eq("id", nextId)
+      .eq("tenant_id", tenantId)
+      .eq("status", "waiting") // someone may have called them by hand a moment ago
+      .select("id")
+    if (updateError || !updated || updated.length === 0) return
+
+    await logActivity(supabase, tenantId, { category: "queue", action: "Auto-called the next queue entry" })
+  } catch (err) {
+    console.error("[admin] autoCallNextIfEnabled failed", { tenantId, err })
+  }
+}
+
 /** @param servedByStaffId Optional. Who is serving this customer; see resolveServedBy(). */
 export async function callQueueEntry(id: string, servedByStaffId?: string | null): Promise<ActionResult> {
   const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "queue")
@@ -631,6 +690,8 @@ export async function markQueueEntryDone(id: string, servedByStaffId?: string | 
 
   await logActivity(supabase, tenantId!, { category: "queue", action: "Marked a queue entry done" })
 
+  await autoCallNextIfEnabled(supabase, tenantId!)
+
   revalidatePath("/admin")
   return { ok: true }
 }
@@ -648,12 +709,17 @@ export async function removeFromQueue(id: string): Promise<ActionResult> {
     .eq("id", id)
     .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
-    .select("id")
+    .select("id, status")
 
   if (deleteError) return { ok: false, error: deleteError.message }
   if (!deleted || deleted.length === 0) return { ok: false, error: QUEUE_ENTRY_CHANGED }
 
   await logActivity(supabase, tenantId!, { category: "queue", action: "Removed a queue entry" })
+
+  // Removing someone who was being served frees a slot just like Done does.
+  if (deleted.some((d: { status: string }) => d.status === "called")) {
+    await autoCallNextIfEnabled(supabase, tenantId!)
+  }
 
   revalidatePath("/admin")
   return { ok: true }
