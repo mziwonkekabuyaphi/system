@@ -246,20 +246,28 @@ function BrandingFields({
             {logoError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{logoError}</p>}
           </FieldRow>
 
-          <div
-            className={`grid grid-cols-2 gap-3 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
-            aria-disabled={!canCustomizeBranding}
-          >
-            <ColorField
-              label="Primary color"
-              value={form.primaryColor ?? "#7A2E3A"}
-              onChange={(hex) => setForm({ ...form, primaryColor: hex })}
-            />
-            <ColorField
-              label="Secondary color"
-              value={form.secondaryColor ?? "#4B6B54"}
-              onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
-            />
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium text-stone-800">Customer-facing experience</p>
+              <p className="text-sm text-stone-500">
+                These colours apply everywhere your customers see your brand.
+              </p>
+            </div>
+            <div
+              className={`grid grid-cols-2 gap-3 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+              aria-disabled={!canCustomizeBranding}
+            >
+              <ColorField
+                label="Primary color"
+                value={form.primaryColor ?? "#7A2E3A"}
+                onChange={(hex) => setForm({ ...form, primaryColor: hex })}
+              />
+              <ColorField
+                label="Secondary color"
+                value={form.secondaryColor ?? "#4B6B54"}
+                onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
+              />
+            </div>
           </div>
         </div>
 
