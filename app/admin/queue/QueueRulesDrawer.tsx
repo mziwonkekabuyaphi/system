@@ -173,7 +173,7 @@ export function QueueRulesDrawer({
               <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch
                   title="Auto-call next"
-                  description="Automatically call the next customer when a slot frees up."
+                  description="When you mark someone done (or remove someone being served) and a staff member is free, the next waiting customer is called automatically."
                   checked={draft.autoCallNext}
                   disabled={saving}
                   onChange={(v) => set("autoCallNext", v)}
