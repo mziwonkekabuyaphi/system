@@ -14,7 +14,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getCurrentTenantMember, getSessionUser } from "@/lib/tenant/current-tenant-member"
 import { MODULE_KEYS, tenantHasModule } from "@/lib/services/plans"
-import { getGraphVersion } from "./graph"
+import { asRecord, getGraphVersion, graphRequest } from "./graph"
 
 export interface ConnectConfig {
   appId: string
@@ -69,7 +69,11 @@ export type ConnectionState = "not_connected" | "pending" | "connected" | "error
 
 export interface ConnectionStatus {
   state: ConnectionState
+  /** The number WhatsApp itself reports for this connection. If Meta couldn't be
+   *  reached, the last stored label (see displayPhoneVerified). */
   displayPhone: string | null
+  /** true = confirmed with Meta just now; false = only the stored label, not confirmed. */
+  displayPhoneVerified: boolean
   phoneNumberId: string | null
   /** "embedded_signup", "manual" or null (set up by hand before self-connect existed). */
   connectedVia: string | null
@@ -79,6 +83,7 @@ export interface ConnectionStatus {
 
 interface IntegrationRow {
   phone_number_id: string
+  access_token_secret_id: string | null
   display_phone_number: string | null
   status: "active" | "pending_verification" | "disabled"
   connected_via: string | null
@@ -86,11 +91,58 @@ interface IntegrationRow {
   last_error_at: string | null
 }
 
+/**
+ * The number on screen must be the number WhatsApp really has for this
+ * connection, not a label someone typed into the database. Asks Meta for the
+ * display number of phone_number_id and, when it differs from what's stored,
+ * corrects the stored label. Never throws and never blocks the page for long:
+ * on any problem (no token, Meta unreachable, token expired) it falls back to
+ * the stored label and says it is NOT confirmed.
+ */
+async function confirmNumberWithMeta(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  tenantId: string,
+  row: IntegrationRow,
+): Promise<{ number: string | null; verified: boolean }> {
+  const fallback = { number: row.display_phone_number, verified: false }
+  if (!row.access_token_secret_id) return fallback
+
+  try {
+    const { data: token } = await supabase.rpc("get_secret_by_id", { p_secret_id: row.access_token_secret_id })
+    if (typeof token !== "string" || !token) return fallback
+
+    const result = await graphRequest(row.phone_number_id, {
+      token,
+      query: { fields: "display_phone_number" },
+      timeoutMs: 6000,
+    })
+    const live = asRecord(result)?.display_phone_number
+    if (typeof live !== "string" || !live.trim()) return fallback
+
+    if (live !== row.display_phone_number) {
+      const { error } = await supabase
+        .from("tenant_whatsapp_integrations")
+        .update({ display_phone_number: live })
+        .eq("tenant_id", tenantId)
+        .eq("phone_number_id", row.phone_number_id)
+      if (error) console.error("[whatsapp-connect] couldn't store the confirmed number", { tenantId, error: error.message })
+    }
+    return { number: live, verified: true }
+  } catch (error) {
+    // The token is never part of this message (graphRequest strips it).
+    console.error("[whatsapp-connect] couldn't confirm the number with Meta", {
+      tenantId,
+      error: error instanceof Error ? error.message : "unknown",
+    })
+    return fallback
+  }
+}
+
 export async function loadConnectionStatus(tenantId: string): Promise<ConnectionStatus> {
   const supabase = getSupabaseServerClient()
   const { data, error } = await supabase
     .from("tenant_whatsapp_integrations")
-    .select("phone_number_id, display_phone_number, status, connected_via, last_error, last_error_at")
+    .select("phone_number_id, access_token_secret_id, display_phone_number, status, connected_via, last_error, last_error_at")
     .eq("tenant_id", tenantId)
     .order("updated_at", { ascending: false })
 
@@ -106,9 +158,12 @@ export async function loadConnectionStatus(tenantId: string): Promise<Connection
 
   const state: ConnectionState = active ? "connected" : pending ? (pending.last_error ? "error" : "pending") : "not_connected"
 
+  const confirmed = row ? await confirmNumberWithMeta(supabase, tenantId, row) : { number: null, verified: false }
+
   return {
     state,
-    displayPhone: row?.display_phone_number ?? null,
+    displayPhone: confirmed.number ?? row?.display_phone_number ?? null,
+    displayPhoneVerified: confirmed.verified,
     phoneNumberId: row?.phone_number_id ?? null,
     connectedVia: row?.connected_via ?? null,
     lastError: row?.last_error ?? null,
