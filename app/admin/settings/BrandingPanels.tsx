@@ -430,12 +430,21 @@ function BrandingFields({
         <div className="mt-2 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium text-stone-800">Dark dashboard</p>
-            <p className="text-sm text-stone-500">A dark look for this admin dashboard. Off keeps the standard cream look. Press Save to apply.</p>
+            <p className="text-sm text-stone-500">A dark look for this admin dashboard, sidebar included. Turning it on clears custom sidebar colours (you can set them again below). Press Save to apply.</p>
           </div>
           <Toggle
             checked={form.adminTheme === "dark"}
             disabled={isPending}
-            onChange={(on) => setForm({ ...form, adminTheme: on ? "dark" : "cream" })}
+            onChange={(on) => {
+              // Switching to dark also drops custom sidebar colours, so the sidebar goes dark with it.
+              // Custom colours can be switched on again below, and they then win over the dark default.
+              if (on) setColorSyncKey((k) => k + 1)
+              setForm({
+                ...form,
+                adminTheme: on ? "dark" : "cream",
+                ...(on ? { sidebarColor: null, sidebarTextColor: null, accentColor: null } : {}),
+              })
+            }}
           />
         </div>
         <div className="mt-3">
