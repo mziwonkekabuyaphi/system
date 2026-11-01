@@ -15,6 +15,7 @@ import { AdminDialog } from "../AdminDialog"
 import { printRequestSlip, slipProblem, toPlain, type RequestSlip } from "./shisha-request-print"
 import { ShishaCounter, StationTag } from "./ShishaCounter"
 import { ShishaDisplayDrawer } from "./ShishaDisplayDrawer"
+import { deleteDevice, deleteFlavour, deleteStation } from "./delete-actions"
 import {
   acceptShishaRequest,
   addDevice,
@@ -138,7 +139,7 @@ function formatMonth(month: string): string {
 
 function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
-    <div className={`${CARD} px-4 py-3`}>
+    <div className={`${CARD} border-l-[3px] border-l-accent px-4 py-3 shadow-sm`}>
       <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
       <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
       {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
@@ -175,6 +176,7 @@ export function ShishaManager({
   const busyRef = useRef(false)
   const [editing, setEditing] = useState<Editing | null>(null)
   const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ArchiveTarget | null>(null)
   const [displayOpen, setDisplayOpen] = useState(false)
 
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
@@ -416,6 +418,21 @@ export function ShishaManager({
     if (ok) setArchiveTarget(null)
   }
 
+  async function confirmDelete() {
+    const target = deleteTarget
+    if (!target) return
+    const fn =
+      target.kind === "flavour"
+        ? () => deleteFlavour(target.id)
+        : target.kind === "device"
+          ? () => deleteDevice(target.id)
+          : () => deleteStation(target.id)
+    const ok = await run(fn, `"${target.name}" deleted.`)
+    // Close either way: on failure the reason is shown in the notice banner.
+    setDeleteTarget(null)
+    return ok
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -462,7 +479,7 @@ export function ShishaManager({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Shisha sections">
+      <div className="flex flex-wrap gap-1 rounded-full border border-line bg-card p-1" role="tablist" aria-label="Shisha sections">
         {sections.map((s) => (
           <button
             key={s.id}
@@ -470,7 +487,11 @@ export function ShishaManager({
             role="tab"
             aria-selected={section === s.id}
             onClick={() => setSection(s.id)}
-            className={section === s.id ? BTN_PRIMARY : BTN}
+            className={
+              section === s.id
+                ? "rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-on-color shadow-md"
+                : "rounded-full px-4 py-1.5 text-sm text-ink-muted hover:text-ink"
+            }
           >
             {s.label}
             {s.id === "requests" && pendingCount > 0 && (
@@ -574,6 +595,7 @@ export function ShishaManager({
                 )
               }
               onArchive={(f) => setArchiveTarget({ kind: "flavour", id: f.id, name: f.name })}
+              onDelete={(f) => setDeleteTarget({ kind: "flavour", id: f.id, name: f.name })}
             />
           )}
 
@@ -593,6 +615,7 @@ export function ShishaManager({
                 )
               }
               onArchive={(d) => setArchiveTarget({ kind: "device", id: d.id, name: d.deviceCode })}
+              onDelete={(d) => setDeleteTarget({ kind: "device", id: d.id, name: d.deviceCode })}
             />
           )}
 
@@ -610,6 +633,7 @@ export function ShishaManager({
                 )
               }
               onArchive={(s) => setArchiveTarget({ kind: "station", id: s.id, name: s.name })}
+              onDelete={(s) => setDeleteTarget({ kind: "station", id: s.id, name: s.name })}
             />
           )}
 
@@ -715,6 +739,28 @@ export function ShishaManager({
         <p className="text-sm text-ink">
           It disappears from the lists and from new sessions. Past sessions keep it, so your history and totals stay
           correct.
+        </p>
+      </AdminDialog>
+
+      {/* Delete confirmation */}
+      <AdminDialog
+        open={deleteTarget !== null}
+        title={deleteTarget ? `Delete ${deleteTarget.name}?` : "Delete?"}
+        onClose={() => !busy && setDeleteTarget(null)}
+        footer={
+          <>
+            <button type="button" onClick={() => setDeleteTarget(null)} disabled={busy} className={BTN}>
+              Keep it
+            </button>
+            <button type="button" onClick={() => void confirmDelete()} disabled={busy} className={BTN_DANGER}>
+              {busy ? "Deleting…" : "Delete permanently"}
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink">
+          This removes it for good and can&apos;t be undone. If it has already been used in a session it can&apos;t be
+          deleted, because your history would break. Use Archive for those instead.
         </p>
       </AdminDialog>
 
@@ -1707,6 +1753,7 @@ function FlavoursPanel({
   onEdit,
   onToggle,
   onArchive,
+  onDelete,
 }: {
   snap: ShishaSnapshot
   canManage: boolean
@@ -1715,6 +1762,7 @@ function FlavoursPanel({
   onEdit: (f: ShishaFlavour) => void
   onToggle: (f: ShishaFlavour) => void
   onArchive: (f: ShishaFlavour) => void
+  onDelete: (f: ShishaFlavour) => void
 }) {
   return (
     <div className="space-y-4">
@@ -1729,9 +1777,9 @@ function FlavoursPanel({
       {snap.flavours.length === 0 ? (
         <EmptyState>No flavours yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {snap.flavours.map((f) => (
-            <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 transition-colors hover:border-accent/30">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-ink">{f.name}</p>
                 <p className="text-xs tabular-nums text-ink-muted">
@@ -1754,6 +1802,9 @@ function FlavoursPanel({
                     <button type="button" onClick={() => onArchive(f)} disabled={busy} className={BTN_GHOST}>
                       Archive
                     </button>
+<button type="button" onClick={() => onDelete(f)} disabled={busy} className={BTN_GHOST + " !text-accent hover:!bg-accent/10"}>
+Delete
+</button>
                   </>
                 )}
               </div>
@@ -1848,6 +1899,7 @@ function DevicesPanel({
   onEdit,
   onToggleMaintenance,
   onArchive,
+  onDelete,
 }: {
   snap: ShishaSnapshot
   canManage: boolean
@@ -1858,6 +1910,7 @@ function DevicesPanel({
   onEdit: (d: ShishaDevice) => void
   onToggleMaintenance: (d: ShishaDevice) => void
   onArchive: (d: ShishaDevice) => void
+  onDelete: (d: ShishaDevice) => void
 }) {
   return (
     <div className="space-y-4">
@@ -1872,12 +1925,12 @@ function DevicesPanel({
       {snap.devices.length === 0 ? (
         <EmptyState>No devices yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {snap.devices.map((d) => {
             const inUse = occupiedDeviceIds.has(d.id)
             const state = d.status === "maintenance" ? "maintenance" : inUse ? "in_use" : "available"
             return (
-              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 transition-colors hover:border-accent/30">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-ink">
                     {d.deviceCode}
@@ -1915,6 +1968,9 @@ function DevicesPanel({
                       <button type="button" onClick={() => onArchive(d)} disabled={busy || inUse} className={BTN_GHOST}>
                         Archive
                       </button>
+<button type="button" onClick={() => onDelete(d)} disabled={busy || inUse} className={BTN_GHOST + " !text-accent hover:!bg-accent/10"}>
+Delete
+</button>
                     </>
                   )}
                 </div>
@@ -1997,6 +2053,7 @@ function StationsPanel({
   onEdit,
   onToggle,
   onArchive,
+  onDelete,
 }: {
   snap: ShishaSnapshot
   canManage: boolean
@@ -2005,6 +2062,7 @@ function StationsPanel({
   onEdit: (s: ShishaStation) => void
   onToggle: (s: ShishaStation) => void
   onArchive: (s: ShishaStation) => void
+  onDelete: (s: ShishaStation) => void
 }) {
   return (
     <div className="space-y-4">
@@ -2019,11 +2077,11 @@ function StationsPanel({
       {snap.stations.length === 0 ? (
         <EmptyState>No stations yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {snap.stations.map((s) => {
             const deviceCount = snap.devices.filter((d) => d.locationId === s.id).length
             return (
-              <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 transition-colors hover:border-accent/30">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-ink">{s.name}</p>
                   <p className="text-xs text-ink-muted">
@@ -2045,6 +2103,9 @@ function StationsPanel({
                       <button type="button" onClick={() => onArchive(s)} disabled={busy} className={BTN_GHOST}>
                         Archive
                       </button>
+<button type="button" onClick={() => onDelete(s)} disabled={busy} className={BTN_GHOST + " !text-accent hover:!bg-accent/10"}>
+Delete
+</button>
                     </>
                   )}
                 </div>
