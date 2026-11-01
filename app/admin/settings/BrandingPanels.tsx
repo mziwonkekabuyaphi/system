@@ -340,7 +340,7 @@ function BrandingFields({
           <div>
             <p className="text-sm font-medium text-stone-800">Hide &quot;zozoQ&quot; Branding</p>
             <p className="text-sm text-stone-500">
-              Hide the platform footer from customer-facing experiences. This is a Business plan feature.
+              Remove "Powered By zozoQ" on footer from customer-facing experiences. This is a Business plan feature.
             </p>
           </div>
           <Toggle checked={form.removePoweredBy} disabled={isPending} onChange={handleRemovePoweredByChange} />
@@ -349,7 +349,7 @@ function BrandingFields({
         {showUpgradePrompt && (
           <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             <span>
-              This is a Business plan feature. Upgrade your plan to remove the &quot;Powered by&quot; footer from your
+              This is a Business plan feature. Upgrade your plan to remove &quot;zozoQ Branding&quot; footer from your
               kiosk.
             </span>
             <button
