@@ -46,6 +46,11 @@ const SUGGESTED_PALETTES: { name: string; primary: string; secondary: string }[]
   { name: "Copper + sand", primary: "#C9825B", secondary: "#E8D2A6" },
   { name: "Neon lime + deep teal", primary: "#9BE564", secondary: "#2F9E8F" },
   { name: "Magenta + sky", primary: "#D94FA0", secondary: "#5AC8E8" },
+  { name: "Wine + sage", primary: "#C0576A", secondary: "#6FA07C" },
+  { name: "Electric blue + magenta", primary: "#3FA7F5", secondary: "#E04FA0" },
+  { name: "Red + gold", primary: "#E5533D", secondary: "#E2B33C" },
+  { name: "Periwinkle + peach", primary: "#8FA8FF", secondary: "#FFB08A" },
+  { name: "Cobalt + silver", primary: "#4F7CFF", secondary: "#D5DCE4" },
 ]
 
 // ---------------------------------------------------------------------------
