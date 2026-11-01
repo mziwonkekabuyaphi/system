@@ -2,6 +2,7 @@
 "use client"
 
 import { useState } from "react"
+import type { ReactElement, ReactNode, SVGProps } from "react"
 
 import type {
   AdminBranding,
@@ -23,6 +24,68 @@ import { KioskPanel } from "./settings/KioskPanels"
 import { SettingsPageHeader } from "./settings/ui"
 
 type SubTab = "general" | "services" | "kiosk" | "display" | "private-label"
+
+// Small line icons for the collapsed settings rail (same style as the main sidebar's).
+function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {children}
+    </svg>
+  )
+}
+
+const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactElement> = {
+  general: (p) => (
+    <RailIcon {...p}>
+      <path d="M3 9l1.5-5h15L21 9" />
+      <path d="M3 9h18" />
+      <path d="M4 9v11h16V9" />
+      <path d="M9 20v-6h6v6" />
+    </RailIcon>
+  ),
+  "private-label": (p) => (
+    <RailIcon {...p}>
+      <path d="M12 3a9 9 0 100 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H17a4 4 0 004-4c0-4.4-4-8.2-9-8.2z" />
+      <circle cx="7.5" cy="11" r="1" />
+      <circle cx="10" cy="7.5" r="1" />
+      <circle cx="14.5" cy="7.5" r="1" />
+    </RailIcon>
+  ),
+  services: (p) => (
+    <RailIcon {...p}>
+      <path d="M8 6h13M8 12h13M8 18h13" />
+      <circle cx="3.5" cy="6" r="1" />
+      <circle cx="3.5" cy="12" r="1" />
+      <circle cx="3.5" cy="18" r="1" />
+    </RailIcon>
+  ),
+  kiosk: (p) => (
+    <RailIcon {...p}>
+      <rect x="6" y="2.5" width="12" height="19" rx="2" />
+      <path d="M10 18.5h4" />
+    </RailIcon>
+  ),
+  display: (p) => (
+    <RailIcon {...p}>
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </RailIcon>
+  ),
+}
+
+// Same widths and timing as the main admin sidebar (200ms width, labels fade in after 100ms).
+const RAIL_COLLAPSED = "3.5rem"
+const RAIL_EXPANDED = "14rem"
+// The active item's accent is the shop's own colour (--sb-accent) when set, else the admin accent.
 
 // Settings are grouped by what the owner is thinking about, not by which
 // part of the system they happen to touch. Labels avoid clashing with the
@@ -145,6 +208,8 @@ export function SettingsManager({
   servicesManage?: boolean
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
+  const [railHovered, setRailHovered] = useState(false)
+  const railExpanded = railHovered
 
   // Queue settings are edited from two places (Kiosk > Services and Queue
   // rules). Lifting them here keeps both in sync after a save, instead of
@@ -164,7 +229,7 @@ export function SettingsManager({
   const activePage = settingsPages.find((p) => p.id === subTab) ?? settingsPages[0]
 
   return (
-    <div className="md:grid md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8">
+    <div className="md:flex md:gap-6">
       {/* Phone / small tablet: one scrolling row of pills */}
       <div className="mb-4 flex gap-1 overflow-x-auto md:hidden">
         {settingsPages.map((t) => (
@@ -184,28 +249,70 @@ export function SettingsManager({
         ))}
       </div>
 
-      {/* Desktop: grouped menu, so it's always clear which area you're in */}
-      <nav aria-label="Settings sections" className="hidden md:block">
-        <div className="sticky top-4 space-y-5">
-          {settingsNav.map((group) => (
-            <div key={group.group}>
-              <p className="px-3 text-xs font-semibold uppercase tracking-wider text-stone-400">{group.group}</p>
-              <ul className="mt-1 space-y-0.5">
+      {/* Desktop: collapsible icon rail. Expands over the page on hover/focus (like the main sidebar),
+          so the content never jumps. The 3.5rem box below just reserves the collapsed width. */}
+      <div className="relative hidden w-14 shrink-0 md:block">
+        <nav
+          aria-label="Settings sections"
+          onMouseEnter={() => setRailHovered(true)}
+          onMouseLeave={() => setRailHovered(false)}
+          onFocus={() => setRailHovered(true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setRailHovered(false)
+          }}
+          style={{ width: railExpanded ? RAIL_EXPANDED : RAIL_COLLAPSED }}
+          className={`sticky top-4 z-20 overflow-hidden rounded-xl border border-stone-200 bg-card py-2 transition-[width] duration-200 ease-out ${
+            railExpanded ? "shadow-2xl" : ""
+          }`}
+        >
+          {settingsNav.map((group, gi) => (
+            <div key={group.group} className={gi > 0 ? "mt-2" : ""}>
+              {/* Collapsed: a small dot. Expanded: the group name. */}
+              <div className="relative h-6 px-3">
+                <span
+                  className={`absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-stone-300 transition-opacity duration-150 ${
+                    railExpanded ? "opacity-0" : "opacity-100"
+                  }`}
+                />
+                <p
+                  className={`whitespace-nowrap pl-3 text-xs font-semibold uppercase tracking-wider text-stone-400 transition-opacity duration-150 ${
+                    railExpanded ? "opacity-100 delay-100" : "opacity-0"
+                  }`}
+                >
+                  {group.group}
+                </p>
+              </div>
+              <ul className="space-y-0.5 px-2">
                 {group.items.map((item) => {
                   const active = subTab === item.id
+                  const Icon = SETTINGS_ICONS[item.id]
                   return (
                     <li key={item.id}>
                       <button
                         type="button"
                         onClick={() => setSubTab(item.id)}
                         aria-current={active ? "page" : undefined}
-                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                        title={item.label}
+                        className={`relative flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors ${
                           active
-                            ? "bg-selected font-semibold text-on-color"
-                            : "font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900"
+                            ? "border-[color-mix(in_srgb,var(--sb-accent,var(--color-admin-accent))_25%,transparent)] bg-[color-mix(in_srgb,var(--sb-accent,var(--color-admin-accent))_12%,transparent)] font-semibold text-[var(--sb-accent,var(--color-admin-accent))]"
+                            : "border-transparent font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900"
                         }`}
                       >
-                        {item.label}
+                        {active && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute bottom-[20%] left-0 top-[20%] w-0.5 rounded-full bg-[var(--sb-accent,var(--color-admin-accent))] shadow-[0_0_8px_var(--sb-accent,var(--color-admin-accent))]"
+                          />
+                        )}
+                        <Icon className="h-5 w-5 shrink-0" />
+                        <span
+                          className={`whitespace-nowrap transition-opacity duration-150 ${
+                            railExpanded ? "opacity-100 delay-100" : "opacity-0"
+                          }`}
+                        >
+                          {item.label}
+                        </span>
                       </button>
                     </li>
                   )
@@ -213,10 +320,10 @@ export function SettingsManager({
               </ul>
             </div>
           ))}
-        </div>
-      </nav>
+        </nav>
+      </div>
 
-      <div className="min-w-0 space-y-4">
+      <div className="min-w-0 flex-1 space-y-4">
         <SettingsPageHeader title={activePage.title} description={activePage.description} />
 
       {activePage.id === "general" && (
