@@ -318,16 +318,18 @@ export function AdminView({
           "text-[color:var(--sb-text-muted)] hover:bg-[var(--sb-hover)] hover:text-[color:var(--sb-text)]",
       }
     : {
-        bg: "bg-admin-sidebar",
-        line: "border-admin-on-sidebar/10",
-        text: "text-admin-on-sidebar",
-        badge: "bg-admin-accent text-admin-on-accent",
-        // Matches the Rands admin sidebar: see-through tint, thin border, red text + icon,
-        // and a small glowing bar on the left edge (not a solid fill).
+        // Default look = the Rands admin sidebar: near-black surface, hairline borders, and an
+        // active item that is the SAME red at ~10% opacity (so the dark shows through) with a
+        // thin glowing bar on the left edge. Hardcoded on purpose so it doesn't depend on the
+        // maroon admin-sidebar token. Shops with their own colours use the branch above.
+        bg: "bg-[#111114]",
+        line: "border-white/[0.07]",
+        text: "text-[#f4f4f5]",
+        badge: "bg-[#E30613] text-white",
         navActive:
-          "relative border-admin-accent/25 bg-admin-accent/[0.12] text-[#ff3344] before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-0.5 before:rounded-full before:bg-admin-accent before:shadow-[0_0_8px_var(--color-admin-accent)]",
+          "relative border-[rgba(227,6,19,0.22)] bg-[rgba(227,6,19,0.10)] text-[#ff3344] before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-0.5 before:rounded-full before:bg-[#E30613] before:shadow-[0_0_8px_rgba(227,6,19,0.35)]",
         navActiveIcon: "",
-        navIdle: "text-admin-on-sidebar/60 hover:bg-admin-on-sidebar/[0.07] hover:text-admin-on-sidebar",
+        navIdle: "text-[#71717a] hover:bg-white/[0.05] hover:text-[#f4f4f5]",
       }
 
   // Display name from Private Label wins; otherwise the shop's own name.
