@@ -318,18 +318,16 @@ export function AdminView({
           "text-[color:var(--sb-text-muted)] hover:bg-[var(--sb-hover)] hover:text-[color:var(--sb-text)]",
       }
     : {
-        // Default look = the Rands admin sidebar: near-black surface, hairline borders, and an
-        // active item that is the SAME red at ~10% opacity (so the dark shows through) with a
-        // thin glowing bar on the left edge. Hardcoded on purpose so it doesn't depend on the
-        // maroon admin-sidebar token. Shops with their own colours use the branch above.
-        bg: "bg-[#111114]",
-        line: "border-white/[0.07]",
-        text: "text-[#f4f4f5]",
-        badge: "bg-[#E30613] text-white",
+        bg: "bg-admin-sidebar",
+        line: "border-admin-on-sidebar/10",
+        text: "text-admin-on-sidebar",
+        badge: "bg-admin-accent text-admin-on-accent",
+        // Matches the Rands admin sidebar: see-through tint, thin border, red text + icon,
+        // and a small glowing bar on the left edge (not a solid fill).
         navActive:
-          "relative border-[rgba(227,6,19,0.22)] bg-[rgba(227,6,19,0.10)] text-[#ff3344] before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-0.5 before:rounded-full before:bg-[#E30613] before:shadow-[0_0_8px_rgba(227,6,19,0.35)]",
+          "relative border-admin-accent/25 bg-admin-accent/[0.12] text-[#ff3344] before:absolute before:left-0 before:top-[20%] before:bottom-[20%] before:w-0.5 before:rounded-full before:bg-admin-accent before:shadow-[0_0_8px_var(--color-admin-accent)]",
         navActiveIcon: "",
-        navIdle: "text-[#71717a] hover:bg-white/[0.05] hover:text-[#f4f4f5]",
+        navIdle: "text-admin-on-sidebar/60 hover:bg-admin-on-sidebar/[0.07] hover:text-admin-on-sidebar",
       }
 
   // Display name from Private Label wins; otherwise the shop's own name.
@@ -360,6 +358,17 @@ export function AdminView({
           expanded ? "shadow-2xl" : ""
         }`}
       >
+        {/* Dark theme only: the thin glowing line down the sidebar's left edge (as in Rands).
+            Fades in while the sidebar is open, in the shop's accent colour when one is set. */}
+        {branding.adminTheme === "dark" && (
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute bottom-[20%] left-0 top-[20%] w-0.5 bg-[linear-gradient(180deg,transparent,var(--sb-accent,var(--color-admin-accent))_50%,transparent)] transition-opacity duration-200 ease-out ${
+              expanded ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        )}
+
         {/* Brand */}
         <div className={`flex h-16 shrink-0 items-center gap-3 border-b ${SB.line} px-4`}>
           {branding.logoUrl ? (
