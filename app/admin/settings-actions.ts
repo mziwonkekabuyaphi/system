@@ -553,8 +553,13 @@ export async function updateBranding(input: {
   sidebarColor?: string | null
   sidebarTextColor?: string | null
   accentColor?: string | null
+  /** 'cream' (default) or 'dark'. Omitting leaves it as is. Free on every plan. */
+  adminTheme?: "cream" | "dark"
 }): Promise<ActionResult> {
   try {
+    if (input.adminTheme !== undefined && input.adminTheme !== "cream" && input.adminTheme !== "dark") {
+      return { success: false, error: "Unknown dashboard look." }
+    }
     for (const [label, value] of [
       ["Sidebar colour", input.sidebarColor],
       ["Sidebar text colour", input.sidebarTextColor],
@@ -600,6 +605,7 @@ export async function updateBranding(input: {
       remove_powered_by: input.removePoweredBy,
       updated_at: new Date().toISOString(),
     }
+    if (input.adminTheme !== undefined) updates.admin_theme = input.adminTheme
 
     if (canCustomizeBranding) {
       updates.primary_color = input.primaryColor

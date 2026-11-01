@@ -1,6 +1,6 @@
 // app/admin/layout.tsx
 import type { ReactNode } from "react"
-import { Fraunces, Inter } from "next/font/google"
+import { Fraunces, Inter, Space_Grotesk } from "next/font/google"
 import { redirect } from "next/navigation"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -24,6 +24,12 @@ const inter = Inter({
   display: "swap",
 })
 
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+  display: "swap",
+})
+
 // Access protection: every /admin page and Server Action now requires a
 // signed-in user with an active tenant_members row (see
 // lib/tenant/current-tenant-member.ts). requireTenantMember() redirects
@@ -39,14 +45,20 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // A shop that signed itself up waits for a platform admin to approve it (status 'pending'),
   // and a declined one is 'inactive'. Neither gets the admin; both see the status page instead.
   const supabase = getSupabaseServerClient()
+  let dark = false
   if (supabase) {
     const { data: tenant } = await supabase.from("tenants").select("status").eq("id", tenantId).maybeSingle()
     if (tenant && (tenant.status === "pending" || tenant.status === "inactive")) redirect("/onboarding/pending")
+
+    // Per-shop dark look (Settings > Branding). Read here so the first paint is already dark, with no flash.
+    const { data: look } = await supabase.from("tenant_branding").select("admin_theme").eq("tenant_id", tenantId).maybeSingle()
+    dark = look?.admin_theme === "dark"
   }
 
   return (
     <div
-      className={`${fraunces.variable} ${inter.variable} min-h-screen bg-admin-body [font-family:var(--font-inter)] antialiased`}
+      data-admin-theme={dark ? "dark" : "cream"}
+      className={`${fraunces.variable} ${inter.variable} ${spaceGrotesk.variable} min-h-screen bg-admin-body [font-family:var(--font-inter)] antialiased`}
     >
       {children}
     </div>

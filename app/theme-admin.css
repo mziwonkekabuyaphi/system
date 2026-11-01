@@ -1,7 +1,7 @@
 /* ==========================================================================
    Admin theme colours — the cream theme (the current look).
    Every value is the EXACT colour it replaced, so nothing changes visually.
-   A second theme (Rands dark) overrides these same names; see step 2.
+   The Rands dark theme (bottom of this file) overrides these same names.
    Used as Tailwind colours: text-ink, bg-card, border-line, ring-accent, ...
    ========================================================================== */
 @theme {
@@ -53,4 +53,120 @@
   --color-danger-soft: #f3e3e0;
   --color-danger-line: #e0b4ad;
   --color-info: #2557a7;
+
+  /* selected pill / active filter chip (was stone-800) */
+  --color-selected: #292524;
+}
+
+
+/* ==========================================================================
+   Rands dark theme. Applies only inside data-admin-theme="dark" (set per shop
+   in Settings > Branding; see app/admin/layout.tsx). Cream is the default.
+   Palette from the Rands dashboard: page #09090b, surfaces #111114/#18181c/
+   #1e1e24, text #f4f4f5, muted #71717a, red #E30613.
+   `:is(div, body)` raises specificity so these win over the font classes that
+   sit on the same element. Pop-ups outside the page tree are covered because
+   <body> carries the same attribute.
+   ========================================================================== */
+:is(div, body)[data-admin-theme="dark"] {
+  color-scheme: dark;
+
+  /* fonts: Space Grotesk for headings, Inter underneath */
+  --font-admin-serif: var(--font-space-grotesk), var(--font-inter), sans-serif;
+
+  /* theme colours */
+  --color-ink: #f4f4f5;
+  --color-ink-soft: #a1a1aa;
+  --color-ink-muted: #71717a;
+  --color-on-primary: #ffffff;
+  --color-on-color: #ffffff;
+
+  --color-card: #111114;
+  --color-panel: #111114;
+  --color-dialog: #18181c;
+  --color-canvas: #0d0d10;
+  --color-tint: #1e1e24;
+  --color-tint-2: #1a1a1f;
+  --color-tint-3: #25252c;
+
+  --color-line: #26262c;
+  --color-line-strong: #34343c;
+
+  --color-primary: #e30613;
+  --color-primary-hover: #c40511;
+  --color-primary-hover-strong: #a9040f;
+  --color-selected: #e30613;
+
+  --color-accent: #e30613;
+  --color-accent-hover: #c40511;
+  --color-accent-hover-2: #b0050f;
+  --color-accent-alt: #e30613;
+  --color-accent-alt-hover: #c40511;
+
+  --color-success: #1f9d55;
+  --color-success-hover: #178a49;
+  --color-success-soft: #12301f;
+  --color-success-strong: #4ade80;
+  --color-success-alt: #34d399;
+  --color-warn: #f5a524;
+  --color-warn-strong: #fcd34d;
+  --color-warn-soft: #33260a;
+  --color-warn-soft-2: #2b2008;
+  --color-warn-line: #6b4f12;
+  --color-warn-alt: #f59e0b;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3a1519;
+  --color-danger-line: #7f1d24;
+  --color-info: #60a5fa;
+
+  /* admin shell tokens (page, sidebar, text) */
+  --color-admin-body: #09090b;
+  --color-admin-sidebar: #111114;
+  --color-admin-surface: #111114;
+  --color-admin-accent: #e30613;
+  --color-admin-on-accent: #ffffff;
+  --color-admin-on-sidebar: #f4f4f5;
+  --color-admin-text: #f4f4f5;
+  --color-admin-text-muted: #a1a1aa;
+  --color-admin-border: #26262c;
+  --color-admin-error: #ef4444;
+  --color-admin-success: #22c55e;
+
+  /* Tailwind palette classes still used around the admin, flipped for dark */
+  --color-stone-50: #18181c;
+  --color-stone-100: #1e1e24;
+  --color-stone-200: #2a2a31;
+  --color-stone-300: #3f3f46;
+  --color-stone-400: #71717a;
+  --color-stone-500: #8b8b94;
+  --color-stone-600: #a1a1aa;
+  --color-stone-700: #d4d4d8;
+  --color-stone-800: #e4e4e7;
+  --color-stone-900: #f4f4f5;
+
+  --color-red-50: #2a1013;
+  --color-red-100: #3a1519;
+  --color-red-200: #5a1c22;
+  --color-red-300: #7f1d24;
+  --color-red-600: #ef4444;
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+
+  --color-amber-50: #2b2008;
+  --color-amber-100: #3a2a0a;
+  --color-amber-200: #6b4f12;
+  --color-amber-600: #f59e0b;
+  --color-amber-700: #fbbf24;
+  --color-amber-800: #fcd34d;
+  --color-amber-900: #fde68a;
+
+  --color-emerald-100: #12301f;
+  --color-emerald-600: #34d399;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+}
+
+body[data-admin-theme="dark"] {
+  background: #09090b;
+  color: #f4f4f5;
 }

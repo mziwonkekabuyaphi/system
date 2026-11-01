@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { SVGProps } from "react"
 
 import { LogoutButton } from "@/components/admin/LogoutButton"
@@ -275,7 +275,16 @@ export function AdminView({
     sidebarColor: initialBranding.sidebarColor ?? null,
     sidebarTextColor: initialBranding.sidebarTextColor ?? null,
     accentColor: initialBranding.accentColor ?? null,
+    adminTheme: (initialBranding.adminTheme === "dark" ? "dark" : "cream") as "cream" | "dark",
   })
+
+  // Pop-ups (drawers, dialogs) can render outside this component's tree, so the dark look is also
+  // flagged on <body>. The server layout sets it on first paint; this keeps it in step after a Save.
+  useEffect(() => {
+    if (branding.adminTheme === "dark") document.body.setAttribute("data-admin-theme", "dark")
+    else document.body.removeAttribute("data-admin-theme")
+    return () => document.body.removeAttribute("data-admin-theme")
+  }, [branding.adminTheme])
 
   function handleBrandingChange(
     patch: Partial<{
@@ -284,6 +293,7 @@ export function AdminView({
       sidebarColor: string | null
       sidebarTextColor: string | null
       accentColor: string | null
+      adminTheme: "cream" | "dark"
     }>,
   ) {
     setBranding((prev) => ({ ...prev, ...patch }))
@@ -324,6 +334,7 @@ export function AdminView({
       style={{ ...(sidebarVars ?? {}) }}
       // Lets components/admin/brand.ts switch to the tenant's own colours.
       data-brand={custom ? "custom" : "default"}
+      data-admin-theme={branding.adminTheme === "dark" ? "dark" : "cream"}
       className="group/admin min-h-screen bg-admin-body text-admin-text"
     >
       {/* ================= SIDEBAR ================= */}

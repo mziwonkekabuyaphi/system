@@ -19,6 +19,7 @@ type BrandingPatch = Partial<{
   sidebarColor: string | null
   sidebarTextColor: string | null
   accentColor: string | null
+  adminTheme: "cream" | "dark"
 }>
 import {
   ColorField,
@@ -109,6 +110,7 @@ function BrandingFields({
     sidebarColor: initial.sidebarColor ?? null,
     sidebarTextColor: initial.sidebarTextColor ?? null,
     accentColor: initial.accentColor ?? null,
+    adminTheme: (initial.adminTheme === "dark" ? "dark" : "cream") as "cream" | "dark",
   })
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -137,6 +139,7 @@ function BrandingFields({
           sidebarColor: form.sidebarColor,
           sidebarTextColor: form.sidebarTextColor,
           accentColor: form.accentColor,
+          adminTheme: form.adminTheme,
         })
       } else {
         setMessage({ ok: false, text: result.error })
@@ -420,6 +423,26 @@ function BrandingFields({
         </div>
 
         <SaveRow isPending={isPending} onSave={save} message={message} />
+      </div>
+
+      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
+        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Dashboard look</p>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-stone-800">Dark dashboard</p>
+            <p className="text-sm text-stone-500">A dark look for this admin dashboard. Off keeps the standard cream look. Press Save to apply.</p>
+          </div>
+          <Toggle
+            checked={form.adminTheme === "dark"}
+            disabled={isPending}
+            onChange={(on) => setForm({ ...form, adminTheme: on ? "dark" : "cream" })}
+          />
+        </div>
+        <div className="mt-3">
+          <button type="button" onClick={save} disabled={isPending} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary disabled:opacity-50">
+            {isPending ? "Saving..." : "Save"}
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
