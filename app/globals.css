@@ -7,7 +7,9 @@
   --color-admin-accent-dim: var(--qless-amber-dim);
   --color-admin-on-accent: var(--qless-navy-deep);
   --color-admin-on-sidebar: var(--qless-paper);
-  --color-admin-body: var(--qless-paper);
+  /* Page background behind the white cards: the deeper cream (paper-dim), so cards
+     stand out from the page all the time, not only while an overlay is open. */
+  --color-admin-body: var(--qless-paper-dim);
   --color-admin-surface: var(--qless-paper-dim);
   --color-admin-text: var(--qless-ink);
   --color-admin-text-muted: var(--qless-ink-soft);
