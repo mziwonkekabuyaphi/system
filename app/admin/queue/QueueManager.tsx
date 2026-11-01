@@ -30,19 +30,19 @@ const REFRESH_MS = 30_000
 type Notice = { kind: "success" | "error"; text: string }
 
 const FIELD =
-  `rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER}`
+  `rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none ${BRAND_FOCUS_BORDER}`
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_CALL = `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 const BTN_DONE =
-  "rounded-md bg-[#4B6B54] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#3D5745] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-success px-3 py-1.5 text-sm font-medium text-on-color hover:bg-success-hover disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_GHOST =
-  "rounded-md px-3 py-1.5 text-sm text-[#8A8375] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md px-3 py-1.5 text-sm text-ink-muted hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 
 const SOURCE_LABEL: Record<AdminQueueEntry["source"], string> = { walk_in: "Walk-in", booking: "Appointment" }
 const SOURCE_BADGE: Record<AdminQueueEntry["source"], string> = {
-  walk_in: "bg-[#1C1A17]/[0.07] text-[#1C1A17]",
-  booking: "bg-[#2557A7]/10 text-[#2557A7]",
+  walk_in: "bg-ink/[0.07] text-ink",
+  booking: "bg-info/10 text-info",
 }
 
 function byPosition(a: AdminQueueEntry, b: AdminQueueEntry) {
@@ -54,10 +54,10 @@ function byPosition(a: AdminQueueEntry, b: AdminQueueEntry) {
 
 function SummaryCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (
-    <div className="rounded-lg border border-[#E6E1D4] bg-white px-4 py-3">
-      <p className="text-xs uppercase tracking-wide text-[#8A8375]">{label}</p>
-      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-[#1C1A17]">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-[#8A8375]">{hint}</p>}
+    <div className="rounded-lg border border-line bg-card px-4 py-3">
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
     </div>
   )
 }
@@ -293,16 +293,16 @@ export function QueueManager({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Queue Management</h2>
-          <p className="mt-0.5 text-sm text-[#8A8375]">
+          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Queue Management</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">
             Walk-ins and appointments waiting to be served, in the order your queue mode sets.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <p className="flex items-center gap-2 text-xs text-[#8A8375]" role="status">
+          <p className="flex items-center gap-2 text-xs text-ink-muted" role="status">
             <span
               aria-hidden
-              className={`inline-block h-2 w-2 rounded-full ${refreshFailed ? "bg-[#B3402A]" : "bg-[#4B6B54]"}`}
+              className={`inline-block h-2 w-2 rounded-full ${refreshFailed ? "bg-danger" : "bg-success"}`}
             />
             {refreshFailed
               ? `Can't reach the server — showing the queue as of ${updatedLabel}`
@@ -334,7 +334,7 @@ export function QueueManager({
         <div
           role={notice.kind === "error" ? "alert" : "status"}
           className={`flex items-start justify-between gap-3 rounded-md px-3 py-2 text-sm ${
-            notice.kind === "error" ? "bg-[#7A2E2E]/10 text-[#7A2E2E]" : "bg-[#4B6B54]/10 text-[#4B6B54]"
+            notice.kind === "error" ? "bg-accent/10 text-accent" : "bg-success/10 text-success"
           }`}
         >
           <span>{notice.text}</span>
@@ -352,19 +352,19 @@ export function QueueManager({
 
       {/* Now serving */}
       <section aria-labelledby="now-serving-heading">
-        <h3 id="now-serving-heading" className="mb-2 text-sm font-semibold text-[#1C1A17]">
+        <h3 id="now-serving-heading" className="mb-2 text-sm font-semibold text-ink">
           Now serving
         </h3>
         {serving.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[#D9D3C3] px-5 py-8 text-center text-[#8A8375]">
+          <div className="rounded-lg border border-dashed border-line-strong px-5 py-8 text-center text-ink-muted">
             {servingAll.length > 0 ? "No one being served matches these filters." : "Nobody is being served right now."}
           </div>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {serving.map((q) => (
-              <li key={q.id} className="rounded-xl border-2 border-[#4B6B54]/40 bg-[#4B6B54]/[0.06] p-4">
+              <li key={q.id} className="rounded-xl border-2 border-success/40 bg-success/[0.06] p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-[#1C1A17]">
+                  <p className="font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">
                     {ticket(q)}
                   </p>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${SOURCE_BADGE[q.source]}`}>
@@ -376,9 +376,9 @@ export function QueueManager({
                   onClick={() => setDetailsId(q.id)}
                   className={`mt-2 block w-full rounded text-left focus-visible:outline focus-visible:outline-2 ${BRAND_FOCUS_OUTLINE}`}
                 >
-                  <p className="truncate text-[1.02rem] text-[#1C1A17]">{q.customerName ?? "No name on file"}</p>
-                  <p className="truncate text-sm text-[#8A8375]">{q.serviceName}</p>
-                  <p className="mt-1 text-xs text-[#8A8375]">
+                  <p className="truncate text-[1.02rem] text-ink">{q.customerName ?? "No name on file"}</p>
+                  <p className="truncate text-sm text-ink-muted">{q.serviceName}</p>
+                  <p className="mt-1 text-xs text-ink-muted">
                     Called {q.calledAt ? formatTime(q.calledAt, timezone) : "—"} · with you for{" "}
                     {formatDuration(now - new Date(q.calledAt ?? q.joinedAt).getTime())}
                   </p>
@@ -433,7 +433,7 @@ export function QueueManager({
               setServiceFilter("all")
               setSourceFilter("all")
             }}
-            className="text-sm text-[#7A2E2E] underline underline-offset-4"
+            className="text-sm text-accent underline underline-offset-4"
           >
             Clear filters
           </button>
@@ -442,16 +442,16 @@ export function QueueManager({
 
       {/* Waiting */}
       <section aria-labelledby="waiting-heading">
-        <h3 id="waiting-heading" className="mb-2 text-sm font-semibold text-[#1C1A17]">
+        <h3 id="waiting-heading" className="mb-2 text-sm font-semibold text-ink">
           Waiting
-          <span className="ml-2 font-normal text-[#8A8375]">{waitingAll.length}</span>
+          <span className="ml-2 font-normal text-ink-muted">{waitingAll.length}</span>
         </h3>
         {waiting.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[#D9D3C3] px-5 py-10 text-center text-[#8A8375]">
+          <div className="rounded-lg border border-dashed border-line-strong px-5 py-10 text-center text-ink-muted">
             {waitingAll.length > 0 ? "No one waiting matches these filters." : "No one's queued up right now."}
           </div>
         ) : (
-          <ul className="divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4] bg-white">
+          <ul className="divide-y divide-line rounded-lg border border-line bg-card">
             {waiting.map((q) => {
               const position = positionOf(q.id)
               const rowBusy = busy?.id === q.id
@@ -462,22 +462,22 @@ export function QueueManager({
                     onClick={() => setDetailsId(q.id)}
                     className={`flex min-w-0 flex-1 items-center gap-4 rounded text-left focus-visible:outline focus-visible:outline-2 ${BRAND_FOCUS_OUTLINE}`}
                   >
-                    <span className="min-w-16 shrink-0 rounded-md bg-[#1C1A17] px-2.5 py-1 text-center font-mono text-sm tabular-nums text-[#FAF6EE]">
+                    <span className="min-w-16 shrink-0 rounded-md bg-primary px-2.5 py-1 text-center font-mono text-sm tabular-nums text-on-primary">
                       {ticket(q)}
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-[1.02rem] text-[#1C1A17]">
+                      <span className="block truncate text-[1.02rem] text-ink">
                         {q.customerName ?? "No name on file"}
                         {position === 1 && (
-                          <span className={`ml-2 rounded-full bg-[#1C1A17]/[0.07] px-2 py-0.5 align-middle text-xs font-medium ${BRAND_TEXT}`}>
+                          <span className={`ml-2 rounded-full bg-ink/[0.07] px-2 py-0.5 align-middle text-xs font-medium ${BRAND_TEXT}`}>
                             Next
                           </span>
                         )}
                       </span>
-                      <span className="block truncate text-sm text-[#8A8375]">
+                      <span className="block truncate text-sm text-ink-muted">
                         {q.serviceName} · {q.customerPhone}
                       </span>
-                      <span className="block text-xs text-[#8A8375]">
+                      <span className="block text-xs text-ink-muted">
                         #{position} in line · joined {formatTime(q.joinedAt, timezone)} · waiting{" "}
                         {formatDuration(now - new Date(q.joinedAt).getTime())}
                         {q.etaMinutes !== null && <> · est. {q.etaMinutes === 0 ? "now" : `~${q.etaMinutes} min`}</>}
@@ -488,7 +488,7 @@ export function QueueManager({
                   <div className="flex shrink-0 items-center gap-2 sm:justify-end">
                     {q.runningLate && (
                       <span
-                        className="rounded-full bg-[#B3402A]/10 px-2.5 py-0.5 text-xs font-medium text-[#B3402A]"
+                        className="rounded-full bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger"
                         title="Estimated to start after its appointment time"
                       >
                         Running late
@@ -539,9 +539,9 @@ export function QueueManager({
       >
         {detailsEntry && (
           <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2">
-            <dt className="text-[#8A8375]">{detailsEntry.ticketLabel ? "Ticket" : "Reference"}</dt>
+            <dt className="text-ink-muted">{detailsEntry.ticketLabel ? "Ticket" : "Reference"}</dt>
             <dd className="font-mono">{ticket(detailsEntry)}</dd>
-            <dt className="text-[#8A8375]">Status</dt>
+            <dt className="text-ink-muted">Status</dt>
             <dd>
               {detailsEntry.status === "waiting"
                 ? `Waiting (#${positionOf(detailsEntry.id)} in line)`
@@ -549,9 +549,9 @@ export function QueueManager({
                   ? "Being served"
                   : "Done"}
             </dd>
-            <dt className="text-[#8A8375]">Customer</dt>
+            <dt className="text-ink-muted">Customer</dt>
             <dd>{detailsEntry.customerName ?? "No name on file"}</dd>
-            <dt className="text-[#8A8375]">Phone</dt>
+            <dt className="text-ink-muted">Phone</dt>
             <dd>
               {detailsEntry.customerPhone ? (
                 <a href={`tel:${detailsEntry.customerPhone}`} className="underline underline-offset-2">
@@ -561,21 +561,21 @@ export function QueueManager({
                 "—"
               )}
             </dd>
-            <dt className="text-[#8A8375]">Service</dt>
+            <dt className="text-ink-muted">Service</dt>
             <dd>{detailsEntry.serviceName}</dd>
-            <dt className="text-[#8A8375]">Source</dt>
+            <dt className="text-ink-muted">Source</dt>
             <dd>{SOURCE_LABEL[detailsEntry.source]}</dd>
-            <dt className="text-[#8A8375]">Joined</dt>
+            <dt className="text-ink-muted">Joined</dt>
             <dd className="tabular-nums">{formatTime(detailsEntry.joinedAt, timezone)}</dd>
             {detailsEntry.calledAt && (
               <>
-                <dt className="text-[#8A8375]">Called</dt>
+                <dt className="text-ink-muted">Called</dt>
                 <dd className="tabular-nums">{formatTime(detailsEntry.calledAt, timezone)}</dd>
               </>
             )}
             {detailsEntry.completedAt && (
               <>
-                <dt className="text-[#8A8375]">Finished</dt>
+                <dt className="text-ink-muted">Finished</dt>
                 <dd className="tabular-nums">{formatTime(detailsEntry.completedAt, timezone)}</dd>
               </>
             )}
@@ -597,7 +597,7 @@ export function QueueManager({
               type="button"
               onClick={() => void handleRemoveConfirmed()}
               disabled={anyBusy}
-              className="rounded-md bg-[#7A2E2E] px-3 py-1.5 text-sm text-white hover:bg-[#651F2A] disabled:opacity-50"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm text-on-color hover:bg-accent-alt-hover disabled:opacity-50"
             >
               {busy?.action === "remove" ? "Removing…" : "Remove"}
             </button>

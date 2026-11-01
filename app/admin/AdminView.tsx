@@ -426,7 +426,7 @@ export function AdminView({
             <img
               src={branding.logoUrl}
               alt=""
-              className="h-10 w-10 shrink-0 rounded-lg border border-stone-200 object-contain bg-white"
+              className="h-10 w-10 shrink-0 rounded-lg border border-stone-200 object-contain bg-card"
             />
           )}
           <div>

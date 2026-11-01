@@ -1,0 +1,5372 @@
+[
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ActivityLogPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-[#651F2A]",
+  "new": "bg-accent-alt-hover"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/AddWalkInDialog.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/AdminDialog.tsx",
+  "old": "bg-[#FAF6EE]",
+  "new": "bg-dialog"
+ },
+ {
+  "file": "app/admin/AdminDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AdminDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#1C1A17]/50",
+  "new": "bg-ink/50"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#FAF6EE]",
+  "new": "bg-dialog"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "ring-[#E6E1D4]",
+  "new": "ring-line"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#F3E3E0]",
+  "new": "bg-danger-soft"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#EDE8DA]",
+  "new": "bg-tint-3"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#662525]",
+  "new": "bg-accent-hover-2"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#33302A]",
+  "new": "bg-primary-hover"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#F3E3E0]",
+  "new": "bg-danger-soft"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/AdminModals.tsx",
+  "old": "bg-[#33302A]",
+  "new": "bg-primary-hover"
+ },
+ {
+  "file": "app/admin/AdminView.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-[#4B6B54]",
+  "new": "bg-success"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-[#4B6B54]",
+  "new": "bg-success"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/CustomersDrawer.tsx",
+  "old": "bg-[#FBF9F3]",
+  "new": "bg-panel"
+ },
+ {
+  "file": "app/admin/CustomersDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/CustomersDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "bg-[#E6E1D4]",
+  "new": "bg-line"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/CustomersManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-[#7A2E3A]/10",
+  "new": "bg-accent-alt/10"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-[#7A2E3A]",
+  "new": "text-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-[#4B6B54]",
+  "new": "bg-success"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "border-[#7A2E3A]",
+  "new": "border-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-[#7A2E3A]",
+  "new": "text-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "border-[#7A2E3A]",
+  "new": "border-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "ring-[#7A2E3A]",
+  "new": "ring-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "border-[#7A2E3A]",
+  "new": "border-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "ring-[#7A2E3A]",
+  "new": "ring-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/InboxManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/ServicesManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/SettingsManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/SettingsManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/SettingsManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "bg-[#FBF9F3]",
+  "new": "bg-panel"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "bg-[#7A2E3A]",
+  "new": "bg-accent-alt"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/WhatsAppSettingsDrawer.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/analytics/AnalyticsDashboard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingTicketCard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingTicketCard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingTicketCard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/BookingTicketCard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "border-[#1C1A17]",
+  "new": "border-ink"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/NewAppointmentDialog.tsx",
+  "old": "hover:bg-black",
+  "new": "hover:bg-primary-hover-strong"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#651F2A]",
+  "new": "bg-accent-alt-hover"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "outline-[#7A2E2E]",
+  "new": "outline-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "decoration-[#8A8375]/60",
+  "new": "decoration-ink-muted/60"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "decoration-[#7A2E2E]/40",
+  "new": "decoration-accent/40"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "decoration-[#7A2E2E]",
+  "new": "decoration-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/booking/TodayBookings.tsx",
+  "old": "hover:bg-black",
+  "new": "hover:bg-primary-hover-strong"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#4B6B54]",
+  "new": "bg-success"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#3D5745]",
+  "new": "bg-success-hover"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#2557A7]/10",
+  "new": "bg-info/10"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#2557A7]",
+  "new": "text-info"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#B3402A]",
+  "new": "bg-danger"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#4B6B54]",
+  "new": "bg-success"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#4B6B54]/40",
+  "new": "border-success/40"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#4B6B54]/[0.06]",
+  "new": "bg-success/[0.06]"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#B3402A]/10",
+  "new": "bg-danger/10"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#B3402A]",
+  "new": "text-danger"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-[#651F2A]",
+  "new": "bg-accent-alt-hover"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/queue/QueueManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/queue/QueueRulesDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/BrandingPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/BrandingPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/BrandingPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/BrandingPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/BusinessPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/BusinessPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ClockPanels.tsx",
+  "old": "var(--sb-bg,#7A2E3A) x5",
+  "new": "var(--sb-bg,var(--color-accent-alt)) x5"
+ },
+ {
+  "file": "app/admin/settings/DisplayPanels.tsx",
+  "old": "var(--sb-bg,#7A2E3A) x9",
+  "new": "var(--sb-bg,var(--color-accent-alt)) x9"
+ },
+ {
+  "file": "app/admin/settings/EmployerPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/KioskPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/KioskPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/KioskPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/KioskPanels.tsx",
+  "old": "var(--sb-bg,#7A2E3A) x5",
+  "new": "var(--sb-bg,var(--color-accent-alt)) x5"
+ },
+ {
+  "file": "app/admin/settings/ModuleToggleCard.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/OperationsPanels.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/WhatsAppTemplatesPanel.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/settings/ui.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-[#FBF9F3]",
+  "new": "bg-panel"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "border-[#1C1A17]",
+  "new": "border-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "tpl?.color ?? \"#D9D3C3\"",
+  "new": "tpl?.color ?? \"var(--color-line-strong)\""
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": ": \"#F3EEE2\" }}",
+  "new": ": \"var(--color-tint)\" }}"
+ },
+ {
+  "file": "app/admin/shifts/ShiftsManager.tsx",
+  "old": "t.color ?? \"#F3EEE2\"",
+  "new": "t.color ?? \"var(--color-tint)\""
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#651F1F]",
+  "new": "bg-accent-hover"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#9A6A12]/10",
+  "new": "bg-warn/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#7A2E2E]/30",
+  "new": "border-accent/30"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#7A2E2E]/[0.06]",
+  "new": "bg-accent/[0.06]"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#7A2E2E]/40",
+  "new": "border-accent/40"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#9A6A12]/40",
+  "new": "border-warn/40"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/shisha/ShishaCounter.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-[#D9D3C3]",
+  "new": "bg-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-[#FBF9F3]",
+  "new": "bg-panel"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaDisplayDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#651F1F]",
+  "new": "bg-accent-hover"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#9A6A12]/10",
+  "new": "bg-warn/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#B3402A]",
+  "new": "bg-danger"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#4B6B54]",
+  "new": "bg-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#9A6A12]/10",
+  "new": "bg-warn/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#9A6A12]/30",
+  "new": "border-warn/30"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#9A6A12]/10",
+  "new": "bg-warn/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#9A6A12]/50",
+  "new": "border-warn/50"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#FBF5E8]",
+  "new": "bg-warn-soft-2"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#9A6A12]/10",
+  "new": "bg-warn/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#7A2E2E]/10",
+  "new": "bg-accent/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#2557A7]/10",
+  "new": "bg-info/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#2557A7]",
+  "new": "text-info"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#9A6A12]/10",
+  "new": "bg-warn/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#9A6A12]",
+  "new": "text-warn"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#4B6B54]/10",
+  "new": "bg-success/10"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#4B6B54]",
+  "new": "text-success"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-[#1C1A17]/[0.07]",
+  "new": "bg-ink/[0.07]"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#6B6558]",
+  "new": "text-ink-soft"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/shisha/ShishaManager.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#33302A]",
+  "new": "bg-primary-hover"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#FAF6EE]",
+  "new": "bg-dialog"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#1C1A17]",
+  "new": "border-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#E3C98A]",
+  "new": "border-warn-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#FBF3DC]",
+  "new": "bg-warn-soft"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#5C4A12]",
+  "new": "text-warn-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#E3C98A]",
+  "new": "border-warn-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#FBF3DC]",
+  "new": "bg-warn-soft"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#5C4A12]",
+  "new": "text-warn-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#E0B4AD]",
+  "new": "border-danger-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F3E3E0]",
+  "new": "bg-danger-soft"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#E0B4AD]",
+  "new": "border-danger-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F3E3E0]",
+  "new": "bg-danger-soft"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#E1EDE0]",
+  "new": "bg-success-soft"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#2F5D2E]",
+  "new": "text-success-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#FBF3DC]",
+  "new": "bg-warn-soft"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#5C4A12]",
+  "new": "text-warn-strong"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/staff/PayrollManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#FAF6EE]",
+  "new": "bg-dialog"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#1C1A17]",
+  "new": "border-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#F1ECDF]",
+  "new": "bg-tint-2"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#FBF3DC]",
+  "new": "bg-warn-soft"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#5C4A12]",
+  "new": "text-warn-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-[#1C1A17]",
+  "new": "bg-primary"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#FAF6EE]",
+  "new": "text-on-primary"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "app/admin/staff/StaffManager.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-[#FBF9F3]",
+  "new": "bg-panel"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-[#D9D3C3]",
+  "new": "bg-line-strong"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "border-[#D9D3C3]",
+  "new": "border-line-strong"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-[#F3EEE2]",
+  "new": "bg-tint"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/AdminDrawer.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#7A2E2E]/30",
+  "new": "border-accent/30"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#7A2E2E]/5",
+  "new": "bg-accent/5"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#7A2E2E]/30",
+  "new": "border-accent/30"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#7A2E2E]/5",
+  "new": "bg-accent/5"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#E6E1D4]",
+  "new": "bg-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#7A2E2E]/30",
+  "new": "border-accent/30"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#7A2E2E]/5",
+  "new": "bg-accent/5"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#7A2E2E]",
+  "new": "border-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#7A2E2E]/5",
+  "new": "bg-accent/5"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#1C1A17]/40",
+  "new": "bg-ink/40"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#7A2E2E]",
+  "new": "text-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#7A2E2E]",
+  "new": "bg-accent"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#7A2E2E]/90",
+  "new": "bg-accent/90"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "divide-[#E6E1D4]",
+  "new": "divide-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#1C1A17]",
+  "new": "text-ink"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-[#8A8375]",
+  "new": "text-ink-muted"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-[#FAF8F3]",
+  "new": "bg-canvas"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "border-[#E6E1D4]",
+  "new": "border-line"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "text-white",
+  "new": "text-on-color"
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "const INK = \"#1C1A17\"",
+  "new": "const INK = \"var(--color-ink)\""
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "const MUTED = \"#8A8375\"",
+  "new": "const MUTED = \"var(--color-ink-muted)\""
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "const LINE = \"#E6E1D4\"",
+  "new": "const LINE = \"var(--color-line)\""
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "const ACCENT = \"#7A2E2E\"",
+  "new": "const ACCENT = \"var(--color-accent)\""
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "const SUCCESS = \"#2B6F5C\"",
+  "new": "const SUCCESS = \"var(--color-success-alt)\""
+ },
+ {
+  "file": "components/admin/BillingPanel.tsx",
+  "old": "const AMBER = \"#A66A1E\"",
+  "new": "const AMBER = \"var(--color-warn-alt)\""
+ },
+ {
+  "file": "components/admin/Toggle.tsx",
+  "old": "bg-white",
+  "new": "bg-card"
+ }
+]

@@ -41,19 +41,19 @@ const STATUS_LABEL: Record<Status, string> = {
 }
 
 const STATUS_BADGE: Record<Status, string> = {
-  confirmed: "bg-[#1C1A17]/[0.07] text-[#1C1A17]",
-  completed: "bg-[#4B6B54]/10 text-[#4B6B54]",
-  cancelled: "bg-[#7A2E2E]/10 text-[#7A2E2E]",
+  confirmed: "bg-ink/[0.07] text-ink",
+  completed: "bg-success/10 text-success",
+  cancelled: "bg-accent/10 text-accent",
 }
 
 const FIELD =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-accent"
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
-  "rounded-md bg-[#1C1A17] px-3 py-1.5 text-sm text-[#FAF6EE] hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-primary px-3 py-1.5 text-sm text-on-primary hover:bg-primary-hover-strong disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_DANGER =
-  "rounded-md bg-[#7A2E2E] px-3 py-1.5 text-sm text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-accent px-3 py-1.5 text-sm text-on-color hover:bg-accent-alt-hover disabled:cursor-not-allowed disabled:opacity-50"
 
 function StatusBadge({ status }: { status: Status }) {
   return (
@@ -65,10 +65,10 @@ function StatusBadge({ status }: { status: Status }) {
 
 function SummaryCard({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
-    <div className="rounded-lg border border-[#E6E1D4] bg-white px-4 py-3">
-      <p className="text-xs uppercase tracking-wide text-[#8A8375]">{label}</p>
-      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-[#1C1A17]">{value}</p>
-      <p className="mt-0.5 text-xs text-[#8A8375]">{hint}</p>
+    <div className="rounded-lg border border-line bg-card px-4 py-3">
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
+      <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>
     </div>
   )
 }
@@ -254,8 +254,8 @@ export function TodayBookings({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Appointments</h2>
-          <p className="mt-0.5 text-sm text-[#8A8375]">
+          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Appointments</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">
             Scheduled visits for your shop. Customers book through WhatsApp or the kiosk; you can also book for them,
             and complete or cancel appointments here.
           </p>
@@ -276,7 +276,7 @@ export function TodayBookings({
         <div
           role={notice.kind === "error" ? "alert" : "status"}
           className={`flex items-start justify-between gap-3 rounded-md px-3 py-2 text-sm ${
-            notice.kind === "error" ? "bg-[#7A2E2E]/10 text-[#7A2E2E]" : "bg-[#4B6B54]/10 text-[#4B6B54]"
+            notice.kind === "error" ? "bg-accent/10 text-accent" : "bg-success/10 text-success"
           }`}
         >
           <span>{notice.text}</span>
@@ -325,7 +325,7 @@ export function TodayBookings({
           aria-label="Jump to date"
           className={FIELD}
         />
-        <div className="flex overflow-hidden rounded-md border border-[#D9D3C3]" role="group" aria-label="View">
+        <div className="flex overflow-hidden rounded-md border border-line-strong" role="group" aria-label="View">
           {(["day", "week"] as const).map((s) => (
             <button
               key={s}
@@ -333,14 +333,14 @@ export function TodayBookings({
               onClick={() => setScope(s)}
               aria-pressed={scope === s}
               className={`px-3 py-1.5 text-sm ${
-                scope === s ? "bg-[#1C1A17] text-[#FAF6EE]" : "bg-white text-[#1C1A17] hover:bg-[#F3EEE2]"
+                scope === s ? "bg-primary text-on-primary" : "bg-card text-ink hover:bg-tint"
               }`}
             >
               {s === "day" ? "Day" : "Week"}
             </button>
           ))}
         </div>
-        <p className="ml-auto text-sm text-[#8A8375]">{heading}</p>
+        <p className="ml-auto text-sm text-ink-muted">{heading}</p>
       </div>
 
       {/* Search + filters */}
@@ -389,7 +389,7 @@ export function TodayBookings({
               setStaffFilter("all")
               setStatusFilter("all")
             }}
-            className="text-sm text-[#7A2E2E] underline underline-offset-4"
+            className="text-sm text-accent underline underline-offset-4"
           >
             Clear filters
           </button>
@@ -398,7 +398,7 @@ export function TodayBookings({
 
       {/* List */}
       {visible.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-[#D9D3C3] px-5 py-10 text-center text-[#8A8375]">
+        <div className="rounded-lg border border-dashed border-line-strong px-5 py-10 text-center text-ink-muted">
           {filtersActive && inRange.length > 0
             ? "No appointments match these filters."
             : scope === "week"
@@ -412,12 +412,12 @@ export function TodayBookings({
           {groups.map(([dayKey, rows]) => (
             <section key={dayKey}>
               {scope === "week" && (
-                <h3 className="mb-2 text-sm font-semibold text-[#1C1A17]">
+                <h3 className="mb-2 text-sm font-semibold text-ink">
                   {dayKey === todayKey ? `Today · ${formatDateShort(dayKey)}` : formatDateShort(dayKey)}
-                  <span className="ml-2 font-normal text-[#8A8375]">{rows.length}</span>
+                  <span className="ml-2 font-normal text-ink-muted">{rows.length}</span>
                 </h3>
               )}
-              <ul className="divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4] bg-white">
+              <ul className="divide-y divide-line rounded-lg border border-line bg-card">
                 {rows.map((b) => {
                   const rowBusy = busy?.id === b.id
                   const minutes = Math.round((new Date(b.endTime).getTime() - new Date(b.startTime).getTime()) / 60000)
@@ -429,24 +429,24 @@ export function TodayBookings({
                       <button
                         type="button"
                         onClick={() => setDetailsId(b.id)}
-                        className="flex min-w-0 flex-1 items-start gap-4 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#7A2E2E]"
+                        className="flex min-w-0 flex-1 items-start gap-4 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                       >
                         <div className="w-14 shrink-0">
-                          <p className="text-[0.95rem] tabular-nums text-[#1C1A17]">{formatTime(b.startTime, timezone)}</p>
-                          <p className="text-xs tabular-nums text-[#8A8375]">{minutes} min</p>
+                          <p className="text-[0.95rem] tabular-nums text-ink">{formatTime(b.startTime, timezone)}</p>
+                          <p className="text-xs tabular-nums text-ink-muted">{minutes} min</p>
                         </div>
                         <div className="min-w-0">
                           <p
                             className={`truncate text-[1.02rem] ${
-                              b.status === "cancelled" ? "text-[#8A8375] line-through decoration-[#8A8375]/60" : "text-[#1C1A17]"
+                              b.status === "cancelled" ? "text-ink-muted line-through decoration-ink-muted/60" : "text-ink"
                             }`}
                           >
                             {b.serviceName}
                           </p>
-                          <p className="truncate text-sm text-[#8A8375]">
+                          <p className="truncate text-sm text-ink-muted">
                             {label(b)} · {b.staffName}
                           </p>
-                          <p className="text-xs text-[#8A8375]">
+                          <p className="text-xs text-ink-muted">
                             {b.ticketLabel ? `${b.ticketLabel} · ` : ""}Ref {b.bookingReference}
                           </p>
                         </div>
@@ -471,7 +471,7 @@ export function TodayBookings({
                                 setConfirmCancelId(b.id)
                               }}
                               disabled={anyBusy}
-                              className="rounded-md px-2 py-1.5 text-sm text-[#7A2E2E] underline decoration-[#7A2E2E]/40 underline-offset-4 hover:decoration-[#7A2E2E] disabled:opacity-50"
+                              className="rounded-md px-2 py-1.5 text-sm text-accent underline decoration-accent/40 underline-offset-4 hover:decoration-accent disabled:opacity-50"
                             >
                               Cancel
                             </button>
@@ -548,13 +548,13 @@ export function TodayBookings({
       >
         {detailsBooking && (
           <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2">
-            <dt className="text-[#8A8375]">Status</dt>
+            <dt className="text-ink-muted">Status</dt>
             <dd>
               <StatusBadge status={detailsBooking.status} />
             </dd>
-            <dt className="text-[#8A8375]">Customer</dt>
+            <dt className="text-ink-muted">Customer</dt>
             <dd>{detailsBooking.customerName ?? "No name on file"}</dd>
-            <dt className="text-[#8A8375]">Phone</dt>
+            <dt className="text-ink-muted">Phone</dt>
             <dd>
               {detailsBooking.customerPhone ? (
                 <a href={`tel:${detailsBooking.customerPhone}`} className="underline underline-offset-2">
@@ -564,23 +564,23 @@ export function TodayBookings({
                 "—"
               )}
             </dd>
-            <dt className="text-[#8A8375]">Service</dt>
+            <dt className="text-ink-muted">Service</dt>
             <dd>{detailsBooking.serviceName}</dd>
-            <dt className="text-[#8A8375]">Staff</dt>
+            <dt className="text-ink-muted">Staff</dt>
             <dd>{detailsBooking.staffName}</dd>
-            <dt className="text-[#8A8375]">Date</dt>
+            <dt className="text-ink-muted">Date</dt>
             <dd>{formatDateLong(detailsBooking.dayKey)}</dd>
-            <dt className="text-[#8A8375]">Time</dt>
+            <dt className="text-ink-muted">Time</dt>
             <dd className="tabular-nums">
               {formatTime(detailsBooking.startTime, timezone)} – {formatTime(detailsBooking.endTime, timezone)}
             </dd>
             {detailsBooking.ticketLabel && (
               <>
-                <dt className="text-[#8A8375]">Ticket</dt>
+                <dt className="text-ink-muted">Ticket</dt>
                 <dd className="font-mono">{detailsBooking.ticketLabel}</dd>
               </>
             )}
-            <dt className="text-[#8A8375]">Reference</dt>
+            <dt className="text-ink-muted">Reference</dt>
             <dd className="font-mono">{detailsBooking.bookingReference}</dd>
           </dl>
         )}
@@ -613,9 +613,9 @@ export function TodayBookings({
               {cancelTarget.serviceName} for <strong>{label(cancelTarget)}</strong> at{" "}
               {formatTime(cancelTarget.startTime, timezone)} on {formatDateShort(cancelTarget.dayKey)}.
             </p>
-            <p className="mt-2 text-[#8A8375]">This can&apos;t be undone from here.</p>
+            <p className="mt-2 text-ink-muted">This can&apos;t be undone from here.</p>
             {dialogError && (
-              <p role="alert" className="mt-3 rounded-md bg-[#7A2E2E]/10 px-3 py-2 text-[#7A2E2E]">
+              <p role="alert" className="mt-3 rounded-md bg-accent/10 px-3 py-2 text-accent">
                 {dialogError}
               </p>
             )}

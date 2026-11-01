@@ -78,16 +78,16 @@ type Editing =
 type ArchiveTarget = { kind: "flavour" | "device" | "station"; id: string; name: string }
 
 const FIELD =
-  `w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none ${BRAND_FOCUS_BORDER}`
+  `w-full rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none ${BRAND_FOCUS_BORDER}`
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
   `rounded-md ${BRAND_BG} ${BRAND_ON} px-3 py-1.5 text-sm font-medium hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50`
 const BTN_DANGER =
-  "rounded-md bg-[#7A2E2E] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F1F] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-color hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_GHOST =
-  "rounded-md px-3 py-1.5 text-sm text-[#8A8375] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
-const CARD = "rounded-lg border border-[#E6E1D4] bg-white"
+  "rounded-md px-3 py-1.5 text-sm text-ink-muted hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
+const CARD = "rounded-lg border border-line bg-card"
 
 const STATUS_LABEL: Record<ShishaDisplayStatus, string> = {
   active: "Running",
@@ -96,10 +96,10 @@ const STATUS_LABEL: Record<ShishaDisplayStatus, string> = {
   expired: "Time's up",
 }
 const STATUS_BADGE: Record<ShishaDisplayStatus, string> = {
-  active: "bg-[#4B6B54]/10 text-[#4B6B54]",
-  refill: "bg-[#9A6A12]/10 text-[#9A6A12]",
-  paused: "bg-[#1C1A17]/[0.07] text-[#6B6558]",
-  expired: "bg-[#7A2E2E]/10 text-[#7A2E2E]",
+  active: "bg-success/10 text-success",
+  refill: "bg-warn/10 text-warn",
+  paused: "bg-ink/[0.07] text-ink-soft",
+  expired: "bg-accent/10 text-accent",
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -139,9 +139,9 @@ function formatMonth(month: string): string {
 function Stat({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
   return (
     <div className={`${CARD} px-4 py-3`}>
-      <p className="text-xs uppercase tracking-wide text-[#8A8375]">{label}</p>
-      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-[#1C1A17]">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-[#8A8375]">{hint}</p>}
+      <p className="text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mt-1 font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums text-ink">{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
     </div>
   )
 }
@@ -151,7 +151,7 @@ function Badge({ className, children }: { className: string; children: React.Rea
 }
 
 function EmptyState({ children }: { children: React.ReactNode }) {
-  return <p className={`${CARD} px-4 py-8 text-center text-sm text-[#8A8375]`}>{children}</p>
+  return <p className={`${CARD} px-4 py-8 text-center text-sm text-ink-muted`}>{children}</p>
 }
 
 // ============================================================================
@@ -420,14 +420,14 @@ export function ShishaManager({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-[#1C1A17]">Shisha</h2>
-          <p className="mt-0.5 text-sm text-[#8A8375]">Timed sessions, flavours, devices and stations.</p>
+          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Shisha</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">Timed sessions, flavours, devices and stations.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <p className="flex items-center gap-2 text-xs text-[#8A8375]" role="status">
+          <p className="flex items-center gap-2 text-xs text-ink-muted" role="status">
             <span
               aria-hidden
-              className={`inline-block h-2 w-2 rounded-full ${refreshFailed ? "bg-[#B3402A]" : "bg-[#4B6B54]"}`}
+              className={`inline-block h-2 w-2 rounded-full ${refreshFailed ? "bg-danger" : "bg-success"}`}
             />
             {refreshFailed
               ? `Can't reach the server — showing data as of ${updatedLabel}`
@@ -449,10 +449,10 @@ export function ShishaManager({
           role={notice.kind === "error" ? "alert" : "status"}
           className={`flex items-start justify-between gap-3 rounded-md px-3 py-2 text-sm ${
             notice.kind === "error"
-              ? "bg-[#7A2E2E]/10 text-[#7A2E2E]"
+              ? "bg-accent/10 text-accent"
               : notice.kind === "warning"
-                ? "bg-[#9A6A12]/10 text-[#9A6A12]"
-                : "bg-[#4B6B54]/10 text-[#4B6B54]"
+                ? "bg-warn/10 text-warn"
+                : "bg-success/10 text-success"
           }`}
         >
           <span>{notice.text}</span>
@@ -476,7 +476,7 @@ export function ShishaManager({
             {s.id === "requests" && pendingCount > 0 && (
               <span
                 className={`ml-2 inline-block min-w-[1.25rem] rounded-full px-1.5 text-center text-xs font-semibold ${
-                  section === "requests" ? "bg-white/25 text-white" : "bg-[#7A2E2E] text-white"
+                  section === "requests" ? "bg-white/25 text-on-color" : "bg-accent text-on-color"
                 }`}
                 aria-label={`${pendingCount} waiting`}
               >
@@ -490,7 +490,7 @@ export function ShishaManager({
       {canOperate && pendingCount > 0 && section !== "requests" && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#9A6A12]/30 bg-[#9A6A12]/10 px-3 py-2 text-sm text-[#9A6A12]"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn"
         >
           <span>
             {pendingCount} customer {pendingCount === 1 ? "request is" : "requests are"} waiting for staff.
@@ -504,7 +504,7 @@ export function ShishaManager({
       {!snap ? (
         loadError ? (
           <div className={`${CARD} space-y-3 px-4 py-6 text-center`}>
-            <p className="text-sm text-[#7A2E2E]">{loadError}</p>
+            <p className="text-sm text-accent">{loadError}</p>
             <button type="button" onClick={() => void doRefresh()} className={BTN}>
               Try again
             </button>
@@ -712,7 +712,7 @@ export function ShishaManager({
           </>
         }
       >
-        <p className="text-sm text-[#1C1A17]">
+        <p className="text-sm text-ink">
           It disappears from the lists and from new sessions. Past sessions keep it, so your history and totals stay
           correct.
         </p>
@@ -800,11 +800,11 @@ function RequestsPanel({
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">Requests</h3>
-        <p className="mt-0.5 text-sm text-[#8A8375]">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Requests</h3>
+        <p className="mt-0.5 text-sm text-ink-muted">
           Customers who asked on WhatsApp. They can't send another request until you accept or reject this one.
         </p>
-        <label className="mt-3 flex items-start gap-2 text-sm text-[#1C1A17]">
+        <label className="mt-3 flex items-start gap-2 text-sm text-ink">
           <input
             type="checkbox"
             className="mt-0.5"
@@ -813,7 +813,7 @@ function RequestsPanel({
           />
           <span>
             Print a slip on this PC when a customer requests a session
-            <span className="block text-xs text-[#8A8375]">
+            <span className="block text-xs text-ink-muted">
               Turn this on only on the PC with the receipt printer, and keep this page open there.
             </span>
           </span>
@@ -838,42 +838,42 @@ function RequestsPanel({
             return (
               <li
                 key={req.id}
-                className={`space-y-3 p-4 ${stale ? "rounded-lg border border-[#9A6A12]/50 bg-[#FBF5E8]" : CARD}`}
+                className={`space-y-3 p-4 ${stale ? "rounded-lg border border-warn/50 bg-warn-soft-2" : CARD}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+                    <p className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
                       {REQUEST_TYPE_LABEL[req.requestType]}
                     </p>
-                    <p className="truncate text-sm text-[#6B6558]">
+                    <p className="truncate text-sm text-ink-soft">
                       {req.customerName ?? req.customerPhone ?? "Unknown customer"}
                       {req.customerName && req.customerPhone ? ` · ${req.customerPhone}` : ""}
                     </p>
                   </div>
-                  <Badge className={stale ? "bg-[#9A6A12]/10 text-[#9A6A12]" : "bg-[#1C1A17]/[0.07] text-[#6B6558]"}>
+                  <Badge className={stale ? "bg-warn/10 text-warn" : "bg-ink/[0.07] text-ink-soft"}>
                     {timeAgo(req.createdAt, now)}
                     {stale ? " · waiting" : ""}
                   </Badge>
                 </div>
 
-                {details && <p className="text-sm text-[#1C1A17]">{details}</p>}
-                {req.issueLabel && <p className="text-sm text-[#1C1A17]">“{req.issueLabel}”</p>}
-                {amountText && <p className="text-sm tabular-nums text-[#6B6558]">{amountText}</p>}
+                {details && <p className="text-sm text-ink">{details}</p>}
+                {req.issueLabel && <p className="text-sm text-ink">“{req.issueLabel}”</p>}
+                {amountText && <p className="text-sm tabular-nums text-ink-soft">{amountText}</p>}
 
                 {req.flavourIssue === "missing" && (
-                  <p className="text-xs text-[#7A2E2E]">That flavour is no longer on the menu.</p>
+                  <p className="text-xs text-accent">That flavour is no longer on the menu.</p>
                 )}
                 {req.flavourIssue === "out_of_stock" && (
-                  <p className="text-xs text-[#7A2E2E]">That flavour is out of stock.</p>
+                  <p className="text-xs text-accent">That flavour is out of stock.</p>
                 )}
                 {needsSession && !req.sessionLive && (
-                  <p className="text-xs text-[#9A6A12]">
+                  <p className="text-xs text-warn">
                     The session this request was about has ended. Accepting looks for the customer's other live
                     session, otherwise reject it.
                   </p>
                 )}
                 {req.requestType === "maintenance" && req.sessionPaused && (
-                  <p className="text-xs text-[#9A6A12]">That session is paused. Resume it before accepting the refill.</p>
+                  <p className="text-xs text-warn">That session is paused. Resume it before accepting the refill.</p>
                 )}
 
                 <div className="flex flex-wrap gap-2">
@@ -982,7 +982,7 @@ function RequestsPanel({
 function RequestSummary({ req, currency }: { req: ShishaRequest; currency: string }) {
   const amountText = requestAmountText(req, currency)
   return (
-    <div className="space-y-1 rounded-md bg-[#F3EEE2] p-3 text-sm text-[#1C1A17]">
+    <div className="space-y-1 rounded-md bg-tint p-3 text-sm text-ink">
       <p className="font-medium">{req.customerName ?? req.customerPhone ?? "Unknown customer"}</p>
       {req.flavourName && (
         <p>
@@ -990,7 +990,7 @@ function RequestSummary({ req, currency }: { req: ShishaRequest; currency: strin
           {req.stationName ? ` · ${req.stationName}` : ""}
         </p>
       )}
-      {amountText && <p className="tabular-nums text-[#6B6558]">{amountText}</p>}
+      {amountText && <p className="tabular-nums text-ink-soft">{amountText}</p>}
     </div>
   )
 }
@@ -1022,7 +1022,7 @@ function AcceptSessionForm({
   if (devices.length === 0) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-[#1C1A17]">Every device is in use or under maintenance. Free one up, or reject.</p>
+        <p className="text-sm text-ink">Every device is in use or under maintenance. Free one up, or reject.</p>
         <div className="flex justify-end">
           <button type="button" onClick={onCancel} className={BTN}>
             Close
@@ -1045,19 +1045,19 @@ function AcceptSessionForm({
     <div className="space-y-4">
       <RequestSummary req={req} currency={currency} />
       {quotedDiffers && (
-        <p className="text-xs text-[#9A6A12]">
+        <p className="text-xs text-warn">
           The price changed since the customer asked. They'll be charged today's price and told the amount.
         </p>
       )}
       {flavourBlocked && (
-        <p className="text-xs text-[#7A2E2E]">
+        <p className="text-xs text-accent">
           {req.flavourIssue === "missing" ? "That flavour is no longer on the menu." : "That flavour is out of stock."}{" "}
           Fix that first, or reject the request.
         </p>
       )}
 
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Device</span>
+        <span className="text-ink-muted">Device</span>
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} className={FIELD}>
           {devices.map((d) => (
             <option key={d.id} value={d.id}>
@@ -1070,9 +1070,9 @@ function AcceptSessionForm({
 
       {stations.length > 0 && (
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">
+          <span className="text-ink-muted">
             Station
-            {stationRequired && <span className="font-medium text-[#7A2E2E]"> * required</span>}
+            {stationRequired && <span className="font-medium text-accent"> * required</span>}
           </span>
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
             <option value="">
@@ -1088,7 +1088,7 @@ function AcceptSessionForm({
       )}
 
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Paid by</span>
+        <span className="text-ink-muted">Paid by</span>
         <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
           {PAYMENT_METHODS.map((m) => (
             <option key={m.value} value={m.value}>
@@ -1138,13 +1138,13 @@ function AcceptRefillForm({
   return (
     <div className="space-y-4">
       <RequestSummary req={req} currency={currency} />
-      <p className="text-sm text-[#1C1A17]">
+      <p className="text-sm text-ink">
         {charge > 0
           ? `This refills the session and adds ${formatMoney(charge, currency)} to it. Collect it from the customer.`
           : "This refills the session. Refills are free for this flavour."}
       </p>
       {req.sessionPaused && (
-        <p className="text-xs text-[#9A6A12]">That session is paused. Resume it in Sessions first.</p>
+        <p className="text-xs text-warn">That session is paused. Resume it in Sessions first.</p>
       )}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
@@ -1176,12 +1176,12 @@ function AcceptEndForm({
   return (
     <div className="space-y-4">
       <RequestSummary req={req} currency={currency} />
-      <p className="text-sm text-[#1C1A17]">The session ends and the device becomes available again.</p>
+      <p className="text-sm text-ink">The session ends and the device becomes available again.</p>
       {alreadyPaid ? (
-        <p className="text-sm text-[#6B6558]">Payment on file: {alreadyPaid}. Collect any refills added since.</p>
+        <p className="text-sm text-ink-soft">Payment on file: {alreadyPaid}. Collect any refills added since.</p>
       ) : (
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">Paid by</span>
+          <span className="text-ink-muted">Paid by</span>
           <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
             {PAYMENT_METHODS.map((m) => (
               <option key={m.value} value={m.value}>
@@ -1220,11 +1220,11 @@ function RejectForm({
   const [reason, setReason] = useState("")
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[#1C1A17]">
+      <p className="text-sm text-ink">
         The customer is told on WhatsApp, and can send a new request straight away.
       </p>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Reason (optional, sent to the customer)</span>
+        <span className="text-ink-muted">Reason (optional, sent to the customer)</span>
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -1338,25 +1338,25 @@ function SessionsPanel({
             <div key={s.id} className={`${CARD} space-y-3 p-4`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+                  <p className="truncate font-[family-name:var(--font-admin-serif)] text-lg text-ink">
                     {s.deviceCode}
                     <StationTag name={s.stationName} className="font-sans text-base" />
                   </p>
-                  <p className="truncate text-sm text-[#6B6558]">{s.flavourName}</p>
+                  <p className="truncate text-sm text-ink-soft">{s.flavourName}</p>
                 </div>
                 <Badge className={STATUS_BADGE[status]}>{STATUS_LABEL[status]}</Badge>
               </div>
 
               <p
                 className={`font-[family-name:var(--font-admin-serif)] text-4xl tabular-nums ${
-                  status === "expired" ? "text-[#7A2E2E]" : "text-[#1C1A17]"
+                  status === "expired" ? "text-accent" : "text-ink"
                 }`}
                 aria-label="Time remaining"
               >
                 {formatCountdown(remaining)}
               </p>
 
-              <p className="text-xs text-[#8A8375]">
+              <p className="text-xs text-ink-muted">
                 {s.customerName ?? s.customerPhone ?? "Walk-in"} · started{" "}
                 {new Date(s.startTime).toLocaleTimeString("en-ZA", {
                   timeZone: timezone,
@@ -1423,7 +1423,7 @@ function SessionsPanel({
       >
         {refillTarget && (
           <div className="space-y-4">
-            <p className="text-sm text-[#1C1A17]">
+            <p className="text-sm text-ink">
               This adds {formatMoney(refillTarget.refillPrice, snap.currency)} to the session (the total becomes{" "}
               {formatMoney(refillTarget.totalAmount + refillTarget.refillPrice, snap.currency)}). Collect it from the
               customer.
@@ -1497,7 +1497,7 @@ function StartSessionForm({
   if (devices.length === 0 || flavours.length === 0) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-[#1C1A17]">
+        <p className="text-sm text-ink">
           {devices.length === 0
             ? "Every device is in use or under maintenance."
             : "No flavours are in stock. Add one or mark one as in stock first."}
@@ -1524,7 +1524,7 @@ function StartSessionForm({
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Device</span>
+        <span className="text-ink-muted">Device</span>
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} className={FIELD}>
           {devices.map((d) => (
             <option key={d.id} value={d.id}>
@@ -1536,9 +1536,9 @@ function StartSessionForm({
       </label>
       {stations.length > 0 && (
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">
+          <span className="text-ink-muted">
             Station
-            {stationRequired && <span className="font-medium text-[#7A2E2E]"> * required</span>}
+            {stationRequired && <span className="font-medium text-accent"> * required</span>}
           </span>
           {stationRequired ? (
             <select
@@ -1575,7 +1575,7 @@ function StartSessionForm({
         </label>
       )}
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Flavour</span>
+        <span className="text-ink-muted">Flavour</span>
         <select value={productId} onChange={(e) => setProductId(e.target.value)} className={FIELD}>
           {flavours.map((f) => (
             <option key={f.id} value={f.id}>
@@ -1585,7 +1585,7 @@ function StartSessionForm({
         </select>
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Customer cellphone (optional)</span>
+        <span className="text-ink-muted">Customer cellphone (optional)</span>
         <input
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
@@ -1633,17 +1633,17 @@ function EndSessionForm({
   const alreadyPaid = paymentMethodLabel(session.paymentMethod)
   return (
     <div className="space-y-4">
-      <p className="text-sm text-[#1C1A17]">
+      <p className="text-sm text-ink">
         {session.flavourName} · {formatMoney(session.totalAmount, currency)}. The device becomes available again.
       </p>
       {alreadyPaid ? (
-        <p className="text-sm text-[#6B6558]">
+        <p className="text-sm text-ink-soft">
           Already paid by {alreadyPaid}.
           {session.refillTotal > 0 ? " Collect any refills added since." : ""}
         </p>
       ) : (
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">Paid by</span>
+          <span className="text-ink-muted">Paid by</span>
           <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
             {PAYMENT_METHODS.map((m) => (
               <option key={m.value} value={m.value}>
@@ -1687,8 +1687,8 @@ function PanelHeader({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">{title}</h3>
-        <p className="mt-0.5 text-sm text-[#8A8375]">{hint}</p>
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">{title}</h3>
+        <p className="mt-0.5 text-sm text-ink-muted">{hint}</p>
       </div>
       {canManage && (
         <button type="button" onClick={onAdd} disabled={busy} className={BTN_PRIMARY}>
@@ -1729,18 +1729,18 @@ function FlavoursPanel({
       {snap.flavours.length === 0 ? (
         <EmptyState>No flavours yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
-        <ul className="divide-y divide-[#E6E1D4] overflow-hidden rounded-lg border border-[#E6E1D4] bg-white">
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
           {snap.flavours.map((f) => (
             <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-[#1C1A17]">{f.name}</p>
-                <p className="text-xs tabular-nums text-[#8A8375]">
+                <p className="truncate text-sm font-medium text-ink">{f.name}</p>
+                <p className="text-xs tabular-nums text-ink-muted">
                   Session {formatMoney(f.price, snap.currency)} · Refill{" "}
                   {f.refillPrice > 0 ? formatMoney(f.refillPrice, snap.currency) : "free"}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className={f.isAvailable ? "bg-[#4B6B54]/10 text-[#4B6B54]" : "bg-[#7A2E2E]/10 text-[#7A2E2E]"}>
+                <Badge className={f.isAvailable ? "bg-success/10 text-success" : "bg-accent/10 text-accent"}>
                   {f.isAvailable ? "In stock" : "Out of stock"}
                 </Badge>
                 {canManage && (
@@ -1791,11 +1791,11 @@ function FlavourForm({
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Name</span>
+        <span className="text-ink-muted">Name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Double apple" className={FIELD} autoFocus />
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Price</span>
+        <span className="text-ink-muted">Price</span>
         <input
           value={price}
           onChange={(e) => setPrice(e.target.value)}
@@ -1805,7 +1805,7 @@ function FlavourForm({
         />
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Refill price</span>
+        <span className="text-ink-muted">Refill price</span>
         <input
           value={refillPrice}
           onChange={(e) => setRefillPrice(e.target.value)}
@@ -1813,7 +1813,7 @@ function FlavourForm({
           placeholder="0"
           className={FIELD}
         />
-        <span className="block text-xs text-[#8A8375]">
+        <span className="block text-xs text-ink-muted">
           Charged each time a session with this flavour is refilled. 0 = refills are free.
         </span>
       </label>
@@ -1872,18 +1872,18 @@ function DevicesPanel({
       {snap.devices.length === 0 ? (
         <EmptyState>No devices yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
-        <ul className="divide-y divide-[#E6E1D4] overflow-hidden rounded-lg border border-[#E6E1D4] bg-white">
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
           {snap.devices.map((d) => {
             const inUse = occupiedDeviceIds.has(d.id)
             const state = d.status === "maintenance" ? "maintenance" : inUse ? "in_use" : "available"
             return (
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#1C1A17]">
+                  <p className="truncate text-sm font-medium text-ink">
                     {d.deviceCode}
-                    {d.deviceName ? <span className="font-normal text-[#6B6558]"> — {d.deviceName}</span> : null}
+                    {d.deviceName ? <span className="font-normal text-ink-soft"> — {d.deviceName}</span> : null}
                   </p>
-                  <p className="text-xs text-[#8A8375]">
+                  <p className="text-xs text-ink-muted">
                     {(d.locationId && stationById.get(d.locationId)?.name) || "No usual station"}
                   </p>
                 </div>
@@ -1891,10 +1891,10 @@ function DevicesPanel({
                   <Badge
                     className={
                       state === "available"
-                        ? "bg-[#4B6B54]/10 text-[#4B6B54]"
+                        ? "bg-success/10 text-success"
                         : state === "in_use"
-                          ? "bg-[#2557A7]/10 text-[#2557A7]"
-                          : "bg-[#9A6A12]/10 text-[#9A6A12]"
+                          ? "bg-info/10 text-info"
+                          : "bg-warn/10 text-warn"
                     }
                   >
                     {state === "available" ? "Available" : state === "in_use" ? "In use" : "Maintenance"}
@@ -1947,15 +1947,15 @@ function DeviceForm({
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Device code</span>
+        <span className="text-ink-muted">Device code</span>
         <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="SH-031" className={FIELD} autoFocus />
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Name (optional)</span>
+        <span className="text-ink-muted">Name (optional)</span>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Terrace hookah 1" className={FIELD} />
       </label>
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Usual station (optional)</span>
+        <span className="text-ink-muted">Usual station (optional)</span>
         <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
           <option value="">No usual station</option>
           {stations.map((s) => (
@@ -1964,7 +1964,7 @@ function DeviceForm({
             </option>
           ))}
         </select>
-        <span className="block text-xs text-[#8A8375]">
+        <span className="block text-xs text-ink-muted">
           Pre-selected when staff start a session on this device. They can still pick a different station.
         </span>
       </label>
@@ -2019,19 +2019,19 @@ function StationsPanel({
       {snap.stations.length === 0 ? (
         <EmptyState>No stations yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
-        <ul className="divide-y divide-[#E6E1D4] overflow-hidden rounded-lg border border-[#E6E1D4] bg-white">
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
           {snap.stations.map((s) => {
             const deviceCount = snap.devices.filter((d) => d.locationId === s.id).length
             return (
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-[#1C1A17]">{s.name}</p>
-                  <p className="text-xs text-[#8A8375]">
+                  <p className="truncate text-sm font-medium text-ink">{s.name}</p>
+                  <p className="text-xs text-ink-muted">
                     {deviceCount} {deviceCount === 1 ? "device" : "devices"}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className={s.isActive ? "bg-[#4B6B54]/10 text-[#4B6B54]" : "bg-[#1C1A17]/[0.07] text-[#6B6558]"}>
+                  <Badge className={s.isActive ? "bg-success/10 text-success" : "bg-ink/[0.07] text-ink-soft"}>
                     {s.isActive ? "Visible to customers" : "Hidden from customers"}
                   </Badge>
                   {canManage && (
@@ -2072,7 +2072,7 @@ function StationForm({
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
-        <span className="text-[#8A8375]">Station name</span>
+        <span className="text-ink-muted">Station name</span>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="VIP terrace" className={FIELD} autoFocus />
       </label>
       <div className="flex justify-end gap-2">
@@ -2118,14 +2118,14 @@ function TimingPanel({
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">Timing</h3>
-        <p className="mt-0.5 text-sm text-[#8A8375]">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Timing</h3>
+        <p className="mt-0.5 text-sm text-ink-muted">
           Applies to new sessions and refills. Sessions already running keep the time they have.
         </p>
       </div>
       <div className={`${CARD} max-w-md space-y-4 p-4`}>
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">Session length (minutes)</span>
+          <span className="text-ink-muted">Session length (minutes)</span>
           <input
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
@@ -2135,7 +2135,7 @@ function TimingPanel({
           />
         </label>
         <label className="block space-y-1 text-sm">
-          <span className="text-[#8A8375]">Warn this many minutes before time runs out</span>
+          <span className="text-ink-muted">Warn this many minutes before time runs out</span>
           <input
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
@@ -2144,8 +2144,8 @@ function TimingPanel({
             className={FIELD}
           />
         </label>
-        <div className="space-y-1 border-t border-[#E6E1D4] pt-4">
-          <label className="flex items-center gap-2 text-sm text-[#1C1A17]">
+        <div className="space-y-1 border-t border-line pt-4">
+          <label className="flex items-center gap-2 text-sm text-ink">
             <input
               type="checkbox"
               checked={requireStation}
@@ -2154,12 +2154,12 @@ function TimingPanel({
             />
             Require a station for every session
           </label>
-          <p className="text-xs text-[#8A8375]">
+          <p className="text-xs text-ink-muted">
             Link devices to a usual station in Devices to have it selected automatically.
           </p>
         </div>
         {!valid && canManage && (
-          <p className="text-xs text-[#7A2E2E]">
+          <p className="text-xs text-accent">
             Session length is 5–480 minutes, the warning is 1–120 minutes and must be shorter than the session.
           </p>
         )}

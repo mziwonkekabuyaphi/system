@@ -49,9 +49,9 @@ const FILTERS: Array<{ id: Filter; label: string }> = [
 ]
 
 const AI_STATE_STYLES: Record<AdminAiState, string> = {
-  active: "bg-[#4B6B54]/10 text-[#4B6B54]",
+  active: "bg-success/10 text-success",
   paused: "bg-stone-200 text-stone-600",
-  handoff: "bg-[#7A2E3A]/10 text-[#7A2E3A]",
+  handoff: "bg-accent-alt/10 text-accent-alt",
   resolved: "bg-stone-100 text-stone-400",
 }
 
@@ -183,7 +183,7 @@ export function InboxManager({
           ← Back to inbox
         </button>
 
-        <div className="rounded-2xl border border-stone-200 bg-white p-4">
+        <div className="rounded-2xl border border-stone-200 bg-card p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">
@@ -202,7 +202,7 @@ export function InboxManager({
                 type="button"
                 onClick={() => handleAiAction("resume")}
                 disabled={isPending}
-                className="rounded-full bg-[#4B6B54] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                className="rounded-full bg-success px-3 py-1.5 text-sm font-medium text-on-color disabled:opacity-50"
               >
                 Resume AI
               </button>
@@ -212,7 +212,7 @@ export function InboxManager({
                 type="button"
                 onClick={() => handleAiAction("pause")}
                 disabled={isPending}
-                className="rounded-full border border-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-[#7A2E3A] disabled:opacity-50"
+                className="rounded-full border border-accent-alt px-3 py-1.5 text-sm font-medium text-accent-alt disabled:opacity-50"
               >
                 Take over (pause AI)
               </button>
@@ -232,7 +232,7 @@ export function InboxManager({
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-        <div className="rounded-2xl border border-stone-200 bg-white p-3">
+        <div className="rounded-2xl border border-stone-200 bg-card p-3">
           {loadingThread ? (
             <p className="px-2 py-8 text-center text-sm text-stone-400">Loading messages…</p>
           ) : messages.length === 0 ? (
@@ -243,7 +243,7 @@ export function InboxManager({
                 <div key={m.id} className={`flex ${m.direction === "outgoing" ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                      m.direction === "outgoing" ? "bg-[#7A2E3A] text-white" : "bg-stone-100 text-stone-800"
+                      m.direction === "outgoing" ? "bg-accent-alt text-on-color" : "bg-stone-100 text-stone-800"
                     }`}
                   >
                     <p>{m.text ?? "(no text)"}</p>
@@ -265,13 +265,13 @@ export function InboxManager({
               if (e.key === "Enter") handleSend()
             }}
             placeholder="Type a message…"
-            className="flex-1 rounded-full border border-stone-300 px-4 py-2 text-sm focus:border-[#7A2E3A] focus:outline-none focus:ring-1 focus:ring-[#7A2E3A]"
+            className="flex-1 rounded-full border border-stone-300 px-4 py-2 text-sm focus:border-accent-alt focus:outline-none focus:ring-1 focus:ring-accent-alt"
           />
           <button
             type="button"
             onClick={handleSend}
             disabled={isPending || !draft.trim()}
-            className="shrink-0 rounded-full bg-[#7A2E3A] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="shrink-0 rounded-full bg-accent-alt px-4 py-2 text-sm font-medium text-on-color disabled:opacity-50"
           >
             Send
           </button>
@@ -288,13 +288,13 @@ export function InboxManager({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search conversations…"
-          className="flex-1 rounded-full border border-stone-300 px-4 py-2 text-sm focus:border-[#7A2E3A] focus:outline-none focus:ring-1 focus:ring-[#7A2E3A]"
+          className="flex-1 rounded-full border border-stone-300 px-4 py-2 text-sm focus:border-accent-alt focus:outline-none focus:ring-1 focus:ring-accent-alt"
         />
         <button
           type="button"
           onClick={() => setShowAnalytics((v) => !v)}
           className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium ${
-            showAnalytics ? "bg-[#7A2E3A] text-white" : "border border-stone-300 text-stone-600"
+            showAnalytics ? "bg-accent-alt text-on-color" : "border border-stone-300 text-stone-600"
           }`}
         >
           Analytics
@@ -324,7 +324,7 @@ export function InboxManager({
             type="button"
             onClick={() => setFilter(f.id)}
             className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium ${
-              filter === f.id ? "bg-stone-800 text-white" : "border border-stone-300 text-stone-600"
+              filter === f.id ? "bg-stone-800 text-on-color" : "border border-stone-300 text-stone-600"
             }`}
           >
             {f.label}
@@ -343,7 +343,7 @@ export function InboxManager({
               key={c.id}
               type="button"
               onClick={() => openConversation(c)}
-              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm hover:border-stone-300"
+              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-card p-4 text-left shadow-sm hover:border-stone-300"
             >
               <div className="min-w-0">
                 <p className="truncate font-[family-name:var(--font-admin-serif)] text-base text-stone-900">

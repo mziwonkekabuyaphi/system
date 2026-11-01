@@ -29,7 +29,7 @@ export function Toggle({
         className={`pointer-events-none inline-block h-4 w-4 transform rounded-full shadow-sm ring-1 transition-transform ${
           checked
             ? "translate-x-6 bg-admin-on-accent ring-admin-accent-dim/40"
-            : "translate-x-1 bg-white ring-admin-border"
+            : "translate-x-1 bg-card ring-admin-border"
         }`}
       />
     </button>

@@ -182,18 +182,18 @@ export function BookingRulesDrawer({
         {message && (
           <p
             role={message.kind === "error" ? "alert" : "status"}
-            className={`text-sm ${message.kind === "error" ? "text-[#7A2E2E]" : "text-[#4B6B54]"}`}
+            className={`text-sm ${message.kind === "error" ? "text-accent" : "text-success"}`}
           >
             {message.text}
           </p>
         )}
         {!message && firstError && (
-          <p role="alert" className="text-sm text-[#7A2E2E]">
+          <p role="alert" className="text-sm text-accent">
             {firstError}
           </p>
         )}
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-[#8A8375]">{dirty ? "You have unsaved changes." : "All changes saved."}</p>
+          <p className="text-xs text-ink-muted">{dirty ? "You have unsaved changes." : "All changes saved."}</p>
           <div className="flex gap-2">
             <button
               type="button"
@@ -278,7 +278,7 @@ export function BookingRulesDrawer({
         {tab === "services" && (
           <div className="space-y-6">
             <DrawerGroup title="Choosing a service">
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch
                   title="Require a service to book"
                   description="Turn this off if customers don't choose between services. The kiosk and WhatsApp then skip the service step and go straight to the date. Separate from “Require a service to join the queue” in Queue rules."
@@ -305,7 +305,7 @@ export function BookingRulesDrawer({
             </DrawerGroup>
 
             <DrawerGroup title="Staff">
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch
                   title="Allow customers to choose staff"
                   description="Customers can ask for a specific person on WhatsApp, e.g. “book with Sipho”. They only see times that person is free. When off, every booking goes automatically to whoever is free. Customers are never given someone different from who they asked for."
@@ -321,7 +321,7 @@ export function BookingRulesDrawer({
         {tab === "reminders" && (
           <div className="space-y-6">
             <DrawerGroup title="WhatsApp reminder" hint="Sent shortly before the appointment, with buttons to confirm or say they can't make it.">
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch title="Booking reminders" checked={remindersOn} disabled={saving} onChange={(v) => set("bookingRemindersEnabled", v)} />
               </div>
               {remindersOn && (
@@ -341,7 +341,7 @@ export function BookingRulesDrawer({
                   )}
                 </>
               )}
-              <p className="text-xs text-[#8A8375]">
+              <p className="text-xs text-ink-muted">
                 Reminders go out within about 5 minutes of the time above. Customers who messaged your WhatsApp in the last 24 hours get a normal
                 message. Everyone else only gets it if they&apos;ve agreed to WhatsApp updates and your reminder template (Inbox → WhatsApp settings
                 → Connection &amp; templates) is approved by WhatsApp.
@@ -353,7 +353,7 @@ export function BookingRulesDrawer({
         {tab === "queue" && queueEnabled && (
           <div className="space-y-6">
             <DrawerGroup title="Link bookings to the queue">
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch
                   title="Add confirmed bookings to the queue"
                   description="Confirmed bookings automatically join the walk-in queue shortly before their start time, so front-of-house sees one line instead of two systems. This doesn't change who can join as a walk-in (see Live Queue → Queue rules)."
@@ -362,7 +362,7 @@ export function BookingRulesDrawer({
                   onChange={(v) => set("unifyWithQueue", v)}
                 />
               </div>
-              <p className="text-xs text-[#8A8375]">Checked about once a minute, so a booking appears within about a minute of becoming eligible.</p>
+              <p className="text-xs text-ink-muted">Checked about once a minute, so a booking appears within about a minute of becoming eligible.</p>
             </DrawerGroup>
 
             <div className={draft.unifyWithQueue ? "space-y-6" : "space-y-6 opacity-60"}>
@@ -387,8 +387,8 @@ export function BookingRulesDrawer({
                       disabled={!draft.unifyWithQueue || saving}
                       onClick={() => set("queuePriorityMode", o.value)}
                     >
-                      <span className="text-sm font-semibold text-[#1C1A17]">{o.title}</span>
-                      <span className="text-xs text-[#8A8375]">{o.description}</span>
+                      <span className="text-sm font-semibold text-ink">{o.title}</span>
+                      <span className="text-xs text-ink-muted">{o.description}</span>
                     </DrawerOptionCard>
                   ))}
                 </div>

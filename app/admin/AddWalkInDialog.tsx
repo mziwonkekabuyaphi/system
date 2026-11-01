@@ -12,11 +12,11 @@ import { useEffect, useRef, useState } from "react"
 import { addWalkIn, getWalkInOptions, type AdminBookableService } from "./actions"
 
 const FIELD =
-  "mt-1 w-full rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] outline-none focus:border-[#7A2E2E]"
+  "mt-1 w-full rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink outline-none focus:border-accent"
 const BTN =
-  "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint disabled:cursor-not-allowed disabled:opacity-50"
 const BTN_PRIMARY =
-  "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#651F2A] disabled:cursor-not-allowed disabled:opacity-50"
+  "rounded-md bg-accent-alt px-3 py-1.5 text-sm font-medium text-on-color hover:bg-accent-alt-hover disabled:cursor-not-allowed disabled:opacity-50"
 
 export function AddWalkInForm({
   onClose,
@@ -69,7 +69,7 @@ export function AddWalkInForm({
   if (loadError) {
     return (
       <div className="space-y-4">
-        <p role="alert" className="rounded-md bg-[#7A2E2E]/10 px-3 py-2 text-[#7A2E2E]">
+        <p role="alert" className="rounded-md bg-accent/10 px-3 py-2 text-accent">
           {loadError}
         </p>
         <div className="flex justify-end">
@@ -81,12 +81,12 @@ export function AddWalkInForm({
     )
   }
 
-  if (options === null) return <p className="text-[#8A8375]">Loading…</p>
+  if (options === null) return <p className="text-ink-muted">Loading…</p>
 
   return (
     <form onSubmit={submit} className="space-y-3">
       {(options.services.length > 0 || options.requireService) && (
-        <label className="block text-[#8A8375]">
+        <label className="block text-ink-muted">
           Service{options.requireService ? "" : " (optional)"}
           <select
             value={serviceId}
@@ -104,7 +104,7 @@ export function AddWalkInForm({
         </label>
       )}
 
-      <label className="block text-[#8A8375]">
+      <label className="block text-ink-muted">
         Customer phone
         <input
           value={phone}
@@ -117,13 +117,13 @@ export function AddWalkInForm({
         />
       </label>
 
-      <label className="block text-[#8A8375]">
+      <label className="block text-ink-muted">
         Customer name (optional)
         <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" className={FIELD} />
       </label>
 
       {error && (
-        <p role="alert" className="rounded-md bg-[#7A2E2E]/10 px-3 py-2 text-[#7A2E2E]">
+        <p role="alert" className="rounded-md bg-accent/10 px-3 py-2 text-accent">
           {error}
         </p>
       )}

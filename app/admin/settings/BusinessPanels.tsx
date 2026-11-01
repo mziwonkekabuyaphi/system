@@ -35,7 +35,7 @@ export function BusinessInfoPanel({ initial }: { initial: AdminTenantSettings })
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
       <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Contact &amp; defaults</p>
       <p className="text-sm text-stone-500">Contact details and defaults shown to customers.</p>
 
@@ -112,7 +112,7 @@ export function OpeningHoursPanel({ initial }: { initial: AdminBusinessHours }) 
   const sorted = [...days].sort((a, b) => a.dayOfWeek - b.dayOfWeek)
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
       <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Opening Hours</p>
       <p className="text-sm text-stone-500">
         Controls when customers can join the queue on the kiosk or start a booking over WhatsApp. Times are in the

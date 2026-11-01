@@ -53,14 +53,14 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         onClick={locked ? undefined : onClose}
-        className={`absolute inset-0 bg-[#1C1A17]/50 backdrop-blur-sm transition-opacity duration-200 ${
+        className={`absolute inset-0 bg-ink/50 backdrop-blur-sm transition-opacity duration-200 ${
           visible ? "opacity-100" : "opacity-0"
         }`}
       />
       <div
         role="dialog"
         aria-modal="true"
-        className={`relative w-full max-w-sm rounded-2xl bg-[#FAF6EE] p-6 text-center shadow-2xl ring-1 ring-[#E6E1D4] transition-all duration-200 ${
+        className={`relative w-full max-w-sm rounded-2xl bg-dialog p-6 text-center shadow-2xl ring-1 ring-line transition-all duration-200 ${
           visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-95 opacity-0"
         }`}
       >
@@ -130,27 +130,27 @@ export function ConfirmDialog({
     <Modal open={open} onClose={onCancel} locked={isBusy}>
       <div
         className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full ${
-          danger ? "bg-[#F3E3E0] text-[#7A2E2E]" : "bg-[#EDE8DA] text-[#1C1A17]"
+          danger ? "bg-danger-soft text-accent" : "bg-tint-3 text-ink"
         }`}
       >
         {danger ? <TrashIcon /> : <CheckIcon />}
       </div>
-      <h2 className="mt-4 text-xl text-[#1C1A17]">{title}</h2>
-      <p className="mt-2 text-[0.95rem] leading-relaxed text-[#8A8375]">{message}</p>
+      <h2 className="mt-4 text-xl text-ink">{title}</h2>
+      <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-muted">{message}</p>
       <div className="mt-6 flex gap-3">
         <button
           onClick={onCancel}
           disabled={isBusy}
           autoFocus
-          className="flex-1 rounded-lg border border-[#D9D3C3] px-4 py-2.5 text-sm text-[#1C1A17] transition-colors hover:bg-[#F1ECDF] disabled:opacity-50"
+          className="flex-1 rounded-lg border border-line-strong px-4 py-2.5 text-sm text-ink transition-colors hover:bg-tint-2 disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
           disabled={isBusy}
-          className={`flex-1 rounded-lg px-4 py-2.5 text-sm text-[#FAF6EE] transition-colors disabled:opacity-60 ${
-            danger ? "bg-[#7A2E2E] hover:bg-[#662525]" : "bg-[#1C1A17] hover:bg-[#33302A]"
+          className={`flex-1 rounded-lg px-4 py-2.5 text-sm text-on-primary transition-colors disabled:opacity-60 ${
+            danger ? "bg-accent hover:bg-accent-hover-2" : "bg-primary hover:bg-primary-hover"
           }`}
         >
           {isBusy ? busyLabel : confirmLabel}
@@ -166,15 +166,15 @@ export type Notice = { title: string; message: string }
 export function NoticeModal({ notice, onClose }: { notice: Notice | null; onClose: () => void }) {
   return (
     <Modal open={notice !== null} onClose={onClose}>
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#F3E3E0] text-[#7A2E2E]">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-danger-soft text-accent">
         <AlertIcon />
       </div>
-      <h2 className="mt-4 text-xl text-[#1C1A17]">{notice?.title}</h2>
-      <p className="mt-2 text-[0.95rem] leading-relaxed text-[#8A8375]">{notice?.message}</p>
+      <h2 className="mt-4 text-xl text-ink">{notice?.title}</h2>
+      <p className="mt-2 text-[0.95rem] leading-relaxed text-ink-muted">{notice?.message}</p>
       <button
         onClick={onClose}
         autoFocus
-        className="mt-6 w-full rounded-lg bg-[#1C1A17] px-4 py-2.5 text-sm text-[#FAF6EE] transition-colors hover:bg-[#33302A]"
+        className="mt-6 w-full rounded-lg bg-primary px-4 py-2.5 text-sm text-on-primary transition-colors hover:bg-primary-hover"
       >
         Got it
       </button>

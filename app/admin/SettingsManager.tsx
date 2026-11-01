@@ -175,8 +175,8 @@ export function SettingsManager({
             aria-current={subTab === t.id ? "page" : undefined}
             className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium ${
               subTab === t.id
-                ? "border-stone-800 bg-stone-800 text-white"
-                : "border-stone-300 bg-white text-stone-600 hover:bg-stone-50"
+                ? "border-stone-800 bg-stone-800 text-on-color"
+                : "border-stone-300 bg-card text-stone-600 hover:bg-stone-50"
             }`}
           >
             {t.label}
@@ -201,7 +201,7 @@ export function SettingsManager({
                         aria-current={active ? "page" : undefined}
                         className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                           active
-                            ? "bg-stone-800 font-semibold text-white"
+                            ? "bg-stone-800 font-semibold text-on-color"
                             : "font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900"
                         }`}
                       >

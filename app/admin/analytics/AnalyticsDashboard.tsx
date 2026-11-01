@@ -21,7 +21,7 @@ const PRESETS: { id: Preset; label: string }[] = [
 // ------------------------------------------------------------------ primitives
 function Card({ title, note, children, className = "" }: { title: string; note?: string; children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-xl border border-stone-200 bg-white p-4 ${className}`}>
+    <section className={`rounded-xl border border-stone-200 bg-card p-4 ${className}`}>
       <h3 className="text-sm font-medium text-stone-900">{title}</h3>
       {note && <p className="mt-0.5 text-xs text-stone-500">{note}</p>}
       <div className="mt-3">{children}</div>
@@ -35,7 +35,7 @@ function Kpi({
   const change = compare ? pctChange(cur, prev) : null
   const good = change == null || change === 0 ? null : lowerIsBetter ? change < 0 : change > 0
   return (
-    <div className="rounded-xl border border-stone-200 bg-white p-4">
+    <div className="rounded-xl border border-stone-200 bg-card p-4">
       <p className="text-xs text-stone-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold tabular-nums text-stone-900">{value}</p>
       {compare && (
@@ -145,7 +145,7 @@ export function AnalyticsDashboard() {
     <div className="space-y-5">
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
-        <div role="group" aria-label="Reporting period" className="inline-flex overflow-hidden rounded-lg border border-stone-200 bg-white">
+        <div role="group" aria-label="Reporting period" className="inline-flex overflow-hidden rounded-lg border border-stone-200 bg-card">
           {PRESETS.map((p) => (
             <button key={p.id} type="button" onClick={() => setPreset(p.id)} aria-pressed={preset === p.id}
               className={`px-3 py-2 text-sm transition-colors ${preset === p.id ? "bg-admin-accent text-admin-on-accent" : "text-stone-700 hover:bg-stone-50"}`}>
@@ -157,11 +157,11 @@ export function AnalyticsDashboard() {
           <>
             <label className="text-xs text-stone-500">From
               <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)}
-                className="mt-1 block rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm text-stone-900" />
+                className="mt-1 block rounded-lg border border-stone-200 bg-card px-2 py-1.5 text-sm text-stone-900" />
             </label>
             <label className="text-xs text-stone-500">To (inclusive)
               <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)}
-                className="mt-1 block rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-sm text-stone-900" />
+                className="mt-1 block rounded-lg border border-stone-200 bg-card px-2 py-1.5 text-sm text-stone-900" />
             </label>
           </>
         )}
@@ -170,7 +170,7 @@ export function AnalyticsDashboard() {
           Compare with previous period
         </label>
         <button type="button" onClick={() => void load()} disabled={loading}
-          className="mb-0.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 disabled:opacity-50">
+          className="mb-0.5 rounded-lg border border-stone-200 bg-card px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 disabled:opacity-50">
           Refresh
         </button>
       </div>
@@ -187,7 +187,7 @@ export function AnalyticsDashboard() {
       {error && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <span>{error}</span>
-          <button type="button" onClick={() => void load()} className="rounded-md border border-red-300 bg-white px-3 py-1 text-red-800 hover:bg-red-100">Retry</button>
+          <button type="button" onClick={() => void load()} className="rounded-md border border-red-300 bg-card px-3 py-1 text-red-800 hover:bg-red-100">Retry</button>
         </div>
       )}
       {data?.warnings.map((w) => <Note key={w}>{w}</Note>)}
@@ -270,7 +270,7 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
           {bq && K("Incoming messages", c.messaging.incoming, p?.messaging.incoming)}
           {bq && K("Outgoing messages", c.messaging.outgoing, p?.messaging.outgoing, { hint: "Sent, not confirmed delivered" })}
           {d.billing && (
-            <div className="rounded-xl border border-stone-200 bg-white p-4">
+            <div className="rounded-xl border border-stone-200 bg-card p-4">
               <p className="text-xs text-stone-500">Outstanding invoices</p>
               {outstanding.length === 0
                 ? <p className="mt-1 text-2xl font-semibold text-stone-900">None</p>
@@ -529,7 +529,7 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
           <Kpi label="AI-enabled conversations" value={formatNum(m.ai_enabled)} compare={false} hint={`${m.ai_disabled} with AI off · all conversations`} />
           <Kpi label="Needs a person" value={formatNum(m.by_handling.handoff)} compare={false} hint="Handed off · current" />
           <Kpi label="Last conversation activity" value={m.last_activity ? new Date(m.last_activity).toLocaleDateString(undefined, { timeZone: d.timezone }) : "–"} compare={false} />
-          <div className="rounded-xl border border-stone-200 bg-white p-4">
+          <div className="rounded-xl border border-stone-200 bg-card p-4">
             <p className="text-xs text-stone-500">WhatsApp integration</p>
             {m.integrations.length === 0 ? <p className="mt-1 text-lg font-semibold text-stone-900">Not connected</p>
               : m.integrations.map((i, k) => <p key={k} className="mt-1 text-lg font-semibold capitalize text-stone-900">{i.status.replace(/_/g, " ")}</p>)}

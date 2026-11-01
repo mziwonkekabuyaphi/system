@@ -87,22 +87,22 @@ export function WhatsAppSettingsDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="whatsapp-settings-title"
-        className={`absolute right-0 top-0 flex h-full w-full max-w-[640px] flex-col bg-[#FBF9F3] shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+        className={`absolute right-0 top-0 flex h-full w-full max-w-[640px] flex-col bg-panel shadow-2xl outline-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
           shown ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-[#E6E1D4] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 id="whatsapp-settings-title" className="font-[family-name:var(--font-admin-serif)] text-lg text-[#1C1A17]">
+            <h2 id="whatsapp-settings-title" className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
               WhatsApp settings
             </h2>
-            <p className="mt-0.5 text-sm text-[#8A8375]">Your number, approved templates, and what customers are sent.</p>
+            <p className="mt-0.5 text-sm text-ink-muted">Your number, approved templates, and what customers are sent.</p>
           </div>
           <button
             type="button"
             onClick={requestClose}
             aria-label="Close"
-            className="rounded-md px-2 py-1 text-lg leading-none text-[#8A8375] hover:bg-[#F3EEE2]"
+            className="rounded-md px-2 py-1 text-lg leading-none text-ink-muted hover:bg-tint"
           >
             ×
           </button>
@@ -119,8 +119,8 @@ export function WhatsAppSettingsDrawer({
                 onClick={() => setTab(t.id)}
                 className={
                   tab === t.id
-                    ? "rounded-md bg-[#7A2E3A] px-3 py-1.5 text-sm font-medium text-white"
-                    : "rounded-md border border-[#D9D3C3] bg-white px-3 py-1.5 text-sm text-[#1C1A17] hover:bg-[#F3EEE2]"
+                    ? "rounded-md bg-accent-alt px-3 py-1.5 text-sm font-medium text-on-color"
+                    : "rounded-md border border-line-strong bg-card px-3 py-1.5 text-sm text-ink hover:bg-tint"
                 }
               >
                 {t.label}

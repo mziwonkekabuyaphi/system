@@ -132,18 +132,18 @@ export function QueueRulesDrawer({
           {message && (
             <p
               role={message.kind === "error" ? "alert" : "status"}
-              className={`text-sm ${message.kind === "error" ? "text-[#7A2E2E]" : "text-[#4B6B54]"}`}
+              className={`text-sm ${message.kind === "error" ? "text-accent" : "text-success"}`}
             >
               {message.text}
             </p>
           )}
           {!message && hasErrors && (
-            <p role="alert" className="text-sm text-[#7A2E2E]">
+            <p role="alert" className="text-sm text-accent">
               {errors.line ?? errors.services ?? errors.tickets}
             </p>
           )}
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-[#8A8375]">{dirty ? "You have unsaved changes." : "All changes saved."}</p>
+            <p className="text-xs text-ink-muted">{dirty ? "You have unsaved changes." : "All changes saved."}</p>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -170,7 +170,7 @@ export function QueueRulesDrawer({
         {tab === "line" && (
           <div className="space-y-6">
             <DrawerGroup title="Calling">
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch
                   title="Auto-call next"
                   description="Automatically call the next customer when a slot frees up."
@@ -207,7 +207,7 @@ export function QueueRulesDrawer({
             </DrawerGroup>
 
             <DrawerGroup title="Where walk-ins can join" hint="This only affects walk-ins. Bookings join the line from Settings → Booking rules.">
-              <div className="divide-y divide-[#E6E1D4] rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch title="WhatsApp" description="Customers can join by messaging you." checked={draft.allowWalkinWhatsapp} disabled={saving} onChange={(v) => set("allowWalkinWhatsapp", v)} />
                 <DrawerSwitch title="Kiosk" description="Customers can join on the touch screen." checked={draft.allowWalkinKiosk} disabled={saving} onChange={(v) => set("allowWalkinKiosk", v)} />
               </div>
@@ -218,7 +218,7 @@ export function QueueRulesDrawer({
         {tab === "services" && (
           <div className="space-y-6">
             <DrawerGroup title="Choosing a service">
-              <div className="rounded-lg border border-[#E6E1D4] bg-white px-4">
+              <div className="rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch
                   title="Require a service to join the queue"
                   description="Turn this off if walk-ins don't choose between services. They'll skip straight to giving their name and number on the kiosk, WhatsApp and admin."
@@ -279,10 +279,10 @@ export function QueueRulesDrawer({
                 onChange={(e) => set("ticketNumberPrefix", e.target.value.toUpperCase())}
               />
             </DrawerField>
-            <div className="rounded-lg border border-[#E6E1D4] bg-white px-4 py-3">
-              <p className="text-xs text-[#8A8375]">Your tickets will look like</p>
-              <p className="mt-1 font-mono text-lg text-[#1C1A17]">
-                {previewPrefix}001 <span className="text-[#8A8375]">→ {previewPrefix}002</span>
+            <div className="rounded-lg border border-line bg-card px-4 py-3">
+              <p className="text-xs text-ink-muted">Your tickets will look like</p>
+              <p className="mt-1 font-mono text-lg text-ink">
+                {previewPrefix}001 <span className="text-ink-muted">→ {previewPrefix}002</span>
               </p>
             </div>
           </DrawerGroup>

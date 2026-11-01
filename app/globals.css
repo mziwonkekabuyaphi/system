@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./theme.css"; /* adjust this path if theme.css doesn't sit next to globals.css */
+@import "./theme-admin.css"; /* admin theme colours (cream). Rands dark theme overrides these in step 2. */
 
 @theme {
   --color-admin-sidebar: var(--qless-navy-deep);

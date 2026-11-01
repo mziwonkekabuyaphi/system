@@ -10,7 +10,7 @@ export const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // Shared styling
 //
 // CONTRAST FIX: inputs previously had no explicit background, so a white
-// <input> sitting inside a white .bg-white card was basically invisible
+// <input> sitting inside a white .bg-card card was basically invisible
 // except for a thin border — and once a Save/upload button hit
 // disabled:opacity-50 on a white background, it faded to almost nothing.
 // Every field/button below now has a resting background distinct from the
@@ -19,11 +19,11 @@ export const HEX_COLOR_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // ---------------------------------------------------------------------------
 export const inputClass =
   "w-full rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-900 " +
-  `placeholder:text-stone-400 ${BRAND_FOCUS_BORDER} focus:bg-white focus:outline-none focus:ring-1 ${BRAND_FOCUS_RING} ` +
+  `placeholder:text-stone-400 ${BRAND_FOCUS_BORDER} focus:bg-card focus:outline-none focus:ring-1 ${BRAND_FOCUS_RING} ` +
   "disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400"
 
 export const secondaryButtonClass =
-  "rounded-full border border-stone-300 bg-white px-3 py-1.5 text-sm font-medium text-stone-700 " +
+  "rounded-full border border-stone-300 bg-card px-3 py-1.5 text-sm font-medium text-stone-700 " +
   "hover:bg-stone-50 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-400 disabled:hover:bg-stone-100"
 
 export const primaryButtonClass =
@@ -61,7 +61,7 @@ export function SettingsCard({
   footer?: React.ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
+    <section className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm sm:p-5">
       <header className="mb-4">
         <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</h3>
         {description && <p className="mt-0.5 text-sm text-stone-500">{description}</p>}
@@ -143,7 +143,7 @@ export function CardSaveRow({
         </button>
       )}
       {message ? (
-        <span className={`text-sm ${message.ok ? "text-[#4B6B54]" : "text-red-700"}`}>{message.text}</span>
+        <span className={`text-sm ${message.ok ? "text-success" : "text-red-700"}`}>{message.text}</span>
       ) : dirty ? (
         <span className="text-sm text-amber-700">Unsaved changes</span>
       ) : null}
@@ -239,7 +239,7 @@ export function ColorField({
       <div className="flex items-center gap-2">
         <input
           type="color"
-          className="h-10 w-10 shrink-0 rounded-lg border border-stone-300 bg-white p-0.5"
+          className="h-10 w-10 shrink-0 rounded-lg border border-stone-300 bg-card p-0.5"
           value={isValid ? draft : value}
           onChange={(e) => {
             setDraft(e.target.value)
@@ -273,7 +273,7 @@ export function SaveRow({
         {isPending ? "Saving…" : "Save"}
       </button>
       {message && (
-        <span className={`text-sm ${message.ok ? "text-[#4B6B54]" : "text-red-700"}`}>{message.text}</span>
+        <span className={`text-sm ${message.ok ? "text-success" : "text-red-700"}`}>{message.text}</span>
       )}
     </div>
   )
@@ -314,7 +314,7 @@ export function Toggle({
         }`}
       >
         <span
-          className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow ring-1 ring-black/20 transition-all ${
+          className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-card shadow ring-1 ring-black/20 transition-all ${
             checked ? "left-[1.375rem]" : "left-0.5"
           }`}
         />
