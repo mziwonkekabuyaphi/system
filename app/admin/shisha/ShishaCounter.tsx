@@ -48,6 +48,10 @@ const BTN_DANGER =
 const CARD = "rounded-lg border border-line bg-card"
 const TILE_BASE =
   "min-h-[56px] rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+const TILE_SM =
+  "min-h-[44px] rounded-lg border px-3 py-1.5 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+const CHIP =
+  "rounded-full border px-3.5 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40"
 const TILE_OFF = "border-line-strong bg-card text-ink hover:bg-tint"
 const TILE_ON = `${BRAND_BORDER} ${BRAND_BG} ${BRAND_ON}`
 
@@ -445,6 +449,8 @@ export function ShishaCounter({
   const [phone, setPhone] = useState("")
   const [payment, setPayment] = useState<string>(PAYMENT_METHODS[0].value)
   const [scanOpen, setScanOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [flavourQuery, setFlavourQuery] = useState("")
   const [flash, setFlash] = useState<{ kind: "ok" | "error"; text: string } | null>(null)
 
   const [autoPrint, setAutoPrint] = useState(true)
@@ -491,14 +497,29 @@ export function ShishaCounter({
 
   // A selection that became invalid after a refresh (device taken, flavour sold out) just drops out.
   const flavour = flavours.find((f) => f.id === productId) ?? null
-  const device = freeDevices.find((d) => d.id === deviceId) ?? null
+  const explicitDevice = freeDevices.find((d) => d.id === deviceId) ?? null
+  const freeSorted = useMemo(
+    () => [...freeDevices].sort((a, b) => a.deviceCode.localeCompare(b.deviceCode, undefined, { numeric: true })),
+    [freeDevices],
+  )
+  const shownFlavours = useMemo(() => {
+    const q = flavourQuery.trim().toLowerCase()
+    return q ? flavours.filter((f) => f.name.toLowerCase().includes(q)) : flavours
+  }, [flavours, flavourQuery])
 
   // Station = where the customer sits, picked per session. A device's own
   // station only pre-selects when staff haven't picked one.
   const activeStations = useMemo(() => snap.stations.filter((st) => st.isActive), [snap.stations])
   const pickedStation = activeStations.find((st) => st.id === stationId) ?? null
-  // The device's usual station (only if staff can actually pick it: active).
-  const deviceStation = activeStations.find((st) => st.id === device?.locationId) ?? null
+  // AUTO-ASSIGN: unless staff chose / scanned a device, the POS takes the first free one,
+  // preferring a device that lives at the station they picked.
+  const autoDevice =
+    (pickedStation ? freeSorted.find((d) => d.locationId === pickedStation.id) : null) ?? freeSorted[0] ?? null
+  const device = explicitDevice ?? autoDevice
+  const deviceIsAuto = !explicitDevice
+  // The device's usual station only pre-selects for a device staff chose or scanned. An
+  // auto-picked device must not silently decide where the customer sits.
+  const deviceStation = activeStations.find((st) => st.id === explicitDevice?.locationId) ?? null
   const effectiveStation = pickedStation ?? deviceStation
   // Required only when the shop can offer a station (same rule as the server).
   const stationRequired = snap.settings.requireStation && activeStations.length > 0
@@ -624,6 +645,55 @@ export function ShishaCounter({
     <div className="grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
       {scanOpen && <QrScanner onResult={handleScan} onClose={() => setScanOpen(false)} />}
 
+      {pickerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Choose a device"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setPickerOpen(false)}
+        >
+          <div className={`${CARD} w-full max-w-lg space-y-3 p-4`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
+                Choose a device <span className="text-sm text-ink-muted">({freeSorted.length} free)</span>
+              </h4>
+              <button type="button" onClick={() => setPickerOpen(false)} className={BTN}>
+                Close
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={!autoDevice}
+              onClick={() => {
+                setDeviceId("")
+                setPickerOpen(false)
+              }}
+              className={`${TILE_SM} w-full text-center ${deviceIsAuto ? TILE_ON : TILE_OFF}`}
+            >
+              Auto-assign{autoDevice ? ` (${autoDevice.deviceCode})` : ""}
+            </button>
+            <div className="grid max-h-[50vh] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+              {freeSorted.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  aria-pressed={explicitDevice?.id === d.id}
+                  onClick={() => {
+                    setDeviceId(d.id)
+                    setPickerOpen(false)
+                  }}
+                  className={`${TILE_SM} ${explicitDevice?.id === d.id ? TILE_ON : TILE_OFF}`}
+                >
+                  <span className="block font-medium">{d.deviceCode}</span>
+                  <span className="block truncate text-xs opacity-80">{stationName(d.locationId) ?? d.deviceName ?? "\u00a0"}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---------------- Needs attention ---------------- */}
       {attention.length > 0 && (
         <section
@@ -659,8 +729,11 @@ export function ShishaCounter({
       )}
 
       {/* ---------------- New session ---------------- */}
-      <section className={`${CARD} space-y-5 p-4`} aria-label="New session">
-        <div className="flex items-center justify-between gap-3">
+      <section
+        className={`${CARD} flex flex-col p-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start`}
+        aria-label="New session"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3">
           <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">New session</h3>
           <button type="button" onClick={() => setScanOpen(true)} disabled={busy || snap.devices.length === 0} className={BTN}>
             Scan QR
@@ -670,153 +743,176 @@ export function ShishaCounter({
         {flash && (
           <p
             role={flash.kind === "error" ? "alert" : "status"}
-            className={`rounded-md px-3 py-2 text-sm ${flash.kind === "error" ? "bg-accent/10 text-accent" : "bg-success/10 text-success"}`}
+            className={`mt-3 shrink-0 rounded-md px-3 py-2 text-sm ${flash.kind === "error" ? "bg-accent/10 text-accent" : "bg-success/10 text-success"}`}
           >
             {flash.text}
           </p>
         )}
 
         {noSetup ? (
-          <p className="text-sm text-ink-muted">
+          <p className="mt-3 text-sm text-ink-muted">
             {flavours.length === 0
               ? "No flavours are in stock yet. A manager needs to add one first."
               : "No devices have been added yet. A manager needs to add one first."}
           </p>
         ) : (
           <>
-            <div className="space-y-2">
-              <p className="text-sm text-ink-muted">Flavour</p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {flavours.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    aria-pressed={flavour?.id === f.id}
-                    onClick={() => setProductId(f.id)}
-                    className={`${TILE_BASE} ${flavour?.id === f.id ? TILE_ON : TILE_OFF}`}
-                  >
-                    <span className="block font-medium">{f.name}</span>
-                    <span className="block text-xs opacity-80">{formatMoney(f.price, snap.currency)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {activeStations.length > 0 && (
+            {/* Everything the cashier taps lives in this one scroll area, so the Start button below never leaves the screen. */}
+            <div className="mt-3 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+              {/* Flavour: searchable, fixed-height grid */}
               <div className="space-y-2">
-                <p className="text-sm text-ink-muted">
-                  Station
-                  {stationRequired && (
-                    <>
-                      {" "}
-                      <span className="font-medium text-accent" aria-hidden>
-                        * required
-                      </span>
-                      <span className="sr-only">(required)</span>
-                    </>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-ink-muted">Flavour</p>
+                  {flavours.length > 8 && (
+                    <input
+                      value={flavourQuery}
+                      onChange={(e) => setFlavourQuery(e.target.value)}
+                      placeholder="Search flavours…"
+                      aria-label="Search flavours"
+                      className={`${FIELD} !w-44 !py-1`}
+                    />
                   )}
-                </p>
-                <div
-                  role="group"
-                  aria-label={stationRequired ? "Station (required)" : "Station"}
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-                >
-                  {activeStations.map((st) => {
-                    const selected = effectiveStation?.id === st.id
-                    const isUsual = deviceStation?.id === st.id
-                    return (
-                      <button
-                        key={st.id}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => setStationId(stationId === st.id ? "" : st.id)}
-                        className={`${TILE_BASE} ${selected ? TILE_ON : TILE_OFF}`}
-                      >
-                        <span className="block truncate font-medium">{st.name}</span>
-                        {isUsual && <span className="block truncate text-xs opacity-80">(device&apos;s usual station)</span>}
-                      </button>
-                    )
-                  })}
                 </div>
-                {stationMissing && flavour && device && (
-                  <p className="text-xs text-accent">Pick where this customer is sitting to start the session.</p>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <p className="text-sm text-ink-muted">Device</p>
-              {freeDevices.length === 0 ? (
-                <p className="text-sm text-accent">Every device is in use or under maintenance.</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {freeDevices.map((d) => (
+                <div className="grid max-h-52 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+                  {shownFlavours.length === 0 && <p className="col-span-full text-sm text-ink-muted">No flavour matches.</p>}
+                  {shownFlavours.map((f) => (
                     <button
-                      key={d.id}
+                      key={f.id}
                       type="button"
-                      aria-pressed={device?.id === d.id}
-                      onClick={() => setDeviceId(d.id)}
-                      className={`${TILE_BASE} ${device?.id === d.id ? TILE_ON : TILE_OFF}`}
+                      aria-pressed={flavour?.id === f.id}
+                      onClick={() => setProductId(f.id)}
+                      className={`${TILE_SM} ${flavour?.id === f.id ? TILE_ON : TILE_OFF}`}
                     >
-                      <span className="block font-medium">{d.deviceCode}</span>
-                      <span className="block truncate text-xs opacity-80">{d.deviceName || "\u00a0"}</span>
+                      <span className="block truncate font-medium">{f.name}</span>
+                      <span className="block text-xs opacity-80">{formatMoney(f.price, snap.currency)}</span>
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-ink-muted">Paid by</p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {PAYMENT_METHODS.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    aria-pressed={payment === m.value}
-                    onClick={() => setPayment(m.value)}
-                    className={`${TILE_BASE} text-center ${payment === m.value ? TILE_ON : TILE_OFF}`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
               </div>
+
+              {/* Station: one compact row of chips */}
+              {activeStations.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm text-ink-muted">
+                    Station
+                    {stationRequired && (
+                      <>
+                        {" "}
+                        <span className="font-medium text-accent" aria-hidden>
+                          * required
+                        </span>
+                        <span className="sr-only">(required)</span>
+                      </>
+                    )}
+                  </p>
+                  <div
+                    role="group"
+                    aria-label={stationRequired ? "Station (required)" : "Station"}
+                    className="flex flex-wrap gap-2"
+                  >
+                    {activeStations.map((st) => {
+                      const selected = effectiveStation?.id === st.id
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setStationId(stationId === st.id ? "" : st.id)}
+                          className={`${CHIP} ${selected ? TILE_ON : TILE_OFF}`}
+                        >
+                          {st.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {stationMissing && flavour && device && (
+                    <p className="text-xs text-accent">Pick where this customer is sitting to start the session.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Device: auto-assigned, change in a popup */}
+              <div className="space-y-2">
+                <p className="text-sm text-ink-muted">Device</p>
+                {!device ? (
+                  <p className="text-sm text-accent">Every device is in use or under maintenance.</p>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-line-strong bg-card px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink">
+                        {device.deviceCode}
+                        {device.deviceName ? <span className="font-normal text-ink-muted"> · {device.deviceName}</span> : null}
+                      </p>
+                      <p className="truncate text-xs text-ink-muted">
+                        {deviceIsAuto ? "Auto-assigned" : "Chosen"}
+                        {stationName(device.locationId) ? ` · usually at ${stationName(device.locationId)}` : ""}
+                        {` · ${freeDevices.length} free`}
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => setPickerOpen(true)} disabled={busy} className={BTN}>
+                      Change
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment: one compact row */}
+              <div className="space-y-2">
+                <p className="text-sm text-ink-muted">Paid by</p>
+                <div className="flex flex-wrap gap-2">
+                  {PAYMENT_METHODS.map((m) => (
+                    <button
+                      key={m.value}
+                      type="button"
+                      aria-pressed={payment === m.value}
+                      onClick={() => setPayment(m.value)}
+                      className={`${CHIP} min-w-[5rem] text-center ${payment === m.value ? TILE_ON : TILE_OFF}`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="block space-y-1 text-sm">
+                <span className="text-ink-muted">Customer cellphone (optional)</span>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  inputMode="tel"
+                  placeholder="Leave empty for a walk-in"
+                  className={FIELD}
+                />
+              </label>
             </div>
 
-            <label className="block space-y-1 text-sm">
-              <span className="text-ink-muted">Customer cellphone (optional)</span>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                inputMode="tel"
-                placeholder="Leave empty for a walk-in"
-                className={FIELD}
-              />
-            </label>
-
-            <button type="button" onClick={() => void submit()} disabled={busy || !flavour || !device || stationMissing} className={`${BTN_PRIMARY} w-full`}>
-              {busy
-                ? "Working…"
-                : flavour && device && stationMissing
-                  ? "Pick a station to start"
-                  : flavour && device
-                  ? `Start ${device.deviceCode}${effectiveStation ? ` · ${effectiveStation.name}` : ""} · ${formatMoney(flavour.price, snap.currency)}`
-                  : "Pick a flavour and a device"}
-            </button>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-sm">
-              <label className="flex items-center gap-2 text-ink">
-                <input type="checkbox" checked={autoPrint} onChange={(e) => changeAutoPrint(e.target.checked)} />
-                Print receipt when a session starts
-              </label>
-              <button
-                type="button"
-                onClick={() => lastReceipt && void printReceipt(lastReceipt)}
-                disabled={!lastReceipt || printing}
-                className={BTN}
-              >
-                {printing ? "Printing…" : "Reprint last receipt"}
+            {/* Pinned footer: Start is always on screen */}
+            <div className="mt-3 shrink-0 space-y-2 border-t border-line pt-3">
+              <button type="button" onClick={() => void submit()} disabled={busy || !flavour || !device || stationMissing} className={`${BTN_PRIMARY} w-full`}>
+                {busy
+                  ? "Working…"
+                  : flavour && device && stationMissing
+                    ? "Pick a station to start"
+                    : flavour && device
+                      ? `Start ${device.deviceCode}${effectiveStation ? ` · ${effectiveStation.name}` : ""} · ${formatMoney(flavour.price, snap.currency)}`
+                      : !device
+                        ? "No free device"
+                        : "Pick a flavour to start"}
               </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <label className="flex items-center gap-2 text-ink">
+                  <input type="checkbox" checked={autoPrint} onChange={(e) => changeAutoPrint(e.target.checked)} />
+                  Print receipt on start
+                </label>
+                <button
+                  type="button"
+                  onClick={() => lastReceipt && void printReceipt(lastReceipt)}
+                  disabled={!lastReceipt || printing}
+                  className={BTN}
+                >
+                  {printing ? "Printing…" : "Reprint last receipt"}
+                </button>
+              </div>
             </div>
           </>
         )}
