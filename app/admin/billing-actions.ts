@@ -132,7 +132,7 @@ export interface ShishaBillingInfo {
 export interface BillingSummary {
   /** Which modules are switched on for this shop (tenant_modules). Drives what the panel shows. */
   products: { booking: boolean; queue: boolean; shisha: boolean }
-  /** Shisha usage and rates. null when the shop has never used Shisha and has it off. */
+  /** Shisha usage and rates. null whenever Shisha is switched off for the shop. */
   shisha: ShishaBillingInfo | null
   currentPlan: Plan
   usage: PlanUsage
@@ -162,8 +162,11 @@ async function loadShishaBilling(
   supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
   tenantId: string,
   switchedOn: boolean,
-  hasShishaInvoices: boolean,
 ): Promise<ShishaBillingInfo | null> {
+  // Shisha switched off: no Shisha usage card, even if there is old usage on record. Invoices already
+  // issued still appear in the invoice history and in "Outstanding", because those are real bills.
+  if (!switchedOn) return null
+
   const { thisMonth, lastMonth } = shishaMonthKeys()
 
   const [usageRes, ratesRes] = await Promise.all([
@@ -181,9 +184,6 @@ async function loadShishaBilling(
   if (usageRes.error) throw new Error(`Failed to load shisha usage: ${usageRes.error.message}`)
 
   const usage = (usageRes.data ?? []) as Array<{ month: string; sessions: number; refills: number; amount: number | string; currency: string }>
-  // Nothing to show: Shisha off, never used, never invoiced.
-  if (!switchedOn && usage.length === 0 && !hasShishaInvoices) return null
-
   const monthOf = (month: string): ShishaMonth => {
     const rows = usage.filter((u) => u.month === month)
     return {
@@ -283,7 +283,7 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
 
     const runsBookingQueue = products.booking || products.queue
     const billingStatus = deriveBillingStatus(tenantRow.data?.status ?? "active", currentPlan.key, invoices, runsBookingQueue)
-    const shisha = await loadShishaBilling(supabase, tenantId!, products.shisha, invoices.some((inv) => inv.product === "shisha"))
+    const shisha = await loadShishaBilling(supabase, tenantId!, products.shisha)
 
     return {
       ok: true,
