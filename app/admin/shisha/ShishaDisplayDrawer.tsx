@@ -103,7 +103,7 @@ function Switch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          checked ? BRAND_BG : "bg-line-strong"
+          checked ? `${BRAND_BG} [[data-admin-theme=dark]_&]:bg-accent [[data-admin-theme=dark]_&]:shadow-[0_0_10px_rgba(227,6,19,0.45)]` : "bg-stone-300"
         }`}
       >
         <span
