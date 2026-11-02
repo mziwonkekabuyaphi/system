@@ -24,11 +24,22 @@ type BrandingPatch = Partial<{
 import {
   ColorField,
   FieldRow,
-  SaveRow,
-  Toggle,
+  SettingsCard,
+  SettingsStatTile,
+  ToggleRow,
   inputClass,
+  primaryButtonClass,
   secondaryButtonClass,
 } from "./ui"
+
+// Small line icon for the summary tiles.
+function TileIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
 const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
@@ -83,7 +94,7 @@ export function PrivateLabelPanel({
   onBrandingChange?: (patch: BrandingPatch) => void
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <BrandingFields plan={plan} canRemovePoweredBy={canRemovePoweredBy} canCustomizeBranding={canCustomizeBranding} initial={initial} onBrandingChange={onBrandingChange} />
     </div>
   )
@@ -102,7 +113,7 @@ function BrandingFields({
   initial: AdminBranding
   onBrandingChange?: (patch: BrandingPatch) => void
 }) {
-  const [form, setForm] = useState({
+  const initialForm = {
     displayName: initial.displayName,
     primaryColor: initial.primaryColor,
     secondaryColor: initial.secondaryColor,
@@ -111,7 +122,11 @@ function BrandingFields({
     sidebarTextColor: initial.sidebarTextColor ?? null,
     accentColor: initial.accentColor ?? null,
     adminTheme: (initial.adminTheme === "dark" ? "dark" : "cream") as "cream" | "dark",
-  })
+  }
+  const [form, setForm] = useState(initialForm)
+  // The last saved copy of the form, to know when there are unsaved changes.
+  const [saved, setSaved] = useState(initialForm)
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -134,6 +149,7 @@ function BrandingFields({
       const result = await updateBranding(form)
       if (result.success) {
         setMessage({ ok: true, text: "Saved." })
+        setSaved(form)
         onBrandingChange?.({
           displayName: form.displayName,
           sidebarColor: form.sidebarColor,
@@ -146,6 +162,12 @@ function BrandingFields({
         setForm((f) => ({ ...f, removePoweredBy: initial.removePoweredBy }))
       }
     })
+  }
+
+  function discard() {
+    setForm(saved)
+    setColorSyncKey((k) => k + 1)
+    setMessage(null)
   }
 
   // Seeds the dashboard colours from the kiosk brand colours (primary ->
@@ -217,18 +239,40 @@ function BrandingFields({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Brand identity</p>
-        <p className="text-sm text-stone-500">Set the name, logo, and colors customers see when interacting with your business.</p>
+    <div className="space-y-4">
+      {/* ================= Summary (follows the form live) ================= */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SettingsStatTile label="Display name" value={form.displayName?.trim() || "Not set"} hint="Shown to customers" icon={<TileIcon><path d="M4 7V5h16v2M12 5v14M9 19h6" /></TileIcon>} />
+        <SettingsStatTile label="Logo" value={logoUrl ? "Uploaded" : "None yet"} hint="PNG, JPEG, WebP or SVG" icon={<TileIcon><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m4 17 5-4.500 4 3.500 3-2.500 4 3" /></TileIcon>} />
+        <SettingsStatTile
+          label="Customer colours"
+          value={
+            <span className="flex items-center gap-2">
+              <span className="h-6 w-6 rounded-full border border-line-strong" style={{ backgroundColor: form.primaryColor ?? "#7A2E3A" }} />
+              <span className="h-6 w-6 rounded-full border border-line-strong" style={{ backgroundColor: form.secondaryColor ?? "#4B6B54" }} />
+            </span>
+          }
+          hint={`${form.primaryColor ?? "#7A2E3A"} · ${form.secondaryColor ?? "#4B6B54"}`}
+          icon={<TileIcon><path d="M12 3a9 9 0 100 18c1.100 0 1.800-.8 1.800-1.700 0-.5-.2-.9-.5-1.200-.3-.3-.5-.7-.5-1.200 0-.9.8-1.700 1.700-1.700H17a4 4 0 004-4c0-4.400-4-8.200-9-8.200z" /></TileIcon>}
+        />
+        <SettingsStatTile
+          label="Dashboard"
+          value={form.adminTheme === "dark" ? "Dark" : "Cream"}
+          hint={customSidebar ? "Custom sidebar colours" : "Standard sidebar"}
+          icon={<TileIcon><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></TileIcon>}
+        />
+      </div>
+
+      {/* ================= Brand identity ================= */}
+      <SettingsCard title="Brand identity" description="Set the name, logo, and colors customers see when interacting with your business.">
         {!canCustomizeBranding && (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="rounded-lg border border-warn-line bg-warn-soft-2 px-3 py-2 text-sm text-warn-strong">
             Custom logo and brand colours are a Business plan feature. Your display name can be changed on any plan.
             Upgrade from Plans &amp; Billing to unlock the rest.
           </p>
         )}
 
-        <div className="mt-4 space-y-4">
+        <div className="grid gap-5 md:grid-cols-2">
           <FieldRow label="Display name">
             <input
               className={inputClass}
@@ -239,12 +283,12 @@ function BrandingFields({
 
           <FieldRow label="Logo">
             <div className="flex items-center gap-4">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-stone-200 bg-stone-50">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-line-strong bg-canvas">
                 {logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, not a static/local asset
                   <img src={logoUrl} alt="Shop logo" className="h-full w-full object-contain" />
                 ) : (
-                  <span className="text-xs text-stone-400">No logo</span>
+                  <span className="text-xs text-ink-muted">No logo</span>
                 )}
               </div>
               <div className="flex flex-col gap-2">
@@ -262,13 +306,13 @@ function BrandingFields({
                       type="button"
                       onClick={handleRemoveLogo}
                       disabled={isLogoPending}
-                      className="rounded-full border border-stone-200 bg-card px-3 py-1.5 text-sm font-medium text-stone-500 hover:bg-stone-100 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-300"
+                      className={secondaryButtonClass}
                     >
                       Remove
                     </button>
                   )}
                 </div>
-                <p className="text-xs text-stone-400">PNG, JPEG, WebP, or SVG. Up to 2MB.</p>
+                <p className="text-xs text-ink-muted">PNG, JPEG, WebP, or SVG. Up to 2MB.</p>
               </div>
               <input
                 ref={fileInputRef}
@@ -278,121 +322,146 @@ function BrandingFields({
                 onChange={(e) => handleLogoFile(e.target.files?.[0] ?? null)}
               />
             </div>
-            {logoError && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{logoError}</p>}
+            {logoError && <p className="mt-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">{logoError}</p>}
           </FieldRow>
+        </div>
+      </SettingsCard>
 
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-medium text-stone-800">Customer-facing experience</p>
-              <p className="text-sm text-stone-500">
-                These colours apply everywhere your customers see your brand.
-              </p>
-            </div>
-            <div
-              className={`grid grid-cols-2 gap-3 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
-              aria-disabled={!canCustomizeBranding}
-            >
-              <ColorField
-                key={`primary-${colorSyncKey}`}
-                label="Primary color"
-                value={form.primaryColor ?? "#7A2E3A"}
-                onChange={(hex) => setForm({ ...form, primaryColor: hex })}
-              />
-              <ColorField
-                key={`secondary-${colorSyncKey}`}
-                label="Secondary color"
-                value={form.secondaryColor ?? "#4B6B54"}
-                onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
-              />
-            </div>
-
-            <div
-              className={canCustomizeBranding ? "" : "pointer-events-none opacity-50"}
-              aria-disabled={!canCustomizeBranding}
-            >
-              <p className="text-sm font-medium text-stone-800">Don&apos;t have brand colours yet?</p>
-              <p className="text-sm text-stone-500">
-                Pick a ready-made combination. You can still fine-tune either colour afterwards.
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-                {SUGGESTED_PALETTES.map((palette) => {
-                  const selected =
-                    form.primaryColor?.toLowerCase() === palette.primary.toLowerCase() &&
-                    form.secondaryColor?.toLowerCase() === palette.secondary.toLowerCase()
-                  return (
-                    <button
-                      key={palette.name}
-                      type="button"
-                      onClick={() => {
-                        setColorSyncKey((k) => k + 1)
-                        setForm({ ...form, primaryColor: palette.primary, secondaryColor: palette.secondary })
-                      }}
-                      aria-pressed={selected}
-                      className={`flex flex-col items-start gap-2 rounded-xl border p-2 text-left text-xs transition ${
-                        selected
-                          ? "border-stone-900 bg-stone-50 ring-1 ring-stone-900"
-                          : "border-stone-200 bg-card hover:bg-stone-50"
-                      }`}
-                    >
-                      <span className="flex w-full overflow-hidden rounded-lg">
-                        <span className="h-8 flex-1" style={{ backgroundColor: palette.primary }} />
-                        <span className="h-8 flex-1" style={{ backgroundColor: palette.secondary }} />
-                      </span>
-                      <span className="font-medium text-stone-700">{palette.name}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
+      {/* ================= Customer-facing colours ================= */}
+      <SettingsCard title="Customer-facing colours" description="These colours apply everywhere your customers see your brand: the kiosk, the public display and your messages.">
+        <div
+          className={`grid gap-4 sm:grid-cols-2 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+          aria-disabled={!canCustomizeBranding}
+        >
+          <ColorField
+            key={`primary-${colorSyncKey}`}
+            label="Primary color"
+            value={form.primaryColor ?? "#7A2E3A"}
+            onChange={(hex) => setForm({ ...form, primaryColor: hex })}
+          />
+          <ColorField
+            key={`secondary-${colorSyncKey}`}
+            label="Secondary color"
+            value={form.secondaryColor ?? "#4B6B54"}
+            onChange={(hex) => setForm({ ...form, secondaryColor: hex })}
+          />
         </div>
 
         <div
-          className={`mt-4 space-y-3 border-t border-stone-200 pt-4 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+          className={`border-t border-line pt-4 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
           aria-disabled={!canCustomizeBranding}
         >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-stone-800">Custom dashboard colours</p>
-              <p className="text-sm text-stone-500">
-                Colour the sidebar of this admin dashboard. Off keeps the standard look.
-              </p>
-            </div>
-            <Toggle checked={customSidebar} disabled={isPending} onChange={toggleCustomSidebar} />
+          <p className="text-sm font-medium text-ink">Don&apos;t have brand colours yet?</p>
+          <p className="text-sm text-ink-muted">
+            Pick a ready-made combination. You can still fine-tune either colour afterwards.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+            {SUGGESTED_PALETTES.map((palette) => {
+              const selected =
+                form.primaryColor?.toLowerCase() === palette.primary.toLowerCase() &&
+                form.secondaryColor?.toLowerCase() === palette.secondary.toLowerCase()
+              return (
+                <button
+                  key={palette.name}
+                  type="button"
+                  onClick={() => {
+                    setColorSyncKey((k) => k + 1)
+                    setForm({ ...form, primaryColor: palette.primary, secondaryColor: palette.secondary })
+                  }}
+                  aria-pressed={selected}
+                  className={`flex flex-col items-start gap-2 rounded-lg border p-2 text-left text-xs transition-shadow ${
+                    selected
+                      ? "border-accent bg-canvas ring-1 ring-accent [[data-admin-theme=dark]_&]:shadow-[0_0_14px_rgba(227,6,19,0.25)]"
+                      : "border-line bg-card hover:bg-tint [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
+                  }`}
+                >
+                  <span className="flex w-full overflow-hidden rounded-md">
+                    <span className="h-8 flex-1" style={{ backgroundColor: palette.primary }} />
+                    <span className="h-8 flex-1" style={{ backgroundColor: palette.secondary }} />
+                  </span>
+                  <span className="font-medium text-ink-soft">{palette.name}</span>
+                </button>
+              )
+            })}
           </div>
+        </div>
+      </SettingsCard>
+
+      {/* ================= Dashboard look ================= */}
+      <SettingsCard title="Dashboard look" description="How this admin dashboard looks for you and your team.">
+        <ToggleRow
+          title="Dark dashboard"
+          description="A dark look for the whole dashboard, sidebar included. Turning it on clears custom sidebar colours (you can set them again below)."
+          checked={form.adminTheme === "dark"}
+          disabled={isPending}
+          onChange={(on) => {
+            // Switching to dark also drops custom sidebar colours, so the sidebar goes dark with it.
+            // Custom colours can be switched on again below, and they then win over the dark default.
+            if (on) setColorSyncKey((k) => k + 1)
+            setForm({
+              ...form,
+              adminTheme: on ? "dark" : "cream",
+              ...(on ? { sidebarColor: null, sidebarTextColor: null, accentColor: null } : {}),
+            })
+          }}
+        />
+
+        <div
+          className={`space-y-3 ${canCustomizeBranding ? "" : "pointer-events-none opacity-50"}`}
+          aria-disabled={!canCustomizeBranding}
+        >
+          <ToggleRow
+            title="Custom dashboard colours"
+            description="Colour the sidebar of this admin dashboard. Off keeps the standard look."
+            checked={customSidebar}
+            disabled={isPending}
+            onChange={toggleCustomSidebar}
+          />
 
           {customSidebar && (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <ColorField
-                  key={`sidebar-${colorSyncKey}`}
-                  label="Sidebar"
-                  value={form.sidebarColor ?? "#1F2937"}
-                  onChange={(hex) => setForm({ ...form, sidebarColor: hex })}
-                />
-                <ColorField
-                  key={`sidebar-text-${colorSyncKey}`}
-                  label="Sidebar text"
-                  value={form.sidebarTextColor ?? readableTextOn(form.sidebarColor ?? "#1F2937")}
-                  onChange={(hex) => setForm({ ...form, sidebarTextColor: hex })}
-                />
-                <ColorField
-                  key={`accent-${colorSyncKey}`}
-                  label="Active item"
-                  value={form.accentColor ?? "#D4A017"}
-                  onChange={(hex) => setForm({ ...form, accentColor: hex })}
-                />
+            <div className="grid gap-5 lg:grid-cols-[1fr_auto]">
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <ColorField
+                    key={`sidebar-${colorSyncKey}`}
+                    label="Sidebar"
+                    value={form.sidebarColor ?? "#1F2937"}
+                    onChange={(hex) => setForm({ ...form, sidebarColor: hex })}
+                  />
+                  <ColorField
+                    key={`sidebar-text-${colorSyncKey}`}
+                    label="Sidebar text"
+                    value={form.sidebarTextColor ?? readableTextOn(form.sidebarColor ?? "#1F2937")}
+                    onChange={(hex) => setForm({ ...form, sidebarTextColor: hex })}
+                  />
+                  <ColorField
+                    key={`accent-${colorSyncKey}`}
+                    label="Active item"
+                    value={form.accentColor ?? "#D4A017"}
+                    onChange={(hex) => setForm({ ...form, accentColor: hex })}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setColorSyncKey((k) => k + 1)
+                    setForm({ ...form, ...brandSidebarColors() })
+                  }}
+                  className={secondaryButtonClass}
+                >
+                  Use my brand colours
+                </button>
               </div>
 
               {previewVars && (
                 <div
                   style={{ ...previewVars, backgroundColor: "var(--sb-bg)", color: "var(--sb-text)" }}
-                  className="flex w-56 flex-col gap-1 rounded-xl p-3 text-sm"
+                  className="flex w-56 flex-col gap-1 self-start rounded-lg border border-line p-3 text-sm"
                   aria-label="Sidebar preview"
                 >
                   <span
                     style={{ backgroundColor: "var(--sb-accent)", color: "var(--sb-on-accent)" }}
-                    className="rounded-lg px-3 py-2"
+                    className="rounded-md px-3 py-2"
                   >
                     Staff
                   </span>
@@ -407,69 +476,23 @@ function BrandingFields({
                   </span>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setColorSyncKey((k) => k + 1)
-                  setForm({ ...form, ...brandSidebarColors() })
-                }}
-                className={secondaryButtonClass}
-              >
-                Use my brand colours
-              </button>
-            </>
+            </div>
           )}
         </div>
+      </SettingsCard>
 
-        <SaveRow isPending={isPending} onSave={save} message={message} />
-      </div>
-
-      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Dashboard look</p>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-stone-800">Dark dashboard</p>
-            <p className="text-sm text-stone-500">A dark look for this admin dashboard, sidebar included. Turning it on clears custom sidebar colours (you can set them again below). Press Save to apply.</p>
-          </div>
-          <Toggle
-            checked={form.adminTheme === "dark"}
-            disabled={isPending}
-            onChange={(on) => {
-              // Switching to dark also drops custom sidebar colours, so the sidebar goes dark with it.
-              // Custom colours can be switched on again below, and they then win over the dark default.
-              if (on) setColorSyncKey((k) => k + 1)
-              setForm({
-                ...form,
-                adminTheme: on ? "dark" : "cream",
-                ...(on ? { sidebarColor: null, sidebarTextColor: null, accentColor: null } : {}),
-              })
-            }}
-          />
-        </div>
-        <div className="mt-3">
-          <button type="button" onClick={save} disabled={isPending} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary disabled:opacity-50">
-            {isPending ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Platform branding</p>
-        <p className="text-sm text-stone-500">Control whether your customers see attribution to the platform.</p>
-
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-stone-800">Hide &quot;zozoQ&quot; Branding</p>
-            <p className="text-sm text-stone-500">
-              Remove "Powered By zozoQ" on footer from customer-facing experiences. This is a Business plan feature.
-            </p>
-          </div>
-          <Toggle checked={form.removePoweredBy} disabled={isPending} onChange={handleRemovePoweredByChange} />
-        </div>
+      {/* ================= Platform branding ================= */}
+      <SettingsCard title="Platform branding" description="Control whether your customers see attribution to the platform.">
+        <ToggleRow
+          title={'Hide "zozoQ" Branding'}
+          description={'Remove "Powered By zozoQ" on footer from customer-facing experiences. This is a Business plan feature.'}
+          checked={form.removePoweredBy}
+          disabled={isPending}
+          onChange={handleRemovePoweredByChange}
+        />
 
         {showUpgradePrompt && (
-          <div className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-warn-line bg-warn-soft-2 px-3 py-2 text-sm text-warn-strong">
             <span>
               This is a Business plan feature. Upgrade your plan to remove &quot;zozoQ Branding&quot; footer from your
               kiosk.
@@ -478,11 +501,30 @@ function BrandingFields({
               type="button"
               onClick={() => setShowUpgradePrompt(false)}
               aria-label="Dismiss"
-              className="shrink-0 text-amber-600 hover:text-amber-900"
+              className="shrink-0 text-warn hover:text-warn-strong"
             >
               ✕
             </button>
           </div>
+        )}
+      </SettingsCard>
+
+      {/* ================= One save for the whole page ================= */}
+      <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-card px-4 py-3 shadow-lg [[data-admin-theme=dark]_&]:shadow-[0_0_24px_rgba(227,6,19,0.12)]">
+        <button type="button" onClick={save} disabled={!dirty || isPending} className={primaryButtonClass}>
+          {isPending ? "Saving…" : "Save changes"}
+        </button>
+        {dirty && !isPending && (
+          <button type="button" onClick={discard} className={secondaryButtonClass}>
+            Discard
+          </button>
+        )}
+        {message ? (
+          <span className={`text-sm ${message.ok ? "text-success" : "text-danger"}`}>{message.text}</span>
+        ) : dirty ? (
+          <span className="text-sm text-warn">Unsaved changes</span>
+        ) : (
+          <span className="text-sm text-ink-muted">All changes saved</span>
         )}
       </div>
     </div>
