@@ -7,6 +7,7 @@
 "use client"
 
 import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_ON, BRAND_SELECTED, BRAND_TEXT } from "@/components/admin/brand"
+import { SettingsSwitch } from "@/components/admin/SettingsSwitch"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
@@ -95,23 +96,9 @@ function Switch({
         <p className="text-sm font-medium text-ink">{title}</p>
         {description && <p className="mt-0.5 text-xs text-ink-muted">{description}</p>}
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={title}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
-          checked ? BRAND_BG : "bg-line-strong"
-        }`}
-      >
-        <span
-          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-card shadow transition-transform motion-reduce:transition-none ${
-            checked ? "translate-x-4" : ""
-          }`}
-        />
-      </button>
+      <div className="mt-0.5">
+        <SettingsSwitch checked={checked} disabled={disabled} onChange={onChange} label={title} />
+      </div>
     </div>
   )
 }

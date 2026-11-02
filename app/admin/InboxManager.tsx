@@ -30,6 +30,7 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react"
 
 import { AdminDrawer } from "@/components/admin/AdminDrawer"
+import { SettingsSwitch } from "@/components/admin/SettingsSwitch"
 import { AnalyticsDashboard } from "./AnalyticsDashboard"
 import { CustomersDrawer } from "./CustomersDrawer"
 import { getConversationThread, sendAgentMessage, setConversationAiState } from "./inbox-actions"
@@ -531,24 +532,14 @@ export function InboxManager({
                   className={`h-2 w-2 rounded-full ${selected.aiState === "active" ? "bg-success shadow-[0_0_6px_var(--color-success)]" : "bg-ink-muted/50"}`}
                 />
                 <span className="text-ink-muted">{selected.aiState === "active" ? "AI is replying" : "AI is not replying"}</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={selected.aiState === "active"}
-                  aria-label={selected.aiState === "active" ? "Pause AI and take over" : "Resume AI"}
-                  disabled={isPending}
-                  onClick={() => handleAiAction(selected.aiState === "active" ? "pause" : "resume")}
-                  className={`relative ml-auto h-5 w-9 shrink-0 rounded-full border transition-all disabled:opacity-50 ${
-                    selected.aiState === "active"
-                      ? "border-accent bg-accent [[data-admin-theme=dark]_&]:shadow-[0_0_10px_rgba(227,6,19,0.35)]"
-                      : "border-line bg-tint-3"
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`absolute top-[2px] h-3.5 w-3.5 rounded-full bg-white transition-all ${selected.aiState === "active" ? "left-[18px]" : "left-[2px]"}`}
+                <span className="ml-auto">
+                  <SettingsSwitch
+                    checked={selected.aiState === "active"}
+                    disabled={isPending}
+                    onChange={() => handleAiAction(selected.aiState === "active" ? "pause" : "resume")}
+                    label={selected.aiState === "active" ? "Pause AI and take over" : "Resume AI"}
                   />
-                </button>
+                </span>
               </div>
             </div>
 
