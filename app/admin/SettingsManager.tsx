@@ -115,7 +115,7 @@ const SETTINGS_NAV: Array<{
       {
         id: "private-label",
         label: "Branding",
-        title: "Branding (private label)",
+        title: "Branding (Private Label)",
         description:
           "Your name, logo and colours. Shown on the kiosk, the public display, the staff clock-in and customer messages.",
       },
