@@ -13,7 +13,7 @@ import {
   type WhatsAppTemplateDto,
   type WhatsAppTemplateStatus,
 } from "../whatsapp-template-actions"
-import { SettingsCard, inputClass, primaryButtonClass, secondaryButtonClass } from "./ui"
+import { SettingsCard, Toggle, inputClass, primaryButtonClass, secondaryButtonClass } from "./ui"
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel"
 
 // ---------------------------------------------------------------------------
@@ -198,23 +198,13 @@ export function WhatsAppTemplatesPanel() {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${style.className}`}>{style.label}</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={t.enabled}
-                      aria-label={`Send "${info.label}" message`}
-                      onClick={() => toggleEnabled(t)}
+                    <Toggle
+                      checked={t.enabled}
                       disabled={isPending}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-                        t.enabled ? "bg-emerald-600" : "bg-stone-300"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 rounded-full bg-card shadow transition-transform ${
-                          t.enabled ? "translate-x-5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
+                      onChange={() => toggleEnabled(t)}
+                      label={`Send "${info.label}" message`}
+                      showState={false}
+                    />
                   </div>
                 </div>
 
