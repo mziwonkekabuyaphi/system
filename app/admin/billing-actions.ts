@@ -180,14 +180,15 @@ async function loadStaffBilling(
   const [ratesRes, countRes] = await Promise.all([
     supabase
       .from("staff_billing_rates")
-      .select("tenant_id, staff_fee, currency")
+      .select("tenant_id, fee_per_staff, currency")
+      .eq("module_key", "staff")
       .eq("is_active", true)
       .or(`tenant_id.eq.${tenantId},tenant_id.is.null`),
     supabase.from("staff").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("active", true),
   ])
-  const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; staff_fee: number | string; currency: string }>
+  const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; fee_per_staff: number | string; currency: string }>
   const rate = rates.find((r) => r.tenant_id === tenantId) ?? rates.find((r) => r.tenant_id === null)
-  const perStaffCents = rate ? toCents(rate.staff_fee) : 0
+  const perStaffCents = rate ? toCents(rate.fee_per_staff) : 0
   const activeStaff = countRes.count ?? 0
   return { perStaffCents, currency: rate?.currency ?? "ZAR", activeStaff, estimatedCents: perStaffCents * activeStaff }
 }

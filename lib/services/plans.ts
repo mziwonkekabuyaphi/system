@@ -911,8 +911,7 @@ export async function generateShishaInvoices(supabase: SupabaseClient): Promise<
 // ----------------------------------------------------------------------------
 // Only for shops that sell/run Staff Management ON ITS OWN: the "staff" module
 // is on and none of Booking, Queue or Shisha is on (those include staff for
-// free). Counted when the cron runs on the 1st, i.e. the active staff at the
-// end of the month just ended. Re-running is safe (unique per period).
+// free). Counted from the nightly headcount snapshot of the last day of the month. Re-running is safe (unique per period).
 // ============================================================================
 
 async function generateStaffInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
@@ -937,14 +936,12 @@ async function generateStaffInvoices(supabase: SupabaseClient): Promise<Generate
 
   const { data: rateRows, error: rateError } = await supabase
     .from("staff_billing_rates")
-    .select("tenant_id, staff_fee, currency")
+    .select("tenant_id, fee_per_staff, currency")
+    .eq("module_key", "staff")
     .eq("is_active", true)
   if (rateError) throw new Error(`Failed to load staff rates: ${rateError.message}`)
-  const rates = (rateRows ?? []) as Array<{ tenant_id: string | null; staff_fee: number | string; currency: string }>
+  const rates = (rateRows ?? []) as Array<{ tenant_id: string | null; fee_per_staff: number | string; currency: string }>
   const defaultRate = rates.find((r) => r.tenant_id === null)
-
-  const { data: tenantRows } = await supabase.from("tenants").select("id, plan").in("id", standalone)
-  const planOf = new Map<string, string>((tenantRows ?? []).map((t: any) => [t.id as string, (t.plan as string) ?? "free"]))
 
   const generated: GeneratedInvoice[] = []
   for (const tenantId of standalone) {
@@ -959,8 +956,16 @@ async function generateStaffInvoices(supabase: SupabaseClient): Promise<Generate
     if (existing) continue
 
     const rate = rates.find((r) => r.tenant_id === tenantId) ?? defaultRate
-    const feeCents = rate ? randsToCents(rate.staff_fee) : 0
-    const staffCount = await countActiveStaff(supabase, tenantId)
+    const feeCents = rate ? randsToCents(rate.fee_per_staff) : 0
+    // Headcount on the last day of the month, from the nightly snapshot (staff_headcount_snapshots).
+    // Falls back to today's active staff only if that day has no snapshot.
+    const { data: snap } = await supabase
+      .from("staff_headcount_snapshots")
+      .select("active_staff")
+      .eq("tenant_id", tenantId)
+      .eq("snapshot_date", periodEnd)
+      .maybeSingle()
+    const staffCount = snap ? Number((snap as any).active_staff) : await countActiveStaff(supabase, tenantId)
     const amountCents = feeCents * staffCount
     if (amountCents === 0) continue
 
@@ -968,7 +973,7 @@ async function generateStaffInvoices(supabase: SupabaseClient): Promise<Generate
       {
         tenant_id: tenantId,
         product: "staff",
-        plan_key: planOf.get(tenantId) ?? "free",
+        plan_key: "staff", // inactive placeholder plan row, like "shisha"
         period_start: periodStart,
         period_end: periodEnd,
         visit_count: 0,
