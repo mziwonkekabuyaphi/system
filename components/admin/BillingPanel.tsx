@@ -218,7 +218,7 @@ export function BillingPanel() {
         </>
       )}
 
-      {shisha && <ShishaSection shisha={shisha} switchedOn={products.shisha} />}
+      {shisha && <ShishaSection shisha={shisha} />}
 
       {runsBookingQueue && (
         <PlanComparisonSection
@@ -232,7 +232,8 @@ export function BillingPanel() {
 
       {!runsBookingQueue && !shisha && (
         <p className={`${NOTICE} text-ink-muted`}>
-          No billable modules are switched on for your shop yet.
+          Nothing is billed right now. Staff, Analytics and Settings have no charge of their own. Billing applies to
+          Booking &amp; Queue (a monthly plan) and Shisha (per session and refill) while they are switched on.
         </p>
       )}
 
@@ -340,9 +341,21 @@ function ModulesOnlyHeader({
 }) {
   return (
     <div className="space-y-5">
-      <PageHeader billingStatus={billingStatus} subtitle="Your modules are billed on usage, with no monthly plan fee." />
+      <PageHeader
+        billingStatus={billingStatus}
+        subtitle={
+          shisha
+            ? "Your modules are billed on usage, with no monthly plan fee."
+            : "Nothing is being billed while Booking, Queue and Shisha are all switched off."
+        }
+      />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Billing" value={BILLING_STATUS_LABEL[billingStatus]} hint="Usage based" icon={<IconTag />} />
+        <StatTile
+          label="Billing"
+          value={BILLING_STATUS_LABEL[billingStatus]}
+          hint={shisha ? "Usage based" : "Nothing to bill"}
+          icon={<IconTag />}
+        />
         <StatTile
           label="This month"
           value={shisha ? formatCents(shisha.thisMonth.amountCents, currency) : "—"}
@@ -369,7 +382,7 @@ function ModulesOnlyHeader({
 // Shisha — billed per session and per refill, separately from the plan
 // ============================================================================
 
-function ShishaSection({ shisha, switchedOn }: { shisha: ShishaBillingInfo; switchedOn: boolean }) {
+function ShishaSection({ shisha }: { shisha: ShishaBillingInfo }) {
   const { currency, sessionFeeCents, refillFeeCents, thisMonth, lastMonth } = shisha
   return (
     <section className={`${CARD} p-5`}>
@@ -389,10 +402,6 @@ function ShishaSection({ shisha, switchedOn }: { shisha: ShishaBillingInfo; swit
           <UsageStat label="This month so far" value={formatCents(thisMonth.amountCents, currency)} emphasize />
         </div>
       </dl>
-
-      {!switchedOn && (
-        <p className="mt-3 text-sm text-ink-muted">Shisha is switched off for your shop. Earlier usage is still billed.</p>
-      )}
     </section>
   )
 }
