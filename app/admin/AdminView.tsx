@@ -171,6 +171,7 @@ export function AdminView({
   queueEnabled,
   shishaEnabled,
   shiftsEnabled,
+  staffEnabled,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -202,6 +203,9 @@ export function AdminView({
   shishaEnabled: boolean
   /** Shifts module on the tenant's plan AND the caller has shifts.view (computed in page.tsx). */
   shiftsEnabled: boolean
+  /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
+   *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
+  staffEnabled: boolean
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -247,6 +251,8 @@ export function AdminView({
       // and only for shops running Booking or Queue.
       case "inbox":
         return staffPermissions.settingsManage && hasBookingOrQueue
+      case "staff":
+        return staffEnabled
       default:
         return true
     }
@@ -538,7 +544,7 @@ export function AdminView({
               timezone={timezone}
             />
           )}
-          {tab === "staff" && (
+          {tab === "staff" && staffEnabled && (
             <StaffManager
               initialStaff={initialStaff}
               initialActiveShifts={initialActiveShifts}

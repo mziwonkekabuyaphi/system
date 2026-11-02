@@ -892,6 +892,7 @@ export default async function AdminPage() {
       queueEnabled={products.queue}
       shishaEnabled={shishaEnabled}
       shiftsEnabled={shiftsEnabled}
+      staffEnabled={products.staff || products.booking || products.queue || products.shisha || products.shifts || products.payroll}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
