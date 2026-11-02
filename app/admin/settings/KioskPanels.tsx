@@ -16,12 +16,22 @@ import {
   CardSaveRow,
   FieldRow,
   SettingsCard,
+  SettingsStatTile,
   SubSection,
   Toggle,
   inputClass,
   secondaryButtonClass,
   useCardForm,
 } from "./ui"
+
+// Small line icon for the summary tiles.
+function TileIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Kiosk — kiosk-specific functionality ONLY: on/off, the public URL + QR
@@ -56,6 +66,8 @@ export function KioskPanel({
   const [enabled, setEnabled] = useState(initialEnabled)
   const [isTogglePending, startToggleTransition] = useTransition()
   const [toggleError, setToggleError] = useState<string | null>(null)
+  // Held here (not inside the behaviour panel) so the summary tiles follow what is being edited.
+  const form = useKioskForm(initialKioskSettings)
 
   function handleToggle(next: boolean) {
     const previous = enabled
@@ -75,38 +87,69 @@ export function KioskPanel({
   // hidden too -- the public kiosk page is unavailable on this plan.
   if (!includedInPlan) {
     return (
-      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-        <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
-        <p className="mt-1 text-sm text-stone-500">
+      <SettingsCard title="Kiosk module">
+        <p className="text-sm text-ink-muted">
           The self-service kiosk isn&apos;t included in your current plan. Upgrade from Plans &amp; Billing to give
           walk-ins a booking and queue screen.
         </p>
-      </div>
+      </SettingsCard>
     )
   }
 
+  const modeTitle = REGISTRATION_TYPE_OPTIONS.find((o) => o.value === form.draft.registrationType)?.title ?? "—"
+
   return (
-    <div className="space-y-3">
-      <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk module</p>
-            <p className="text-sm text-stone-500">Enable the self-service kiosk for this location.</p>
-          </div>
-          <Toggle checked={enabled} disabled={isTogglePending} onChange={handleToggle} />
-        </div>
-        {toggleError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{toggleError}</p>}
-        {!enabled && (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            The kiosk is off — walk-ins won&apos;t see a booking flow at the URL below. Everything else on this tab
-            still saves, so you can set it up before switching it on.
-          </p>
-        )}
+    <div className="space-y-4">
+      {/* ================= Summary (follows the form live) ================= */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SettingsStatTile
+          label="Kiosk"
+          value={enabled ? "On" : "Off"}
+          hint={enabled ? "Walk-ins can use it" : "Hidden from walk-ins"}
+          icon={<TileIcon><rect x="6" y="2.5" width="12" height="19" rx="2" /><path d="M10 18.5h4" /></TileIcon>}
+        />
+        <SettingsStatTile
+          label="Customers can"
+          value={modeTitle}
+          hint="Set under Customer options"
+          icon={<TileIcon><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" /></TileIcon>}
+        />
+        <SettingsStatTile
+          label="Idle reset"
+          value={`${form.draft.idleRefreshSeconds}s`}
+          hint="Back to the welcome screen"
+          icon={<TileIcon><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></TileIcon>}
+        />
+        <SettingsStatTile
+          label="Ticket screen"
+          value={`${form.draft.confirmationRefreshSeconds}s`}
+          hint="How long the ticket stays up"
+          icon={<TileIcon><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8z" /></TileIcon>}
+        />
       </div>
 
-      <KioskUrlPanel tenantSlug={tenantSlug} />
+      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+        <SettingsCard title="Kiosk module" description="Enable the self-service kiosk for this location.">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
+            <div>
+              <p className="text-sm font-medium text-ink">{enabled ? "Kiosk is on" : "Kiosk is off"}</p>
+              <p className="text-xs text-ink-muted">Switch the kiosk on or off for walk-ins.</p>
+            </div>
+            <Toggle checked={enabled} disabled={isTogglePending} onChange={handleToggle} />
+          </div>
+          {toggleError && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">{toggleError}</p>}
+          {!enabled && (
+            <p className="rounded-lg border border-warn-line bg-warn-soft-2 px-3 py-2 text-sm text-warn-strong">
+              The kiosk is off — walk-ins won&apos;t see a booking flow at the URL on the right. Everything else on this
+              tab still saves, so you can set it up before switching it on.
+            </p>
+          )}
+        </SettingsCard>
 
-      <KioskBehaviorPanel initial={initialKioskSettings} />
+        <KioskUrlPanel tenantSlug={tenantSlug} />
+      </div>
+
+      <KioskBehaviorPanel form={form} />
     </div>
   )
 }
@@ -136,12 +179,9 @@ function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-      <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">Kiosk address</p>
-      <p className="text-sm text-stone-500">The registration URL used for your kiosk.</p>
-
-      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
-        <div className="flex-1 space-y-2">
+    <SettingsCard title="Kiosk address" description="The registration URL used for your kiosk.">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex gap-2">
             <input className={inputClass} readOnly value={kioskUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
             <button type="button" className={secondaryButtonClass} onClick={copyUrl} disabled={!kioskUrl}>
@@ -158,29 +198,30 @@ function KioskUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               Open the kiosk ↗
             </a>
           )}
-          <p className="text-xs text-stone-400">Print this on a table stand, or open it directly on the kiosk tablet.</p>
+          <p className="text-xs text-ink-muted">Print this on a table stand, or open it directly on the kiosk tablet.</p>
         </div>
 
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-canvas p-3">
           {kioskUrl ? (
             // Third-party QR generator — the kiosk URL isn't sensitive
             // (it's the same link printed on a counter stand), so a hosted
             // generator is fine here; swap for a self-hosted one if that
-            // changes.
+            // changes. The white frame keeps the code scannable on the dark theme.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(kioskUrl)}`}
               alt="QR code linking to the kiosk"
               width={160}
               height={160}
+              className="rounded-md bg-white p-2"
             />
           ) : (
-            <div className="flex h-40 w-40 items-center justify-center text-xs text-stone-400">Loading…</div>
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-ink-muted">Loading…</div>
           )}
-          <span className="text-xs text-stone-500">Scan to continue on phone</span>
+          <span className="text-xs text-ink-muted">Scan to continue on phone</span>
         </div>
       </div>
-    </div>
+    </SettingsCard>
   )
 }
 
@@ -329,8 +370,8 @@ const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
   "whatsAppOptInLabel",
 ]
 
-function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
-  const form = useCardForm<KioskDraft>({
+function useKioskForm(initial: AdminKioskSettings) {
+  return useCardForm<KioskDraft>({
     initial: toKioskDraft(initial),
     persist: async (full) => {
       // Refuse settings that would leave the customer nothing to fill in (or an unnamed question).
@@ -339,6 +380,9 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
       return updateKioskSettings(toKioskPayload(full))
     },
   })
+}
+
+function KioskBehaviorPanel({ form }: { form: ReturnType<typeof useKioskForm> }) {
   const { draft, set } = form
   const busy = form.savingCard !== null
   const showsBooking = draft.registrationType !== "queue"
@@ -359,24 +403,25 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
   // One on/off row for the details screen, with optional extra controls shown while it is on.
   function fieldToggle(key: DetailsToggleKey, label: string, hint: string, extra?: ReactNode, locked = false) {
     return (
-      <div className="rounded-xl border border-stone-200 p-3">
+      <div className="rounded-lg border border-line bg-canvas p-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-stone-800">{label}</p>
-            <p className="text-xs text-stone-500">{hint}</p>
+            <p className="text-sm font-semibold text-ink">{label}</p>
+            <p className="text-xs text-ink-muted">{hint}</p>
           </div>
           <Toggle checked={locked ? true : draft[key]} disabled={busy || locked} onChange={(next) => set(key, next)} />
         </div>
-        {draft[key] && extra && <div className="mt-3 space-y-3 border-t border-stone-100 pt-3">{extra}</div>}
+        {draft[key] && extra && <div className="mt-3 space-y-3 border-t border-line pt-3">{extra}</div>}
       </div>
     )
   }
 
   function requiredCheckbox(key: "emailRequired" | "customRequired") {
     return (
-      <label className="flex items-center gap-2 text-sm text-stone-700">
+      <label className="flex items-center gap-2 text-sm text-ink-soft">
         <input
           type="checkbox"
+          className="h-4 w-4 accent-accent"
           checked={draft[key]}
           disabled={busy}
           onChange={(e) => set(key, e.target.checked)}
@@ -425,16 +470,16 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
                 disabled={busy}
                 onClick={() => set("registrationType", option.value)}
                 aria-pressed={selected}
-                className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-shadow ${
                   selected
-                    ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))]"
-                    : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                    ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))] [[data-admin-theme=dark]_&]:shadow-[0_0_16px_rgba(227,6,19,0.25)]"
+                    : "border-line-strong bg-canvas hover:bg-tint [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
                 }`}
               >
-                <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-stone-800"}`}>
+                <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-ink"}`}>
                   {option.title}
                 </span>
-                <span className="text-xs text-stone-500">{option.description}</span>
+                <span className="text-xs text-ink-muted">{option.description}</span>
               </button>
             )
           })}
@@ -463,13 +508,13 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
           >
             {textField("choiceTitle", "Screen heading", DEFAULT_CHOICE_TITLE, 80)}
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-4 rounded-xl border border-stone-200 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Booking card</p>
+              <div className="space-y-4 rounded-lg border border-line bg-canvas p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Booking card</p>
                 {textField("bookingCardTitle", "Title", DEFAULT_BOOKING_CARD_TITLE, 40)}
                 {textField("bookingCardSubtitle", "Subtitle", DEFAULT_BOOKING_CARD_SUBTITLE, 100)}
               </div>
-              <div className="space-y-4 rounded-xl border border-stone-200 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">Queue card</p>
+              <div className="space-y-4 rounded-lg border border-line bg-canvas p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Queue card</p>
                 {textField("queueCardTitle", "Title", DEFAULT_QUEUE_CARD_TITLE, 40)}
                 {textField("queueCardSubtitle", "Subtitle", DEFAULT_QUEUE_CARD_SUBTITLE, 100)}
               </div>
@@ -500,7 +545,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
           {textField("detailsScreenTitle", "Screen heading", DEFAULT_DETAILS_SCREEN_TITLE, 80)}
 
           <div className="space-y-2">
-            <p className="text-sm font-medium text-stone-700">Fields to show</p>
+            <p className="text-sm font-medium text-ink">Fields to show</p>
             {fieldToggle("showName", "Name", "The customer's first name. Needs at least 2 letters.")}
             {fieldToggle("showSurname", "Surname", "Shown next to Name, and saved together with it as the customer's name.")}
             {fieldToggle(
@@ -546,7 +591,7 @@ function KioskBehaviorPanel({ initial }: { initial: AdminKioskSettings }) {
               </>,
             )}
             {detailsProblem && (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p className="rounded-lg border border-warn-line bg-warn-soft-2 px-3 py-2 text-sm text-warn-strong">
                 {detailsProblem}
               </p>
             )}
