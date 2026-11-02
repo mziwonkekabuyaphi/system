@@ -128,6 +128,12 @@ const QUEUE_STATE_SERVICE_SELECTION = "queue_service_selection"
  *  kiosk request, not a bug in normal use. */
 export const QUEUE_TOO_MANY_SERVICES = "QUEUE_TOO_MANY_SERVICES"
 
+/** Thrown by joinQueue() when the tenant's queue_settings.max_queue_size is
+ *  already reached. The database trigger enforce_max_queue_size is the real
+ *  gate (race-safe); this early check just refuses before a ticket number is
+ *  allocated, so a full queue doesn't burn numbers. */
+export const QUEUE_FULL = "QUEUE_FULL"
+
 /** Hard ceiling, mirrors the DB CHECK on max_services_per_queue_entry. */
 const ABSOLUTE_MAX_SERVICES_PER_QUEUE_ENTRY = 5
 
@@ -362,6 +368,41 @@ async function readMaxServicesPerQueueEntry(supabase: SupabaseClient, tenantId: 
 
   const value = Number(data?.max_services_per_queue_entry)
   return Number.isInteger(value) && value >= 1 && value <= ABSOLUTE_MAX_SERVICES_PER_QUEUE_ENTRY ? value : 1
+}
+
+/**
+ * Walk-ins only: refuses a join when queue_settings.max_queue_size is already
+ * reached. Counts people still in the line (waiting or called); a blank limit
+ * means no limit. Fails open on a read error because the database trigger
+ * enforce_max_queue_size is the authoritative check.
+ */
+async function assertQueueNotFull(supabase: SupabaseClient, tenantId: string): Promise<void> {
+  const { data: settings, error } = await supabase
+    .from("queue_settings")
+    .select("max_queue_size")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (error) {
+    console.error("[queue] Failed to load max_queue_size, deferring to the database check", { tenantId, error: error.message })
+    return
+  }
+
+  const max = settings?.max_queue_size
+  if (max === null || max === undefined) return
+
+  const { count, error: countError } = await supabase
+    .from("queue_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .in("status", ["waiting", "called"])
+
+  if (countError) {
+    console.error("[queue] Failed to count the queue, deferring to the database check", { tenantId, error: countError.message })
+    return
+  }
+
+  if ((count ?? 0) >= max) throw new Error(QUEUE_FULL)
 }
 
 /** Exported for the kiosk's Server Actions, which re-check the limit before
@@ -753,6 +794,10 @@ export interface JoinQueueResult {
  * gaplessness, and uniqueness is guaranteed by the counter table's atomic
  * UPSERT regardless.
  *
+ * QUEUE SIZE: throws QUEUE_FULL when queue_settings.max_queue_size is reached
+ * (waiting + called). The trigger enforce_max_queue_size re-checks it atomically
+ * at insert, so two simultaneous joins cannot both take the last place.
+ *
  * MULTI-SERVICE: throws QUEUE_TOO_MANY_SERVICES if more services were sent
  * than queue_settings.max_services_per_queue_entry allows (checked first,
  * from the database, never from the client). queue_entry_services is written
@@ -788,6 +833,10 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
   // ticket number or claiming anything for a join that's about to be
   // rejected because the tenant is over their monthly visit cap anyway.
   await assertWithinVisitLimit(supabase, tenantId)
+
+  // Walk-in limit (Queue rules > Maximum queue size). Before the ticket number is
+  // allocated so a full queue never burns numbers.
+  await assertQueueNotFull(supabase, tenantId)
 
   // Same minimal (phone-only) customer creation as booking.ts's
   // createBooking() — queueing isn't gated behind full registration
@@ -945,6 +994,14 @@ async function joinAndReply(
     if (error instanceof Error && error.message === QUEUE_TOO_MANY_SERVICES) {
       return { reply: tooManyServicesMessage(maxServices), buttons: [], nextState: null }
     }
+    if (error instanceof Error && (error.message === QUEUE_FULL || error.message.includes("queue is full"))) {
+      // TODO: move into lib/services/messages/queue.ts as queueFullMessage(), like the other replies.
+      return {
+        reply: "Sorry, the queue is full right now. Please try again a little later.",
+        buttons: [],
+        nextState: null,
+      }
+    }
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
       // TODO: move this into lib/services/messages/queue.ts as a proper
       // planLimitReachedMessage(), same as booking.ts's matching TODO —
@@ -956,8 +1013,9 @@ async function joinAndReply(
         nextState: null,
       }
     }
-    // The database refuses a walk-in join in three expected situations
-    // (triggers enforce_walkin_business_hours / block_duplicate_queue_entry).
+    // The database refuses a walk-in join in four expected situations
+    // (triggers enforce_walkin_business_hours / block_duplicate_queue_entry /
+    // enforce_max_queue_size, the last handled above).
     // Each gets its own friendly reply instead of the generic error.
     const dbMessage = error instanceof Error ? error.message : ""
     if (dbMessage.includes("currently closed")) {
