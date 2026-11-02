@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 
 import {
   updateDisplaySettings,
@@ -14,6 +14,7 @@ import {
   FieldRow,
   HEX_COLOR_PATTERN,
   SettingsCard,
+  SettingsStatTile,
   SubSection,
   ToggleRow,
   inputClass,
@@ -21,6 +22,15 @@ import {
   useCardForm,
 } from "./ui"
 import { ModuleToggleCard } from "./ModuleToggleCard"
+
+// Small line icon for the summary tiles.
+function TileIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Display — the ambient TV screen for the waiting area. Its own tab
@@ -336,16 +346,68 @@ export function DisplayPanel({
     )
   }
 
+  const layoutTitle = DISPLAY_LAYOUT_OPTIONS.find((o) => o.value === draft.layout)?.title ?? "—"
+  const themeOption = DISPLAY_THEME_OPTIONS.find((o) => o.value === draft.theme)
+  const themeSwatch =
+    draft.theme === "custom"
+      ? HEX_COLOR_PATTERN.test(draft.backgroundColor) ? draft.backgroundColor : "#15110D"
+      : themeOption?.swatch ?? "#15110D"
+  const screensOn = [draft.showServices, draft.showBookings, queueEnabled && draft.showQueue].filter(Boolean).length
+
   return (
     <div className="space-y-4">
-      <ModuleToggleCard
-        which="display"
-        title="Public display module"
-        description="Enable the waiting-area display screen for this location."
-        offNotice="The display is off — the screen at the address below won't show anything. Everything else on this tab still saves, so you can set it up before switching it on."
-      />
+      {/* ================= Summary (follows the form live) ================= */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <SettingsStatTile
+          label="Layout"
+          value={layoutTitle}
+          hint="How the TV is arranged"
+          icon={<TileIcon><rect x="2.5" y="4" width="19" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></TileIcon>}
+        />
+        <SettingsStatTile
+          label="Colour theme"
+          value={
+            <span className="flex items-center gap-2">
+              <span className="h-5 w-5 rounded-full border border-line-strong" style={{ background: themeSwatch }} />
+              {themeOption?.title ?? "—"}
+            </span>
+          }
+          hint="Background of the screen"
+          icon={<TileIcon><path d="M12 3a9 9 0 100 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H17a4 4 0 004-4c0-4.4-4-8.2-9-8.2z" /></TileIcon>}
+        />
+        <SettingsStatTile
+          label="Screens showing"
+          value={`${screensOn} / ${queueEnabled ? 3 : 2}`}
+          hint="Menu, bookings and queue"
+          icon={<TileIcon><path d="M4 6h16M4 12h16M4 18h10" /></TileIcon>}
+        />
+        {queueEnabled ? (
+          <SettingsStatTile
+            label="Call alert"
+            value={draft.callAlertEnabled ? "On" : "Off"}
+            hint={draft.callAlertEnabled ? `${draft.callAlertSeconds}s full screen` : "Called tickets don't take over"}
+            icon={<TileIcon><path d="M18 8a6 6 0 10-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 20a2 2 0 01-3.4 0" /></TileIcon>}
+          />
+        ) : (
+          <SettingsStatTile
+            label="Tagline"
+            value={draft.tagline.trim() || "None"}
+            hint="Under your name"
+            icon={<TileIcon><path d="M4 7V5h16v2M12 5v14M9 19h6" /></TileIcon>}
+          />
+        )}
+      </div>
 
-      <DisplayUrlPanel tenantSlug={tenantSlug} />
+      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+        <ModuleToggleCard
+          which="display"
+          title="Public display module"
+          description="Enable the waiting-area display screen for this location."
+          offNotice="The display is off — the screen at the address on the right won't show anything. Everything else on this tab still saves, so you can set it up before switching it on."
+        />
+
+        <DisplayUrlPanel tenantSlug={tenantSlug} />
+      </div>
 
       <SettingsCard
         title="Layout & look"
@@ -370,16 +432,16 @@ export function DisplayPanel({
                   disabled={busy}
                   onClick={() => set("layout", option.value)}
                   aria-pressed={selected}
-                  className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                  className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-shadow ${
                     selected
-                      ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))]"
-                      : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                      ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))] [[data-admin-theme=dark]_&]:shadow-[0_0_16px_rgba(227,6,19,0.25)]"
+                      : "border-line-strong bg-canvas hover:bg-tint [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
                   }`}
                 >
-                  <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-stone-800"}`}>
+                  <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-ink"}`}>
                     {option.title}
                   </span>
-                  <span className="text-xs text-stone-500">
+                  <span className="text-xs text-ink-muted">
                     {queueEnabled ? option.description : (BOOKING_ONLY_LAYOUT_DESCRIPTIONS[option.value] ?? option.description)}
                   </span>
                 </button>
@@ -409,21 +471,21 @@ export function DisplayPanel({
                   disabled={busy || locked}
                   onClick={() => set("theme", option.value)}
                   aria-pressed={selected}
-                  className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                  className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-shadow ${
                     locked ? "cursor-not-allowed opacity-60 " : ""
                   }${
                     selected
-                      ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))]"
-                      : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                      ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))] [[data-admin-theme=dark]_&]:shadow-[0_0_16px_rgba(227,6,19,0.25)]"
+                      : "border-line-strong bg-canvas hover:bg-tint [[data-admin-theme=dark]_&]:hover:border-accent/50 [[data-admin-theme=dark]_&]:hover:shadow-[0_4px_14px_rgba(227,6,19,0.18)]"
                   }`}
                 >
                   <span className="flex items-center gap-2">
-                    <span className="h-4 w-4 shrink-0 rounded-full border border-stone-300" style={{ background: swatch }} />
-                    <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-stone-800"}`}>
+                    <span className="h-4 w-4 shrink-0 rounded-full border border-line-strong" style={{ background: swatch }} />
+                    <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-ink"}`}>
                       {option.title}
                     </span>
                   </span>
-                  <span className="text-xs text-stone-500">
+                  <span className="text-xs text-ink-muted">
                     {locked ? "Custom background colours are a Business plan feature." : option.description}
                   </span>
                 </button>
@@ -458,6 +520,8 @@ export function DisplayPanel({
         </SubSection>
       </SettingsCard>
 
+      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+        <div className="space-y-4">
       <SettingsCard
         title="Screens to show"
         description={
@@ -502,7 +566,95 @@ export function DisplayPanel({
           />
         )}
       </SettingsCard>
-
+      {isRotation && (
+        <SettingsCard
+          title="Timing"
+          description="How long each screen stays up. Only applies to the rotating-slides layout."
+          footer={footer("timing", DISPLAY_TIMING_KEYS)}
+        >
+          <FieldRow
+            label="Welcome slide (seconds)"
+            hint="How long your logo and name show when the screen first starts. It never repeats after that."
+          >
+            <input
+              type="number"
+              min={2}
+              max={30}
+              className={inputClass}
+              value={draft.welcomeSeconds}
+              onChange={(e) => set("welcomeSeconds", Number(e.target.value))}
+            />
+          </FieldRow>
+          <div className={queueEnabled ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-1"}>
+            <FieldRow label="Menu & bookings (seconds)" hint="How long each of these screens shows before moving on.">
+              <input
+                type="number"
+                min={3}
+                max={120}
+                className={inputClass}
+                value={draft.menuBookingsSeconds}
+                onChange={(e) => set("menuBookingsSeconds", Number(e.target.value))}
+              />
+            </FieldRow>
+            {queueEnabled && (
+              <>
+                <FieldRow label="Live queue (seconds)" hint="Usually longer, since there's more to read.">
+                  <input
+                    type="number"
+                    min={3}
+                    max={300}
+                    className={inputClass}
+                    value={draft.queueSeconds}
+                    onChange={(e) => set("queueSeconds", Number(e.target.value))}
+                  />
+                </FieldRow>
+                <FieldRow label="Split screen (seconds)" hint="Only used when Split screen is switched on above.">
+                  <input
+                    type="number"
+                    min={3}
+                    max={300}
+                    className={inputClass}
+                    value={draft.splitSeconds}
+                    onChange={(e) => set("splitSeconds", Number(e.target.value))}
+                  />
+                </FieldRow>
+              </>
+            )}
+          </div>
+        </SettingsCard>
+      )}
+      {queueEnabled && (
+        <SettingsCard
+          title="Call alert"
+          description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to every layout."
+          footer={footer("callAlert", DISPLAY_CALL_ALERT_KEYS)}
+        >
+          <ToggleRow
+            title="Full-screen call alert"
+            description="Show the called ticket full screen. If several customers are called close together, they show one after another."
+            checked={draft.callAlertEnabled}
+            disabled={busy}
+            onChange={(v) => set("callAlertEnabled", v)}
+          />
+          {draft.callAlertEnabled && (
+            <FieldRow
+              label="Alert duration (seconds)"
+              hint="How long each called ticket stays on screen. Between 3 and 60."
+            >
+              <input
+                type="number"
+                min={3}
+                max={60}
+                className={inputClass}
+                value={draft.callAlertSeconds}
+                onChange={(e) => set("callAlertSeconds", Number(e.target.value))}
+              />
+            </FieldRow>
+          )}
+        </SettingsCard>
+      )}
+        </div>
+        <div className="space-y-4">
       {queueEnabled && (
         <SettingsCard
           title="Queue ticket details"
@@ -589,95 +741,8 @@ export function DisplayPanel({
           />
         </SettingsCard>
       )}
-
-      {isRotation && (
-        <SettingsCard
-          title="Timing"
-          description="How long each screen stays up. Only applies to the rotating-slides layout."
-          footer={footer("timing", DISPLAY_TIMING_KEYS)}
-        >
-          <FieldRow
-            label="Welcome slide (seconds)"
-            hint="How long your logo and name show when the screen first starts. It never repeats after that."
-          >
-            <input
-              type="number"
-              min={2}
-              max={30}
-              className={inputClass}
-              value={draft.welcomeSeconds}
-              onChange={(e) => set("welcomeSeconds", Number(e.target.value))}
-            />
-          </FieldRow>
-          <div className={queueEnabled ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-1"}>
-            <FieldRow label="Menu & bookings (seconds)" hint="How long each of these screens shows before moving on.">
-              <input
-                type="number"
-                min={3}
-                max={120}
-                className={inputClass}
-                value={draft.menuBookingsSeconds}
-                onChange={(e) => set("menuBookingsSeconds", Number(e.target.value))}
-              />
-            </FieldRow>
-            {queueEnabled && (
-              <>
-                <FieldRow label="Live queue (seconds)" hint="Usually longer, since there's more to read.">
-                  <input
-                    type="number"
-                    min={3}
-                    max={300}
-                    className={inputClass}
-                    value={draft.queueSeconds}
-                    onChange={(e) => set("queueSeconds", Number(e.target.value))}
-                  />
-                </FieldRow>
-                <FieldRow label="Split screen (seconds)" hint="Only used when Split screen is switched on above.">
-                  <input
-                    type="number"
-                    min={3}
-                    max={300}
-                    className={inputClass}
-                    value={draft.splitSeconds}
-                    onChange={(e) => set("splitSeconds", Number(e.target.value))}
-                  />
-                </FieldRow>
-              </>
-            )}
-          </div>
-        </SettingsCard>
-      )}
-
-      {queueEnabled && (
-        <SettingsCard
-          title="Call alert"
-          description="When you call a customer, the TV takes over the whole screen to show their ticket, then goes back to what it was showing. Applies to every layout."
-          footer={footer("callAlert", DISPLAY_CALL_ALERT_KEYS)}
-        >
-          <ToggleRow
-            title="Full-screen call alert"
-            description="Show the called ticket full screen. If several customers are called close together, they show one after another."
-            checked={draft.callAlertEnabled}
-            disabled={busy}
-            onChange={(v) => set("callAlertEnabled", v)}
-          />
-          {draft.callAlertEnabled && (
-            <FieldRow
-              label="Alert duration (seconds)"
-              hint="How long each called ticket stays on screen. Between 3 and 60."
-            >
-              <input
-                type="number"
-                min={3}
-                max={60}
-                className={inputClass}
-                value={draft.callAlertSeconds}
-                onChange={(e) => set("callAlertSeconds", Number(e.target.value))}
-              />
-            </FieldRow>
-          )}
-        </SettingsCard>
-      )}
+        </div>
+      </div>
 
       <SettingsCard
         title="Local terms"
@@ -808,7 +873,7 @@ export function DisplayPanel({
             </div>
           </SubSection>
         ) : (
-          <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-500">
+          <p className="rounded-lg border border-line bg-canvas px-3 py-2 text-xs text-ink-muted">
             {queueEnabled
               ? "More local terms (column heading, empty messages, ticket badges) appear here when you choose the Live board or Split screen layout."
               : "More local terms (the empty-bookings message) appear here when you choose the Live board layout."}
@@ -849,7 +914,7 @@ function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
       description="Open this link in the TV's browser and leave the tab open. No login needed."
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        <div className="flex-1 space-y-2">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex gap-2">
             <input className={inputClass} readOnly value={displayUrl ?? "Loading…"} onFocus={(e) => e.target.select()} />
             <button type="button" className={secondaryButtonClass} onClick={copyUrl} disabled={!displayUrl}>
@@ -868,7 +933,7 @@ function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
           )}
         </div>
 
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-canvas p-3">
           {displayUrl ? (
             // Third-party QR generator — this URL isn't sensitive.
             // eslint-disable-next-line @next/next/no-img-element
@@ -877,11 +942,12 @@ function DisplayUrlPanel({ tenantSlug }: { tenantSlug: string }) {
               alt="QR code linking to the display"
               width={160}
               height={160}
+              className="rounded-md bg-white p-2"
             />
           ) : (
-            <div className="flex h-40 w-40 items-center justify-center text-xs text-stone-400">Loading…</div>
+            <div className="flex h-40 w-40 items-center justify-center text-xs text-ink-muted">Loading…</div>
           )}
-          <span className="text-xs text-stone-500">Scan to open on a phone or tablet</span>
+          <span className="text-xs text-ink-muted">Scan to open on a phone or tablet</span>
         </div>
       </div>
     </SettingsCard>

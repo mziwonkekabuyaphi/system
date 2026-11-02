@@ -4,7 +4,7 @@
 import { useEffect, useState, useTransition } from "react"
 
 import { getModuleSwitch, setModuleSwitch } from "../settings-actions"
-import { Toggle } from "./ui"
+import { SettingsCard, Toggle } from "./ui"
 
 /**
  * On/off card for the Public display and Staff clock-in tabs -- same look as
@@ -55,24 +55,26 @@ export function ModuleToggleCard({
   }
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-card p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+    <SettingsCard title={title} description={description}>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
         <div>
-          <p className="font-[family-name:var(--font-admin-serif)] text-lg text-stone-900">{title}</p>
-          <p className="text-sm text-stone-500">{description}</p>
+          <p className="text-sm font-medium text-ink">
+            {enabled === null ? "Checking…" : enabled ? "Switched on" : "Switched off"}
+          </p>
+          <p className="text-xs text-ink-muted">Turn this on or off for this location.</p>
         </div>
         {enabled === null ? (
-          <span className="text-xs text-stone-400">Loading…</span>
+          <span className="text-xs text-ink-muted">Loading…</span>
         ) : (
           <Toggle checked={enabled} disabled={isPending} onChange={handleToggle} />
         )}
       </div>
-      {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
       {enabled === false && (
-        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="rounded-lg border border-warn-line bg-warn-soft-2 px-3 py-2 text-sm text-warn-strong">
           {offNotice}
         </p>
       )}
-    </div>
+    </SettingsCard>
   )
 }
