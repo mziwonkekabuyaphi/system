@@ -111,6 +111,7 @@ const PRODUCT_LABELS: Record<ProductKey | AddonKey, string> = {
   booking: "Booking",
   queue: "Queue",
   shisha: "Shisha",
+  staff: "Staff Management",
   shifts: "Shifts",
   payroll: "Payroll",
 }

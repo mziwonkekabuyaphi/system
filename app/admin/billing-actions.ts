@@ -56,14 +56,14 @@ async function getTenantScopedClient() {
   return { supabase, tenantId, error: undefined as string | undefined }
 }
 
-export type InvoiceProduct = "booking_queue" | "shisha"
+export type InvoiceProduct = "booking_queue" | "shisha" | "staff"
 
 export interface TenantInvoice {
   id: string
   /** Which module this invoice bills. Older rows are all Booking & Queue. */
   product: InvoiceProduct
   /** Shisha invoices: { sessions, session_fee_cents, refills, refill_fee_cents }. null otherwise. */
-  detail: { sessions?: number; session_fee_cents?: number; refills?: number; refill_fee_cents?: number } | null
+  detail: { staff?: number; fee_per_staff_cents?: number; sessions?: number; session_fee_cents?: number; refills?: number; refill_fee_cents?: number } | null
   periodStart: string
   periodEnd: string
   visitCount: number
@@ -129,9 +129,20 @@ export interface ShishaBillingInfo {
   lastMonth: ShishaMonth
 }
 
+export interface StaffBillingInfo {
+  perStaffCents: number
+  currency: string
+  /** Active staff right now; the month-end count is what gets invoiced. */
+  activeStaff: number
+  /** activeStaff x perStaffCents: this month's bill if the month ended now. */
+  estimatedCents: number
+}
+
 export interface BillingSummary {
   /** Which modules are switched on for this shop (tenant_modules). Drives what the panel shows. */
-  products: { booking: boolean; queue: boolean; shisha: boolean }
+  products: { booking: boolean; queue: boolean; shisha: boolean; staff: boolean }
+  /** Staff Management billed on its own (R30 per active staff). null unless Staff is on AND the shop runs no Booking, Queue or Shisha (those include staff). */
+  staff: StaffBillingInfo | null
   /** Shisha usage and rates. null whenever Shisha is switched off for the shop. */
   shisha: ShishaBillingInfo | null
   currentPlan: Plan
@@ -157,6 +168,29 @@ function shishaMonthKeys(): { thisMonth: string; lastMonth: string } {
 }
 
 const toCents = (rands: unknown): number => Math.round(Number(rands) * 100) || 0
+
+async function loadStaffBilling(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+  products: { booking: boolean; queue: boolean; shisha: boolean; staff: boolean },
+): Promise<StaffBillingInfo | null> {
+  // Staff is included with Booking, Queue and Shisha, so it is only a bill of its own when sold alone.
+  if (!products.staff || products.booking || products.queue || products.shisha) return null
+
+  const [ratesRes, countRes] = await Promise.all([
+    supabase
+      .from("staff_billing_rates")
+      .select("tenant_id, staff_fee, currency")
+      .eq("is_active", true)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`),
+    supabase.from("staff").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("active", true),
+  ])
+  const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; staff_fee: number | string; currency: string }>
+  const rate = rates.find((r) => r.tenant_id === tenantId) ?? rates.find((r) => r.tenant_id === null)
+  const perStaffCents = rate ? toCents(rate.staff_fee) : 0
+  const activeStaff = countRes.count ?? 0
+  return { perStaffCents, currency: rate?.currency ?? "ZAR", activeStaff, estimatedCents: perStaffCents * activeStaff }
+}
 
 async function loadShishaBilling(
   supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
@@ -259,7 +293,7 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
 
     const invoices: TenantInvoice[] = (invoiceRows ?? []).map((row: any) => ({
       id: row.id,
-      product: (row.product === "shisha" ? "shisha" : "booking_queue") as InvoiceProduct,
+      product: (row.product === "shisha" || row.product === "staff" ? row.product : "booking_queue") as InvoiceProduct,
       detail: row.detail ?? null,
       periodStart: row.period_start,
       periodEnd: row.period_end,
@@ -284,12 +318,14 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
     const runsBookingQueue = products.booking || products.queue
     const billingStatus = deriveBillingStatus(tenantRow.data?.status ?? "active", currentPlan.key, invoices, runsBookingQueue)
     const shisha = await loadShishaBilling(supabase, tenantId!, products.shisha)
+    const staff = await loadStaffBilling(supabase, tenantId!, products)
 
     return {
       ok: true,
       data: {
-        products: { booking: products.booking, queue: products.queue, shisha: products.shisha },
+        products: { booking: products.booking, queue: products.queue, shisha: products.shisha, staff: products.staff },
         shisha,
+        staff,
         currentPlan,
         usage,
         visitBreakdown,

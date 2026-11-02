@@ -237,7 +237,7 @@ async function tenantContext() {
   return { supabase, tenantId }
 }
 
-const PRODUCT_LABELS: Record<ProductKey, string> = { booking: "Booking", queue: "Queue", shisha: "Shisha" }
+const PRODUCT_LABELS: Record<ProductKey, string> = { booking: "Booking", queue: "Queue", shisha: "Shisha", staff: "Staff Management" }
 
 /** Module guard for settings saves. Hiding a panel in the UI is not enough (a stale
  *  tab or a forged request can still call the action), so each save for a

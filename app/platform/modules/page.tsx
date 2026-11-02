@@ -22,6 +22,7 @@ const SWITCHABLE: Array<{ key: string; label: string; defaultOn: boolean; planGa
   { key: "booking", label: "Booking", defaultOn: false, planGated: false, group: "product" },
   { key: "queue", label: "Queue", defaultOn: false, planGated: false, group: "product" },
   { key: "shisha", label: "Shisha", defaultOn: false, planGated: false, group: "product" },
+  { key: "staff", label: "Staff Management (R30 per staff, only when sold alone)", defaultOn: false, planGated: false, group: "product" },
   { key: "shifts", label: "Shifts", defaultOn: false, planGated: false, group: "addon" },
   { key: "payroll", label: "Payroll", defaultOn: false, planGated: false, group: "addon" },
   { key: "kiosk", label: "Kiosk", defaultOn: true, planGated: true, group: "feature" },

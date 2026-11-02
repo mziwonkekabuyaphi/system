@@ -218,7 +218,7 @@ export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
 /** The three products a shop can run. Each is an independent on/off switch in
  *  tenant_modules, set by the platform admin. The plan is NOT consulted: a plan
  *  only decides billing tier and add-on features, never which products exist. */
-export const PRODUCT_KEYS = ["booking", "queue", "shisha"] as const
+export const PRODUCT_KEYS = ["booking", "queue", "shisha", "staff"] as const
 export type ProductKey = (typeof PRODUCT_KEYS)[number]
 
 /** Stand-alone switchable modules that are not products: add-ons any shop can
@@ -274,7 +274,7 @@ export async function getEnabledProducts(
   supabase: SupabaseClient,
   tenantId: string,
 ): Promise<Record<ProductKey | AddonKey, boolean>> {
-  const result = { booking: false, queue: false, shisha: false, shifts: false, payroll: false }
+  const result = { booking: false, queue: false, shisha: false, staff: false, shifts: false, payroll: false }
   try {
     const { data, error } = await supabase
       .from("tenant_modules")
@@ -588,7 +588,7 @@ export async function getTenantStaffLimit(supabase: SupabaseClient, tenantId: st
 // webhook flip status to 'paid' -- this function's output doesn't change.
 // ============================================================================
 
-export type InvoiceProduct = "booking_queue" | "shisha"
+export type InvoiceProduct = "booking_queue" | "shisha" | "staff"
 
 export interface GeneratedInvoice {
   tenantId: string
@@ -906,6 +906,100 @@ export async function generateShishaInvoices(supabase: SupabaseClient): Promise<
   return generated
 }
 
+// ============================================================================
+// STAFF MANAGEMENT invoices: R30 (staff_billing_rates) per active staff member
+// ----------------------------------------------------------------------------
+// Only for shops that sell/run Staff Management ON ITS OWN: the "staff" module
+// is on and none of Booking, Queue or Shisha is on (those include staff for
+// free). Counted when the cron runs on the 1st, i.e. the active staff at the
+// end of the month just ended. Re-running is safe (unique per period).
+// ============================================================================
+
+async function generateStaffInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
+  const { periodStart, periodEnd } = previousMonthRangeUtc()
+
+  const { data: onRows, error: onError } = await supabase
+    .from("tenant_modules")
+    .select("tenant_id, modules!inner(key), tenants!inner(status)")
+    .eq("enabled", true)
+    .in("modules.key", ["staff", "booking", "queue", "shisha"])
+    .eq("tenants.status", "active")
+  if (onError) throw new Error(`Failed to load Staff switches: ${onError.message}`)
+
+  const staffOn = new Set<string>()
+  const otherProduct = new Set<string>()
+  for (const row of (onRows ?? []) as any[]) {
+    if (row.modules?.key === "staff") staffOn.add(row.tenant_id)
+    else otherProduct.add(row.tenant_id)
+  }
+  const standalone = [...staffOn].filter((id) => !otherProduct.has(id))
+  if (standalone.length === 0) return []
+
+  const { data: rateRows, error: rateError } = await supabase
+    .from("staff_billing_rates")
+    .select("tenant_id, staff_fee, currency")
+    .eq("is_active", true)
+  if (rateError) throw new Error(`Failed to load staff rates: ${rateError.message}`)
+  const rates = (rateRows ?? []) as Array<{ tenant_id: string | null; staff_fee: number | string; currency: string }>
+  const defaultRate = rates.find((r) => r.tenant_id === null)
+
+  const { data: tenantRows } = await supabase.from("tenants").select("id, plan").in("id", standalone)
+  const planOf = new Map<string, string>((tenantRows ?? []).map((t: any) => [t.id as string, (t.plan as string) ?? "free"]))
+
+  const generated: GeneratedInvoice[] = []
+  for (const tenantId of standalone) {
+    const { data: existing } = await supabase
+      .from("tenant_invoices")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("product", "staff")
+      .eq("period_start", periodStart)
+      .eq("period_end", periodEnd)
+      .maybeSingle()
+    if (existing) continue
+
+    const rate = rates.find((r) => r.tenant_id === tenantId) ?? defaultRate
+    const feeCents = rate ? randsToCents(rate.staff_fee) : 0
+    const staffCount = await countActiveStaff(supabase, tenantId)
+    const amountCents = feeCents * staffCount
+    if (amountCents === 0) continue
+
+    const { error: insertError } = await supabase.from("tenant_invoices").insert([
+      {
+        tenant_id: tenantId,
+        product: "staff",
+        plan_key: planOf.get(tenantId) ?? "free",
+        period_start: periodStart,
+        period_end: periodEnd,
+        visit_count: 0,
+        rate_cents: feeCents,
+        amount_cents: amountCents,
+        currency: rate?.currency ?? "ZAR",
+        base_fee_cents: 0,
+        staff_count: staffCount,
+        included_staff: 0,
+        extra_staff: staffCount,
+        extra_staff_fee_cents: amountCents,
+        detail: { staff: staffCount, fee_per_staff_cents: feeCents },
+      },
+    ])
+    if (insertError) {
+      console.error("[plans] Failed to create staff invoice", { tenantId, periodStart, error: insertError })
+      continue
+    }
+    generated.push({
+      tenantId,
+      product: "staff",
+      visitCount: 0,
+      amountCents,
+      baseFeeCents: 0,
+      extraStaffFeeCents: amountCents,
+      overageVisits: 0,
+    })
+  }
+  return generated
+}
+
 /**
  * Monthly cron entry point (unchanged name and signature, so
  * app/api/cron/generate-invoices/route.ts needs no edit): Booking & Queue
@@ -914,7 +1008,7 @@ export async function generateShishaInvoices(supabase: SupabaseClient): Promise<
 export async function generateMonthlyInvoices(supabase: SupabaseClient): Promise<GeneratedInvoice[]> {
   const all: GeneratedInvoice[] = []
   const failures: unknown[] = []
-  for (const run of [generateBookingQueueInvoices, generateShishaInvoices]) {
+  for (const run of [generateBookingQueueInvoices, generateShishaInvoices, generateStaffInvoices]) {
     try {
       all.push(...(await run(supabase)))
     } catch (error) {
