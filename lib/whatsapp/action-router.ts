@@ -229,7 +229,7 @@ async function menuPromptFor(tenantId: string): Promise<string> {
   } catch {
     return MENU_PROMPT
   }
-  return `${MENU_PROMPT}\n\nOr just type what you need in your own words and I'll take care of it.`
+  return `${MENU_PROMPT}\n\You may also type your request directly in this chat.Our virtual assistant is available in English, isiXhosa, isiZulu and Afrikaans. .`
 }
 
 type ServicesMenu = ReturnType<typeof buildServicesListMessage>
