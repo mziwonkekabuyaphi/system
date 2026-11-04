@@ -21,9 +21,10 @@ import { BusinessInfoPanel, OpeningHoursPanel, todayIndex } from "./settings/Bus
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
+import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "shisha"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -80,6 +81,14 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <path d="M8 21h8M12 17v4" />
     </RailIcon>
   ),
+  shisha: (p) => (
+    <RailIcon {...p}>
+      <path d="M9.5 3.5h5l-.8 3.2h-3.4z" />
+      <path d="M12 6.7V12" />
+      <path d="M8.2 12h7.6l1.3 7.3a1 1 0 0 1-1 1.2H7.9a1 1 0 0 1-1-1.2z" />
+      <path d="M15.8 14c2.4.2 3.7 1.3 3.7 3" />
+    </RailIcon>
+  ),
 }
 
 // Same widths and timing as the main admin sidebar (200ms width, labels fade in after 100ms).
@@ -100,7 +109,7 @@ const SETTINGS_NAV: Array<{
     /** Shown only when at least one of these products is switched on for the shop
      *  (tenant_modules). Omitted = shared by every shop. The save actions re-check
      *  this server-side; hiding here is only so owners aren't shown dead controls. */
-    needs?: Array<"booking" | "queue">
+    needs?: Array<"booking" | "queue" | "shisha">
   }>
 }> = [
   {
@@ -145,6 +154,13 @@ const SETTINGS_NAV: Array<{
         description: "The screen in your waiting area showing the queue, bookings and menu.",
         needs: ["booking", "queue"], // a Booking-only shop gets a display too (bookings + menu)
       },
+      {
+        id: "shisha",
+        label: "Shisha settings",
+        title: "Shisha settings",
+        description: "Session length, refill warning and whether a station is required.",
+        needs: ["shisha"],
+      },
     ],
   },
 ]
@@ -182,6 +198,8 @@ export function SettingsManager({
   onQueueSettingsChange,
   bookingEnabled = true,
   queueEnabled = true,
+  shishaEnabled = false,
+  shishaManage = false,
   initialServices = [],
   servicesManage = true,
 }: {
@@ -217,6 +235,10 @@ export function SettingsManager({
    *  product that is off are hidden; a group left with no panels is hidden too. */
   bookingEnabled?: boolean
   queueEnabled?: boolean
+  /** Shisha switched on for this shop. Shows Settings > Shisha settings. */
+  shishaEnabled?: boolean
+  /** Caller has shisha.manage (can save Shisha settings). */
+  shishaManage?: boolean
   /** Services list (loaded in page.tsx, already [] for a caller without services.manage). */
   initialServices?: AdminService[]
   /** Whether the caller has services.manage. The Services page is hidden without it. */
@@ -234,7 +256,7 @@ export function SettingsManager({
   // each re-opening with the stale server-rendered copy.
   const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
 
-  const enabled = { booking: bookingEnabled, queue: queueEnabled }
+  const enabled = { booking: bookingEnabled, queue: queueEnabled, shisha: shishaEnabled }
   const settingsNav = SETTINGS_NAV.map((g) => ({
     ...g,
     items: g.items
@@ -379,6 +401,7 @@ export function SettingsManager({
           queueEnabled={queueEnabled}
         />
       )}
+      {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "private-label" && (
         <PrivateLabelPanel
           plan={initialPlan}
