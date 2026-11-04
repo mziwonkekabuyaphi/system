@@ -25,6 +25,7 @@ const SWITCHABLE: Array<{ key: string; label: string; defaultOn: boolean; planGa
   { key: "staff", label: "Staff Management (R30 per staff, only when sold alone)", defaultOn: false, planGated: false, group: "product" },
   { key: "shifts", label: "Shifts", defaultOn: false, planGated: false, group: "addon" },
   { key: "payroll", label: "Payroll", defaultOn: false, planGated: false, group: "addon" },
+  { key: "whatsapp", label: "WhatsApp staff notifications", defaultOn: false, planGated: false, group: "addon" },
   { key: "kiosk", label: "Kiosk", defaultOn: true, planGated: true, group: "feature" },
   { key: "display", label: "Public display", defaultOn: true, planGated: false, group: "feature" },
   { key: "staff_clock_in", label: "Staff clock-in", defaultOn: true, planGated: false, group: "feature" },
@@ -94,7 +95,7 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
       )}
 
       <section className={`${card} overflow-x-auto`}>
-        <table className="w-full min-w-[1100px] text-left text-sm">
+        <table className="w-full min-w-[1250px] text-left text-sm">
           <thead>
             <tr className="text-xs uppercase text-stone-400">
               <th className="py-2 pr-4 font-medium">Shop</th>
