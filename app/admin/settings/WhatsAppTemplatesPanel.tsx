@@ -31,6 +31,22 @@ const TEMPLATE_INFO: Record<string, { label: string; when: string }> = {
     label: "A time opened up (waitlist)",
     when: "Sent when a booked time is freed up and this customer is next on the waitlist for that day.",
   },
+  // Staff notifications (sent to staff who ticked "Send WhatsApp notifications").
+  staff_whatsapp_verify: {
+    label: "Confirm their number",
+    when: "Sent when you press “Send verification message” on a staff member. They reply YES to confirm.",
+  },
+  staff_rota_published: { label: "Shifts published", when: "Sent when you publish a rota that has shifts for them." },
+  staff_shift_changed: {
+    label: "Shifts changed",
+    when: "Sent when their shifts are added, moved or removed. Several edits within about 10 minutes become one message.",
+  },
+  staff_swap_request: { label: "Shift swap asked", when: "Sent to the colleague who is asked to swap or cover a shift." },
+  staff_swap_update: { label: "Shift swap decided", when: "Sent when a swap is approved or declined." },
+  staff_payslip_paid: {
+    label: "Pay processed",
+    when: "Sent when their pay is marked as paid. It doesn't include the payslip itself; they're told to ask their manager.",
+  },
 }
 
 const VARIABLE_LABELS: Record<string, string> = {
@@ -41,6 +57,13 @@ const VARIABLE_LABELS: Record<string, string> = {
   people_ahead: "people ahead",
   wait_minutes: "estimated wait (minutes)",
   booking_date: "the day they're waiting for",
+  staff_name: "staff member's first name",
+  period: "pay or rota period",
+  shift_count: "number of shifts",
+  requester_name: "who asked for the swap",
+  shift_date: "shift date",
+  shift_time: "shift time",
+  outcome: "approved or declined",
 }
 
 const STATUS_STYLE: Record<WhatsAppTemplateStatus, { label: string; className: string }> = {
@@ -146,6 +169,91 @@ export function WhatsAppTemplatesPanel() {
     })
   }
 
+  function renderTemplate(t: WhatsAppTemplateDto) {
+    const info = TEMPLATE_INFO[t.key] ?? { label: t.key, when: "" }
+    const style = STATUS_STYLE[t.status]
+    const body = bodies[t.key] ?? t.body
+    const dirty = body !== t.body
+    const locked = t.status === "pending"
+    const msg = messages[t.key]
+    const busy = busyKey === t.key
+    return (
+      <div key={t.key} className={`space-y-2 rounded-xl border border-stone-200 p-4 ${t.enabled ? "" : "bg-stone-50"}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-medium text-stone-900">{info.label}</p>
+            <p className="text-xs text-stone-500">{info.when}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${style.className}`}>{style.label}</span>
+            <SettingsSwitch
+              checked={t.enabled}
+              disabled={isPending}
+              onChange={() => toggleEnabled(t)}
+              label={`Send "${info.label}" message`}
+            />
+          </div>
+        </div>
+
+        {!t.enabled && (
+          <p className="text-xs text-stone-500">
+            Off: {t.key.startsWith("staff_") ? "staff" : "customers"} won&apos;t receive this message.
+          </p>
+        )}
+        {t.enabled && t.key === "queue_called" && (
+          <p className="text-xs text-stone-400">
+            This is how customers learn it&apos;s their turn. Only turn it off if you tell them another way.
+          </p>
+        )}
+
+        <textarea
+          className={`${inputClass} min-h-[96px]`}
+          value={body}
+          disabled={locked}
+          maxLength={1024}
+          onChange={(e) => setBodies((b) => ({ ...b, [t.key]: e.target.value }))}
+        />
+
+        <p className="text-xs text-stone-500">
+          {t.variables.map((v, i) => (
+            <span key={v} className="mr-3 inline-block">
+              <code className="rounded bg-stone-100 px-1">{`{{${i + 1}}}`}</code> {VARIABLE_LABELS[v] ?? v}
+            </span>
+          ))}
+        </p>
+        <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-700">
+          <span className="text-xs text-stone-400">Preview: </span>
+          {preview(t, body)}
+        </p>
+
+        {t.status === "rejected" && t.rejectionReason && (
+          <p className="text-sm text-red-700">Meta&apos;s reason: {t.rejectionReason}. Edit the wording and submit again.</p>
+        )}
+        {t.status === "approved" && dirty && (
+          <p className="text-xs text-amber-700">
+            Changing an approved template means Meta reviews it again. Until it&apos;s approved, customers outside the 24-hour
+            window won&apos;t get this message.
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={secondaryButtonClass} onClick={() => save(t)} disabled={!dirty || locked || isPending}>
+            {busy && dirty ? "Saving…" : "Save wording"}
+          </button>
+          {(t.status === "draft" || t.status === "rejected" || dirty) && (
+            <button type="button" className={primaryButtonClass} onClick={() => submit(t)} disabled={locked || isPending || !connected}>
+              {busy ? "Sending…" : "Submit to Meta"}
+            </button>
+          )}
+          {msg && <span className={`text-sm ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.text}</span>}
+        </div>
+      </div>
+    )
+  }
+
+  const customerTemplates = (templates ?? []).filter((t) => !t.key.startsWith("staff_"))
+  const staffTemplates = (templates ?? []).filter((t) => t.key.startsWith("staff_"))
+
   return (
     <div className="space-y-6">
     {/* Connection status + Connect/Reconnect. After a (re)connect, reload this panel's own "connected" flag. */}
@@ -182,88 +290,19 @@ export function WhatsAppTemplatesPanel() {
             </button>
           </div>
 
-          {templates.map((t) => {
-            const info = TEMPLATE_INFO[t.key] ?? { label: t.key, when: "" }
-            const style = STATUS_STYLE[t.status]
-            const body = bodies[t.key] ?? t.body
-            const dirty = body !== t.body
-            const locked = t.status === "pending"
-            const msg = messages[t.key]
-            const busy = busyKey === t.key
-            return (
-              <div key={t.key} className={`space-y-2 rounded-xl border border-stone-200 p-4 ${t.enabled ? "" : "bg-stone-50"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-stone-900">{info.label}</p>
-                    <p className="text-xs text-stone-500">{info.when}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${style.className}`}>{style.label}</span>
-                    <SettingsSwitch
-                      checked={t.enabled}
-                      disabled={isPending}
-                      onChange={() => toggleEnabled(t)}
-                      label={`Send "${info.label}" message`}
-                    />
-                  </div>
-                </div>
-
-                {!t.enabled && (
-                  <p className="text-xs text-stone-500">Off: customers won&apos;t receive this message.</p>
-                )}
-                {t.enabled && t.key === "queue_called" && (
-                  <p className="text-xs text-stone-400">
-                    This is how customers learn it&apos;s their turn. Only turn it off if you tell them another way.
-                  </p>
-                )}
-
-                <textarea
-                  className={`${inputClass} min-h-[96px]`}
-                  value={body}
-                  disabled={locked}
-                  maxLength={1024}
-                  onChange={(e) => setBodies((b) => ({ ...b, [t.key]: e.target.value }))}
-                />
-
-                <p className="text-xs text-stone-500">
-                  {t.variables.map((v, i) => (
-                    <span key={v} className="mr-3 inline-block">
-                      <code className="rounded bg-stone-100 px-1">{`{{${i + 1}}}`}</code> {VARIABLE_LABELS[v] ?? v}
-                    </span>
-                  ))}
-                </p>
-                <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-700">
-                  <span className="text-xs text-stone-400">Preview: </span>
-                  {preview(t, body)}
-                </p>
-
-                {t.status === "rejected" && t.rejectionReason && (
-                  <p className="text-sm text-red-700">Meta&apos;s reason: {t.rejectionReason}. Edit the wording and submit again.</p>
-                )}
-                {t.status === "approved" && dirty && (
-                  <p className="text-xs text-amber-700">
-                    Changing an approved template means Meta reviews it again. Until it&apos;s approved, customers outside the 24-hour
-                    window won&apos;t get this message.
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button type="button" className={secondaryButtonClass} onClick={() => save(t)} disabled={!dirty || locked || isPending}>
-                    {busy && dirty ? "Saving…" : "Save wording"}
-                  </button>
-                  {(t.status === "draft" || t.status === "rejected" || dirty) && (
-                    <button type="button" className={primaryButtonClass} onClick={() => submit(t)} disabled={locked || isPending || !connected}>
-                      {busy ? "Sending…" : "Submit to Meta"}
-                    </button>
-                  )}
-                  {msg && <span className={`text-sm ${msg.ok ? "text-emerald-700" : "text-red-700"}`}>{msg.text}</span>}
-                </div>
-              </div>
-            )
-          })}
+          {customerTemplates.map(renderTemplate)}
         </div>
       )}
     </SettingsCard>
+
+    {templates !== null && staffTemplates.length > 0 && (
+      <SettingsCard
+        title="Messages to your staff"
+        description="Sent to staff who have WhatsApp notifications ticked on their profile and have confirmed their number. Like the messages above, each one must be approved by Meta first."
+      >
+        <div className="space-y-4">{staffTemplates.map(renderTemplate)}</div>
+      </SettingsCard>
+    )}
     </div>
   )
 }
