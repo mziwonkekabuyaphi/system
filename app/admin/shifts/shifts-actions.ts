@@ -388,41 +388,81 @@ export async function deleteScheduledShift(id: string): Promise<ShiftResult> {
   return error ? { ok: false, error: error.message } : { ok: true }
 }
 
-/** Repeat a pattern: staff + shift type + weekdays (0=Sun..6=Sat) filled across the schedule's period. */
+/** Fill a schedule for one person: shift type + weekdays (0=Sun..6=Sat) across the whole period. */
 export async function applyWeeklyPattern(input: {
   scheduleId: string
   staffId: string
   templateId: string
   weekdays: number[]
-}): Promise<ShiftResult<{ created: number }>> {
+}): Promise<ShiftResult<{ created: number; skipped: number }>> {
   const c = await ctx("manage")
   if ("error" in c) return { ok: false, error: c.error }
   if (!input.weekdays.length || input.weekdays.some((d) => d < 0 || d > 6)) {
     return { ok: false, error: "Pick at least one weekday." }
   }
-  const { data: sched } = await c.supabase
-    .from("shift_schedules")
-    .select("period_start, period_end")
-    .eq("id", input.scheduleId)
-    .eq("tenant_id", c.tenantId)
-    .maybeSingle()
+
+  const [{ data: sched }, { data: tpl }] = await Promise.all([
+    c.supabase
+      .from("shift_schedules")
+      .select("period_start, period_end")
+      .eq("id", input.scheduleId)
+      .eq("tenant_id", c.tenantId)
+      .maybeSingle(),
+    c.supabase
+      .from("shift_templates")
+      .select("start_time, end_time")
+      .eq("id", input.templateId)
+      .eq("tenant_id", c.tenantId)
+      .maybeSingle(),
+  ])
   if (!sched) return { ok: false, error: "Schedule not found." }
+  if (!tpl) return { ok: false, error: "That shift type no longer exists." }
 
-  const { error: ruleError } = await c.supabase.from("shift_recurrence_rules").insert({
-    tenant_id: c.tenantId,
-    staff_id: input.staffId,
-    template_id: input.templateId,
-    weekdays: input.weekdays,
-    start_date: sched.period_start,
-    end_date: sched.period_end,
-    active: true,
-    created_by: c.userId,
-  })
-  if (ruleError) return { ok: false, error: ruleError.message }
+  // Every date in the period that falls on a chosen weekday (YYYY-MM-DD compares fine as text).
+  const dates: string[] = []
+  for (let d = sched.period_start as string; d <= sched.period_end; d = addDaysKey(d, 1)) {
+    if (input.weekdays.includes(new Date(`${d}T00:00:00Z`).getUTCDay())) dates.push(d)
+  }
 
-  const { data: created, error } = await c.supabase.rpc("apply_shift_recurrence", { p_schedule_id: input.scheduleId })
-  if (error) return { ok: false, error: error.message }
-  return { ok: true, created: Number(created ?? 0) }
+  // Dates where this person already has this exact shift type in this schedule.
+  const { data: existing } = await c.supabase
+    .from("scheduled_shifts")
+    .select("shift_date")
+    .eq("tenant_id", c.tenantId)
+    .eq("schedule_id", input.scheduleId)
+    .eq("staff_id", input.staffId)
+    .eq("template_id", input.templateId)
+    .neq("status", "cancelled")
+  const have = new Set((existing ?? []).map((e: any) => e.shift_date as string))
+
+  let created = 0
+  let skipped = 0
+  let firstError: string | null = null
+  for (const date of dates) {
+    if (have.has(date)) {
+      skipped++
+      continue
+    }
+    const { error } = await c.supabase.from("scheduled_shifts").insert({
+      tenant_id: c.tenantId,
+      schedule_id: input.scheduleId,
+      staff_id: input.staffId,
+      template_id: input.templateId,
+      shift_date: date,
+      start_time: tpl.start_time,
+      end_time: tpl.end_time,
+      created_by: c.userId,
+    })
+    if (error) {
+      skipped++ // usually a time clash with another shift for the same person
+      firstError ??= error.message
+    } else {
+      created++
+    }
+  }
+
+  if (created === 0 && firstError) return { ok: false, error: firstError }
+  return { ok: true, created, skipped }
 }
 
 export async function saveShiftSettings(input: ShiftSettings): Promise<ShiftResult> {
