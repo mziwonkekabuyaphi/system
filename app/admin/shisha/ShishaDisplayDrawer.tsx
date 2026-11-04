@@ -42,13 +42,13 @@ const LAYOUTS: Array<{ value: ShishaDisplayLayout; title: string; description: s
   {
     value: "board",
     title: "Board",
-    description: "Every device as a card with its own coal ring. Best when you want the whole floor on screen at once.",
+    description: "Every hookah as a card with its own coal ring. Best when you want the whole floor on screen at once.",
   },
   {
     value: "lounge",
     title: "Lounge",
     description:
-      "The session closest to finishing gets a big glowing ring, with every device in a live burn-down list beside it. Uses your brand colours.",
+      "The session closest to finishing gets a big glowing ring, with every hookah in a live burn-down list beside it. Uses your brand colours.",
   },
   {
     value: "rotate",
@@ -64,8 +64,8 @@ const THEMES: Array<{ value: ShishaDisplayTheme; title: string; description: str
 ]
 
 const SORTS: Array<{ value: ShishaDisplaySort; title: string; description: string }> = [
-  { value: "code", title: "By device code", description: "Every device stays in the same spot. Best when the screen mirrors your floor." },
-  { value: "urgency", title: "Most urgent first", description: "Overdue and refill-due devices move to the top." },
+  { value: "code", title: "By hookah code", description: "Every hookah stays in the same spot. Best when the screen mirrors your floor." },
+  { value: "urgency", title: "Most urgent first", description: "Overdue and refill-due hookahs move to the top." },
 ]
 
 const FIELD =
@@ -504,7 +504,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
                     </Field>
                   </Group>
 
-                  <Group title="Order of devices" hint={draft.layout === "lounge" ? "Applies to the list. The big device is always the one finishing soonest." : undefined}>
+                  <Group title="Order of hookahs" hint={draft.layout === "lounge" ? "Applies to the list. The big hookah is always the one finishing soonest." : undefined}>
                     <div className="space-y-2">
                       {SORTS.map((o) => (
                         <OptionCard key={o.value} selected={draft.sort === o.value} disabled={saving} onClick={() => set("sort", o.value)}>
@@ -519,10 +519,10 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
 
               {tab === "show" && (
                 <div className="space-y-6">
-                  <Group title="On each device card" hint="This is a public screen, so only turn on what you're happy for the whole lounge to read.">
+                  <Group title="On each hookah card" hint="This is a public screen, so only turn on what you're happy for the whole lounge to read.">
                     <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
                       <Switch title="Flavour" description="The flavour being smoked." checked={draft.showFlavour} disabled={saving} onChange={(v) => set("showFlavour", v)} />
-                      <Switch title="Station" description="The area the device is in, e.g. Terrace." checked={draft.showStation} disabled={saving} onChange={(v) => set("showStation", v)} />
+                      <Switch title="Station" description="The area the hookah is in, e.g. Terrace." checked={draft.showStation} disabled={saving} onChange={(v) => set("showStation", v)} />
                       <Switch
                         title="Customer first name"
                         description="First name only, and only for sessions linked to a customer. Off by default."
@@ -535,8 +535,8 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
 
                   <Group title="On the screen">
                     <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
-                      <Switch title="Summary strip" description="Counts of running, refill-due, overdue, paused and free devices." checked={draft.showStats} disabled={saving} onChange={(v) => set("showStats", v)} />
-                      <Switch title="Free devices" description="Turn off to show only devices in use." checked={draft.showFreeDevices} disabled={saving} onChange={(v) => set("showFreeDevices", v)} />
+                      <Switch title="Summary strip" description="Counts of running, refill-due, overdue, paused and free hookahs." checked={draft.showStats} disabled={saving} onChange={(v) => set("showStats", v)} />
+                      <Switch title="Free hookahs" description="Turn off to show only hookahs in use." checked={draft.showFreeDevices} disabled={saving} onChange={(v) => set("showFreeDevices", v)} />
                       <Switch title="Clock" checked={draft.showClock} disabled={saving} onChange={(v) => set("showClock", v)} />
                       <Switch title="Scrolling ticker" description="A message along the bottom of the screen." checked={draft.showTicker} disabled={saving} onChange={(v) => set("showTicker", v)} />
                     </div>
@@ -587,7 +587,7 @@ export function ShishaDisplayDrawer({ open, onClose }: { open: boolean; onClose:
               {tab === "alerts" && (
                 <Group
                   title="Time-up alert"
-                  hint="When a session runs out, the TV takes over the whole screen with that device's code, then goes back to the board."
+                  hint="When a session runs out, the TV takes over the whole screen with that hookah's code, then goes back to the board."
                 >
                   <div className="rounded-lg border border-line bg-card px-4">
                     <Switch

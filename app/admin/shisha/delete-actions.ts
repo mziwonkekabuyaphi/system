@@ -59,7 +59,7 @@ async function deleteRow(kind: Kind, id: string): Promise<ShishaActionResult> {
       .eq("device_id", id)
       .neq("status", "completed")
     if ((count ?? 0) > 0) {
-      return { ok: false, error: "This device is in use right now. End its session first." } as ShishaActionResult
+      return { ok: false, error: "This hookah is in use right now. End its session first." } as ShishaActionResult
     }
   }
 
@@ -75,7 +75,7 @@ async function deleteRow(kind: Kind, id: string): Promise<ShishaActionResult> {
     if ((count ?? 0) > 0) {
       return {
         ok: false,
-        error: "This station still has devices. Move or delete them first.",
+        error: "This station still has hookahs. Move or delete them first.",
       } as ShishaActionResult
     }
   }

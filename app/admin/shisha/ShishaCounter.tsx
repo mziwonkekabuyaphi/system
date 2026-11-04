@@ -166,7 +166,7 @@ function buildReceiptHtml(r: ReceiptData): string {
   <h1>${esc(r.shopName || "Shisha")}</h1>
   ${r.shopName ? '<div class="center">Shisha</div>' : ""}
   <hr>
-  ${row("Device", r.deviceCode)}
+  ${row("Hookah", r.deviceCode)}
   ${r.station ? row("Station", r.station) : ""}
   ${row("Flavour", r.flavour)}
   ${row("Duration", `${r.durationMinutes} min`)}
@@ -291,7 +291,7 @@ function loadJsQr(): Promise<JsQrFn> {
     s.async = true
     s.onload = () =>
       typeof w.jsQR === "function" ? resolve(w.jsQR) : reject(new Error("The QR scanner didn't start."))
-    s.onerror = () => reject(new Error("Couldn't load the QR scanner. Pick the device from the list instead."))
+    s.onerror = () => reject(new Error("Couldn't load the QR scanner. Pick the hookah from the list instead."))
     document.head.appendChild(s)
   })
 }
@@ -404,8 +404,8 @@ function QrScanner({ onResult, onClose }: { onResult: (raw: string) => void; onC
   }, [])
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Scan device QR code" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/85 p-4">
-      <p className="text-sm text-on-color">Point the camera at the QR code on the device.</p>
+    <div role="dialog" aria-modal="true" aria-label="Scan hookah QR code" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/85 p-4">
+      <p className="text-sm text-on-color">Point the camera at the QR code on the hookah.</p>
       <video ref={videoRef} playsInline muted className="max-h-[60vh] w-full max-w-md rounded-lg bg-black object-cover" />
       {error && <p className="max-w-md rounded-md bg-accent px-3 py-2 text-center text-sm text-on-color">{error}</p>}
       <button type="button" onClick={onClose} className={BTN}>
@@ -623,7 +623,7 @@ export function ShishaCounter({
     setScanOpen(false)
     const code = extractDeviceCode(raw).trim().toUpperCase()
     const match = snap.devices.find((d) => d.deviceCode.toUpperCase() === code)
-    if (!match) return setFlash({ kind: "error", text: `No device found for "${code}".` })
+    if (!match) return setFlash({ kind: "error", text: `No hookah found for "${code}".` })
     if (match.status === "maintenance") return setFlash({ kind: "error", text: `${match.deviceCode} is under maintenance.` })
     if (occupiedDeviceIds.has(match.id)) return setFlash({ kind: "error", text: `${match.deviceCode} already has a live session.` })
     setDeviceId(match.id)
@@ -649,7 +649,7 @@ export function ShishaCounter({
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Choose a device"
+          aria-label="Choose a hookah"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           onClick={() => setPickerOpen(false)}
         >
@@ -753,7 +753,7 @@ export function ShishaCounter({
           <p className="mt-3 text-sm text-ink-muted">
             {flavours.length === 0
               ? "No flavours are in stock yet. A manager needs to add one first."
-              : "No devices have been added yet. A manager needs to add one first."}
+              : "No hookahs have been added yet. A manager needs to add one first."}
           </p>
         ) : (
           <>
@@ -833,9 +833,9 @@ export function ShishaCounter({
 
               {/* Device: auto-assigned, change in a popup */}
               <div className="space-y-2">
-                <p className="text-sm text-ink-muted">Device</p>
+                <p className="text-sm text-ink-muted">Hookah</p>
                 {!device ? (
-                  <p className="text-sm text-accent">Every device is in use or under maintenance.</p>
+                  <p className="text-sm text-accent">Every hookah is in use or under maintenance.</p>
                 ) : (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-line-strong bg-card px-3 py-2">
                     <div className="min-w-0">
@@ -896,7 +896,7 @@ export function ShishaCounter({
                     : flavour && device
                       ? `Start ${device.deviceCode}${effectiveStation ? ` · ${effectiveStation.name}` : ""} · ${formatMoney(flavour.price, snap.currency)}`
                       : !device
-                        ? "No free device"
+                        ? "No free hookah"
                         : "Pick a flavour to start"}
               </button>
               <div className="flex flex-wrap items-center justify-between gap-3 text-sm">

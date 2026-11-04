@@ -36,7 +36,6 @@ import {
   startSession,
   updateDevice,
   updateFlavour,
-  updateShishaSettings,
   updateStation,
 } from "./actions"
 import {
@@ -70,7 +69,17 @@ const PRINTED_REQUESTS_KEY = "shishaPrintedRequests"
 /** A request older than this is never auto-printed (e.g. the tab was closed for hours). */
 const MAX_SLIP_AGE_MS = 30 * 60_000
 
-type Section = "counter" | "requests" | "sessions" | "flavours" | "devices" | "stations" | "timing"
+/** Which Shisha page to show. Chosen from the sidebar (AdminView). Settings like session length live in Settings > Shisha settings. */
+export type ShishaSection = "counter" | "requests" | "sessions" | "flavours" | "devices" | "stations"
+type Section = ShishaSection
+export const SHISHA_SECTION_LABELS: Record<ShishaSection, string> = {
+  counter: "Counter",
+  requests: "Requests",
+  sessions: "Sessions",
+  flavours: "Flavours",
+  devices: "Hookahs",
+  stations: "Stations",
+}
 type Notice = { kind: "success" | "error" | "warning"; text: string }
 type Editing =
   | { kind: "flavour"; item: ShishaFlavour | null }
@@ -163,14 +172,17 @@ export function ShishaManager({
   timezone,
   canOperate,
   canManage,
+  section,
+  onSectionChange,
 }: {
   timezone: string
   canOperate: boolean
   canManage: boolean
+  /** Page to show, picked from the sidebar. */
+  section: ShishaSection
+  onSectionChange: (section: ShishaSection) => void
 }) {
   const [snap, setSnap] = useState<ShishaSnapshot | null>(null)
-  // Floor staff (can operate, can't manage) land on the Counter; owners on Sessions.
-  const [section, setSection] = useState<Section>(canOperate && !canManage ? "counter" : "sessions")
   const [notice, setNotice] = useState<Notice | null>(null)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
@@ -395,15 +407,6 @@ export function ShishaManager({
       ? "—"
       : new Date(lastUpdated).toLocaleTimeString("en-ZA", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false })
 
-  const sections: Array<{ id: Section; label: string }> = [
-    ...(canOperate ? [{ id: "counter" as const, label: "Counter" }] : []),
-    ...(canOperate ? [{ id: "requests" as const, label: "Requests" }] : []),
-    { id: "sessions", label: "Sessions" },
-    { id: "flavours", label: "Flavours" },
-    { id: "devices", label: "Devices" },
-    { id: "stations", label: "Stations" },
-    { id: "timing", label: "Timing" },
-  ]
 
   async function confirmArchive() {
     const target = archiveTarget
@@ -437,8 +440,8 @@ export function ShishaManager({
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">Shisha</h2>
-          <p className="mt-0.5 text-sm text-ink-muted">Timed sessions, flavours, devices and stations.</p>
+          <h2 className="font-[family-name:var(--font-admin-serif)] text-xl text-ink">{SHISHA_SECTION_LABELS[section]}</h2>
+          <p className="mt-0.5 text-sm text-ink-muted">Shisha · timed sessions, flavours, hookahs and stations.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <p className="flex items-center gap-2 text-xs text-ink-muted" role="status">
@@ -479,35 +482,6 @@ export function ShishaManager({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-1 rounded-full border border-line bg-card p-1" role="tablist" aria-label="Shisha sections">
-        {sections.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            role="tab"
-            aria-selected={section === s.id}
-            onClick={() => setSection(s.id)}
-            className={
-              section === s.id
-                ? "rounded-full bg-accent px-4 py-1.5 text-sm font-semibold text-on-color shadow-md"
-                : "rounded-full px-4 py-1.5 text-sm text-ink-muted hover:text-ink"
-            }
-          >
-            {s.label}
-            {s.id === "requests" && pendingCount > 0 && (
-              <span
-                className={`ml-2 inline-block min-w-[1.25rem] rounded-full px-1.5 text-center text-xs font-semibold ${
-                  section === "requests" ? "bg-white/25 text-on-color" : "bg-accent text-on-color"
-                }`}
-                aria-label={`${pendingCount} waiting`}
-              >
-                {pendingCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
       {canOperate && pendingCount > 0 && section !== "requests" && (
         <div
           role="status"
@@ -516,7 +490,7 @@ export function ShishaManager({
           <span>
             {pendingCount} customer {pendingCount === 1 ? "request is" : "requests are"} waiting for staff.
           </span>
-          <button type="button" onClick={() => setSection("requests")} className={BTN}>
+          <button type="button" onClick={() => onSectionChange("requests")} className={BTN}>
             Review
           </button>
         </div>
@@ -636,16 +610,6 @@ export function ShishaManager({
               onDelete={(s) => setDeleteTarget({ kind: "station", id: s.id, name: s.name })}
             />
           )}
-
-          {section === "timing" && (
-            <TimingPanel
-              key={`${snap.settings.coalDurationMinutes}-${snap.settings.refillThresholdMinutes}-${snap.settings.requireStation}`}
-              snap={snap}
-              canManage={canManage}
-              busy={busy}
-              onSave={(input) => run(() => updateShishaSettings(input), "Timing saved.")}
-            />
-          )}
         </>
       )}
 
@@ -675,7 +639,7 @@ export function ShishaManager({
 
       <AdminDialog
         open={editing?.kind === "device"}
-        title={editing?.kind === "device" && editing.item ? "Edit device" : "Add device"}
+        title={editing?.kind === "device" && editing.item ? "Edit hookah" : "Add hookah"}
         onClose={() => !busy && setEditing(null)}
       >
         {editing?.kind === "device" && snap && (
@@ -876,7 +840,7 @@ function RequestsPanel({
             const details = [
               req.flavourName,
               req.stationName ? `Station: ${req.stationName}` : null,
-              req.deviceCode ? `Device ${req.deviceCode}` : null,
+              req.deviceCode ? `Hookah ${req.deviceCode}` : null,
             ]
               .filter(Boolean)
               .join(" · ")
@@ -1068,7 +1032,7 @@ function AcceptSessionForm({
   if (devices.length === 0) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-ink">Every device is in use or under maintenance. Free one up, or reject.</p>
+        <p className="text-sm text-ink">Every hookah is in use or under maintenance. Free one up, or reject.</p>
         <div className="flex justify-end">
           <button type="button" onClick={onCancel} className={BTN}>
             Close
@@ -1103,7 +1067,7 @@ function AcceptSessionForm({
       )}
 
       <label className="block space-y-1 text-sm">
-        <span className="text-ink-muted">Device</span>
+        <span className="text-ink-muted">Hookah</span>
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} className={FIELD}>
           {devices.map((d) => (
             <option key={d.id} value={d.id}>
@@ -1122,7 +1086,7 @@ function AcceptSessionForm({
           </span>
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
             <option value="">
-              {usual ? `Device's usual: ${usual.name}` : stationRequired ? "Pick a station…" : "No station"}
+              {usual ? `Hookah's usual: ${usual.name}` : stationRequired ? "Pick a station…" : "No station"}
             </option>
             {stations.map((st) => (
               <option key={st.id} value={st.id}>
@@ -1222,7 +1186,7 @@ function AcceptEndForm({
   return (
     <div className="space-y-4">
       <RequestSummary req={req} currency={currency} />
-      <p className="text-sm text-ink">The session ends and the device becomes available again.</p>
+      <p className="text-sm text-ink">The session ends and the hookah becomes available again.</p>
       {alreadyPaid ? (
         <p className="text-sm text-ink-soft">Payment on file: {alreadyPaid}. Collect any refills added since.</p>
       ) : (
@@ -1346,7 +1310,7 @@ function SessionsPanel({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Live now" value={rows.length} />
         <Stat label="Need attention" value={needAttention} hint="Refill soon or time's up" />
-        <Stat label="Free devices" value={freeDevices.length} />
+        <Stat label="Free hookahs" value={freeDevices.length} />
         <Stat
           label="Today"
           value={formatMoney(snap.today.revenue, snap.currency)}
@@ -1545,7 +1509,7 @@ function StartSessionForm({
       <div className="space-y-4">
         <p className="text-sm text-ink">
           {devices.length === 0
-            ? "Every device is in use or under maintenance."
+            ? "Every hookah is in use or under maintenance."
             : "No flavours are in stock. Add one or mark one as in stock first."}
         </p>
         <div className="flex justify-end">
@@ -1570,7 +1534,7 @@ function StartSessionForm({
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
-        <span className="text-ink-muted">Device</span>
+        <span className="text-ink-muted">Hookah</span>
         <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} className={FIELD}>
           {devices.map((d) => (
             <option key={d.id} value={d.id}>
@@ -1602,13 +1566,13 @@ function StartSessionForm({
               {stations.map((st) => (
                 <option key={st.id} value={st.id}>
                   {st.name}
-                  {st.id === usualStation?.id ? " (device's usual station)" : ""}
+                  {st.id === usualStation?.id ? " (hookah's usual station)" : ""}
                 </option>
               ))}
             </select>
           ) : (
             <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={FIELD}>
-              <option value="">{usualStation ? `${usualStation.name} (device's usual station)` : "No station"}</option>
+              <option value="">{usualStation ? `${usualStation.name} (hookah's usual station)` : "No station"}</option>
               {stations
                 .filter((st) => st.id !== usualStation?.id)
                 .map((st) => (
@@ -1680,7 +1644,7 @@ function EndSessionForm({
   return (
     <div className="space-y-4">
       <p className="text-sm text-ink">
-        {session.flavourName} · {formatMoney(session.totalAmount, currency)}. The device becomes available again.
+        {session.flavourName} · {formatMoney(session.totalAmount, currency)}. The hookah becomes available again.
       </p>
       {alreadyPaid ? (
         <p className="text-sm text-ink-soft">
@@ -1915,15 +1879,15 @@ function DevicesPanel({
   return (
     <div className="space-y-4">
       <PanelHeader
-        title="Devices"
-        hint="Your hookahs. A device in use can't be edited out from under a live session."
+        title="Hookahs"
+        hint="Your hookahs. A hookah in use can't be edited out from under a live session."
         canManage={canManage}
         busy={busy}
-        addLabel="Add device"
+        addLabel="Add hookah"
         onAdd={onAdd}
       />
       {snap.devices.length === 0 ? (
-        <EmptyState>No devices yet.{canManage ? " Add your first one." : ""}</EmptyState>
+        <EmptyState>No hookahs yet.{canManage ? " Add your first one." : ""}</EmptyState>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {snap.devices.map((d) => {
@@ -2003,7 +1967,7 @@ function DeviceForm({
   return (
     <div className="space-y-4">
       <label className="block space-y-1 text-sm">
-        <span className="text-ink-muted">Device code</span>
+        <span className="text-ink-muted">Hookah code</span>
         <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="SH-031" className={FIELD} autoFocus />
       </label>
       <label className="block space-y-1 text-sm">
@@ -2021,7 +1985,7 @@ function DeviceForm({
           ))}
         </select>
         <span className="block text-xs text-ink-muted">
-          Pre-selected when staff start a session on this device. They can still pick a different station.
+          Pre-selected when staff start a session on this hookah. They can still pick a different station.
         </span>
       </label>
       <div className="flex justify-end gap-2">
@@ -2034,7 +1998,7 @@ function DeviceForm({
           onClick={() => void onSubmit({ deviceCode: code, deviceName: name, locationId: locationId || null })}
           className={BTN_PRIMARY}
         >
-          {busy ? "Saving…" : "Save device"}
+          {busy ? "Saving…" : "Save hookah"}
         </button>
       </div>
     </div>
@@ -2068,7 +2032,7 @@ function StationsPanel({
     <div className="space-y-4">
       <PanelHeader
         title="Stations"
-        hint="Areas of the venue where devices are set up."
+        hint="Areas of the venue where hookahs are set up."
         canManage={canManage}
         busy={busy}
         addLabel="Add station"
@@ -2085,7 +2049,7 @@ function StationsPanel({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-ink">{s.name}</p>
                   <p className="text-xs text-ink-muted">
-                    {deviceCount} {deviceCount === 1 ? "device" : "devices"}
+                    {deviceCount} {deviceCount === 1 ? "hookah" : "hookahs"}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2148,94 +2112,6 @@ function StationForm({
         >
           {busy ? "Saving…" : "Save station"}
         </button>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
-// Timing
-// ============================================================================
-
-function TimingPanel({
-  snap,
-  canManage,
-  busy,
-  onSave,
-}: {
-  snap: ShishaSnapshot
-  canManage: boolean
-  busy: boolean
-  onSave: (input: { coalDurationMinutes: number; refillThresholdMinutes: number; requireStation: boolean }) => Promise<boolean>
-}) {
-  const [duration, setDuration] = useState(String(snap.settings.coalDurationMinutes))
-  const [threshold, setThreshold] = useState(String(snap.settings.refillThresholdMinutes))
-  const [requireStation, setRequireStation] = useState(snap.settings.requireStation)
-  const d = Number(duration)
-  const t = Number(threshold)
-  const valid =
-    Number.isInteger(d) && d >= 5 && d <= 480 && Number.isInteger(t) && t >= 1 && t <= 120 && t < d
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Timing</h3>
-        <p className="mt-0.5 text-sm text-ink-muted">
-          Applies to new sessions and refills. Sessions already running keep the time they have.
-        </p>
-      </div>
-      <div className={`${CARD} max-w-md space-y-4 p-4`}>
-        <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">Session length (minutes)</span>
-          <input
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            inputMode="numeric"
-            disabled={!canManage}
-            className={FIELD}
-          />
-        </label>
-        <label className="block space-y-1 text-sm">
-          <span className="text-ink-muted">Warn this many minutes before time runs out</span>
-          <input
-            value={threshold}
-            onChange={(e) => setThreshold(e.target.value)}
-            inputMode="numeric"
-            disabled={!canManage}
-            className={FIELD}
-          />
-        </label>
-        <div className="space-y-1 border-t border-line pt-4">
-          <label className="flex items-center gap-2 text-sm text-ink">
-            <input
-              type="checkbox"
-              checked={requireStation}
-              onChange={(e) => setRequireStation(e.target.checked)}
-              disabled={!canManage}
-            />
-            Require a station for every session
-          </label>
-          <p className="text-xs text-ink-muted">
-            Link devices to a usual station in Devices to have it selected automatically.
-          </p>
-        </div>
-        {!valid && canManage && (
-          <p className="text-xs text-accent">
-            Session length is 5–480 minutes, the warning is 1–120 minutes and must be shorter than the session.
-          </p>
-        )}
-        {canManage && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              disabled={busy || !valid}
-              onClick={() => void onSave({ coalDurationMinutes: d, refillThresholdMinutes: t, requireStation })}
-              className={BTN_PRIMARY}
-            >
-              {busy ? "Saving…" : "Save timing"}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   )

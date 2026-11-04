@@ -208,8 +208,8 @@ async function startSessionCore(
 
   const device = deviceRes.data as { id: string; device_code: string; status: string; location_id: string | null } | null
   const product = productRes.data as { id: string; price: number | string; is_available: boolean } | null
-  if (!device) return fail("Device not found.")
-  if (device.status === "maintenance") return fail("That device is under maintenance.")
+  if (!device) return fail("Hookah not found.")
+  if (device.status === "maintenance") return fail("That hookah is under maintenance.")
   if (!product || !product.is_available) return fail("That flavour isn't available.")
 
   let settings
@@ -280,7 +280,7 @@ async function startSessionCore(
     .select("id")
   if (insertError) {
     // The partial unique index: one live session per device.
-    if (insertError.code === UNIQUE_VIOLATION) return fail("That device already has a live session.")
+    if (insertError.code === UNIQUE_VIOLATION) return fail("That hookah already has a live session.")
     return fail(insertError.message)
   }
 
@@ -590,9 +590,9 @@ export async function addDevice(input: DeviceInput): Promise<ShishaActionResult>
   const s = await scoped("shisha.manage")
   if (!s.ok) return s
   const code = cleanText(input.deviceCode, 30)?.toUpperCase()
-  if (!code) return fail("Device code is required (30 characters max).")
+  if (!code) return fail("Hookah code is required (30 characters max).")
   const name = input.deviceName.trim() === "" ? null : cleanText(input.deviceName, 80)
-  if (input.deviceName.trim() !== "" && !name) return fail("Device name is too long (80 characters max).")
+  if (input.deviceName.trim() !== "" && !name) return fail("Hookah name is too long (80 characters max).")
   if (input.locationId && !(await stationBelongsToTenant(s.supabase, s.tenantId, input.locationId))) {
     return fail("Station not found.")
   }
@@ -600,7 +600,7 @@ export async function addDevice(input: DeviceInput): Promise<ShishaActionResult>
   const { error } = await s.supabase.from("shisha_devices").insert([
     { tenant_id: s.tenantId, device_code: code, device_name: name, location_id: input.locationId },
   ])
-  if (error) return fail(error.code === UNIQUE_VIOLATION ? `Device "${code}" already exists.` : error.message)
+  if (error) return fail(error.code === UNIQUE_VIOLATION ? `Hookah "${code}" already exists.` : error.message)
   return { ok: true }
 }
 
@@ -608,9 +608,9 @@ export async function updateDevice(id: string, input: DeviceInput): Promise<Shis
   const s = await scoped("shisha.manage")
   if (!s.ok) return s
   const code = cleanText(input.deviceCode, 30)?.toUpperCase()
-  if (!code) return fail("Device code is required (30 characters max).")
+  if (!code) return fail("Hookah code is required (30 characters max).")
   const name = input.deviceName.trim() === "" ? null : cleanText(input.deviceName, 80)
-  if (input.deviceName.trim() !== "" && !name) return fail("Device name is too long (80 characters max).")
+  if (input.deviceName.trim() !== "" && !name) return fail("Hookah name is too long (80 characters max).")
   if (input.locationId && !(await stationBelongsToTenant(s.supabase, s.tenantId, input.locationId))) {
     return fail("Station not found.")
   }
@@ -622,8 +622,8 @@ export async function updateDevice(id: string, input: DeviceInput): Promise<Shis
     .eq("tenant_id", s.tenantId)
     .is("archived_at", null)
     .select("id")
-  if (error) return fail(error.code === UNIQUE_VIOLATION ? `Device "${code}" already exists.` : error.message)
-  if (!data || data.length === 0) return fail("Device not found.")
+  if (error) return fail(error.code === UNIQUE_VIOLATION ? `Hookah "${code}" already exists.` : error.message)
+  if (!data || data.length === 0) return fail("Hookah not found.")
   return { ok: true }
 }
 
@@ -631,7 +631,7 @@ export async function setDeviceMaintenance(id: string, inMaintenance: boolean): 
   const s = await scoped("shisha.manage")
   if (!s.ok) return s
   if (inMaintenance && (await deviceHasLiveSession(s.supabase, s.tenantId, id))) {
-    return fail("End the live session on this device first.")
+    return fail("End the live session on this hookah first.")
   }
   const { data, error } = await s.supabase
     .from("shisha_devices")
@@ -641,14 +641,14 @@ export async function setDeviceMaintenance(id: string, inMaintenance: boolean): 
     .is("archived_at", null)
     .select("id")
   if (error) return fail(error.message)
-  if (!data || data.length === 0) return fail("Device not found.")
+  if (!data || data.length === 0) return fail("Hookah not found.")
   return { ok: true }
 }
 
 export async function archiveDevice(id: string): Promise<ShishaActionResult> {
   const s = await scoped("shisha.manage")
   if (!s.ok) return s
-  if (await deviceHasLiveSession(s.supabase, s.tenantId, id)) return fail("End the live session on this device first.")
+  if (await deviceHasLiveSession(s.supabase, s.tenantId, id)) return fail("End the live session on this hookah first.")
   const { data, error } = await s.supabase
     .from("shisha_devices")
     .update({ archived_at: new Date().toISOString() })
@@ -657,7 +657,7 @@ export async function archiveDevice(id: string): Promise<ShishaActionResult> {
     .is("archived_at", null)
     .select("id")
   if (error) return fail(error.message)
-  if (!data || data.length === 0) return fail("Device not found.")
+  if (!data || data.length === 0) return fail("Hookah not found.")
   return { ok: true }
 }
 
@@ -931,7 +931,7 @@ async function acceptOrderSession(
   req: RequestRow,
   input: { deviceId?: string | null; locationId?: string | null; paymentMethod?: string | null },
 ): Promise<ShishaActionResult> {
-  if (!input.deviceId) return fail("Pick a device for this session.")
+  if (!input.deviceId) return fail("Pick a hookah for this session.")
   const paymentMethod = PAYMENT_METHODS.find((m) => m.value === input.paymentMethod)?.value ?? null
   if (input.paymentMethod && !paymentMethod) return fail("Pick a valid payment method.")
   if (!req.flavour_name) return fail("This request has no flavour. Reject it, or start the session at the counter.")

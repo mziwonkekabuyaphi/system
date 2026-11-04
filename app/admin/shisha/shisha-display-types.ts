@@ -6,23 +6,23 @@
 
 export type ShishaDisplayTheme = "dark" | "light" | "custom"
 export type ShishaDisplaySort = "code" | "urgency"
-/** "board" = grid of device cards; "lounge" = featured device + burn-down list;
+/** "board" = grid of hookah cards; "lounge" = featured hookah + burn-down list;
  *  "rotate" = the TV alternates between the two. */
 export type ShishaDisplayLayout = "board" | "lounge" | "rotate"
 
 /** Every piece of wording on the TV. null = use `fallback`. */
 export const SHISHA_DISPLAY_LABELS = [
-  { key: "active", column: "label_active", title: "Session running", fallback: "In session", hint: "Status of a device with time left." },
+  { key: "active", column: "label_active", title: "Session running", fallback: "In session", hint: "Status of a hookah with time left." },
   { key: "refill", column: "label_refill", title: "Refill due", fallback: "Refill due", hint: "Shown when the refill warning time is reached." },
   { key: "expired", column: "label_expired", title: "Time is up", fallback: "Overdue", hint: "Shown once the session has run out." },
   { key: "paused", column: "label_paused", title: "Paused", fallback: "On hold", hint: "A session that is paused." },
-  { key: "available", column: "label_available", title: "Free device", fallback: "Available", hint: "A device with no session." },
-  { key: "maintenance", column: "label_maintenance", title: "Under maintenance", fallback: "Out of service", hint: "A device set to maintenance." },
+  { key: "available", column: "label_available", title: "Free hookah", fallback: "Available", hint: "A hookah with no session." },
+  { key: "maintenance", column: "label_maintenance", title: "Under maintenance", fallback: "Out of service", hint: "A hookah set to maintenance." },
   { key: "live", column: "label_live", title: "Connected pill", fallback: "Live", hint: "Header pill while the screen is connected." },
   { key: "offline", column: "label_offline", title: "Offline pill", fallback: "Reconnecting…", hint: "Header pill when the connection drops." },
   { key: "timeUp", column: "label_time_up", title: "Time-up alert heading", fallback: "Time's up", hint: "Heading on the full-screen alert." },
-  { key: "soonest", column: "label_soonest", title: "Lounge layout: featured heading", fallback: "Finishing soonest", hint: "Heading above the big device in the Lounge layout." },
-  { key: "empty", column: "label_empty", title: "No devices message", fallback: "No devices set up yet.", hint: "Shown when you haven't added any devices." },
+  { key: "soonest", column: "label_soonest", title: "Lounge layout: featured heading", fallback: "Finishing soonest", hint: "Heading above the big hookah in the Lounge layout." },
+  { key: "empty", column: "label_empty", title: "No hookahs message", fallback: "No hookahs set up yet.", hint: "Shown when you haven't added any hookahs." },
 ] as const
 
 export type ShishaDisplayLabelKey = (typeof SHISHA_DISPLAY_LABELS)[number]["key"]
