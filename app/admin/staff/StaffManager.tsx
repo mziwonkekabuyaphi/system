@@ -2,7 +2,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState, useTransition, type FormEvent, type ReactNode } from "react"
-import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, resetStaffClockInPin, toggleStaffActive, updateStaff } from "../actions"
+import { addStaff, deleteStaff, forceClockOutShift, getStaffPayProfiles, requestStaffWhatsAppVerification, resetStaffClockInPin, toggleStaffActive, updateStaff } from "../actions"
 import { ConfirmDialog, NoticeModal, type Notice } from "../AdminModals"
 import { StaffClockInDrawer } from "./StaffClockInDrawer"
 import { StaffPayrollDrawer } from "./StaffPayrollDrawer"
@@ -30,6 +30,7 @@ type StaffFormState = {
   phone: string
   email: string
   loginPassword: string
+  whatsappOptIn: boolean
   hourlyRate: number | null
   // How they are paid (payroll.manage only, like hourlyRate). commissionRate is
   // kept as text so a half-typed number isn't fought by the input; it's
@@ -62,6 +63,7 @@ const EMPTY_FORM: StaffFormState = {
   phone: "",
   email: "",
   loginPassword: "",
+  whatsappOptIn: false,
   employeeNumber: "",
   startDate: "",
   idNumber: "",
@@ -87,6 +89,7 @@ function formFromStaff(member: AdminStaff, profile?: AdminStaffPayProfile): Staf
     phone: member.phone ?? "",
     email: member.email ?? "",
     loginPassword: "",
+    whatsappOptIn: member.whatsappOptIn,
     employeeNumber: member.employeeNumber ?? "",
     startDate: member.startDate ?? "",
     // "payrollDetails" in member is false (key absent) for a payroll.view-less
@@ -381,6 +384,7 @@ export function StaffManager({
   clockSettings,
   canCustomizeBranding,
   shiftsEnabled,
+  whatsappEnabled,
 }: {
   initialStaff: AdminStaff[]
   initialActiveShifts: AdminStaffShift[]
@@ -399,6 +403,8 @@ export function StaffManager({
   canCustomizeBranding: boolean
   /** Shifts module on the plan (page.tsx). Also needs permissions.shiftsView. */
   shiftsEnabled: boolean
+  /** WhatsApp module is on for this shop (page.tsx). Hides the WhatsApp tick box when off. */
+  whatsappEnabled: boolean
 }) {
   // Right-hand overlays, same pattern as Shisha's "TV display".
   const [payrollOpen, setPayrollOpen] = useState(false)
@@ -423,6 +429,9 @@ export function StaffManager({
   }, [refreshPayProfiles])
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, startSave] = useTransition()
+  // "Send verification message" button state (WhatsApp notifications).
+  const [verifyNote, setVerifyNote] = useState<{ text: string; ok: boolean } | null>(null)
+  const [isSendingVerify, startVerify] = useTransition()
 
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [isToggling, startToggle] = useTransition()
@@ -492,6 +501,7 @@ export function StaffManager({
     setEditingId(member.id)
     setForm(formFromStaff(member, payProfiles[member.id]))
     setFormError(null)
+    setVerifyNote(null)
     setFormOpen(true)
   }
 
@@ -499,6 +509,7 @@ export function StaffManager({
     setEditingId(null)
     setForm(EMPTY_FORM)
     setFormError(null)
+    setVerifyNote(null)
     setFormOpen(true)
   }
 
@@ -537,6 +548,8 @@ export function StaffManager({
       // Unused: PINs are never typed in. Owners use Reset PIN, which shows the new PIN once.
       clockInPin: "",
       loginPassword: form.loginPassword,
+      // Only sent when the shop has WhatsApp, so a shop without it never changes the saved choice.
+      ...(whatsappEnabled ? { whatsappOptIn: form.whatsappOptIn } : {}),
       employeeNumber: form.employeeNumber,
       startDate: form.startDate,
     }
@@ -561,6 +574,15 @@ export function StaffManager({
       } else {
         setFormError(result.error)
       }
+    })
+  }
+
+  function sendVerification(member: AdminStaff) {
+    if (!permissions.staffManage) return
+    setVerifyNote(null)
+    startVerify(async () => {
+      const result = await requestStaffWhatsAppVerification(member.id)
+      setVerifyNote(result.ok ? { text: result.message, ok: true } : { text: result.error, ok: false })
     })
   }
 
@@ -763,6 +785,11 @@ export function StaffManager({
                               <p className={`truncate font-medium ${member.active ? "text-ink" : "text-ink-muted"}`}>
                                 {member.name}
                                 {member.hasLogin && <span className="ml-2 text-xs font-normal text-ink-muted">· can sign in</span>}
+                                {whatsappEnabled && member.whatsappOptIn && (
+                                  <span className="ml-2 text-xs font-normal text-ink-muted">
+                                    · {member.whatsappVerified ? "WhatsApp on" : member.whatsappVerificationPending ? "WhatsApp: waiting for YES" : "WhatsApp: not verified"}
+                                  </span>
+                                )}
                               </p>
                               <p className="truncate text-xs text-ink-muted">
                                 {[member.email, member.phone].filter(Boolean).join(" · ") || "No contact details"}
@@ -1096,6 +1123,64 @@ export function StaffManager({
               className="mt-1 w-full border-b border-line-strong bg-transparent pb-1 text-ink outline-none focus:border-accent"
             />
           </div>
+
+          {whatsappEnabled && (
+            <div className="sm:col-span-2 rounded-lg border border-line p-4">
+              <label className="flex items-start gap-3 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={form.whatsappOptIn}
+                  onChange={(e) => {
+                    setVerifyNote(null)
+                    setForm((f) => ({ ...f, whatsappOptIn: e.target.checked }))
+                  }}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span>
+                  Send WhatsApp notifications
+                  <span className="block text-xs text-ink-muted">
+                    They get a WhatsApp message when their shifts are published or changed, a swap is decided, and when pay is processed.
+                    Only tick this if they agreed to it.
+                  </span>
+                </span>
+              </label>
+
+              {form.whatsappOptIn && !isEditing && (
+                <p className="mt-2 text-xs text-ink-muted">Save first, then you can send the verification message.</p>
+              )}
+
+              {form.whatsappOptIn && editingMember && (
+                <div className="mt-3 space-y-2 text-sm">
+                  {!editingMember.whatsappOptIn || form.phone.trim() !== (editingMember.phone ?? "").trim() ? (
+                    <p className="text-xs text-ink-muted">Save your changes, then you can send the verification message.</p>
+                  ) : editingMember.whatsappVerified ? (
+                    <p className="text-emerald-700">✓ Number verified. They&apos;ll get notifications on {editingMember.phone}.</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-ink-muted">
+                        {editingMember.whatsappVerificationPending
+                          ? "Verification sent. Waiting for them to reply YES on WhatsApp."
+                          : "Not verified yet. We send a message and they reply YES to confirm this is their number."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => sendVerification(editingMember)}
+                        disabled={isSendingVerify || !permissions.staffManage}
+                        className={BTN}
+                      >
+                        {isSendingVerify
+                          ? "Sending…"
+                          : editingMember.whatsappVerificationPending
+                            ? "Send verification again"
+                            : "Send verification message"}
+                      </button>
+                    </>
+                  )}
+                  {verifyNote && <p className={`text-xs ${verifyNote.ok ? "text-emerald-700" : "text-accent"}`}>{verifyNote.text}</p>}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sensitive payroll details: payroll.manage only, and the
               server re-checks it. Nothing here renders for anyone else. */}
