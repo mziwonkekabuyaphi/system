@@ -418,28 +418,36 @@ function PatternDrawer({
   const [staffId, setStaffId] = useState("")
   const [templateId, setTemplateId] = useState("")
   const [weekdays, setWeekdays] = useState<number[]>([1, 2, 3, 4, 5])
+  const [result, setResult] = useState<string | null>(null)
   const act = useAction()
   const toggle = (d: number) => setWeekdays((w) => (w.includes(d) ? w.filter((x) => x !== d) : [...w, d]))
   return (
     <SubDrawer
       open={open}
-      onClose={onClose}
+      onClose={() => {
+        setResult(null)
+        onClose()
+      }}
       title="Repeat a pattern"
-      subtitle="Fills this schedule for one person. Days that already have a shift are skipped."
+      subtitle="Fills this schedule for one person. Skips days that already have this shift type or would clash with another shift."
       footer={
         <button
           className={DRAWER_BTN_PRIMARY}
           disabled={act.busy || !staffId || !templateId}
-          onClick={() =>
-            act.run(
-              async () => {
-                const r = await applyWeeklyPattern({ scheduleId: schedule.id, staffId, templateId, weekdays })
-                if (r.ok) await onDone()
-                return r
-              },
-              onClose,
-            )
-          }
+          onClick={() => {
+            setResult(null)
+            void act.run(async () => {
+              const r = await applyWeeklyPattern({ scheduleId: schedule.id, staffId, templateId, weekdays })
+              if (r.ok) {
+                await onDone()
+                setResult(
+                  `Added ${r.created} shift${r.created === 1 ? "" : "s"}` +
+                    (r.skipped ? `, skipped ${r.skipped} (already scheduled or clashing with another shift).` : "."),
+                )
+              }
+              return r
+            })
+          }}
         >
           {act.busy ? "Applying…" : "Apply pattern"}
         </button>
@@ -477,6 +485,7 @@ function PatternDrawer({
           </div>
         </DrawerGroup>
         <Msg text={act.msg} />
+        {result && <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">{result}</p>}
       </div>
     </SubDrawer>
   )
