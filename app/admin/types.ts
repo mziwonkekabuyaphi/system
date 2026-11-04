@@ -31,6 +31,12 @@ export interface AdminStaff {
   /** True when this staff member has a sign-in (staff.profile_id is set).
    *  Not sensitive: it only drives the "can sign in" hint in the UI. */
   hasLogin: boolean
+  /** WhatsApp notifications: staff consent ("opted in") and whether the
+   *  number they'll be messaged on has been confirmed by a "YES" reply. */
+  whatsappOptIn: boolean
+  whatsappVerified: boolean
+  /** A verification message was sent and we're waiting for their "YES". */
+  whatsappVerificationPending: boolean
   /** Present ONLY when the caller has payroll.view — app/admin/page.tsx's
    *  getAllStaff() adds this key conditionally rather than always
    *  including it as null, so the key's mere presence is meaningful.
@@ -61,6 +67,8 @@ export interface AdminStaffInput {
    *  with this as their password, or reset it if they already have one.
    *  Empty/omitted = leave login access untouched. Min 8 characters. */
   loginPassword?: string
+  /** Staff member agreed to get WhatsApp notifications about their shifts. */
+  whatsappOptIn?: boolean
   hourlyRate?: number | null
 }
 

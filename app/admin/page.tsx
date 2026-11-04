@@ -51,6 +51,7 @@ import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { formatBookingTicketNumber } from "@/lib/services/ticket-format"
 import { last4 } from "@/lib/payroll/staff-details"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
@@ -181,7 +182,8 @@ async function getAllStaff(
   includeContactDetails: boolean,
 ): Promise<AdminStaff[]> {
   const directoryColumns = "id, name, active, job_title"
-  const contactColumns = "phone, email, clock_in_pin_hash, profile_id, employee_number, start_date"
+  const contactColumns =
+    "phone, email, clock_in_pin_hash, profile_id, employee_number, start_date, whatsapp_opt_in, whatsapp_verified_at, whatsapp_verified_number, whatsapp_verification_requested_at"
   const baseColumns = includeContactDetails ? `${directoryColumns}, ${contactColumns}` : directoryColumns
   const columns = includeHourlyRate ? `${baseColumns}, hourly_rate` : baseColumns
 
@@ -215,6 +217,10 @@ async function getAllStaff(
       // which drives the Reset PIN / Create PIN wording in StaffManager.
       clockInPin: includeClockInPin && s.clock_in_pin_hash ? "\u2022\u2022\u2022\u2022\u2022\u2022" : null,
       hasLogin: !!s.profile_id,
+      whatsappOptIn: s.whatsapp_opt_in === true,
+      // Verified only while the confirmed number is still the number on file.
+      whatsappVerified: !!s.whatsapp_verified_at,
+      whatsappVerificationPending: !s.whatsapp_verified_at && !!s.whatsapp_verification_requested_at,
       employeeNumber: s.employee_number ?? null,
       startDate: s.start_date ?? null,
     }
@@ -874,6 +880,8 @@ export default async function AdminPage() {
   // Every action re-checks both server-side.
   const shishaEnabled = permissions.shishaView
   const shiftsEnabled = permissions.shiftsView
+  // WhatsApp staff notifications: only offered when the shop has the WhatsApp module on.
+  const whatsappEnabled = await isModuleEnabled(tenantId, "whatsapp").catch(() => false)
 
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
@@ -892,6 +900,7 @@ export default async function AdminPage() {
       queueEnabled={products.queue}
       shishaEnabled={shishaEnabled}
       shiftsEnabled={shiftsEnabled}
+      whatsappEnabled={whatsappEnabled}
       staffEnabled={products.staff || products.booking || products.queue || products.shisha || products.shifts || products.payroll}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}

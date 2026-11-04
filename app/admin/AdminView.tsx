@@ -171,6 +171,7 @@ export function AdminView({
   queueEnabled,
   shishaEnabled,
   shiftsEnabled,
+  whatsappEnabled,
   staffEnabled,
   initialConversations,
   initialInboxStats,
@@ -203,6 +204,7 @@ export function AdminView({
   shishaEnabled: boolean
   /** Shifts module on the tenant's plan AND the caller has shifts.view (computed in page.tsx). */
   shiftsEnabled: boolean
+  whatsappEnabled: boolean
   /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
    *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
   staffEnabled: boolean
@@ -554,6 +556,7 @@ export function AdminView({
               clockSettings={initialClockSettings}
               canCustomizeBranding={initialPlan === "business"}
               shiftsEnabled={shiftsEnabled}
+              whatsappEnabled={whatsappEnabled}
             />
           )}
           {tab === "analytics" && staffPermissions.analyticsView && <AnalyticsDashboard />}

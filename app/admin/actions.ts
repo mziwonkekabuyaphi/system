@@ -33,6 +33,7 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 import { isProductEnabled, staffLimitError, type AddonKey, type ProductKey } from "@/lib/services/plans"
 import { calculatePeriodDeductions, inclusiveDayCount } from "@/lib/payroll/paye"
 import {
@@ -1094,6 +1095,51 @@ export async function resetStaffClockInPin(
   return { ok: false, error: "Couldn't find a free PIN. Please try again." }
 }
 
+/** Sends the "reply YES to confirm this number" WhatsApp message to a staff
+ *  member who has opted in. They become "verified" when they reply YES. */
+export async function requestStaffWhatsAppVerification(
+  staffId: string,
+): Promise<{ ok: true; message: string } | { ok: false; error: string }> {
+  const { supabase, tenantId, error } = await getTenantScopedClient("staff.manage")
+  if (!supabase) return { ok: false, error: error! }
+
+  if (!(await isModuleEnabled(tenantId!, "whatsapp"))) {
+    return { ok: false, error: "WhatsApp isn't switched on for this shop yet." }
+  }
+
+  const { data: member, error: memberError } = await supabase
+    .from("staff")
+    .select("id, name, active, phone, whatsapp_opt_in")
+    .eq("id", staffId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (memberError) return { ok: false, error: memberError.message }
+  if (!member) return { ok: false, error: "Staff member not found." }
+  if (!member.active) return { ok: false, error: "This staff member is inactive." }
+  if (!member.phone) return { ok: false, error: "Add a phone number for this staff member first." }
+  if (!member.whatsapp_opt_in) {
+    return { ok: false, error: "Tick \"Send WhatsApp notifications\" and save before sending the verification message." }
+  }
+
+  const { error: rpcError } = await supabase.rpc("request_staff_whatsapp_verification", { p_staff_id: staffId })
+  if (rpcError) {
+    const m = rpcError.message || ""
+    if (m.includes("no valid phone")) {
+      return { ok: false, error: "That phone number doesn't look right. Use a full number like 082 123 4567 or +27 82 123 4567." }
+    }
+    if (m.includes("not opted in")) return { ok: false, error: "Save the tick box first, then send the verification." }
+    return { ok: false, error: "Couldn't send the verification message. Please try again." }
+  }
+
+  await logActivity(supabase, tenantId!, {
+    category: "staff",
+    action: `Sent WhatsApp verification to staff member "${member.name}"`,
+    staffId,
+  })
+  revalidatePath("/admin")
+  return { ok: true, message: `Sent. Ask ${member.name.split(" ")[0]} to reply YES on WhatsApp.` }
+}
+
 // ---- Staff sign-in (auth user + profile + tenant membership) ----------------
 // A `staff` row is only a roster/clock-in record. To let someone sign in to
 // /admin they also need: an auth.users row (the handle_new_auth_user trigger
@@ -1200,6 +1246,7 @@ export async function addStaff(input: AdminStaffInput): Promise<ActionResult> {
         hourly_rate: "hourlyRate" in input ? input.hourlyRate : null,
         phone: input.phone.trim() || null,
         email: input.email.trim() || null,
+        whatsapp_opt_in: input.whatsappOptIn === true,
         employee_number: extras.staffPatch.employee_number ?? null,
         start_date: extras.staffPatch.start_date ?? null,
         active: true,
@@ -1283,6 +1330,9 @@ export async function updateStaff(id: string, input: AdminStaffInput): Promise<A
     email: input.email.trim() || null,
   }
   if (canTouchRate) patch.hourly_rate = input.hourlyRate
+  // WhatsApp consent: only touched when the form sent it. (If the phone number
+  // changes, the database itself clears the old verification.)
+  if (typeof input.whatsappOptIn === "boolean") patch.whatsapp_opt_in = input.whatsappOptIn
   // Only the HR fields the input actually carried; omitted keys stay as they are.
   Object.assign(patch, extras.staffPatch)
 
