@@ -37,6 +37,8 @@ export const MENU_ROW_IDS = {
   profile: "menu_profile",
   // Only shown for tenants with the "shisha" module switched on (see buildServicesListMessage).
   shisha: "menu_shisha",
+  // Only shown to a verified staff member of a tenant with the "shifts" module on.
+  staff: "menu_staff",
 } as const
 
 export type MenuRowId = (typeof MENU_ROW_IDS)[keyof typeof MENU_ROW_IDS]
@@ -48,10 +50,14 @@ export function isMenuRowId(id: string | null | undefined): id is MenuRowId {
 /**
  * Builds the menu as a follow-up message.
  * @param bodyText The text shown above the "View Options" button.
+ * @param options.staff Include the "Staff area" row (sender is a verified staff member, Shifts on). Default false.
  * @param options.shisha Include the Shisha Lounge row (tenant has the module on). Default false,
  *   so a caller that forgets the flag can never show a module the tenant doesn't have.
  */
-export function buildServicesListMessage(bodyText: string, options: { shisha?: boolean } = {}): FollowUpMessage {
+export function buildServicesListMessage(
+  bodyText: string,
+  options: { shisha?: boolean; staff?: boolean } = {},
+): FollowUpMessage {
   const moduleRows = options.shisha
     ? [
         {
@@ -60,6 +66,10 @@ export function buildServicesListMessage(bodyText: string, options: { shisha?: b
           description: "Start a session, refill coals or track yours",
         },
       ]
+    : []
+  // Per-sender, never per-shop: only a verified staff member of a shop with Shifts on sees it.
+  const staffRows = options.staff
+    ? [{ id: MENU_ROW_IDS.staff, title: "👷 Staff area", description: "Your shifts, swaps and approvals" }]
     : []
 
   return {
@@ -103,6 +113,7 @@ export function buildServicesListMessage(bodyText: string, options: { shisha?: b
               description: "Cancel your booking or leave the queue",
             },
             ...moduleRows,
+            ...staffRows,
           ],
         },
       ],
