@@ -69,6 +69,7 @@ import { REMINDER_TAP_PATTERN, handleReminderTap } from "@/lib/services/reminder
 import { WAITLIST_TAP_PATTERN, handleWaitlistTap } from "@/lib/services/waitlist-reply"
 import { profileService } from "@/lib/services/profile"
 import { shishaService } from "@/lib/services/shisha"
+import { getStaffForPhone, staffBotService, STAFF_ID_PREFIX, STAFF_MAIN_MENU_TAP } from "@/lib/services/staff-bot"
 import { conciergeService } from "@/lib/ai/concierge"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
 
@@ -145,15 +146,20 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
 // `unhandled: true` marks a genuine "we don't know what to do" reply —
 // handover.ts's shouldEscalate() uses this flag, not raw intent confidence.
 // A function, not a constant: the menu it carries depends on which modules the tenant has on.
-async function unknownStateReply(tenantId: string): Promise<ActionResult> {
-  const [shisha, products] = await Promise.all([isModuleEnabled(tenantId, "shisha"), getWhatsAppProducts(tenantId)])
+async function unknownStateReply(tenantId: string, phone?: string): Promise<ActionResult> {
+  const [shisha, products, staffIdentity] = await Promise.all([
+    isModuleEnabled(tenantId, "shisha"),
+    getWhatsAppProducts(tenantId),
+    phone ? getStaffForPhone(tenantId, phone) : Promise.resolve(null),
+  ])
+  const staff = staffIdentity !== null
   return {
     reply: "I couldn't continue your previous request, so let's start again. How can I help you today?",
     buttons: [],
     nextState: null,
     unhandled: true,
     followUp: [
-      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha }), hiddenMenuRows(products)),
+      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha, staff }), hiddenMenuRows(products)),
     ],
   }
 }
@@ -229,7 +235,7 @@ async function menuPromptFor(tenantId: string): Promise<string> {
   } catch {
     return MENU_PROMPT
   }
-  return `${MENU_PROMPT}\n\You may also type your request directly in this chat.Our virtual assistant is available in English, isiXhosa, isiZulu and Afrikaans. .`
+  return `${MENU_PROMPT}\n\nOr just type what you need in your own words and I'll take care of it.`
 }
 
 type ServicesMenu = ReturnType<typeof buildServicesListMessage>
@@ -289,13 +295,19 @@ const NOTHING_ON_REPLY = "Sorry, this shop doesn't take bookings or queue entrie
  * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const [shishaOn, products] = await Promise.all([isModuleEnabled(tenantId, "shisha"), getWhatsAppProducts(tenantId)])
-  const baseMenu = buildServicesListMessage(await menuPromptFor(tenantId), { shisha: shishaOn })
+  const [shishaOn, products, staffIdentity] = await Promise.all([
+    isModuleEnabled(tenantId, "shisha"),
+    getWhatsAppProducts(tenantId),
+    getStaffForPhone(tenantId, message.from),
+  ])
+  const baseMenu = buildServicesListMessage(await menuPromptFor(tenantId), { shisha: shishaOn, staff: staffIdentity !== null })
   // Only offer what this shop actually runs (a Booking-only shop never sees Join Queue, and so on).
   const menu = withoutRows(baseMenu, hiddenMenuRows(products))
 
   // Neither Booking nor Queue (e.g. a shisha-only venue): nothing to book or queue for here.
   if (!products.booking && !products.queue && !shishaOn) {
+    // A verified staff member of a staff-only shop gets the staff menu instead of a dead end.
+    if (staffIdentity) return staffBotService.entry(tenantId, staffIdentity)
     return { reply: NOTHING_ON_REPLY, buttons: [], nextState: null }
   }
 
@@ -387,7 +399,7 @@ async function delegateState(
   }
 
   await stateService.clearState(tenantId, message.from)
-  return unknownStateReply(tenantId)
+  return unknownStateReply(tenantId, message.from)
 }
 
 export async function routeAction(
@@ -396,6 +408,30 @@ export async function routeAction(
   state: ConversationState | null,
   message: IncomingMessage,
 ): Promise<ActionResult> {
+  // ── -2. STAFF AREA (module "shifts") ──────────────────────────────
+  // Staff taps, staff keywords, open staff conversations and the YES that verifies a
+  // staff number are handled by lib/services/staff-bot.ts, which answers null for
+  // everything else (customers are never affected). Old menus stay in the chat, so
+  // when the Shifts module is off a stale staff tap / staff state is cleared and the
+  // person gets a fresh menu instead of a dead end.
+  {
+    const tapId = message.interactiveId ?? ""
+    const staffTap = tapId.startsWith(STAFF_ID_PREFIX) || tapId === MENU_ROW_IDS.staff
+    const staffState = Boolean(state?.state.startsWith(STAFF_ID_PREFIX))
+    if (tapId === STAFF_MAIN_MENU_TAP) {
+      await stateService.clearState(tenantId, message.from)
+      return buildEntryReply(tenantId, message, false)
+    }
+    if ((staffTap || staffState) && !(await isModuleEnabled(tenantId, "shifts"))) {
+      await stateService.clearState(tenantId, message.from)
+      const fresh = await buildEntryReply(tenantId, message, false)
+      return { ...fresh, reply: "Sorry, that service isn't available right now. What would you like to do instead?" }
+    }
+    if (staffTap) await stateService.clearState(tenantId, message.from)
+    const staffResult = await staffBotService.route(tenantId, state, message)
+    if (staffResult) return staffResult
+  }
+
   // ── -1. MODULE GATE (shisha) ───────────────────────────────────────
   // Hiding the menu row is not enough: WhatsApp list messages stay in the
   // chat, so a customer can scroll up and tap an OLD menu that still has the
