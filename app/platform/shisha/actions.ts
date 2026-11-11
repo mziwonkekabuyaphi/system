@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { invalidateModuleCache } from "@/lib/tenant/modules"
+import { invalidateEffectiveCache } from "@/lib/tenant/effective-modules"
 
 // Literal on purpose: independent of MODULE_KEYS.shisha existing in plans.ts.
 const SHISHA_MODULE_KEY = "shisha"
@@ -54,6 +55,7 @@ export async function setShishaEnabledAction(formData: FormData): Promise<void> 
   // WhatsApp caches module lookups for a few seconds; drop this shop's entry so
   // the instance that handled the toggle sees it straight away.
   invalidateModuleCache(tenantId, SHISHA_MODULE_KEY)
+  invalidateEffectiveCache(tenantId)
 
   revalidatePath("/platform/shisha")
 }
