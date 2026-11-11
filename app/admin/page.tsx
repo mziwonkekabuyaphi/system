@@ -948,6 +948,7 @@ export default async function AdminPage() {
       eventsPermissions={eventsPermissions}
       whatsappEnabled={whatsappEnabled}
       staffEnabled={["staff", "booking", "queue", "shisha", "shifts", "payroll"].some((k) => mods.on(k))}
+      settingsModules={mods.flags()}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}

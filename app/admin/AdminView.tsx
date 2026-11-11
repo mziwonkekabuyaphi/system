@@ -13,6 +13,7 @@ import { ShishaManager, type ShishaSection } from "./shisha/ShishaManager"
 import { EventsManager } from "./events/EventsManager"
 import type { EventsPermissions, EventsSection } from "./events/types"
 import { SettingsManager } from "./SettingsManager"
+import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 import { sidebarStyleVars } from "./sidebar-theme"
 import { StaffManager } from "./staff/StaffManager"
 import { TodayBookings } from "./booking/TodayBookings"
@@ -354,6 +355,7 @@ export function AdminView({
   eventsPermissions,
   whatsappEnabled,
   staffEnabled,
+  settingsModules,
   initialConversations,
   initialInboxStats,
   initialPlan,
@@ -393,6 +395,8 @@ export function AdminView({
   /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
    *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
   staffEnabled: boolean
+  /** Module state from the database resolver (page.tsx). Drives which Settings pages appear. */
+  settingsModules?: ModuleFlags
   initialConversations: AdminConversationSummary[]
   initialInboxStats: AdminInboxStats
   initialPlan: AdminPlan
@@ -823,6 +827,7 @@ export function AdminView({
               initialQueueSettings={queueSettings!}
               onQueueSettingsChange={setQueueSettings}
               initialBusinessHours={initialBusinessHours!}
+              modules={settingsModules}
               bookingEnabled={bookingEnabled}
               queueEnabled={queueEnabled}
               shishaEnabled={shishaEnabled && staffPermissions.shishaView}

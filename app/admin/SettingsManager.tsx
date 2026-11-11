@@ -24,6 +24,7 @@ import { KioskPanel } from "./settings/KioskPanels"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
+import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
 type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "shisha" | "passport"
 
@@ -114,10 +115,14 @@ const SETTINGS_NAV: Array<{
     label: string
     title: string
     description: string
-    /** Shown only when at least one of these products is switched on for the shop
-     *  (tenant_modules). Omitted = shared by every shop. The save actions re-check
-     *  this server-side; hiding here is only so owners aren't shown dead controls. */
-    needs?: Array<"booking" | "queue" | "shisha" | "passport">
+    /** Owner-switchable feature (kiosk, display): shown when the modules it NEEDS are on
+     *  (public.module_requires), even if the owner switched the feature itself off, because
+     *  the on/off toggle lives inside this page. Value = modules.key. */
+    module?: string
+    /** Shown when at least one of these modules is effective (own switch on AND parents on).
+     *  Omitted (with no `module`) = shared by every shop. The save actions re-check this
+     *  server-side; hiding here is only so owners aren't shown dead controls. */
+    anyOf?: string[]
   }>
 }> = [
   {
@@ -146,35 +151,35 @@ const SETTINGS_NAV: Array<{
         label: "Services",
         title: "Services",
         description: "What customers can book or queue for: names, prices and durations.",
-        needs: ["booking", "queue"],
+        anyOf: ["booking", "queue"],
       },
       {
         id: "kiosk",
         label: "Kiosk",
         title: "Self-service kiosk",
         description: "The touch screen customers use to check in, book or join the queue.",
-        needs: ["booking", "queue"],
+        module: "kiosk", // needs Booking or Queue (module_requires)
       },
       {
         id: "display",
         label: "Public display",
         title: "Public display",
         description: "The screen in your waiting area showing the queue, bookings and menu.",
-        needs: ["booking", "queue"], // a Booking-only shop gets a display too (bookings + menu)
+        module: "display", // needs Booking or Queue (module_requires); a Booking-only shop gets a display too
       },
       {
         id: "shisha",
         label: "Shisha settings",
         title: "Shisha settings",
         description: "Session length, refill warning and whether a station is required.",
-        needs: ["shisha"],
+        anyOf: ["shisha"],
       },
       {
         id: "passport",
         label: "Passport settings",
         title: "Passport settings",
         description: "Top-up limits and whether customers can top up their own Passport.",
-        needs: ["passport"],
+        anyOf: ["wallet"],
       },
     ],
   },
@@ -211,6 +216,7 @@ export function SettingsManager({
   initialQueueSettings,
   initialBusinessHours,
   onQueueSettingsChange,
+  modules,
   bookingEnabled = true,
   queueEnabled = true,
   shishaEnabled = false,
@@ -248,6 +254,9 @@ export function SettingsManager({
   initialBusinessHours: AdminBusinessHours
   /** Tells AdminView when Kiosk > Services saves queue settings, so Live Queue > Queue rules stays current. */
   onQueueSettingsChange?: (next: AdminQueueSettings) => void
+  /** Module state from the database resolver (page.tsx -> getEffectiveModules().flags()). Decides which
+   *  pages appear. Optional: without it the old booking/queue/shisha/passport props below are used. */
+  modules?: ModuleFlags
   /** Which products this shop runs (tenant_modules, loaded once in page.tsx). Panels for a
    *  product that is off are hidden; a group left with no panels is hidden too. */
   bookingEnabled?: boolean
@@ -277,12 +286,23 @@ export function SettingsManager({
   // each re-opening with the stale server-rendered copy.
   const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
 
-  const enabled = { booking: bookingEnabled, queue: queueEnabled, shisha: shishaEnabled, passport: passportEnabled }
+  // Which pages exist comes from the database (modules + module_requires). Fallback for a parent that
+  // doesn't pass `modules` yet: the same rules as before, built from the old props.
+  const flags: ModuleFlags = modules ?? {
+    on: { booking: bookingEnabled, queue: queueEnabled, shisha: shishaEnabled, wallet: passportEnabled },
+    available: { kiosk: bookingEnabled || queueEnabled, display: bookingEnabled || queueEnabled },
+  }
   const settingsNav = SETTINGS_NAV.map((g) => ({
     ...g,
     items: g.items
-      .filter((i) => !i.needs || i.needs.some((k) => enabled[k]))
-      // Services also needs its own permission (services.manage), like it did in the sidebar.
+      .filter((i) => {
+        if (i.module) return flags.available[i.module] === true
+        if (i.anyOf) return i.anyOf.some((k) => flags.on[k] === true)
+        return true
+      })
+      // Permissions still apply on top of the module state: shisha.view, wallet.view, services.manage.
+      .filter((i) => i.id !== "shisha" || shishaEnabled)
+      .filter((i) => i.id !== "passport" || passportEnabled)
       .filter((i) => i.id !== "services" || servicesManage),
   })).filter((g) => g.items.length > 0)
   const settingsPages = settingsNav.flatMap((g) => g.items)
