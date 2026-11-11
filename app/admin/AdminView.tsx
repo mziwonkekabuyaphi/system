@@ -415,11 +415,16 @@ export function AdminView({
   initialBusinessHours: AdminBusinessHours | null
 }) {
   // Which tabs this shop + caller can see. Booking and Queue are optional
-  // products; Inbox only means something when at least one of them is on.
-  // Staff, Analytics, Billing and Settings stay available.
+  // products. Analytics, Billing and Settings stay available.
   // (Services now lives in Settings > Customer Journey, next to Kiosk and Display.
   //  Customers now lives on the Inbox page, next to Analytics and WhatsApp settings.)
   const hasBookingOrQueue = bookingEnabled || queueEnabled
+  // Every module talks to its customers over WhatsApp (the tenant customer interface), so the
+  // Inbox is available as soon as ANY module is on: Booking, Queue, Shisha, Staff (which also
+  // covers Shifts and Payroll, see staffEnabled in page.tsx), Passport/wallet, or Events (which
+  // needs Passport). All of these are the effective, parent-checked states from page.tsx.
+  const hasAnyModule =
+    hasBookingOrQueue || shishaEnabled || eventsEnabled || staffEnabled || settingsModules?.on.wallet === true
   const isTabVisible = (id: Tab): boolean => {
     switch (id) {
       case "today":
@@ -459,9 +464,9 @@ export function AdminView({
       case "billing":
         return staffPermissions.settingsManage
       // Inbox (WhatsApp, with Customers inside) holds phone numbers: owner-only,
-      // and only for shops running Booking or Queue.
+      // and for any shop running at least one module (see hasAnyModule above).
       case "inbox":
-        return staffPermissions.settingsManage && hasBookingOrQueue
+        return staffPermissions.settingsManage && hasAnyModule
       case "staff":
         return staffEnabled
       default:
