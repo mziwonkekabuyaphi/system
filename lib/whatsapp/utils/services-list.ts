@@ -2,8 +2,9 @@
 /**
  * The QLess main menu — an interactive WhatsApp LIST with six core rows:
  * My Profile (always first), Book Now, Join Queue, Check Status, Reschedule, Cancel Now,
- * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on, and a
- * "My Passport" (wallet) row ONLY for tenants with the wallet module on.
+ * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on,, a
+ * "My Passport" (wallet) row ONLY for tenants with the wallet module on, and an "Events" row ONLY for
+ * tenants with the events module on.
  *
  * Same idea as the old Rands "services list": the menu is sent as a
  * `followUp` message after a short greeting, and every row has a fixed id.
@@ -40,6 +41,8 @@ export const MENU_ROW_IDS = {
   shisha: "menu_shisha",
   // Only shown for tenants with the "wallet" module switched on (see buildServicesListMessage).
   wallet: "menu_wallet",
+  // Only shown for tenants with the "events" module switched on (see buildServicesListMessage).
+  events: "menu_events",
   // Only shown to a verified staff member of a tenant with the "shifts" module on.
   staff: "menu_staff",
 } as const
@@ -57,10 +60,11 @@ export function isMenuRowId(id: string | null | undefined): id is MenuRowId {
  * @param options.shisha Include the Shisha Lounge row (tenant has the module on). Default false,
  *   so a caller that forgets the flag can never show a module the tenant doesn't have.
  * @param options.wallet Include the My Passport row (tenant has the wallet module on). Same default-false rule.
+ * @param options.events Include the Events row (tenant has the events module on). Same default-false rule.
  */
 export function buildServicesListMessage(
   bodyText: string,
-  options: { shisha?: boolean; staff?: boolean; wallet?: boolean } = {},
+  options: { shisha?: boolean; staff?: boolean; wallet?: boolean; events?: boolean } = {},
 ): FollowUpMessage {
   const moduleRows = options.shisha
     ? [
@@ -77,6 +81,15 @@ export function buildServicesListMessage(
           id: MENU_ROW_IDS.wallet,
           title: "🪪 My Passport", // 14 chars
           description: "Check your balance and recent activity",
+        },
+      ]
+    : []
+  const eventRows = options.events
+    ? [
+        {
+          id: MENU_ROW_IDS.events,
+          title: "🎟️ Events", // 9 chars
+          description: "See what's on and your tickets",
         },
       ]
     : []
@@ -127,6 +140,7 @@ export function buildServicesListMessage(
             },
             ...moduleRows,
             ...walletRows,
+            ...eventRows,
             ...staffRows,
           ],
         },
