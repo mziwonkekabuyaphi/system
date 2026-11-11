@@ -13,6 +13,7 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { invalidateModuleCache } from "@/lib/tenant/modules"
+import { invalidateEffectiveCache } from "@/lib/tenant/effective-modules"
 
 type R<T = object> = ({ success: true } & T) | { success: false; error: string }
 
@@ -362,6 +363,7 @@ export async function setShopAdModule(input: { tenantId: string; moduleKey: stri
     if (error) return fail(error)
 
     invalidateModuleCache(input.tenantId, input.moduleKey)
+    invalidateEffectiveCache(input.tenantId)
     refresh()
     revalidatePath("/platform/modules")
     return { success: true }
