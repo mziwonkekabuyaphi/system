@@ -18,14 +18,15 @@
  *    A caller without billing/payroll permission gets `null` for that section;
  *    the data is never queried, not merely hidden.
  *
- * Modules (same idea as Billing): `products` says which of Booking / Queue /
- * Shisha are switched on for the shop (tenant_modules, via getEnabledProducts).
- * The dashboard only shows tabs and figures for modules that are on. Shisha
- * numbers are only queried when Shisha is on AND the caller has shisha.view.
+ * Modules: `products` says which of Booking / Queue / Shisha / Shifts / Payroll are
+ * effectively on for the shop (own switch AND parents, via getEffectiveModules: the same
+ * resolver the admin pages use). The dashboard only shows tabs and figures for modules that
+ * are on. Shisha numbers are only queried when Shisha is on AND the caller has shisha.view;
+ * Payroll numbers only when Payroll is on AND the caller has payroll.view.
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { getEnabledProducts } from "@/lib/services/plans"
+import { getEffectiveModules } from "@/lib/tenant/effective-modules"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
 import { loadDisplayContext } from "../admin-data"
 import { addDaysKey, dateKeyInTz, startOfDayUtc } from "../tz"
@@ -159,16 +160,23 @@ export async function getAnalytics(input: {
   if (!supabase) return { ok: false, error: "Supabase isn't configured." }
 
   try {
-    const [{ timezone }, settings, billingCheck, payrollCheck, shishaCheck, enabled] = await Promise.all([
+    const [{ timezone }, settings, billingCheck, payrollCheck, shishaCheck, mods] = await Promise.all([
       loadDisplayContext(supabase, tenantId),
       supabase.from("tenant_settings").select("currency").eq("tenant_id", tenantId).maybeSingle(),
       requireTenantPermission("billing.view"),
       requireTenantPermission("payroll.view"),
       requireTenantPermission("shisha.view"),
-      getEnabledProducts(supabase, tenantId),
+      getEffectiveModules(tenantId),
     ])
-    // Which modules this shop runs: the same source Billing uses (tenant_modules).
-    const products = { booking: enabled.booking, queue: enabled.queue, shisha: enabled.shisha }
+    // Which modules this shop runs (effective state, so a module whose parent is off counts as off).
+    const products = {
+      booking: mods.on("booking"),
+      queue: mods.on("queue"),
+      shisha: mods.on("shisha"),
+      // Shift hours are recorded by the Shifts add-on and by Staff clock-in.
+      shifts: mods.on("shifts") || mods.on("staff_clock_in"),
+      payroll: mods.on("payroll"),
+    }
     const wantShisha = products.shisha && shishaCheck.ok
 
     const resolved = resolveRange(input.preset, timezone, { from: input.from, to: input.to })
@@ -188,7 +196,7 @@ export async function getAnalytics(input: {
       supabase.rpc("analytics_dashboard", args(range)),
       prevRange ? supabase.rpc("analytics_dashboard", args(prevRange)) : Promise.resolve(null),
       billingCheck.ok ? supabase.rpc("analytics_billing", args(range)) : Promise.resolve(null),
-      payrollCheck.ok ? supabase.rpc("analytics_payroll", args(range)) : Promise.resolve(null),
+      payrollCheck.ok && products.payroll ? supabase.rpc("analytics_payroll", args(range)) : Promise.resolve(null),
       wantShisha ? shishaFor(range) : Promise.resolve(null),
       wantShisha && prevRange ? shishaFor(prevRange) : Promise.resolve(null),
     ])
