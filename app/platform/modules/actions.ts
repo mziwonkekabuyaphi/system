@@ -9,6 +9,7 @@ import { redirect } from "next/navigation"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { invalidateModuleCache } from "@/lib/tenant/modules"
+import { invalidateEffectiveCache } from "@/lib/tenant/effective-modules"
 
 // ONLY these can be switched. Everything else is decided by the shop's plan
 // (plan_modules), where a tenant_modules row would do nothing. Keep in sync
@@ -61,6 +62,7 @@ export async function setTenantModuleAction(formData: FormData): Promise<void> {
   // WhatsApp caches module lookups for a few seconds; drop this shop's entry so
   // the instance that handled the toggle sees it straight away.
   invalidateModuleCache(tenantId, moduleKey)
+  invalidateEffectiveCache(tenantId)
 
   revalidatePath("/platform/modules")
   revalidatePath("/platform/shisha")
