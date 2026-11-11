@@ -24,12 +24,17 @@ export type EffectiveModule = {
   effective: boolean
 }
 
+/** Plain objects (a Map can't cross into a client component). `on` = effective, `available` = parents satisfied. */
+export type ModuleFlags = { on: Record<string, boolean>; available: Record<string, boolean> }
+
 export type EffectiveModules = {
   /** Is the module effective (own switch on AND parents satisfied)? */
   on: (key: string) => boolean
   /** Are the module's parents satisfied, regardless of its own switch? */
   available: (key: string) => boolean
   all: Map<string, EffectiveModule>
+  /** Serialisable copy, for passing to client components (e.g. the Settings navigation). */
+  flags: () => ModuleFlags
 }
 
 const TTL_MS = 5_000
@@ -66,6 +71,15 @@ export async function getEffectiveModules(tenantId: string): Promise<EffectiveMo
     all,
     on: (key) => all.get(key)?.effective === true,
     available: (key) => all.get(key)?.requirementsMet === true,
+    flags: () => {
+      const on: Record<string, boolean> = {}
+      const available: Record<string, boolean> = {}
+      for (const m of all.values()) {
+        on[m.key] = m.effective
+        available[m.key] = m.requirementsMet
+      }
+      return { on, available }
+    },
   }
 }
 
