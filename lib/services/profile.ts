@@ -44,6 +44,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getEnabledProducts } from "@/lib/services/plans"
 import { getShishaProfileSession } from "@/lib/services/shisha"
+import { formatPassportMoney, readPassportSummary, type PassportSummary } from "@/lib/services/passport"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 import type { ActiveSessionSummary } from "@/lib/services/messages/shisha"
 import { getQueueSimulation, formatQueueTicketNumber } from "@/lib/services/queue"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
@@ -82,6 +84,8 @@ interface ShownProducts {
   booking: boolean
   queue: boolean
   shisha: boolean
+  /** The Passport (wallet) module. Not a "product" in plans.ts, so it comes from isModuleEnabled. */
+  wallet: boolean
 }
 
 interface ProfileData {
@@ -92,10 +96,12 @@ interface ProfileData {
   booking: Section<UpcomingBooking | null>
   queue: Section<ActiveQueueEntry | null>
   shisha: Section<ActiveSessionSummary | null>
+  /** null = no Passport yet (a real answer, not a failure). */
+  wallet: Section<PassportSummary | null>
   visits: Section<VisitSummary>
 }
 
-const NOTHING_SHOWN: ShownProducts = { booking: false, queue: false, shisha: false }
+const NOTHING_SHOWN: ShownProducts = { booking: false, queue: false, shisha: false, wallet: false }
 
 // ============================================================================
 // HELPERS
@@ -295,6 +301,7 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
       booking: unavailable(),
       queue: unavailable(),
       shisha: unavailable(),
+      wallet: unavailable(),
       visits: unavailable(),
     }
   }
@@ -306,15 +313,16 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
     console.error("[profile] getCustomer failed", { tenantId, error })
   }
 
-  const [shopNameResult, timeZoneResult, products] = await Promise.all([
+  const [shopNameResult, timeZoneResult, products, walletOn] = await Promise.all([
     Promise.allSettled([loadShopName(supabase, tenantId)]).then((r) => r[0]),
     Promise.allSettled([getTenantTimezone(supabase, tenantId)]).then((r) => r[0]),
     getEnabledProducts(supabase, tenantId),
+    isModuleEnabled(tenantId, "wallet").catch(() => false),
   ])
 
   const shopName = shopNameResult.status === "fulfilled" ? shopNameResult.value : null
   const timeZone = timeZoneResult.status === "fulfilled" ? timeZoneResult.value : "Africa/Johannesburg"
-  const show: ShownProducts = { booking: products.booking, queue: products.queue, shisha: products.shisha }
+  const show: ShownProducts = { booking: products.booking, queue: products.queue, shisha: products.shisha, wallet: walletOn }
   const showVisits = show.booking || show.queue
 
   // Brand-new number with no tenant_customers row: nothing to look up, and
@@ -328,6 +336,7 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
       booking: { status: "ok", value: null },
       queue: { status: "ok", value: null },
       shisha: { status: "ok", value: null },
+      wallet: { status: "ok", value: null },
       visits: { status: "ok", value: { totalVisits: 0, lastVisitAt: null } },
     }
   }
@@ -335,10 +344,11 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
   const customerId = customer.id
   // A switched-off product is never read: its tables aren't touched at all.
   const skipped = <T,>(value: T): Promise<T> => Promise.resolve(value)
-  const [bookingResult, queueResult, shishaResult, visitsResult] = await Promise.allSettled([
+  const [bookingResult, queueResult, shishaResult, walletResult, visitsResult] = await Promise.allSettled([
     show.booking ? readUpcomingBooking(supabase, tenantId, customerId) : skipped(null),
     show.queue ? readActiveQueueEntry(supabase, tenantId, customerId) : skipped(null),
     show.shisha ? getShishaProfileSession(tenantId, phone) : skipped(null),
+    show.wallet ? readPassportSummary(supabase, tenantId, customerId) : skipped(null),
     showVisits ? readVisitSummary(supabase, tenantId, customerId) : skipped({ totalVisits: 0, lastVisitAt: null }),
   ])
 
@@ -346,6 +356,7 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
     ["booking", bookingResult],
     ["queue", queueResult],
     ["shisha", shishaResult],
+    ["passport", walletResult],
     ["visits", visitsResult],
   ] as const) {
     if (result.status === "rejected") {
@@ -361,6 +372,7 @@ async function buildProfileData(tenantId: string, phone: string): Promise<Profil
     booking: settled(bookingResult),
     queue: settled(queueResult),
     shisha: settled(shishaResult),
+    wallet: settled(walletResult),
     visits: settled(visitsResult),
   }
 }
@@ -446,6 +458,15 @@ function shishaLines(section: ProfileData["shisha"]): string[] {
   return lines
 }
 
+function passportLines(section: ProfileData["wallet"]): string[] {
+  if (section.status === "unavailable") return ["🪪 *Passport:* temporarily unavailable"]
+  const wallet = section.value
+  if (!wallet || wallet.status === "none") return ["🪪 *Passport:* no balance yet"]
+  if (wallet.status === "blocked") return ["🪪 *Passport:* on hold, please contact the shop"]
+  if (wallet.status === "closed") return ["🪪 *Passport:* closed"]
+  return [`🪪 *Passport:* ${formatPassportMoney(wallet.balance, wallet.currency)}`]
+}
+
 function visitLines(section: ProfileData["visits"], timeZone: string): string[] {
   if (section.status === "unavailable") return ["✂️ *Visits:* temporarily unavailable"]
   const { totalVisits, lastVisitAt } = section.value
@@ -464,6 +485,7 @@ function buildProfileMessage(data: ProfileData): string {
   if (data.show.booking) blocks.push(bookingLines(data.booking, data.timeZone))
   if (data.show.queue) blocks.push(queueLines(data.queue))
   if (data.show.shisha) blocks.push(shishaLines(data.shisha))
+  if (data.show.wallet) blocks.push(passportLines(data.wallet))
   if (data.show.booking || data.show.queue) blocks.push(visitLines(data.visits, data.timeZone))
 
   if (blocks.length === 0) return [title, "", "There's nothing to show on your profile here yet."].join("\n")
@@ -482,14 +504,15 @@ function buildProfileMessage(data: ProfileData): string {
  *    shows the booking and queue spot, and they're already looking at it), and
  *  - the rows for products the shop has switched OFF (Book Now / Reschedule
  *    without Booking, Join Queue without Queue, Cancel Now with neither).
- * The Shisha Lounge row appears when Shisha is on. Filtered by row id, so the
+ * The Shisha Lounge row appears when Shisha is on. The My Passport row is left off: the profile
+ * above already shows the balance. Filtered by row id, so the
  * greeting menu is untouched. Returns null when no row is left to offer.
  * (Mirrors hiddenMenuRows() in action-router.ts, which can't be imported here
  * without a circular import.)
  */
 function buildProfileFollowUp(bodyText: string, show: ShownProducts) {
-  const menu = buildServicesListMessage(bodyText, { shisha: show.shisha })
-  const hidden = new Set<string>([MENU_ROW_IDS.status, MENU_ROW_IDS.profile])
+  const menu = buildServicesListMessage(bodyText, { shisha: show.shisha, wallet: show.wallet })
+  const hidden = new Set<string>([MENU_ROW_IDS.status, MENU_ROW_IDS.profile, MENU_ROW_IDS.wallet])
   if (!show.booking) {
     hidden.add(MENU_ROW_IDS.book)
     hidden.add(MENU_ROW_IDS.reschedule)

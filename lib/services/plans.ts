@@ -211,6 +211,7 @@ export const MODULE_KEYS = {
   bookingTicket: "booking_ticket",
   shisha: "shisha",
   shifts: "shifts",
+  wallet: "wallet",
 } as const
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
