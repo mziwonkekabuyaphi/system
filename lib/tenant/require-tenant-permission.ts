@@ -55,6 +55,15 @@ export type PermissionKey =
   | "shisha.manage"
   | "shifts.view"
   | "shifts.manage"
+  | "wallet.view"
+  | "wallet.operate"
+  | "wallet.manage"
+  | "events.view"
+  | "events.manage"
+  | "tickets.view"
+  | "tickets.manage"
+  | "tickets.issue"
+  | "tickets.scan"
 
 
 export type PermissionCheckResult =
