@@ -89,6 +89,9 @@ const INTENTS = [
   "shisha",  // Shisha lounge session / refill / track. MODULE-GATED per tenant: this router is
              // tenant-agnostic by design, so action-router.ts downgrades it to "support"
              // for any tenant that has the shisha module off.
+  "wallet",  // Their Passport (wallet): balance, recent activity, how to top up. MODULE-GATED per
+             // tenant exactly like "shisha": action-router.ts downgrades it to "support" for any
+             // tenant that has the wallet module off.
   "support", // Needs a human: complaints, reschedule, running late, shop questions
   "unknown", // Greetings, chit-chat, or not enough information
 ] as const
@@ -313,6 +316,32 @@ const PROFILE_PHRASES = new Set([
   "visit history",
 ])
 
+// Exact-phrase allowlist for "show me my Passport balance". Deliberately exact, not a loose
+// word match: "balance" or "wallet" inside a longer sentence ("I'll pay the balance at the
+// door") must not hijack a booking. Compared AFTER normalizeForFastPath, so the menu label
+// "🪪 My Passport" arrives here as plain "my passport".
+const WALLET_PHRASES = new Set([
+  "passport",
+  "my passport",
+  "view passport",
+  "view my passport",
+  "show my passport",
+  "passport balance",
+  "my passport balance",
+  "wallet",
+  "my wallet",
+  "wallet balance",
+  "balance",
+  "my balance",
+  "check balance",
+  "check my balance",
+  "top up",
+  "topup",
+  "top-up",
+  "top up my passport",
+  "top up my wallet",
+])
+
 /**
  * Lowercases and strips punctuation/emoji so "Cancel!", "❌ Cancel Now" and
  * "[button reply] Check Status" all compare as plain words. A leading
@@ -408,6 +437,11 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
   // (A question like "do you have shisha?" is left to the concierge/AI.)
   if (/\b(shisha|hookah|hubbly)\b/.test(normalized) && !text.includes("?")) {
     return { intent: "shisha", confidence: 0.9, reasoning: "Fast-path: shisha request" }
+  }
+
+  // Passport (wallet) balance (clear intent, exact phrases only)
+  if (WALLET_PHRASES.has(normalized)) {
+    return { intent: "wallet", confidence: 0.95, reasoning: "Fast-path: passport / wallet request" }
   }
 
   // Profile overview (clear intent)
@@ -514,6 +548,22 @@ in. Examples of how the same intents sound locally:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE INTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+wallet
+Customer wants to see their Passport / wallet: their balance, their recent
+top-ups and spending, or how to add money. Only for the customer's OWN balance
+or top-up — a question about whether the shop has a wallet, or about prices, is
+"support".
+
+Examples:
+
+my balance
+
+how much do I have on my passport
+
+check my wallet
+
+I want to top up
 
 shisha
 Customer wants a shisha / hookah session, a coal refill, to end or track their
