@@ -149,7 +149,7 @@ export interface Payroll {
 
 /** Which modules are effectively on for this shop (own switch AND parents, via getEffectiveModules).
  *  `shifts` is true when Shifts OR Staff clock-in is on, since either one records shift hours. */
-export interface EnabledProducts { booking: boolean; queue: boolean; shisha: boolean; shifts: boolean; payroll: boolean }
+export interface EnabledProducts { booking: boolean; queue: boolean; shisha: boolean; shifts: boolean; payroll: boolean; vvip: boolean }
 
 /** Shisha activity for one reporting window. Built from shisha_sessions. */
 export interface ShishaStats {
@@ -170,6 +170,26 @@ export interface ShishaStats {
   by_product: { name: string; sessions: number; amount: number }[]
 }
 
+/** VVIP table activity for one reporting window. Built from vvip_bookings / vvip_tab_ledger. */
+export interface VvipStats {
+  bookings: number
+  /** Bookings that are not cancelled or no-show. */
+  active_bookings: number
+  completed: number
+  cancelled: number
+  no_show: number
+  revenue: number
+  refunded: number
+  tab_issued: number
+  tab_spent: number
+  /** Unspent tab on bookings still live (confirmed / checked in / seated), regardless of period. */
+  tab_outstanding: number
+  by_day: { date: string; bookings: number; revenue: number }[]
+  by_package: { name: string; bookings: number; revenue: number }[]
+  by_payment: { method: string; count: number; amount: number }[]
+  by_status: { status: string; count: number }[]
+}
+
 export interface AnalyticsData {
   timezone: string
   currency: string
@@ -182,6 +202,8 @@ export interface AnalyticsData {
   /** null = Shisha is off for this shop, or the caller lacks shisha.view (or it failed: see warnings). */
   shisha: ShishaStats | null
   shishaPrevious: ShishaStats | null
+  /** null = VVIP is off for this shop, or the caller lacks vvip.view (or it failed: see warnings). */
+  vvip: VvipStats | null
   /** null = caller lacks billing.view (or the section failed: see warnings). */
   billing: Billing | null
   /** null = caller lacks payroll.view (or the section failed: see warnings). */
