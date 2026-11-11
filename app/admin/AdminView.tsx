@@ -803,8 +803,6 @@ export function AdminView({
               permissions={staffPermissions}
               tenantSlug={tenantSlug}
               timezone={timezone}
-              clockSettings={initialClockSettings}
-              canCustomizeBranding={initialPlan === "business"}
               shiftsEnabled={shiftsEnabled}
               whatsappEnabled={whatsappEnabled}
             />
