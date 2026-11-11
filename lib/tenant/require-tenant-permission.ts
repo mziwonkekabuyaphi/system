@@ -64,6 +64,9 @@ export type PermissionKey =
   | "tickets.manage"
   | "tickets.issue"
   | "tickets.scan"
+  | "vvip.view"
+  | "vvip.operate"
+  | "vvip.manage"
 
 
 export type PermissionCheckResult =

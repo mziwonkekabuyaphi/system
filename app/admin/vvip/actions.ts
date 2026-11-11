@@ -7,8 +7,8 @@
  * Same layers as app/admin/events/actions.ts and app/admin/passport/actions.ts:
  *   1. requireTenantPermission() proves the signed-in user holds the key for THEIR shop. The
  *      tenantId comes from the membership, never the browser.
- *   2. isModuleEnabled() proves the "events" module is on. VVIP has no switch of its own: it only
- *      exists while Events does. A switch-off shuts every action, even from a stale page.
+ *   2. isModuleEnabled() proves the "vvip" module is on (platform admin > Modules) and so is "events",
+ *      which it needs (and Events needs Passport). A switch-off shuts every action, even from a stale page.
  *   3. READS use the service-role client and are always filtered by tenant_id (RLS is not
  *      protecting those, so each loader checks vvip.view first). WRITES never touch a vvip_* table:
  *      the database refuses direct writes. Everything goes through the vvip_* functions, called on
@@ -54,7 +54,7 @@ type Row = Record<string, unknown>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const KEY_RE = /^[A-Za-z0-9-]{8,64}$/
-const MODULE_OFF = "Events isn't switched on for your business."
+const MODULE_OFF = "VVIP isn't switched on for your business."
 const GENERIC_ERROR = "Something went wrong. Please try again."
 const NOT_FOUND_PACKAGE = "Package not found."
 const NOT_FOUND_BOOKING = "Booking not found."
@@ -110,7 +110,8 @@ async function scoped(...permissions: PermissionKey[]): Promise<Scope> {
 
   const read = getSupabaseServerClient()
   if (!read) return fail("Supabase isn't configured.")
-  if (!(await isModuleEnabled(tenantId, "events"))) return fail(MODULE_OFF)
+  // VVIP's own switch, and Events (the database functions check Events too, and packages belong to an event).
+  if (!(await isModuleEnabled(tenantId, "vvip")) || !(await isModuleEnabled(tenantId, "events"))) return fail(MODULE_OFF)
   return { ok: true, read, tenantId }
 }
 

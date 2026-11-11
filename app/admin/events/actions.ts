@@ -393,7 +393,7 @@ export async function deleteEvent(eventId: string): Promise<ActionResult> {
   const write = await sessionDb()
   const { error } = await write.from("events").delete().eq("id", eventId).eq("tenant_id", c.tenantId)
   if (error) {
-    if (/foreign key/i.test(error.message)) return fail("This event has ticket sales, so it can't be deleted. Cancel it instead.")
+    if (/foreign key/i.test(error.message)) return fail("This event has ticket sales or VVIP bookings, so it can't be deleted. Cancel it instead.")
     return fail(friendly(error))
   }
   return { ok: true, data: undefined }
