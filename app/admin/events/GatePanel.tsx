@@ -5,7 +5,11 @@
 // Door check-in (the Rands "Monitor" view). The scan field keeps focus, so a
 // hardware QR scanner (which types the code and presses Enter) or a person typing
 // a ticket number both work. Every result, including failures, is kept in the
-// event's scan log by the database; this screen just shows the latest.
+// event's scan log by the database.
+//
+// The ScanBox is the main stage: while idle a line sweeps up and down inside a
+// viewfinder; when a scan comes back, the result takes over the same box, then
+// the box returns to idle so the line resumes for the next person.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { checkInTicket, loadGate } from "./actions"
@@ -30,6 +34,10 @@ const SCAN_LABEL: Record<ScanResult, string> = {
   cancelled: "Cancelled",
   event_closed: "Gate closed",
 }
+
+/** How long a result stays in the box before it returns to the sweeping line. */
+const RESULT_MS_GOOD = 4_000
+const RESULT_MS_BAD = 8_000
 
 export function GatePanel({
   events,
@@ -76,12 +84,24 @@ export function GatePanel({
 
   useEffect(() => { input.current?.focus() }, [event?.id])
 
+  // Hand the box back to the sweeping line after a while.
+  useEffect(() => {
+    if (!result && !scanError) return
+    const good = result?.success === true
+    const t = setTimeout(() => {
+      setResult(null)
+      setScanError(null)
+    }, good ? RESULT_MS_GOOD : RESULT_MS_BAD)
+    return () => clearTimeout(t)
+  }, [result, scanError])
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     const value = code.trim()
     if (!event || !value || busy) return
     setBusy(true)
     setScanError(null)
+    setResult(null)
     const res = await checkInTicket(event.id, value, gate.trim() || null)
     setBusy(false)
     setCode("")
@@ -89,7 +109,6 @@ export function GatePanel({
       setResult(res.data)
       await Promise.all([refreshSnap(), res.data.success ? onScanned() : Promise.resolve()])
     } else {
-      setResult(null)
       setScanError(res.error)
     }
     input.current?.focus()
@@ -105,7 +124,6 @@ export function GatePanel({
     )
   }
 
-  const style = result ? RESULT_STYLE[result.result] : null
   const sold = snap?.sold ?? event.ticketTypes.reduce((n, t) => n + t.sold, 0)
 
   return (
@@ -125,6 +143,8 @@ export function GatePanel({
             <input id="gate-name" className={INPUT} value={gate} onChange={(e) => setGate(e.target.value)} />
           </div>
         </section>
+
+        <ScanBox busy={busy} result={result} error={scanError} timezone={timezone} />
 
         <form onSubmit={submit} className={`${PANEL} p-5`}>
           <label className={LABEL} htmlFor="gate-code">Scan or type a ticket</label>
@@ -147,34 +167,6 @@ export function GatePanel({
             </button>
           </div>
         </form>
-
-        <div aria-live="assertive" aria-atomic="true">
-          {scanError && <p role="alert" className="rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-600">{scanError}</p>}
-          {result && style && (
-            <div className={`rounded-3xl p-6 ${style.box}`}>
-              <div className="flex items-center gap-4">
-                <Icon name={style.icon} className="text-5xl" />
-                <div className="min-w-0">
-                  <p className="text-2xl font-bold">{style.title}</p>
-                  <p className="text-sm opacity-90">{result.message}</p>
-                </div>
-              </div>
-              {(result.ticketNumber || result.holder || result.ticketType) && (
-                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-white/25 pt-4 text-sm sm:grid-cols-3">
-                  {result.ticketNumber && (<div><dt className="text-xs opacity-75">Ticket</dt><dd className="font-mono font-semibold">{result.ticketNumber}</dd></div>)}
-                  {result.ticketType && (<div><dt className="text-xs opacity-75">Tier</dt><dd className="font-semibold">{result.ticketType}</dd></div>)}
-                  {result.holder && (<div><dt className="text-xs opacity-75">Holder</dt><dd className="font-semibold">{result.holder}</dd></div>)}
-                  {result.entriesAllowed !== undefined && result.entriesAllowed > 1 && (
-                    <div><dt className="text-xs opacity-75">Entries</dt><dd className="font-semibold">{result.entriesUsed} of {result.entriesAllowed}</dd></div>
-                  )}
-                  {result.result === "duplicate" && result.lastScannedAt && (
-                    <div><dt className="text-xs opacity-75">First scanned</dt><dd className="font-semibold">{formatClock(result.lastScannedAt, timezone)}</dd></div>
-                  )}
-                </dl>
-              )}
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="space-y-5">
@@ -205,6 +197,88 @@ export function GatePanel({
         </section>
       </div>
     </div>
+  )
+}
+
+/**
+ * The viewfinder. Idle: corner brackets + a line sweeping up and down.
+ * Busy: the line speeds up. Result / error: the box turns into the result card.
+ */
+function ScanBox({
+  busy,
+  result,
+  error,
+  timezone,
+}: {
+  busy: boolean
+  result: CheckInResult | null
+  error: string | null
+  timezone: string
+}) {
+  const style = result ? RESULT_STYLE[result.result] : null
+  const showing = Boolean(error || (result && style))
+
+  // Screen readers get the outcome once, without hearing the idle text change.
+  const announce = error ?? (result && style ? `${style.title}. ${result.message}` : "")
+
+  const surface = error ? "bg-red-600 text-white" : style ? style.box : "bg-stone-900 text-white"
+
+  return (
+    <section aria-label="Scan result" className={`relative min-h-[17rem] overflow-hidden rounded-3xl transition-colors duration-200 ${surface}`}>
+      <style>{`
+        @keyframes gate-sweep { from { top: 10%; } to { top: 90%; } }
+        .gate-sweep-line { animation: gate-sweep 2.2s ease-in-out infinite alternate; }
+        .gate-sweep-line[data-busy="true"] { animation-duration: 0.7s; }
+        @media (prefers-reduced-motion: reduce) {
+          .gate-sweep-line { animation: none; top: 50%; }
+        }
+      `}</style>
+
+      <div className="sr-only" aria-live="assertive" aria-atomic="true">{announce}</div>
+
+      {showing ? (
+        <div className="flex min-h-[17rem] flex-col justify-center p-6">
+          <div className="flex items-center gap-4">
+            <Icon name={error ? "triangle-exclamation" : style!.icon} className="text-5xl" />
+            <div className="min-w-0">
+              <p className="text-2xl font-bold">{error ? "Couldn't check in" : style!.title}</p>
+              <p className="text-sm opacity-90">{error ?? result!.message}</p>
+            </div>
+          </div>
+          {result && (result.ticketNumber || result.holder || result.ticketType) && (
+            <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-white/25 pt-4 text-sm sm:grid-cols-3">
+              {result.ticketNumber && (<div><dt className="text-xs opacity-75">Ticket</dt><dd className="font-mono font-semibold">{result.ticketNumber}</dd></div>)}
+              {result.ticketType && (<div><dt className="text-xs opacity-75">Tier</dt><dd className="font-semibold">{result.ticketType}</dd></div>)}
+              {result.holder && (<div><dt className="text-xs opacity-75">Holder</dt><dd className="font-semibold">{result.holder}</dd></div>)}
+              {result.entriesAllowed !== undefined && result.entriesAllowed > 1 && (
+                <div><dt className="text-xs opacity-75">Entries</dt><dd className="font-semibold">{result.entriesUsed} of {result.entriesAllowed}</dd></div>
+              )}
+              {result.result === "duplicate" && result.lastScannedAt && (
+                <div><dt className="text-xs opacity-75">First scanned</dt><dd className="font-semibold">{formatClock(result.lastScannedAt, timezone)}</dd></div>
+              )}
+            </dl>
+          )}
+        </div>
+      ) : (
+        <div className="relative min-h-[17rem]" aria-hidden="true">
+          {/* Viewfinder corners */}
+          <span className="absolute left-5 top-5 h-8 w-8 rounded-tl-xl border-l-4 border-t-4 border-white/70" />
+          <span className="absolute right-5 top-5 h-8 w-8 rounded-tr-xl border-r-4 border-t-4 border-white/70" />
+          <span className="absolute bottom-5 left-5 h-8 w-8 rounded-bl-xl border-b-4 border-l-4 border-white/70" />
+          <span className="absolute bottom-5 right-5 h-8 w-8 rounded-br-xl border-b-4 border-r-4 border-white/70" />
+
+          {/* The sweeping line */}
+          <span
+            data-busy={busy}
+            className="gate-sweep-line absolute left-8 right-8 h-0.5 rounded-full bg-[var(--sb-accent,var(--color-admin-accent))] shadow-[0_0_14px_3px_var(--sb-accent,var(--color-admin-accent))]"
+          />
+
+          <div className="absolute inset-x-0 bottom-9 text-center text-sm font-medium text-white/70">
+            {busy ? "Checking…" : "Ready to scan"}
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 
