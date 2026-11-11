@@ -3,6 +3,7 @@
 // exists, a platform admin approves here, which flips tenants.plan.
 import { redirect } from "next/navigation"
 
+import { PageHeader } from "@/components/platform/PageHeader"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 
@@ -70,15 +71,11 @@ export default async function UpgradeRequestsPage({
   const resolved = requests.filter((r) => r.status !== "pending").slice(0, 20)
 
   return (
-    <main className="mx-auto max-w-6xl space-y-5 px-6 py-10">
-      <div>
-        <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">
-          Upgrade requests
-        </h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Approving switches the shop to the requested plan straight away. Collect payment first if you need to.
-        </p>
-      </div>
+    <main className="space-y-6">
+      <PageHeader
+        title="Upgrade requests"
+        description="Approving switches the shop to the requested plan straight away. Collect payment first if you need to."
+      />
 
       {requestsResult.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

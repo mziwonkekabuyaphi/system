@@ -2,6 +2,7 @@
 // shop owes (per-session + per-refill fees) for this and last month.
 import { redirect } from "next/navigation"
 
+import { PageHeader } from "@/components/platform/PageHeader"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
@@ -79,13 +80,11 @@ export default async function PlatformShisha({ searchParams }: { searchParams: P
   const totalLast = usage.filter((u) => u.month === lastMonth).reduce((sum, u) => sum + Number(u.amount), 0)
 
   return (
-    <main className="mx-auto max-w-6xl space-y-5 px-6 py-10">
-      <div>
-        <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Shisha</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Shisha isn&apos;t part of any plan. A shop only gets it when you switch it on here, and it is billed per session and per refill.
-        </p>
-      </div>
+    <main className="space-y-6">
+      <PageHeader
+        title="Shisha"
+        description="Shisha isn't part of any plan. A shop only gets it when you switch it on here, and it is billed per session and per refill."
+      />
 
       {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
       {moduleProblem && (

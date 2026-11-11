@@ -3,6 +3,7 @@
 
 import { useState, useTransition } from "react"
 
+import { PageHeader } from "@/components/platform/PageHeader"
 import { CREATABLE_MODULES, type NewShopModule } from "@/lib/services/new-shop-modules"
 import { approveShop, createOwnerInvite, createShop, declineShop } from "./actions"
 
@@ -26,8 +27,8 @@ export function Tenants({ rows, pending }: { rows: Row[]; pending: Pending[] }) 
   const shown = rows.filter((r) => `${r.name} ${r.slug}`.toLowerCase().includes(query.trim().toLowerCase()))
 
   return (
-    <main className="mx-auto max-w-6xl space-y-5 px-6 py-10">
-      <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Shops ({rows.length})</h1>
+    <main className="space-y-6">
+      <PageHeader title="Shops" count={rows.length} description="Approve new shops, create one, or invite an owner." />
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{msg.text}</p>}
       {invite && <InviteBox shop={invite.shop} code={invite.code} onClose={() => setInvite(null)} />}
 
