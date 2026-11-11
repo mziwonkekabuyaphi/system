@@ -3,6 +3,7 @@
 
 import { useState, useTransition } from "react"
 
+import { ModulePicker } from "@/components/platform/ModulePicker"
 import { PageHeader } from "@/components/platform/PageHeader"
 import { CREATABLE_MODULES, type NewShopModule } from "@/lib/services/new-shop-modules"
 import { approveShop, createOwnerInvite, createShop, declineShop } from "./actions"
@@ -47,7 +48,11 @@ export function Tenants({ rows, pending }: { rows: Row[]; pending: Pending[] }) 
               <tr key={r.id}>
                 <td className="py-2 text-stone-900">{r.name}</td>
                 <td className="font-mono text-xs">{r.slug}</td>
-                <td>{r.status}</td>
+                <td>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${r.status === "active" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : r.status === "pending" ? "bg-amber-50 text-amber-800 ring-amber-200" : "bg-stone-100 text-stone-600 ring-stone-200"}`}>
+                    {r.status}
+                  </span>
+                </td>
                 <td className="text-right tabular-nums">{r.members}</td>
                 <td>{r.referredBy ?? "—"}</td>
                 <td>{date(r.createdAt)}</td>
@@ -91,35 +96,38 @@ function WaitingForApproval({ pending, busy, start, setMsg }: {
     picked[p.id] ?? CREATABLE_MODULES.filter((m) => p.requested.includes(m.key)).map((m) => m.key)
 
   return (
-    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
-      <p className="mb-2 text-sm font-semibold text-stone-800">Waiting for approval ({pending.length})</p>
-      <div className="divide-y divide-amber-200">
+    <section className="overflow-hidden rounded-2xl border border-amber-300 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-amber-200 bg-amber-50 px-5 py-3">
+        <h2 className="text-sm font-semibold text-stone-800">Waiting for approval</h2>
+        <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-amber-900">{pending.length}</span>
+      </div>
+      <div className="divide-y divide-stone-100">
         {pending.map((p) => {
           const chosen = current(p)
           return (
-            <div key={p.id} className="space-y-2 py-3 text-sm">
+            <div key={p.id} className="space-y-4 p-5 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold text-stone-900">{p.name}</h3>
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">Pending</span>
+                  </div>
+                  <p className="mt-0.5 font-mono text-xs text-stone-500">/{p.slug}</p>
+                </div>
+                <p className="text-xs text-stone-500">Signed up {date(p.createdAt)}</p>
+              </div>
+              <p className="text-xs text-stone-600">
+                {p.ownerName ?? "Owner"} · {p.ownerEmail ?? "no email"}
+                {p.requested.length === 0 && " · didn't ask for anything specific"}
+              </p>
               <div>
-                <span className="font-medium text-stone-900">{p.name}</span>{" "}
-                <span className="font-mono text-xs text-stone-500">{p.slug}</span>
-                <span className="ml-2 text-xs text-stone-500">signed up {date(p.createdAt)}</span>
-              </div>
-              <div className="text-xs text-stone-600">
-                {p.ownerName ?? "Owner"} · {p.ownerEmail ?? "no email"} · asked for: {p.requested.length ? p.requested.join(", ") : "nothing specific"}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-stone-700">
-                <span className="text-xs uppercase text-stone-400">Switch on</span>
-                {CREATABLE_MODULES.map((m) => (
-                  <label key={m.key} className="flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={chosen.includes(m.key)}
-                      onChange={(e) =>
-                        setPicked((cur) => ({ ...cur, [p.id]: e.target.checked ? [...chosen, m.key] : chosen.filter((k) => k !== m.key) }))
-                      }
-                    />
-                    {m.label}
-                  </label>
-                ))}
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400">Switch on when approved</p>
+                <ModulePicker
+                  value={chosen}
+                  requested={p.requested}
+                  disabled={busy}
+                  onChange={(next) => setPicked((cur) => ({ ...cur, [p.id]: next }))}
+                />
               </div>
               <div className="flex gap-2">
                 <button
@@ -154,7 +162,7 @@ function WaitingForApproval({ pending, busy, start, setMsg }: {
           )
         })}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -171,25 +179,18 @@ function NewShop({ busy, start, setMsg, setInvite }: {
   const [modules, setModules] = useState<NewShopModule[]>(CREATABLE_MODULES.filter((m) => m.defaultOn).map((m) => m.key))
 
   return (
-    <div className={card}>
-      <p className="mb-2 text-sm font-semibold text-stone-800">Create a shop</p>
-      <div className="flex flex-wrap gap-2">
+    <section className={`${card} space-y-4`}>
+      <h2 className="text-sm font-semibold text-stone-800">Create a shop</h2>
+      <div className="grid gap-2 sm:grid-cols-3">
         <input className={input} placeholder="Business name" value={name} onChange={(e) => { setName(e.target.value); if (!slugEdited) setSlug(slugify(e.target.value)) }} />
         <input className={input} placeholder="web-address" value={slug} onChange={(e) => { setSlug(e.target.value); setSlugEdited(true) }} />
         <input className={input} type="email" placeholder="Owner email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-sm text-stone-700">
-          <span className="text-xs uppercase text-stone-400">Switched on from day one</span>
-          {CREATABLE_MODULES.map((m) => (
-            <label key={m.key} className="flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={modules.includes(m.key)}
-                onChange={(e) => setModules((cur) => (e.target.checked ? [...cur, m.key] : cur.filter((k) => k !== m.key)))}
-              />
-              {m.label}
-            </label>
-          ))}
-        </div>
+      </div>
+      <div>
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400">Switched on from day one</p>
+        <ModulePicker value={modules} onChange={setModules} disabled={busy} />
+      </div>
+      <div>
         <button
           className={btn}
           disabled={busy}
@@ -210,11 +211,11 @@ function NewShop({ busy, start, setMsg, setInvite }: {
         >
           Create shop
         </button>
+        <p className="mt-2 text-xs text-stone-500">
+          You get an owner invite code. If you enter the owner&apos;s email, only that email can use the code.
+        </p>
       </div>
-      <p className="mt-2 text-xs text-stone-500">
-        You get an owner invite code. If you enter the owner&apos;s email, only that email can use the code.
-      </p>
-    </div>
+    </section>
   )
 }
 
