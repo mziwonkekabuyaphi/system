@@ -3,6 +3,7 @@
 
 import { useState, useTransition } from "react"
 
+import { PageHeader } from "@/components/platform/PageHeader"
 import {
   addAdjustment, approveSignup, createSalespersonAccount, markPayoutPaid, reassignTenant,
   rejectSignup, runMonthlyPayouts, setSalespersonStatus, updateRule,
@@ -40,8 +41,8 @@ export function PlatformSales(props: { salespeople: Salesperson[]; signups: Sign
   const pendingCount = props.signups.filter((s) => s.status === "pending").length
 
   return (
-    <main className="mx-auto max-w-6xl space-y-5 px-6 py-10">
-      <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Sales &amp; commissions</h1>
+    <main className="space-y-6">
+      <PageHeader title="Sales & commissions" description="Sign-ups from your salespeople, who they've brought in, and what you owe them." />
       <nav className="flex flex-wrap gap-2">
         {TABS.map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} className={`rounded-full px-4 py-1.5 text-sm ${tab === id ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-700"}`}>

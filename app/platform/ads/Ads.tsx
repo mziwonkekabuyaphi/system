@@ -3,6 +3,7 @@
 
 import { useState, useTransition, type ReactNode } from "react"
 
+import { PageHeader } from "@/components/platform/PageHeader"
 import {
   deleteCampaign, deleteSlide, deleteTier, generateBilling, previewShop, saveCampaign, saveGlobalSettings,
   saveShopAdSettings, saveSlide, saveTier, setBillingStatus, setCampaignStatus, setEarningStatus,
@@ -132,13 +133,11 @@ export function Ads({ data }: { data: AdsData }) {
   ]
 
   return (
-    <main className="mx-auto max-w-6xl space-y-5 px-6 py-10">
-      <div>
-        <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Kiosk ads</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Ads you sell that play on shop kiosks. Each shop earns a share of what the advertiser pays; shops on a plan with the opt-out can switch them off.
-        </p>
-      </div>
+    <main className="space-y-6">
+      <PageHeader
+        title="Kiosk ads"
+        description="Ads you sell that play on shop kiosks. Each shop earns a share of what the advertiser pays; shops on a plan with the opt-out can switch them off."
+      />
 
       {data.loadError && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">

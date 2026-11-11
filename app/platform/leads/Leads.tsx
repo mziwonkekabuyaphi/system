@@ -3,6 +3,7 @@
 
 import { useState, useTransition } from "react"
 
+import { PageHeader } from "@/components/platform/PageHeader"
 import { updateContactRequest, type LeadStatus } from "./actions"
 
 export interface LeadRow {
@@ -185,11 +186,8 @@ export function Leads({ rows, loadFailed }: { rows: LeadRow[]; loadFailed: boole
   const shown = filter === "all" ? rows : rows.filter((r) => r.status === filter)
 
   return (
-    <main className="mx-auto max-w-4xl space-y-5 px-6 py-10">
-      <div>
-        <h1 className="font-[family-name:var(--font-admin-serif)] text-3xl tracking-tight text-stone-900">Enquiries</h1>
-        <p className="mt-1 text-sm text-stone-500">Everyone who used “Book a demo” or “Ask a question” on the website.</p>
-      </div>
+    <main className="space-y-6">
+      <PageHeader title="Enquiries" description="Everyone who used “Book a demo” or “Ask a question” on the website." />
 
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
