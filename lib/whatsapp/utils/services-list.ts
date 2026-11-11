@@ -2,7 +2,8 @@
 /**
  * The QLess main menu — an interactive WhatsApp LIST with six core rows:
  * My Profile (always first), Book Now, Join Queue, Check Status, Reschedule, Cancel Now,
- * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on.
+ * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on, and a
+ * "My Passport" (wallet) row ONLY for tenants with the wallet module on.
  *
  * Same idea as the old Rands "services list": the menu is sent as a
  * `followUp` message after a short greeting, and every row has a fixed id.
@@ -37,6 +38,8 @@ export const MENU_ROW_IDS = {
   profile: "menu_profile",
   // Only shown for tenants with the "shisha" module switched on (see buildServicesListMessage).
   shisha: "menu_shisha",
+  // Only shown for tenants with the "wallet" module switched on (see buildServicesListMessage).
+  wallet: "menu_wallet",
   // Only shown to a verified staff member of a tenant with the "shifts" module on.
   staff: "menu_staff",
 } as const
@@ -53,10 +56,11 @@ export function isMenuRowId(id: string | null | undefined): id is MenuRowId {
  * @param options.staff Include the "Staff area" row (sender is a verified staff member, Shifts on). Default false.
  * @param options.shisha Include the Shisha Lounge row (tenant has the module on). Default false,
  *   so a caller that forgets the flag can never show a module the tenant doesn't have.
+ * @param options.wallet Include the My Passport row (tenant has the wallet module on). Same default-false rule.
  */
 export function buildServicesListMessage(
   bodyText: string,
-  options: { shisha?: boolean; staff?: boolean } = {},
+  options: { shisha?: boolean; staff?: boolean; wallet?: boolean } = {},
 ): FollowUpMessage {
   const moduleRows = options.shisha
     ? [
@@ -64,6 +68,15 @@ export function buildServicesListMessage(
           id: MENU_ROW_IDS.shisha,
           title: "💨 Shisha Lounge",
           description: "Start a session, refill coals or track yours",
+        },
+      ]
+    : []
+  const walletRows = options.wallet
+    ? [
+        {
+          id: MENU_ROW_IDS.wallet,
+          title: "🪪 My Passport", // 14 chars
+          description: "Check your balance and recent activity",
         },
       ]
     : []
@@ -113,6 +126,7 @@ export function buildServicesListMessage(
               description: "Cancel your booking or leave the queue",
             },
             ...moduleRows,
+            ...walletRows,
             ...staffRows,
           ],
         },
