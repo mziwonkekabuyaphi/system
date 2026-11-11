@@ -1,6 +1,7 @@
 // app/platform/modules/page.tsx — per-shop module switches for the platform admin.
 // Switchable here: kiosk, public display, staff clock-in, shisha.
 // Everything else is decided by the shop's plan and is shown read-only.
+// "On, hidden" = switched on but a module it needs is off (public.module_requires); see lib/tenant/effective-modules.ts.
 import { redirect } from "next/navigation"
 
 import { requirePlatformAdmin } from "@/lib/sales/auth"
@@ -36,7 +37,7 @@ const SWITCHABLE_KEYS = new Set(SWITCHABLE.map((m) => m.key))
 
 type Tenant = { id: string; name: string; slug: string; status: string; plan: string; staff_limit: number | null }
 type Mod = { id: string; key: string; name: string }
-type State = "on" | "off" | "no_plan" | "missing"
+type State = "on" | "off" | "blocked" | "no_plan" | "missing"
 
 export default async function PlatformModules({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   await requirePlatformAdmin()
@@ -44,15 +45,18 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
   const supabase = getSupabaseServerClient()
   if (!supabase) redirect("/login")
 
-  const [tenantsRes, modulesRes, planModulesRes, switchesRes, staffRes] = await Promise.all([
+  const [tenantsRes, modulesRes, planModulesRes, switchesRes, staffRes, matrixRes, requiresRes] = await Promise.all([
     supabase.from("tenants").select("id, name, slug, status, plan, staff_limit").order("name", { ascending: true }).limit(500),
     supabase.from("modules").select("id, key, name").order("key", { ascending: true }),
     supabase.from("plan_modules").select("plan_key, module_id"),
     supabase.from("tenant_modules").select("tenant_id, module_id, enabled"),
     supabase.from("staff").select("tenant_id").eq("active", true).limit(10000),
+    // Effective state for every shop in one call (modules + module_requires). Switch on + parent missing = "blocked".
+    supabase.rpc("platform_effective_matrix"),
+    supabase.from("module_requires").select("module_key, requires_key"),
   ])
 
-  const loadError = tenantsRes.error ?? modulesRes.error ?? planModulesRes.error ?? switchesRes.error ?? staffRes.error
+  const loadError = tenantsRes.error ?? modulesRes.error ?? planModulesRes.error ?? switchesRes.error ?? staffRes.error ?? matrixRes.error ?? requiresRes.error
   const activeStaff = new Map<string, number>()
   for (const r of (staffRes.data ?? []) as Array<{ tenant_id: string }>) {
     activeStaff.set(r.tenant_id, (activeStaff.get(r.tenant_id) ?? 0) + 1)
@@ -66,12 +70,30 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
     ((switchesRes.data ?? []) as any[]).map((r) => [`${r.tenant_id}:${r.module_id}`, r.enabled === true]),
   )
 
+  // Which modules each module needs ("Booking or Queue"), and each shop's effective state, from the database.
+  const labelOf = (key: string) => modules.find((m) => m.key === key)?.name ?? key
+  const parentsOf = new Map<string, string[]>()
+  for (const r of (requiresRes.data ?? []) as Array<{ module_key: string; requires_key: string }>) {
+    parentsOf.set(r.module_key, [...(parentsOf.get(r.module_key) ?? []), r.requires_key])
+  }
+  const needsText = (key: string) => {
+    const parents = parentsOf.get(key)
+    return parents && parents.length > 0 ? `needs ${parents.map(labelOf).join(" or ")}` : null
+  }
+  const blockedByParent = new Set<string>(
+    ((matrixRes.data ?? []) as Array<{ tenant_id: string; module_key: string; requirements_met: boolean }>)
+      .filter((r) => !r.requirements_met)
+      .map((r) => `${r.tenant_id}:${r.module_key}`),
+  )
+
   function stateOf(t: Tenant, spec: (typeof SWITCHABLE)[number]): State {
     const mod = moduleByKey.get(spec.key)
     if (!mod) return "missing"
     if (spec.planGated && !planHas.has(`${t.plan}:${mod.id}`)) return "no_plan"
     const row = rowFor.get(`${t.id}:${mod.id}`)
-    return (row === undefined ? spec.defaultOn : row) ? "on" : "off"
+    const switchedOn = row === undefined ? spec.defaultOn : row
+    if (switchedOn && blockedByParent.has(`${t.id}:${spec.key}`)) return "blocked"
+    return switchedOn ? "on" : "off"
   }
 
   // Plan-only modules, with the plans that include them.
@@ -131,18 +153,20 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
                         <form action={setTenantModuleAction} className="flex items-center gap-2">
                           <input type="hidden" name="tenantId" value={t.id} />
                           <input type="hidden" name="moduleKey" value={spec.key} />
-                          <input type="hidden" name="enable" value={state === "on" ? "false" : "true"} />
+                          <input type="hidden" name="enable" value={state === "on" || state === "blocked" ? "false" : "true"} />
                           <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${state === "on" ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-600"}`}
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${state === "on" ? "bg-emerald-100 text-emerald-800" : state === "blocked" ? "bg-amber-100 text-amber-800" : "bg-stone-100 text-stone-600"}`}
+                            title={state === "blocked" ? `Switched on, but hidden: ${needsText(spec.key)}` : undefined}
                           >
-                            {state === "on" ? "On" : "Off"}
+                            {state === "on" ? "On" : state === "blocked" ? "On, hidden" : "Off"}
                           </span>
                           <button
                             type="submit"
                             className="rounded-full border border-stone-300 px-3 py-1 text-xs text-stone-700 hover:bg-stone-100"
                           >
-                            {state === "on" ? "Switch off" : "Switch on"}
+                            {state === "on" || state === "blocked" ? "Switch off" : "Switch on"}
                           </button>
+                          {state === "blocked" && <span className="text-xs text-amber-700">{needsText(spec.key)}</span>}
                         </form>
                       )}
                     </td>
@@ -178,7 +202,10 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
         <div className="mt-2 divide-y divide-stone-100 text-sm">
           {planOnly.map((m) => (
             <div key={m.id} className="flex justify-between gap-4 py-2">
-              <span className="text-stone-900">{m.name}</span>
+              <span className="text-stone-900">
+                {m.name}
+                {needsText(m.key) && <span className="ml-2 text-xs text-stone-400">{needsText(m.key)}</span>}
+              </span>
               <span className="text-stone-500">{plansFor(m.id).join(", ") || "no plan"}</span>
             </div>
           ))}
