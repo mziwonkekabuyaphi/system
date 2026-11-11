@@ -55,6 +55,7 @@ import { isModuleEnabled } from "@/lib/tenant/modules"
 import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
+import type { EventsPermissions } from "./events/types"
 import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
 import { BOOKING_WINDOW_DAYS_AHEAD, BOOKING_WINDOW_DAYS_BACK, addDaysKey, dateKeyInTz, startOfDayUtc } from "./tz"
 import type {
@@ -782,7 +783,28 @@ export default async function AdminPage() {
     "shisha.operate",
     "shisha.manage",
     "shifts.view",
+    // Events & ticketing (its own module), plus the two Passport keys that decide whether
+    // the box office may charge a customer's Passport. Same batched lookup.
+    "events.view",
+    "events.manage",
+    "tickets.view",
+    "tickets.manage",
+    "tickets.issue",
+    "tickets.scan",
+    "wallet.operate",
+    "wallet.manage",
   ]
+
+  const NO_EVENTS_PERMISSIONS: EventsPermissions = {
+    eventsView: false,
+    eventsManage: false,
+    ticketsView: false,
+    ticketsManage: false,
+    ticketsIssue: false,
+    ticketsScan: false,
+  }
+  let eventsPermissions: EventsPermissions = NO_EVENTS_PERMISSIONS
+  let mayChargePassport = false
 
   let permissions: AdminStaffPermissions
   try {
@@ -800,6 +822,15 @@ export default async function AdminPage() {
       shishaManage: granted.has("shisha.manage"),
       shiftsView: granted.has("shifts.view"),
     }
+    eventsPermissions = {
+      eventsView: granted.has("events.view"),
+      eventsManage: granted.has("events.manage"),
+      ticketsView: granted.has("tickets.view"),
+      ticketsManage: granted.has("tickets.manage"),
+      ticketsIssue: granted.has("tickets.issue"),
+      ticketsScan: granted.has("tickets.scan"),
+    }
+    mayChargePassport = granted.has("wallet.operate") || granted.has("wallet.manage")
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
     permissions = {
@@ -882,6 +913,14 @@ export default async function AdminPage() {
   const shiftsEnabled = permissions.shiftsView
   // WhatsApp staff notifications: only offered when the shop has the WhatsApp module on.
   const whatsappEnabled = await isModuleEnabled(tenantId, "whatsapp").catch(() => false)
+  // Events is its own module (tenant_modules key "events"), switched by the platform admin.
+  // Off = no events permissions at all for this request, same fail-closed posture as above.
+  const eventsEnabled = await isModuleEnabled(tenantId, "events").catch(() => false)
+  if (!eventsEnabled) eventsPermissions = NO_EVENTS_PERMISSIONS
+  // Tickets can be paid from a customer's Passport only when that module is on and this
+  // person is allowed to charge one.
+  const walletOn = await isModuleEnabled(tenantId, "wallet").catch(() => false)
+  const canChargePassport = walletOn && mayChargePassport
 
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
@@ -900,6 +939,9 @@ export default async function AdminPage() {
       queueEnabled={products.queue}
       shishaEnabled={shishaEnabled}
       shiftsEnabled={shiftsEnabled}
+      eventsEnabled={eventsEnabled}
+      eventsPermissions={eventsPermissions}
+      canChargePassport={canChargePassport}
       whatsappEnabled={whatsappEnabled}
       staffEnabled={products.staff || products.booking || products.queue || products.shisha || products.shifts || products.payroll}
       initialConversations={inbox.conversations}

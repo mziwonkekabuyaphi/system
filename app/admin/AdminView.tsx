@@ -9,6 +9,8 @@ import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
 import { InboxManager } from "./InboxManager"
 import { QueueManager } from "./queue/QueueManager"
 import { ShishaManager, type ShishaSection } from "./shisha/ShishaManager"
+import { EventsManager } from "./events/EventsManager"
+import type { EventsPermissions, EventsSection } from "./events/types"
 import { SettingsManager } from "./SettingsManager"
 import { sidebarStyleVars } from "./sidebar-theme"
 import { StaffManager } from "./staff/StaffManager"
@@ -43,6 +45,9 @@ type Tab =
   | "shishaFlavours"
   | "shishaHookahs"
   | "shishaStations"
+  | "eventsList"
+  | "eventsBoxOffice"
+  | "eventsGate"
   | "inbox"
   | "staff"
   | "analytics"
@@ -65,6 +70,18 @@ const SECTION_SHISHA_TAB: Record<ShishaSection, Tab> = {
   flavours: "shishaFlavours",
   devices: "shishaHookahs",
   stations: "shishaStations",
+}
+
+/** Sidebar entry -> the Events page it opens. */
+const EVENTS_TAB_SECTION: Partial<Record<Tab, EventsSection>> = {
+  eventsList: "events",
+  eventsBoxOffice: "boxoffice",
+  eventsGate: "gate",
+}
+const SECTION_EVENTS_TAB: Record<EventsSection, Tab> = {
+  events: "eventsList",
+  boxoffice: "eventsBoxOffice",
+  gate: "eventsGate",
 }
 
 const SIDEBAR_COLLAPSED = 65 // px
@@ -202,6 +219,36 @@ function ShishaStationsIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function EventsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.2" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      <path d="m12 12.2.9 1.9 2.1.3-1.5 1.5.35 2.1L12 17l-1.85 1 .35-2.1L9 14.4l2.1-.3z" />
+    </svg>
+  )
+}
+
+function BoxOfficeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3.5 9.5 5 4.5h14l1.5 5" />
+      <path d="M3.5 9.5a2.8 2.8 0 0 0 5.5 0 2.8 2.8 0 0 0 6 0 2.8 2.8 0 0 0 5.5 0" />
+      <path d="M5 12.5V20h14v-7.5" />
+      <path d="M10 20v-4.5h4V20" />
+    </svg>
+  )
+}
+
+function GateIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+      <path d="M8 12h8" />
+    </svg>
+  )
+}
+
 function ChevronIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -219,6 +266,9 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "shishaFlavours", label: "Flavours", icon: ShishaFlavoursIcon },
   { id: "shishaHookahs", label: "Hookahs", icon: HookahIcon },
   { id: "shishaStations", label: "Stations", icon: ShishaStationsIcon },
+  { id: "eventsList", label: "Events", icon: EventsIcon },
+  { id: "eventsBoxOffice", label: "Box office", icon: BoxOfficeIcon },
+  { id: "eventsGate", label: "Gate", icon: GateIcon },
   { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
@@ -231,6 +281,8 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
   { label: "Control Centre", ids: ["today", "queue", "inbox", "staff"] },
   // Shown only while Shisha is switched on. Each entry is one page of the Shisha area.
   { label: "Shisha", ids: ["shishaCounter", "shishaRequests", "shishaSessions", "shishaFlavours", "shishaHookahs", "shishaStations"] },
+  // Shown only while Events is switched on and the caller holds the matching permissions.
+  { label: "Events", ids: ["eventsList", "eventsBoxOffice", "eventsGate"] },
   { label: "Analytics", ids: ["analytics"] },
   { label: "System", ids: ["billing", "settings"] },
 ]
@@ -247,6 +299,9 @@ export function AdminView({
   queueEnabled,
   shishaEnabled,
   shiftsEnabled,
+  eventsEnabled,
+  eventsPermissions,
+  canChargePassport,
   whatsappEnabled,
   staffEnabled,
   initialConversations,
@@ -280,6 +335,13 @@ export function AdminView({
   shishaEnabled: boolean
   /** Shifts module on the tenant's plan AND the caller has shifts.view (computed in page.tsx). */
   shiftsEnabled: boolean
+  /** The Events module is switched on for the shop (tenant_modules). page.tsx also zeroes
+   *  eventsPermissions when it is off, so both are safe to trust for showing tabs. */
+  eventsEnabled: boolean
+  eventsPermissions: EventsPermissions
+  /** Passport (the customer wallet) is on AND the caller may charge one (wallet.operate or
+   *  wallet.manage), so Box office offers Passport as a way to pay. */
+  canChargePassport: boolean
   whatsappEnabled: boolean
   /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
    *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
@@ -321,6 +383,13 @@ export function AdminView({
       case "shishaHookahs":
       case "shishaStations":
         return shishaEnabled && staffPermissions.shishaView
+      // Events: module on + the permission for that page. Every action re-checks both server-side.
+      case "eventsList":
+        return eventsEnabled && eventsPermissions.eventsView
+      case "eventsBoxOffice":
+        return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsIssue
+      case "eventsGate":
+        return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsScan
       // The counter and the customer request queue are for staff who run sessions.
       case "shishaCounter":
       case "shishaRequests":
@@ -364,6 +433,7 @@ export function AdminView({
   // the (now-empty/inapplicable) tab is shown at all.
   const visibleTabs = TABS.filter((t) => isTabVisible(t.id))
   const shishaSection = SHISHA_TAB_SECTION[tab] ?? null
+  const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
   // A shop with no Booking/Queue has little else, so its Shisha pages go at the top of the sidebar.
   const navGroups = hasBookingOrQueue ? NAV_GROUPS : [NAV_GROUPS[1], NAV_GROUPS[0], ...NAV_GROUPS.slice(2)]
 
@@ -594,7 +664,7 @@ export function AdminView({
               {brandName}
             </h1>
             <p className="mt-1 text-sm text-stone-500">
-              {shishaSection ? "Shisha · " : ""}
+              {shishaSection ? "Shisha · " : eventsSection ? "Events · " : ""}
               {TABS.find((t) => t.id === tab)?.label ?? ""}
             </p>
           </div>
@@ -627,6 +697,18 @@ export function AdminView({
               canManage={staffPermissions.shishaManage}
               section={shishaSection}
               onSectionChange={(next) => setTab(SECTION_SHISHA_TAB[next])}
+            />
+          )}
+          {/* One Events page for the three sidebar entries, so the event list stays loaded
+              while moving between Events, Box office and Gate (same idea as Shisha). */}
+          {eventsSection && isTabVisible(tab) && (
+            <EventsManager
+              section={eventsSection}
+              onSectionChange={(next) => setTab(SECTION_EVENTS_TAB[next])}
+              permissions={eventsPermissions}
+              timezone={timezone}
+              currency={initialTenantSettings?.currency ?? "ZAR"}
+              canChargePassport={canChargePassport}
             />
           )}
           {tab === "inbox" && isTabVisible("inbox") && (
