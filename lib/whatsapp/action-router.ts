@@ -70,6 +70,7 @@ import { WAITLIST_TAP_PATTERN, handleWaitlistTap } from "@/lib/services/waitlist
 import { profileService } from "@/lib/services/profile"
 import { shishaService } from "@/lib/services/shisha"
 import { passportService } from "@/lib/services/passport"
+import { eventTicketsService } from "@/lib/services/event-tickets"
 import { getStaffForPhone, staffBotService, STAFF_ID_PREFIX, STAFF_MAIN_MENU_TAP } from "@/lib/services/staff-bot"
 import { conciergeService } from "@/lib/ai/concierge"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
@@ -126,6 +127,9 @@ const intentHandlers: Record<string, Handler> = {
   // Module-gated ("wallet"): never reached for a tenant without it (see routeAction step -1a).
   // Stateless: one live read in, the Passport message + the menu out.
   wallet: passportReply,
+  // Module-gated ("events"): never reached for a tenant without it (see routeAction step -1a2).
+  // Stateless and read-only for now: the events on sale, or the customer's own tickets.
+  events: eventTicketsService.handle,
 }
 
 /**
@@ -146,15 +150,17 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
   [MENU_ROW_IDS.profile]: profileService.handleProfile,
   [MENU_ROW_IDS.shisha]: (tenantId, _intent, message) => shishaService.startShishaFlow(tenantId, message.from),
   [MENU_ROW_IDS.wallet]: passportReply,
+  [MENU_ROW_IDS.events]: eventTicketsService.handle,
 }
 
 // `unhandled: true` marks a genuine "we don't know what to do" reply —
 // handover.ts's shouldEscalate() uses this flag, not raw intent confidence.
 // A function, not a constant: the menu it carries depends on which modules the tenant has on.
 async function unknownStateReply(tenantId: string, phone?: string): Promise<ActionResult> {
-  const [shisha, wallet, products, staffIdentity] = await Promise.all([
+  const [shisha, wallet, events, products, staffIdentity] = await Promise.all([
     isModuleEnabled(tenantId, "shisha"),
     isModuleEnabled(tenantId, "wallet"),
+    isModuleEnabled(tenantId, "events"),
     getWhatsAppProducts(tenantId),
     phone ? getStaffForPhone(tenantId, phone) : Promise.resolve(null),
   ])
@@ -165,7 +171,7 @@ async function unknownStateReply(tenantId: string, phone?: string): Promise<Acti
     nextState: null,
     unhandled: true,
     followUp: [
-      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha, staff, wallet }), hiddenMenuRows(products)),
+      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha, staff, wallet, events }), hiddenMenuRows(products)),
     ],
   }
 }
@@ -301,15 +307,17 @@ const NOTHING_ON_REPLY = "Sorry, this shop doesn't take bookings or queue entrie
  * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const [shishaOn, walletOn, products, staffIdentity] = await Promise.all([
+  const [shishaOn, walletOn, eventsOn, products, staffIdentity] = await Promise.all([
     isModuleEnabled(tenantId, "shisha"),
     isModuleEnabled(tenantId, "wallet"),
+    isModuleEnabled(tenantId, "events"),
     getWhatsAppProducts(tenantId),
     getStaffForPhone(tenantId, message.from),
   ])
   const baseMenu = buildServicesListMessage(await menuPromptFor(tenantId), {
     shisha: shishaOn,
     wallet: walletOn,
+    events: eventsOn,
     staff: staffIdentity !== null,
   })
   // Only offer what this shop actually runs (a Booking-only shop never sees Join Queue, and so on).
@@ -317,7 +325,7 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
 
   // Neither Booking nor Queue (e.g. a shisha-only venue): nothing to book or queue for here.
   // A shop with only the Passport on still has something to offer (balance), so it is not a dead end.
-  if (!products.booking && !products.queue && !shishaOn && !walletOn) {
+  if (!products.booking && !products.queue && !shishaOn && !walletOn && !eventsOn) {
     // A verified staff member of a staff-only shop gets the staff menu instead of a dead end.
     if (staffIdentity) return staffBotService.entry(tenantId, staffIdentity)
     return { reply: NOTHING_ON_REPLY, buttons: [], nextState: null }
@@ -378,6 +386,7 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   if (products.queue && !openStatus.isClosed) can.push("join the walk-in queue")
   if (shishaOn) can.push("start a shisha session")
   if (walletOn) can.push("check your Passport balance")
+  if (eventsOn) can.push("see upcoming events and your tickets")
   const orList = (items: string[]) =>
     items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`
   const helpLine = can.length > 0 ? `I can help you ${orList(can)}.` : ""
@@ -497,6 +506,22 @@ export async function routeAction(
       return { ...fresh, reply: "Sorry, that service isn't available right now. What would you like to do instead?" }
     }
     // A typed request is handled like any other question (concierge / greeting + menu).
+    intent = { ...intent, intent: "support" }
+  }
+
+  // ── -1a2. MODULE GATE (events) ─────────────────────────────────────
+  // Same shape as the Passport gate above. Events is stateless for now, so only a tap on an
+  // OLD menu with the Events row, or a typed "my tickets" / "events" classified as the events
+  // intent, can reach a shop that has it off. Read the switch only in those two cases.
+  if (
+    (message.interactiveId === MENU_ROW_IDS.events || intent?.intent === "events") &&
+    !(await isModuleEnabled(tenantId, "events"))
+  ) {
+    if (message.interactiveId === MENU_ROW_IDS.events) {
+      await stateService.clearState(tenantId, message.from)
+      const fresh = await buildEntryReply(tenantId, message, false)
+      return { ...fresh, reply: "Sorry, that service isn't available right now. What would you like to do instead?" }
+    }
     intent = { ...intent, intent: "support" }
   }
 

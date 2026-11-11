@@ -92,6 +92,9 @@ const INTENTS = [
   "wallet",  // Their Passport (wallet): balance, recent activity, how to top up. MODULE-GATED per
              // tenant exactly like "shisha": action-router.ts downgrades it to "support" for any
              // tenant that has the wallet module off.
+  "events",  // Events & tickets: what is on, and the customer's own tickets. MODULE-GATED per
+             // tenant exactly like "shisha" / "wallet": action-router.ts downgrades it to "support"
+             // for any tenant that has the events module off.
   "support", // Needs a human: complaints, reschedule, running late, shop questions
   "unknown", // Greetings, chit-chat, or not enough information
 ] as const
@@ -342,6 +345,22 @@ const WALLET_PHRASES = new Set([
   "top up my wallet",
 ])
 
+// Exact-phrase allowlist for "show me the events / my tickets". Exact on purpose: a bare "ticket"
+// is also what the walk-in queue hands out, so it is NOT here. The menu label "🎟️ Events" and the
+// reply buttons "Events" / "My Tickets" arrive here as plain "events" / "my tickets".
+const EVENT_PHRASES = new Set([
+  "events",
+  "upcoming events",
+  "whats on",
+  "what's on",
+  "my events",
+  "my tickets",
+  "view my tickets",
+  "check my tickets",
+  "buy tickets",
+  "event tickets",
+])
+
 /**
  * Lowercases and strips punctuation/emoji so "Cancel!", "❌ Cancel Now" and
  * "[button reply] Check Status" all compare as plain words. A leading
@@ -442,6 +461,11 @@ function checkIntentFastPath(text: string): RoutedIntent | null {
   // Passport (wallet) balance (clear intent, exact phrases only)
   if (WALLET_PHRASES.has(normalized)) {
     return { intent: "wallet", confidence: 0.95, reasoning: "Fast-path: passport / wallet request" }
+  }
+
+  // Events & tickets (clear intent, exact phrases only)
+  if (EVENT_PHRASES.has(normalized)) {
+    return { intent: "events", confidence: 0.95, reasoning: "Fast-path: events / tickets request" }
   }
 
   // Profile overview (clear intent)
@@ -548,6 +572,19 @@ in. Examples of how the same intents sound locally:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE INTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+events
+Customer wants to know what events are on, or to see their own event tickets.
+Only for these: a question about prices of services, or about whether the shop
+hosts events, is "support". A walk-in queue ticket is NOT an event ticket.
+
+Examples:
+
+what events are on
+
+show me upcoming events
+
+my tickets
 
 wallet
 Customer wants to see their Passport / wallet: their balance, their recent
