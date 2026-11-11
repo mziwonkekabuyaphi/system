@@ -277,7 +277,7 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
   )
 
   // Which modules this shop runs. Everything below only draws figures for modules that are on.
-  const { booking, queue, shisha } = d.products
+  const { booking, queue, shisha, shifts } = d.products
   const bq = booking || queue
   const sh = d.shisha
   const shp = d.shishaPrevious
@@ -533,21 +533,25 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
         <Grid>
           <Kpi label="Active staff" value={formatNum(s.active_count)} compare={false} />
           <Kpi label="Clocked in now" value={formatNum(s.clocked_in_now)} compare={false} hint="Live snapshot" />
-          {K("Completed shifts", s.completed_shifts, p?.staff.completed_shifts, { hint: "Started in period" })}
-          {K("Shift hours", s.shift_hours, p?.staff.shift_hours, { fmt: String(s.shift_hours) })}
-          <Kpi label="Average shift" value={s.avg_shift_hours == null ? "–" : `${s.avg_shift_hours} h`} compare={false} />
+          {shifts && K("Completed shifts", s.completed_shifts, p?.staff.completed_shifts, { hint: "Started in period" })}
+          {shifts && K("Shift hours", s.shift_hours, p?.staff.shift_hours, { fmt: String(s.shift_hours) })}
+          {shifts && <Kpi label="Average shift" value={s.avg_shift_hours == null ? "–" : `${s.avg_shift_hours} h`} compare={false} />}
         </Grid>
-        <Card title={booking ? "Staff hours and appointments" : "Staff hours"} note="Hours use logout − login on completed shifts.">
-          <Table
-            cols={[
-              { h: "Staff" }, { h: "Shifts", align: "right" }, { h: "Hours", align: "right" },
-              ...(booking ? [{ h: "Appointments", align: "right" as const }, { h: "Completed", align: "right" as const }] : []),
-            ]}
-            rows={s.hours_by_staff.map((h) => [
-              h.name, h.shifts, h.hours,
-              ...(booking ? [perf.get(h.staff_id)?.scheduled ?? 0, perf.get(h.staff_id)?.completed ?? 0] : []),
-            ])} />
-        </Card>
+        {(shifts || booking) && (
+          <Card title={shifts && booking ? "Staff hours and appointments" : booking ? "Appointments by staff" : "Staff hours"} note={shifts ? "Hours use logout − login on completed shifts." : undefined}>
+            <Table
+              cols={[
+                { h: "Staff" },
+                ...(shifts ? [{ h: "Shifts", align: "right" as const }, { h: "Hours", align: "right" as const }] : []),
+                ...(booking ? [{ h: "Appointments", align: "right" as const }, { h: "Completed", align: "right" as const }] : []),
+              ]}
+              rows={s.hours_by_staff.map((h) => [
+                h.name,
+                ...(shifts ? [h.shifts, h.hours] : []),
+                ...(booking ? [perf.get(h.staff_id)?.scheduled ?? 0, perf.get(h.staff_id)?.completed ?? 0] : []),
+              ])} />
+          </Card>
+        )}
         <Grid cols={2}>
           <Card title="Admin activity by area"><HBars data={activity.map((a) => ({ label: a.category, value: a.count }))} /></Card>
           <Card title="Recent activity">
@@ -555,7 +559,7 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
               rows={s.recent_activity.filter((a) => areaVisible(a.category)).map((a) => [new Date(a.at).toLocaleString(undefined, { timeZone: d.timezone }), a.category, a.action])} />
           </Card>
         </Grid>
-        {s.shifts_using_fallback_hours > 0 && <Note>{s.shifts_using_fallback_hours} shift(s) had no valid logout time, so their stored hours_worked value was used.</Note>}
+        {shifts && s.shifts_using_fallback_hours > 0 && <Note>{s.shifts_using_fallback_hours} shift(s) had no valid logout time, so their stored hours_worked value was used.</Note>}
         {booking && <Note>Appointment counts come from bookings only: walk-in queue entries don't record which staff member served them.</Note>}
       </>
     )

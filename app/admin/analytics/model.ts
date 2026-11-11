@@ -147,8 +147,9 @@ export interface Payroll {
   by_staff: { staff_id: string; name: string; hours: number; gross: number; final: number }[]
 }
 
-/** Which modules are switched on for this shop (tenant_modules), same source Billing uses. */
-export interface EnabledProducts { booking: boolean; queue: boolean; shisha: boolean }
+/** Which modules are effectively on for this shop (own switch AND parents, via getEffectiveModules).
+ *  `shifts` is true when Shifts OR Staff clock-in is on, since either one records shift hours. */
+export interface EnabledProducts { booking: boolean; queue: boolean; shisha: boolean; shifts: boolean; payroll: boolean }
 
 /** Shisha activity for one reporting window. Built from shisha_sessions. */
 export interface ShishaStats {
