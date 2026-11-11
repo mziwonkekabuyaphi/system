@@ -12,6 +12,8 @@ import { QueueManager } from "./queue/QueueManager"
 import { ShishaManager, type ShishaSection } from "./shisha/ShishaManager"
 import { EventsManager } from "./events/EventsManager"
 import type { EventsPermissions, EventsSection } from "./events/types"
+import { VvipManager } from "./vvip/VvipManager"
+import type { VvipPermissions, VvipSection } from "./vvip/types"
 import { SettingsManager } from "./SettingsManager"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 import { sidebarStyleVars } from "./sidebar-theme"
@@ -53,6 +55,8 @@ type Tab =
   | "eventsList"
   | "eventsBoxOffice"
   | "eventsGate"
+  | "vvipTables"
+  | "vvipTabs"
   | "inbox"
   | "staff"
   | "analytics"
@@ -99,6 +103,16 @@ const SECTION_EVENTS_TAB: Record<EventsSection, Tab> = {
   events: "eventsList",
   boxoffice: "eventsBoxOffice",
   gate: "eventsGate",
+}
+
+/** Sidebar entry -> the VVIP page it opens. */
+const VVIP_TAB_SECTION: Partial<Record<Tab, VvipSection>> = {
+  vvipTables: "tables",
+  vvipTabs: "tabs",
+}
+const SECTION_VVIP_TAB: Record<VvipSection, Tab> = {
+  tables: "vvipTables",
+  tabs: "vvipTabs",
 }
 
 const SIDEBAR_COLLAPSED = 65 // px
@@ -296,6 +310,24 @@ function GateIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function VvipTablesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m4.5 8.5 2.8 2.9L12 6l4.7 5.4 2.8-2.9-1.2 8.5H5.7z" />
+      <path d="M6 20.5h12" />
+    </svg>
+  )
+}
+
+function VvipTabsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M6 3.5h12v17l-2.2-1.5-1.9 1.5-1.9-1.5-1.9 1.5-1.9-1.5L6 20.5z" />
+      <path d="M9 8.5h6M9 12h6M9 15.5h3.5" />
+    </svg>
+  )
+}
+
 function ChevronIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -319,6 +351,8 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "eventsList", label: "Events", icon: EventsIcon },
   { id: "eventsBoxOffice", label: "Box office", icon: BoxOfficeIcon },
   { id: "eventsGate", label: "Gate", icon: GateIcon },
+  { id: "vvipTables", label: "VVIP tables", icon: VvipTablesIcon },
+  { id: "vvipTabs", label: "VVIP tabs", icon: VvipTabsIcon },
   { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
@@ -334,7 +368,8 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
   // Shown only while Passport (the customer wallet) is switched on and the caller can view it.
   { label: "Passport", ids: ["passportOverview", "passportAccounts", "passportRefunds"] },
   // Shown only while Events is switched on and the caller holds the matching permissions.
-  { label: "Events", ids: ["eventsList", "eventsBoxOffice", "eventsGate"] },
+  // The VVIP pages sit under Events but have their own module switch (needs Events), so a shop can run Events without them.
+  { label: "Events", ids: ["eventsList", "eventsBoxOffice", "eventsGate", "vvipTables", "vvipTabs"] },
   { label: "Analytics", ids: ["analytics"] },
   { label: "System", ids: ["billing", "settings"] },
 ]
@@ -353,6 +388,8 @@ export function AdminView({
   shiftsEnabled,
   eventsEnabled,
   eventsPermissions,
+  vvipEnabled,
+  vvipPermissions,
   whatsappEnabled,
   staffEnabled,
   settingsModules,
@@ -391,6 +428,10 @@ export function AdminView({
    *  eventsPermissions when it is off, so both are safe to trust for showing tabs. */
   eventsEnabled: boolean
   eventsPermissions: EventsPermissions
+  /** The VVIP module is effectively on for the shop: its own switch AND Events AND Passport (module_requires,
+   *  resolved in page.tsx). page.tsx also zeroes vvipPermissions when it is off. */
+  vvipEnabled: boolean
+  vvipPermissions: VvipPermissions
   whatsappEnabled: boolean
   /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
    *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
@@ -450,6 +491,11 @@ export function AdminView({
         return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsIssue
       case "eventsGate":
         return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsScan
+      // VVIP: its own module switch (which needs Events, which needs Passport) + vvip.view +
+      // events.view. The actions re-check all of it server-side.
+      case "vvipTables":
+      case "vvipTabs":
+        return vvipEnabled && vvipPermissions.view && eventsPermissions.eventsView
       // Passport: module switched on + wallet.view (page.tsx zeroes the permissions when it is off).
       // The actions re-check both server-side.
       case "passportOverview":
@@ -497,6 +543,7 @@ export function AdminView({
   const shishaSection = SHISHA_TAB_SECTION[tab] ?? null
   const passportSection = PASSPORT_TAB_SECTION[tab] ?? null
   const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
+  const vvipSection = VVIP_TAB_SECTION[tab] ?? null
   // A shop with no Booking/Queue has little else, so its Shisha pages go at the top of the sidebar.
   const navGroups = hasBookingOrQueue ? NAV_GROUPS : [NAV_GROUPS[1], NAV_GROUPS[0], ...NAV_GROUPS.slice(2)]
 
@@ -727,7 +774,7 @@ export function AdminView({
               {brandName}
             </h1>
             <p className="mt-1 text-sm text-stone-500">
-              {shishaSection ? "Shisha · " : passportSection ? "Passport · " : eventsSection ? "Events · " : ""}
+              {shishaSection ? "Shisha · " : passportSection ? "Passport · " : eventsSection || vvipSection ? "Events · " : ""}
               {TABS.find((t) => t.id === tab)?.label ?? ""}
             </p>
           </div>
@@ -783,6 +830,20 @@ export function AdminView({
               currency={initialTenantSettings?.currency ?? "ZAR"}
               // Passport pays for tickets only when it is on (page.tsx zeroes walletView when off)
               // and this person is allowed to charge one.
+              canChargePassport={
+                staffPermissions.walletView && (staffPermissions.walletOperate || staffPermissions.walletManage)
+              }
+            />
+          )}
+          {/* One VVIP page for both sidebar entries, so packages and bookings stay loaded while moving
+              between VVIP tables and VVIP tabs (same idea as Events above). */}
+          {vvipSection && isTabVisible(tab) && (
+            <VvipManager
+              section={vvipSection}
+              onSectionChange={(next) => setTab(SECTION_VVIP_TAB[next])}
+              permissions={vvipPermissions}
+              timezone={timezone}
+              currency={initialTenantSettings?.currency ?? "ZAR"}
               canChargePassport={
                 staffPermissions.walletView && (staffPermissions.walletOperate || staffPermissions.walletManage)
               }

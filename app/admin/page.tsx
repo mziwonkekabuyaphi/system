@@ -56,6 +56,7 @@ import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS
 
 import { AdminView } from "./AdminView"
 import type { EventsPermissions } from "./events/types"
+import type { VvipPermissions } from "./vvip/types"
 import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
 import { BOOKING_WINDOW_DAYS_AHEAD, BOOKING_WINDOW_DAYS_BACK, addDaysKey, dateKeyInTz, startOfDayUtc } from "./tz"
 import type {
@@ -793,6 +794,10 @@ export default async function AdminPage() {
     "tickets.manage",
     "tickets.issue",
     "tickets.scan",
+    // VVIP tables (their own module switch; needs Events). Same batched lookup.
+    "vvip.view",
+    "vvip.operate",
+    "vvip.manage",
   ]
 
   const NO_EVENTS_PERMISSIONS: EventsPermissions = {
@@ -804,6 +809,9 @@ export default async function AdminPage() {
     ticketsScan: false,
   }
   let eventsPermissions: EventsPermissions = NO_EVENTS_PERMISSIONS
+
+  const NO_VVIP_PERMISSIONS: VvipPermissions = { view: false, operate: false, manage: false }
+  let vvipPermissions: VvipPermissions = NO_VVIP_PERMISSIONS
 
   let permissions: AdminStaffPermissions
   try {
@@ -831,6 +839,11 @@ export default async function AdminPage() {
       ticketsManage: granted.has("tickets.manage"),
       ticketsIssue: granted.has("tickets.issue"),
       ticketsScan: granted.has("tickets.scan"),
+    }
+    vvipPermissions = {
+      view: granted.has("vvip.view"),
+      operate: granted.has("vvip.operate"),
+      manage: granted.has("vvip.manage"),
     }
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
@@ -870,6 +883,10 @@ export default async function AdminPage() {
   // Events needs its own switch AND Passport (module_requires: events -> wallet).
   const eventsEnabled = mods.on("events")
   if (!eventsEnabled) eventsPermissions = NO_EVENTS_PERMISSIONS
+  // VVIP is its own add-on switch and needs Events (module_requires: vvip -> events -> wallet), so Passport
+  // controls it through Events. Off = same fail-closed zeroing, even for an owner.
+  const vvipEnabled = mods.on("vvip")
+  if (!vvipEnabled) vvipPermissions = NO_VVIP_PERMISSIONS
 
   // Services and full Settings data are owner-only. A tenant_staff caller
   // never triggers getAllServices()/getSettingsData() at all for this
@@ -946,6 +963,8 @@ export default async function AdminPage() {
       shiftsEnabled={shiftsEnabled}
       eventsEnabled={eventsEnabled}
       eventsPermissions={eventsPermissions}
+      vvipEnabled={vvipEnabled}
+      vvipPermissions={vvipPermissions}
       whatsappEnabled={whatsappEnabled}
       staffEnabled={["staff", "booking", "queue", "shisha", "shifts", "payroll"].some((k) => mods.on(k))}
       settingsModules={mods.flags()}
