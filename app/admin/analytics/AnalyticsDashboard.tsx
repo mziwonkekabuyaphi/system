@@ -9,7 +9,7 @@ import {
   type AnalyticsData, type Preset,
 } from "./model"
 
-type TabId = "overview" | "bookings" | "queue" | "shisha" | "customers" | "services" | "staff" | "messaging" | "billing" | "payroll"
+type TabId = "overview" | "bookings" | "queue" | "shisha" | "vvip" | "customers" | "services" | "staff" | "messaging" | "billing" | "payroll"
 
 const PRESETS: { id: Preset; label: string }[] = [
   { id: "7d", label: "Last 7 days" },
@@ -170,6 +170,7 @@ export function AnalyticsDashboard() {
     ...(pr?.booking ? [{ id: "bookings" as const, label: "Bookings" }] : []),
     ...(pr?.queue ? [{ id: "queue" as const, label: "Queue" }] : []),
     ...(pr?.shisha && data?.shisha ? [{ id: "shisha" as const, label: "Shisha" }] : []),
+    ...(pr?.vvip && data?.vvip ? [{ id: "vvip" as const, label: "VVIP" }] : []),
     ...(runsBookingQueue
       ? [{ id: "customers" as const, label: "Customers" }, { id: "services" as const, label: "Services" }]
       : []),
@@ -460,6 +461,44 @@ function Section({ tab, d, compare }: { tab: TabId; d: AnalyticsData; compare: b
             rows={sh.by_payment.map((x) => [paymentLabel(x.method), x.count, money(x.amount)])} empty="No completed sessions in this period." />
         </Card>
         <Note>Sessions are counted by the day they started. Revenue is the total on completed sessions and already includes refill charges. It is sales taken at your venue, not what you owe the platform.</Note>
+      </>
+    )
+  }
+
+  if (tab === "vvip" && d.vvip) {
+    const v = d.vvip
+    const label = (m: string) => m.replace(/_/g, " ").replace(/^./, (x) => x.toUpperCase())
+    return (
+      <>
+        <Grid>
+          <Kpi label="Bookings" value={formatNum(v.active_bookings)} compare={false} hint="Created in period, excl. cancelled / no-show" />
+          <Kpi label="Completed" value={formatNum(v.completed)} compare={false} />
+          <Kpi label="Revenue" value={money(v.revenue)} compare={false} hint="Package prices paid" />
+          <Kpi label="Refunded" value={money(v.refunded)} compare={false} />
+          <Kpi label="Tab credit issued" value={money(v.tab_issued)} compare={false} />
+          <Kpi label="Tab spent" value={money(v.tab_spent)} compare={false} hint="Posted in period" />
+          <Kpi label="Tab outstanding" value={money(v.tab_outstanding)} compare={false} hint="Live bookings, right now" />
+          <Kpi label="Cancelled / no-show" value={`${formatNum(v.cancelled)} / ${formatNum(v.no_show)}`} compare={false} />
+        </Grid>
+        <Grid cols={2}>
+          <Card title="VVIP bookings per day" note="By the day the booking was made.">
+            <LineChart label="VVIP bookings per day" labels={v.by_day.map((r) => r.date)} series={[{ name: "Bookings", values: v.by_day.map((r) => r.bookings) }]} />
+          </Card>
+          <Card title="Revenue per day">
+            <LineChart label="VVIP revenue per day" labels={v.by_day.map((r) => r.date)} series={[{ name: "Revenue", values: v.by_day.map((r) => r.revenue) }]} />
+          </Card>
+          <Card title="Top packages" note="By bookings.">
+            <HBars data={v.by_package.slice(0, 6).map((x) => ({ label: x.name, value: x.bookings }))} />
+          </Card>
+          <Card title="Booking status">
+            <Donut label="VVIP bookings by status" data={v.by_status.map((x) => ({ label: label(x.status), value: x.count }))} />
+          </Card>
+        </Grid>
+        <Card title="Payment methods" note="Bookings not cancelled or no-show.">
+          <Table cols={[{ h: "Method" }, { h: "Bookings", align: "right" }, { h: "Amount", align: "right" }]}
+            rows={v.by_payment.map((x) => [label(x.method), x.count, money(x.amount)])} empty="No VVIP bookings in this period." />
+        </Card>
+        <Note>Bookings are counted by the day they were made. Tab figures cover the drinks and food tab attached to each VVIP table.</Note>
       </>
     )
   }
