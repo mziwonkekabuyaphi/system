@@ -7,6 +7,7 @@ import { LogoutButton } from "@/components/admin/LogoutButton"
 import { BillingPanel } from "@/components/admin/BillingPanel"
 import { AnalyticsDashboard } from "./analytics/AnalyticsDashboard"
 import { InboxManager } from "./InboxManager"
+import { PassportManager, type PassportSection } from "./passport/PassportManager"
 import { QueueManager } from "./queue/QueueManager"
 import { ShishaManager, type ShishaSection } from "./shisha/ShishaManager"
 import { EventsManager } from "./events/EventsManager"
@@ -45,6 +46,9 @@ type Tab =
   | "shishaFlavours"
   | "shishaHookahs"
   | "shishaStations"
+  | "passportOverview"
+  | "passportAccounts"
+  | "passportRefunds"
   | "eventsList"
   | "eventsBoxOffice"
   | "eventsGate"
@@ -70,6 +74,18 @@ const SECTION_SHISHA_TAB: Record<ShishaSection, Tab> = {
   flavours: "shishaFlavours",
   devices: "shishaHookahs",
   stations: "shishaStations",
+}
+
+/** Sidebar entry -> the Passport page it opens. */
+const PASSPORT_TAB_SECTION: Partial<Record<Tab, PassportSection>> = {
+  passportOverview: "overview",
+  passportAccounts: "accounts",
+  passportRefunds: "refunds",
+}
+const SECTION_PASSPORT_TAB: Record<PassportSection, Tab> = {
+  overview: "passportOverview",
+  accounts: "passportAccounts",
+  refunds: "passportRefunds",
 }
 
 /** Sidebar entry -> the Events page it opens. */
@@ -219,6 +235,36 @@ function ShishaStationsIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function PassportOverviewIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v1.5" />
+      <path d="M4 7.5V17a2 2 0 0 0 2 2h12.5a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H6.5A2.5 2.5 0 0 1 4 7.5Z" />
+      <circle cx="16" cy="13.5" r="1.1" />
+    </svg>
+  )
+}
+
+function PassportAccountsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="4.5" y="3.5" width="15" height="17" rx="2" />
+      <circle cx="12" cy="10" r="2.6" />
+      <path d="M8 16.5c.6-1.7 2.1-2.6 4-2.6s3.4.9 4 2.6" />
+    </svg>
+  )
+}
+
+function PassportRefundsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 12a8 8 0 1 0 2.6-5.9" />
+      <path d="M4 4.5v4h4" />
+      <path d="M12 8.5v3.8l2.4 1.4" />
+    </svg>
+  )
+}
+
 function EventsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -266,6 +312,9 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "shishaFlavours", label: "Flavours", icon: ShishaFlavoursIcon },
   { id: "shishaHookahs", label: "Hookahs", icon: HookahIcon },
   { id: "shishaStations", label: "Stations", icon: ShishaStationsIcon },
+  { id: "passportOverview", label: "Overview", icon: PassportOverviewIcon },
+  { id: "passportAccounts", label: "Accounts", icon: PassportAccountsIcon },
+  { id: "passportRefunds", label: "Refunds", icon: PassportRefundsIcon },
   { id: "eventsList", label: "Events", icon: EventsIcon },
   { id: "eventsBoxOffice", label: "Box office", icon: BoxOfficeIcon },
   { id: "eventsGate", label: "Gate", icon: GateIcon },
@@ -281,6 +330,8 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
   { label: "Control Centre", ids: ["today", "queue", "inbox", "staff"] },
   // Shown only while Shisha is switched on. Each entry is one page of the Shisha area.
   { label: "Shisha", ids: ["shishaCounter", "shishaRequests", "shishaSessions", "shishaFlavours", "shishaHookahs", "shishaStations"] },
+  // Shown only while Passport (the customer wallet) is switched on and the caller can view it.
+  { label: "Passport", ids: ["passportOverview", "passportAccounts", "passportRefunds"] },
   // Shown only while Events is switched on and the caller holds the matching permissions.
   { label: "Events", ids: ["eventsList", "eventsBoxOffice", "eventsGate"] },
   { label: "Analytics", ids: ["analytics"] },
@@ -301,7 +352,6 @@ export function AdminView({
   shiftsEnabled,
   eventsEnabled,
   eventsPermissions,
-  canChargePassport,
   whatsappEnabled,
   staffEnabled,
   initialConversations,
@@ -339,9 +389,6 @@ export function AdminView({
    *  eventsPermissions when it is off, so both are safe to trust for showing tabs. */
   eventsEnabled: boolean
   eventsPermissions: EventsPermissions
-  /** Passport (the customer wallet) is on AND the caller may charge one (wallet.operate or
-   *  wallet.manage), so Box office offers Passport as a way to pay. */
-  canChargePassport: boolean
   whatsappEnabled: boolean
   /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
    *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
@@ -383,6 +430,10 @@ export function AdminView({
       case "shishaHookahs":
       case "shishaStations":
         return shishaEnabled && staffPermissions.shishaView
+      // The counter and the customer request queue are for staff who run sessions.
+      case "shishaCounter":
+      case "shishaRequests":
+        return shishaEnabled && staffPermissions.shishaView && staffPermissions.shishaOperate
       // Events: module on + the permission for that page. Every action re-checks both server-side.
       case "eventsList":
         return eventsEnabled && eventsPermissions.eventsView
@@ -390,10 +441,12 @@ export function AdminView({
         return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsIssue
       case "eventsGate":
         return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsScan
-      // The counter and the customer request queue are for staff who run sessions.
-      case "shishaCounter":
-      case "shishaRequests":
-        return shishaEnabled && staffPermissions.shishaView && staffPermissions.shishaOperate
+      // Passport: module switched on + wallet.view (page.tsx zeroes the permissions when it is off).
+      // The actions re-check both server-side.
+      case "passportOverview":
+      case "passportAccounts":
+      case "passportRefunds":
+        return staffPermissions.walletView
       // Analytics has its own permission key (analytics.view). The server
       // action in app/admin/analytics/actions.ts re-checks it.
       case "analytics":
@@ -433,6 +486,7 @@ export function AdminView({
   // the (now-empty/inapplicable) tab is shown at all.
   const visibleTabs = TABS.filter((t) => isTabVisible(t.id))
   const shishaSection = SHISHA_TAB_SECTION[tab] ?? null
+  const passportSection = PASSPORT_TAB_SECTION[tab] ?? null
   const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
   // A shop with no Booking/Queue has little else, so its Shisha pages go at the top of the sidebar.
   const navGroups = hasBookingOrQueue ? NAV_GROUPS : [NAV_GROUPS[1], NAV_GROUPS[0], ...NAV_GROUPS.slice(2)]
@@ -664,7 +718,7 @@ export function AdminView({
               {brandName}
             </h1>
             <p className="mt-1 text-sm text-stone-500">
-              {shishaSection ? "Shisha · " : eventsSection ? "Events · " : ""}
+              {shishaSection ? "Shisha · " : passportSection ? "Passport · " : eventsSection ? "Events · " : ""}
               {TABS.find((t) => t.id === tab)?.label ?? ""}
             </p>
           </div>
@@ -699,8 +753,18 @@ export function AdminView({
               onSectionChange={(next) => setTab(SECTION_SHISHA_TAB[next])}
             />
           )}
+          {/* One Passport page for the three sidebar entries, same idea as Shisha above. */}
+          {passportSection && isTabVisible(tab) && (
+            <PassportManager
+              timezone={timezone}
+              canOperate={staffPermissions.walletOperate || staffPermissions.walletManage}
+              canManage={staffPermissions.walletManage}
+              section={passportSection}
+              onSectionChange={(next) => setTab(SECTION_PASSPORT_TAB[next])}
+            />
+          )}
           {/* One Events page for the three sidebar entries, so the event list stays loaded
-              while moving between Events, Box office and Gate (same idea as Shisha). */}
+              while moving between Events, Box office and Gate (same idea as Shisha/Passport). */}
           {eventsSection && isTabVisible(tab) && (
             <EventsManager
               section={eventsSection}
@@ -708,7 +772,11 @@ export function AdminView({
               permissions={eventsPermissions}
               timezone={timezone}
               currency={initialTenantSettings?.currency ?? "ZAR"}
-              canChargePassport={canChargePassport}
+              // Passport pays for tickets only when it is on (page.tsx zeroes walletView when off)
+              // and this person is allowed to charge one.
+              canChargePassport={
+                staffPermissions.walletView && (staffPermissions.walletOperate || staffPermissions.walletManage)
+              }
             />
           )}
           {tab === "inbox" && isTabVisible("inbox") && (
@@ -759,6 +827,8 @@ export function AdminView({
               queueEnabled={queueEnabled}
               shishaEnabled={shishaEnabled && staffPermissions.shishaView}
               shishaManage={staffPermissions.shishaManage}
+              passportEnabled={staffPermissions.walletView}
+              passportManage={staffPermissions.walletManage}
               initialServices={initialServices}
               servicesManage={staffPermissions.servicesManage}
             />

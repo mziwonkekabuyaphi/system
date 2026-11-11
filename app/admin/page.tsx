@@ -783,16 +783,16 @@ export default async function AdminPage() {
     "shisha.operate",
     "shisha.manage",
     "shifts.view",
-    // Events & ticketing (its own module), plus the two Passport keys that decide whether
-    // the box office may charge a customer's Passport. Same batched lookup.
+    "wallet.view",
+    "wallet.operate",
+    "wallet.manage",
+    // Events & ticketing (its own module). Same batched lookup.
     "events.view",
     "events.manage",
     "tickets.view",
     "tickets.manage",
     "tickets.issue",
     "tickets.scan",
-    "wallet.operate",
-    "wallet.manage",
   ]
 
   const NO_EVENTS_PERMISSIONS: EventsPermissions = {
@@ -804,7 +804,6 @@ export default async function AdminPage() {
     ticketsScan: false,
   }
   let eventsPermissions: EventsPermissions = NO_EVENTS_PERMISSIONS
-  let mayChargePassport = false
 
   let permissions: AdminStaffPermissions
   try {
@@ -821,6 +820,9 @@ export default async function AdminPage() {
       shishaOperate: granted.has("shisha.operate"),
       shishaManage: granted.has("shisha.manage"),
       shiftsView: granted.has("shifts.view"),
+      walletView: granted.has("wallet.view"),
+      walletOperate: granted.has("wallet.operate"),
+      walletManage: granted.has("wallet.manage"),
     }
     eventsPermissions = {
       eventsView: granted.has("events.view"),
@@ -830,7 +832,6 @@ export default async function AdminPage() {
       ticketsIssue: granted.has("tickets.issue"),
       ticketsScan: granted.has("tickets.scan"),
     }
-    mayChargePassport = granted.has("wallet.operate") || granted.has("wallet.manage")
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
     permissions = {
@@ -845,6 +846,9 @@ export default async function AdminPage() {
       shishaOperate: false,
       shishaManage: false,
       shiftsView: false,
+      walletView: false,
+      walletOperate: false,
+      walletManage: false,
     }
   }
 
@@ -857,6 +861,13 @@ export default async function AdminPage() {
   if (!products.payroll) permissions = { ...permissions, payrollView: false, payrollManage: false }
   if (!products.shisha) permissions = { ...permissions, shishaView: false, shishaOperate: false, shishaManage: false }
   if (!products.shifts) permissions = { ...permissions, shiftsView: false }
+  // Passport (customer wallet) is its own module (tenant_modules key "wallet"), switched by the platform admin.
+  const walletOn = await isModuleEnabled(tenantId, "wallet").catch(() => false)
+  if (!walletOn) permissions = { ...permissions, walletView: false, walletOperate: false, walletManage: false }
+  // Events is its own module (tenant_modules key "events"), switched by the platform admin.
+  // Off = no events permissions at all for this request, same fail-closed posture as above.
+  const eventsEnabled = await isModuleEnabled(tenantId, "events").catch(() => false)
+  if (!eventsEnabled) eventsPermissions = NO_EVENTS_PERMISSIONS
 
   // Services and full Settings data are owner-only. A tenant_staff caller
   // never triggers getAllServices()/getSettingsData() at all for this
@@ -913,14 +924,6 @@ export default async function AdminPage() {
   const shiftsEnabled = permissions.shiftsView
   // WhatsApp staff notifications: only offered when the shop has the WhatsApp module on.
   const whatsappEnabled = await isModuleEnabled(tenantId, "whatsapp").catch(() => false)
-  // Events is its own module (tenant_modules key "events"), switched by the platform admin.
-  // Off = no events permissions at all for this request, same fail-closed posture as above.
-  const eventsEnabled = await isModuleEnabled(tenantId, "events").catch(() => false)
-  if (!eventsEnabled) eventsPermissions = NO_EVENTS_PERMISSIONS
-  // Tickets can be paid from a customer's Passport only when that module is on and this
-  // person is allowed to charge one.
-  const walletOn = await isModuleEnabled(tenantId, "wallet").catch(() => false)
-  const canChargePassport = walletOn && mayChargePassport
 
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
@@ -941,7 +944,6 @@ export default async function AdminPage() {
       shiftsEnabled={shiftsEnabled}
       eventsEnabled={eventsEnabled}
       eventsPermissions={eventsPermissions}
-      canChargePassport={canChargePassport}
       whatsappEnabled={whatsappEnabled}
       staffEnabled={products.staff || products.booking || products.queue || products.shisha || products.shifts || products.payroll}
       initialConversations={inbox.conversations}

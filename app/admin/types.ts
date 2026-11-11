@@ -94,6 +94,11 @@ export interface AdminStaffPermissions {
   shishaManage: boolean
   /** shifts.view — shows the Shifts tab (also needs the shifts module on the plan). Managers additionally hold shifts.manage, re-checked server-side. */
   shiftsView: boolean
+  /** wallet.view / wallet.operate / wallet.manage (Passport, the customer wallet) — resolved in app/admin/page.tsx,
+   *  and all false when the shop's Passport module is switched off. */
+  walletView: boolean
+  walletOperate: boolean
+  walletManage: boolean
 }
 
 /** A currently-open row in staff_shifts, joined with the staff member's

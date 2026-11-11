@@ -21,10 +21,11 @@ import { BusinessInfoPanel, OpeningHoursPanel, todayIndex } from "./settings/Bus
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
+import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "shisha"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "shisha" | "passport"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -89,6 +90,13 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <path d="M15.8 14c2.4.2 3.7 1.3 3.7 3" />
     </RailIcon>
   ),
+  passport: (p) => (
+    <RailIcon {...p}>
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18a2 2 0 0 1 2 2v1.5" />
+      <path d="M4 7.5V17a2 2 0 0 0 2 2h12.5a1.5 1.5 0 0 0 1.5-1.5v-8a1.5 1.5 0 0 0-1.5-1.5H6.5A2.5 2.5 0 0 1 4 7.5Z" />
+      <circle cx="16" cy="13.5" r="1.1" />
+    </RailIcon>
+  ),
 }
 
 // Same widths and timing as the main admin sidebar (200ms width, labels fade in after 100ms).
@@ -109,7 +117,7 @@ const SETTINGS_NAV: Array<{
     /** Shown only when at least one of these products is switched on for the shop
      *  (tenant_modules). Omitted = shared by every shop. The save actions re-check
      *  this server-side; hiding here is only so owners aren't shown dead controls. */
-    needs?: Array<"booking" | "queue" | "shisha">
+    needs?: Array<"booking" | "queue" | "shisha" | "passport">
   }>
 }> = [
   {
@@ -161,6 +169,13 @@ const SETTINGS_NAV: Array<{
         description: "Session length, refill warning and whether a station is required.",
         needs: ["shisha"],
       },
+      {
+        id: "passport",
+        label: "Passport settings",
+        title: "Passport settings",
+        description: "Top-up limits and whether customers can top up their own Passport.",
+        needs: ["passport"],
+      },
     ],
   },
 ]
@@ -200,6 +215,8 @@ export function SettingsManager({
   queueEnabled = true,
   shishaEnabled = false,
   shishaManage = false,
+  passportEnabled = false,
+  passportManage = false,
   initialServices = [],
   servicesManage = true,
 }: {
@@ -239,6 +256,10 @@ export function SettingsManager({
   shishaEnabled?: boolean
   /** Caller has shisha.manage (can save Shisha settings). */
   shishaManage?: boolean
+  /** Passport (customer wallet) switched on for this shop and the caller has wallet.view. Shows Settings > Passport settings. */
+  passportEnabled?: boolean
+  /** Caller has wallet.manage (can save Passport settings). */
+  passportManage?: boolean
   /** Services list (loaded in page.tsx, already [] for a caller without services.manage). */
   initialServices?: AdminService[]
   /** Whether the caller has services.manage. The Services page is hidden without it. */
@@ -256,7 +277,7 @@ export function SettingsManager({
   // each re-opening with the stale server-rendered copy.
   const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
 
-  const enabled = { booking: bookingEnabled, queue: queueEnabled, shisha: shishaEnabled }
+  const enabled = { booking: bookingEnabled, queue: queueEnabled, shisha: shishaEnabled, passport: passportEnabled }
   const settingsNav = SETTINGS_NAV.map((g) => ({
     ...g,
     items: g.items
@@ -402,6 +423,7 @@ export function SettingsManager({
         />
       )}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
+      {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
       {activePage.id === "private-label" && (
         <PrivateLabelPanel
           plan={initialPlan}
