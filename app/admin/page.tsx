@@ -51,7 +51,7 @@ import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { formatBookingTicketNumber } from "@/lib/services/ticket-format"
 import { last4 } from "@/lib/payroll/staff-details"
-import { isModuleEnabled } from "@/lib/tenant/modules"
+import { getEffectiveModules } from "@/lib/tenant/effective-modules"
 import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
@@ -858,15 +858,17 @@ export default async function AdminPage() {
   // owner. Fails closed: a lookup error means everything optional is off.
   // Booking and Queue also skip their data loads below.
   const products = await getEnabledProducts(supabase, tenantId)
-  if (!products.payroll) permissions = { ...permissions, payrollView: false, payrollManage: false }
-  if (!products.shisha) permissions = { ...permissions, shishaView: false, shishaOperate: false, shishaManage: false }
-  if (!products.shifts) permissions = { ...permissions, shiftsView: false }
+  // ONE resolver (database: modules + module_requires): a module counts only if its own switch is on AND its
+  // parents are (shifts/payroll/clock-in need staff, events needs Passport, ...). Fails closed.
+  const mods = await getEffectiveModules(tenantId)
+  if (!mods.on("payroll")) permissions = { ...permissions, payrollView: false, payrollManage: false }
+  if (!mods.on("shisha")) permissions = { ...permissions, shishaView: false, shishaOperate: false, shishaManage: false }
+  if (!mods.on("shifts")) permissions = { ...permissions, shiftsView: false }
   // Passport (customer wallet) is its own module (tenant_modules key "wallet"), switched by the platform admin.
-  const walletOn = await isModuleEnabled(tenantId, "wallet").catch(() => false)
+  const walletOn = mods.on("wallet")
   if (!walletOn) permissions = { ...permissions, walletView: false, walletOperate: false, walletManage: false }
-  // Events is its own module (tenant_modules key "events"), switched by the platform admin.
-  // Off = no events permissions at all for this request, same fail-closed posture as above.
-  const eventsEnabled = await isModuleEnabled(tenantId, "events").catch(() => false)
+  // Events needs its own switch AND Passport (module_requires: events -> wallet).
+  const eventsEnabled = mods.on("events")
   if (!eventsEnabled) eventsPermissions = NO_EVENTS_PERMISSIONS
 
   // Services and full Settings data are owner-only. A tenant_staff caller
@@ -923,7 +925,7 @@ export default async function AdminPage() {
   const shishaEnabled = permissions.shishaView
   const shiftsEnabled = permissions.shiftsView
   // WhatsApp staff notifications: only offered when the shop has the WhatsApp module on.
-  const whatsappEnabled = await isModuleEnabled(tenantId, "whatsapp").catch(() => false)
+  const whatsappEnabled = mods.on("whatsapp")
 
   const adminBranding: AdminBranding = brandingEntitled
     ? settingsData.branding
@@ -945,7 +947,7 @@ export default async function AdminPage() {
       eventsEnabled={eventsEnabled}
       eventsPermissions={eventsPermissions}
       whatsappEnabled={whatsappEnabled}
-      staffEnabled={products.staff || products.booking || products.queue || products.shisha || products.shifts || products.payroll}
+      staffEnabled={["staff", "booking", "queue", "shisha", "shifts", "payroll"].some((k) => mods.on(k))}
       initialConversations={inbox.conversations}
       initialInboxStats={inbox.stats}
       initialPlan={settingsData.plan}
