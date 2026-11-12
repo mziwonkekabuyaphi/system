@@ -114,7 +114,9 @@ type Handler = IntentService["handle"]
 // cancelService owns exactly the "cancel_*" states.
 // shishaService owns exactly the "shisha_*" states; it is only reachable for tenants
 // with the module on (guard at the top of routeAction + a check inside the service).
-const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService, shishaService]
+// passportService owns the "passport_*" states (top-up amount); eventTicketsService owns "events_*" (buying tickets).
+// Both are module-gated like shisha.
+const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService, shishaService, passportService, eventTicketsService]
 
 const intentHandlers: Record<string, Handler> = {
   booking: bookingService.handleBooking.bind(bookingService),
@@ -204,6 +206,8 @@ function resolveOwningIntent(stateName: string): Intent | null {
   if (stateName.startsWith("reschedule_")) return "booking"
   if (stateName.startsWith(CANCEL_STATE_PREFIX)) return "cancel"
   if (stateName.startsWith("shisha_")) return "shisha"
+  if (stateName.startsWith("passport_")) return "wallet"
+  if (stateName.startsWith("events_")) return "events"
   return null
 }
 
@@ -412,6 +416,8 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
  */
 async function passportReply(tenantId: string, intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
   const result = await passportService.handle(tenantId, intent, message)
+  // Mid top-up the customer must answer the amount question; a menu under it would invite them to wander off.
+  if (result.nextState) return result
   try {
     const menu = await buildEntryReply(tenantId, message, false)
     return menu.followUp?.length ? { ...result, followUp: menu.followUp } : result

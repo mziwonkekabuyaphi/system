@@ -130,7 +130,12 @@ export async function processIncomingMessage(
     // Skip the model entirely when the result would be ignored, when the shop
     // has AI off, while the customer is typing their name, or over the hourly cap.
     const skip = intentIsIrrelevant(message, state)
-    const inNameStep = state?.state === "booking_awaiting_name" && !(message.text ?? "").includes("?")
+    // Free-text steps where the customer types a name or an amount: no classifier call is worth paying for.
+    const inNameStep =
+      (state?.state === "booking_awaiting_name" ||
+        state?.state === "passport_topup_amount" ||
+        state?.state.startsWith("events_")) &&
+      !(message.text ?? "").includes("?")
     const allowAi =
       !skip &&
       !inNameStep &&
