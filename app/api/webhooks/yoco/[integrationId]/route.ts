@@ -29,8 +29,9 @@ import { NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { verifyYocoWebhook, yocoRefundCheckout } from "@/lib/payments/yoco"
 import { getTenantYocoCredentials } from "@/lib/payments/credentials"
-import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
+import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { formatPassportMoney } from "@/lib/services/passport"
+import { getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 
 export const runtime = "nodejs"
@@ -288,6 +289,12 @@ async function notifyOrder(db: Db, tenantId: string, orderId: string) {
     if (!phone) return
     const text = await buildOrderConfirmation(db, tenantId, orderId, "✅ *Payment received. Your tickets are confirmed!*")
     await sendWhatsAppTextMessage(tenantId, phone, text)
+    // One QR per ticket. Each send is separate so one failure can't stop the rest.
+    for (const qr of await getOrderTicketQrs(db, tenantId, orderId)) {
+      await sendWhatsAppImageMessage(tenantId, phone, qr.url, qr.caption).catch((error) =>
+        console.error("[yoco-webhook] QR image failed", { tenantId, error: error instanceof Error ? error.message : String(error) }),
+      )
+    }
   } catch (error) {
     console.error("[yoco-webhook] ticket message failed (tickets are already issued)", {
       tenantId,
