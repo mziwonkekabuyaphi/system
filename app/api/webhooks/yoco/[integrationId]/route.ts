@@ -10,6 +10,7 @@
  *   4. The event is payment.succeeded and its checkout id matches a checkout WE created for THIS integration
  *      (Yoco sends events for every payment on the shop's account, including ones that are not ours).
  *   5. The amount paid equals the amount we asked for, to the cent, and the currency matches.
+ *      (A payment the expiry job cancelled but that was paid late is still honoured: see wallet_revive_topup.)
  *   6. The credit goes through wallet_complete_topup, which is itself idempotent and service_role only.
  *      Ticket orders go through event_fulfil_card_order_whatsapp (idempotent, service_role only).
  *      If the tickets can no longer be issued (tier sold out meanwhile, price changed), the card payment is
@@ -158,6 +159,12 @@ async function handleSucceeded(db: Db, tenantId: string, integrationId: string, 
 
   // 6. Credit.
   if (payment.purpose === "wallet_topup") {
+    // A top-up the expiry job already closed, paid late: put it back to pending so it can be credited.
+    // (No-op unless the top-up is 'expired'; wallet_complete_topup is idempotent after that.)
+    if (payment.status === "cancelled") {
+      const { error: reviveError } = await db.rpc("wallet_revive_topup", { p_topup_id: payment.purpose_id })
+      if (reviveError) throw new Error(`wallet_revive_topup failed: ${reviveError.message}`)
+    }
     const { error: creditError } = await db.rpc("wallet_complete_topup", {
       p_topup_id: payment.purpose_id,
       p_provider: "yoco",

@@ -1,5 +1,12 @@
 {
   "crons": [
-    { "path": "/api/cron/sweep-stale-queue", "schedule": "30 0 * * *" }
+    {
+      "path": "/api/cron/sweep-stale-queue",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/expire-payments",
+      "schedule": "45 0 * * *"
+    }
   ]
 }
