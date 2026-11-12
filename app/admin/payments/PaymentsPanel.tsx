@@ -131,7 +131,7 @@ export function PaymentsPanel() {
           <button type="button" className={BTN_GHOST} onClick={() => { setEditing(true); setDone(null) }}>Replace key</button>
           {confirmOff ? (
             <>
-              <span className="text-xs text-stone-600">Customers won&apos;t be able to top up by card. Also remove the webhook in your Yoco portal.</span>
+              <span className="text-xs text-stone-600">Customers won&apos;t be able to pay by card. We&apos;ll also remove our webhook from your Yoco account.</span>
               <button type="button" className={BTN_DANGER} onClick={disconnect} disabled={busy}>Yes, disconnect</button>
               <button type="button" className={BTN_GHOST} onClick={() => setConfirmOff(false)} disabled={busy}>Keep</button>
             </>

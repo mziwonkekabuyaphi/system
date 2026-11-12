@@ -14,8 +14,8 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
-import { getAppBaseUrl } from "@/lib/payments/credentials"
-import { isYocoSecretKey, yocoModeFromKey, yocoRegisterWebhook, YocoError } from "@/lib/payments/yoco"
+import { getAppBaseUrl, getTenantYocoCredentials } from "@/lib/payments/credentials"
+import { isYocoSecretKey, yocoDeleteWebhook, yocoModeFromKey, yocoRegisterWebhook, YocoError } from "@/lib/payments/yoco"
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -143,11 +143,23 @@ export async function disconnectYoco(): Promise<ActionResult> {
   if (!s.ok) return s
   const { data: row } = await s.db
     .from("tenant_payment_integrations")
-    .select("id")
+    .select("id, provider_webhook_id")
     .eq("tenant_id", s.tenantId)
     .eq("provider", "yoco")
     .maybeSingle()
   if (!row) return { ok: true, data: undefined }
+
+  // Remove the webhook on Yoco's side too, while we still hold the key. Best effort: if Yoco can't be
+  // reached or it's already gone, we still disconnect (the owner can delete a leftover in their portal).
+  if (row.provider_webhook_id) {
+    try {
+      const creds = await getTenantYocoCredentials(s.db, s.tenantId)
+      if (creds) await yocoDeleteWebhook(creds.secretKey, row.provider_webhook_id as string)
+    } catch {
+      /* ignore */
+    }
+  }
+
   const { error } = await s.db.rpc("payments_disconnect", { p_integration_id: row.id })
   if (error) return { ok: false, error: GENERIC_ERROR }
   return { ok: true, data: undefined }
