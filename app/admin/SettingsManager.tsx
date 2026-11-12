@@ -22,12 +22,13 @@ import { ClockPanel } from "./settings/ClockPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
+import { PaymentsPanel } from "./payments/PaymentsPanel"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "shisha" | "passport"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -69,6 +70,12 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <circle cx="9" cy="8" r="3.2" />
       <path d="M3 20c.4-3.4 3-5.5 6-5.5s5.6 2.1 6 5.5" />
       <path d="M17 4.5a3 3 0 010 5.8M18.5 14.8c1.6.7 2.6 2.4 2.9 4.7" />
+    </RailIcon>
+  ),
+  payments: (p) => (
+    <RailIcon {...p}>
+      <rect x="3" y="5.5" width="18" height="13" rx="2" />
+      <path d="M3 10h18M7 15h4" />
     </RailIcon>
   ),
   services: (p) => (
@@ -155,6 +162,14 @@ const SETTINGS_NAV: Array<{
         label: "Staff settings",
         title: "Staff settings",
         description: "The clock-in pad your team uses to clock in and out: link, colours and wording.",
+      },
+      {
+        // Card payments (the shop's own Yoco account) are used by Passport top-ups and event tickets.
+        id: "payments",
+        label: "Payments",
+        title: "Payments",
+        description: "Connect your own Yoco account so customers can pay by card. The money goes straight to you.",
+        anyOf: ["wallet", "events"],
       },
     ],
   },
@@ -464,6 +479,7 @@ export function SettingsManager({
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
         />
       )}
+      {activePage.id === "payments" && <PaymentsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
       {activePage.id === "private-label" && (
