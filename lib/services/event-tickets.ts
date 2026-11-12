@@ -8,36 +8,44 @@
  * Events screens, box office and gate scanner use), keyed by tenant_id, with the
  * customer being a tenant_customers row.
  *
- * PHASE 1 (this file): READ-ONLY.
+ * WHAT IT DOES
  *   - "Events": what is on sale at this shop, with tiers, prices and what is left
  *   - "My tickets": the customer's own live tickets, with the number the gate scans
- * It never writes, so it cannot sell, charge or issue anything.
+ *   - "Buy Tickets": event -> tier -> quantity -> pay. Pay from the Passport balance (one database
+ *     transaction), or by card on the SHOP'S OWN Yoco account (we only start the checkout here; the
+ *     signed webhook issues the tickets once the payment is verified). Free tiers need no payment.
+ *   - All prices and availability come from the database (event_quote_whatsapp), never from memory.
  *
- * PHASE 2 (buying on WhatsApp, not built): needs a service-role purchase function in
- * the database first. The existing event_purchase_ticket / event_issue_box_office_tickets /
- * wallet_charge all start with `if auth.uid() is null then raise`, and the bot has no signed-in
- * user. See supabase/proposed/event_purchase_ticket_whatsapp.sql. Until then BUY_HELP below
- * is the one line that tells customers how to buy.
- *
- * STATELESS: nextState is always null; menu taps are routed by id in action-router.ts, and the
- * two buttons ("My Tickets" / "Events") come back as typed text that the intent router's
- * exact-phrase fast path maps to the "events" intent.
+ * STATES (all prefixed "events_"; this service owns them, module-gated on "events"):
+ *   events_choose_event -> events_choose_tier -> events_quantity -> events_choose_payment
+ * Menu taps are routed by id in action-router.ts; the buttons come back as typed text that the intent
+ * router's exact-phrase fast path maps to the "events" intent.
  * MODULE GATE: action-router.ts gates the row / typed intent, and handle() checks the switch
  * again itself (same belt-and-braces as shisha and passport).
  * PRIVACY: only ever reads tickets of message.from's own customer record (or tickets issued to
  * that exact number at the box office). No way to look up another number's tickets.
  */
 
+import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { RoutedIntent } from "@/lib/whatsapp/intent-router"
 import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import type { ActionResult } from "@/lib/types/action"
+import type { ConversationState } from "@/lib/services/state"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getCustomer } from "@/lib/services/tenant-customer"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 import { isModuleEnabled } from "@/lib/tenant/modules"
+import { formatPassportMoney } from "@/lib/services/passport"
+import { getTenantYocoCredentials } from "@/lib/payments/credentials"
+import {
+  buyWithPassport,
+  getEventPaymentOptions,
+  quoteEventPurchase,
+  startEventCardCheckout,
+} from "@/lib/payments/event-checkout"
 
 // ============================================================================
 // CONSTANTS
@@ -49,8 +57,17 @@ const MAX_TICKETS_SHOWN = 10
 const OPEN_ENDED_EVENT_HOURS = 6
 const DEFAULT_TZ = "Africa/Johannesburg"
 
-/** Replace this line when buying on WhatsApp is wired (Phase 2). */
+/** Shown when this shop can't take payment on WhatsApp (no Passport, no Yoco). */
 const BUY_HELP = "To buy tickets, ask a team member at the shop or use the shop's online page."
+
+export const EVENT_STATE_CHOOSE_EVENT = "events_choose_event"
+export const EVENT_STATE_CHOOSE_TIER = "events_choose_tier"
+export const EVENT_STATE_QUANTITY = "events_quantity"
+export const EVENT_STATE_CHOOSE_PAYMENT = "events_choose_payment"
+
+const MAX_PER_PURCHASE = 10
+const BUY_PATTERN = /\bbuy\b/
+const CANCEL_PATTERN = /^(cancel|no|stop|back|menu|main menu|nevermind|never mind)[.!]*$/i
 
 const UNAVAILABLE_REPLY = "Sorry, I couldn't load that right now. Please try again in a moment."
 
@@ -176,9 +193,15 @@ async function buildEventsReply(supabase: SupabaseClient, tenantId: string, time
     return lines.join("\n")
   })
 
+  // Offer "Buy Tickets" only when this shop can take payment here: Passport on, Yoco connected, or a free tier.
+  const canBuy =
+    tiers.some((t) => Number(t.price) <= 0 && t.capacity > t.sold) ||
+    (await isModuleEnabled(tenantId, "wallet")) ||
+    Boolean(await getTenantYocoCredentials(supabase, tenantId))
+
   return {
-    reply: ["🎟️ *Upcoming events*", "", blocks.join("\n\n"), "", BUY_HELP].join("\n"),
-    buttons: ["My Tickets", "Main Menu"],
+    reply: ["🎟️ *Upcoming events*", "", blocks.join("\n\n"), "", canBuy ? "Tap *Buy Tickets* to get yours." : BUY_HELP].join("\n"),
+    buttons: canBuy ? ["Buy Tickets", "My Tickets", "Main Menu"] : ["My Tickets", "Main Menu"],
     nextState: null,
   }
 }
@@ -288,35 +311,332 @@ async function buildMyTicketsReply(
 // ENTRY POINT
 // ============================================================================
 
-async function handle(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
-  const reply = (text: string): ActionResult => ({ reply: text, buttons: [], nextState: null })
+// ============================================================================
+// BUYING
+// ============================================================================
 
+type StateData = Record<string, unknown>
+
+const stay = (state: string, data: StateData, reply: string, buttons: string[] = []): ActionResult => ({
+  reply,
+  buttons,
+  nextState: { state, data },
+})
+const finish = (reply: string, buttons: string[] = []): ActionResult => ({ reply, buttons, nextState: null })
+
+function parseChoice(raw: string, max: number): number | null {
+  const m = /^\s*(\d{1,2})[.)]?\s*$/.exec(raw)
+  if (!m) return null
+  const n = Number(m[1])
+  return n >= 1 && n <= max ? n : null
+}
+
+async function readTier(supabase: SupabaseClient, tenantId: string, tierId: string): Promise<TierRow | null> {
+  const { data, error } = await supabase
+    .from("event_ticket_types")
+    .select("id, event_id, name, price, capacity, sold, is_active")
+    .eq("tenant_id", tenantId)
+    .eq("id", tierId)
+    .maybeSingle()
+  if (error) throw new Error(`Failed to read ticket type: ${error.message}`)
+  const row = data as (TierRow & { is_active: boolean }) | null
+  return row && row.is_active ? row : null
+}
+
+async function readSellableTiers(supabase: SupabaseClient, tenantId: string, eventId: string): Promise<TierRow[]> {
+  const { data, error } = await supabase
+    .from("event_ticket_types")
+    .select("id, event_id, name, price, capacity, sold")
+    .eq("tenant_id", tenantId)
+    .eq("event_id", eventId)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+  if (error) throw new Error(`Failed to read ticket types: ${error.message}`)
+  return ((data ?? []) as TierRow[]).filter((t) => t.capacity > t.sold)
+}
+
+function tierChoice(t: TierRow, i: number): string {
+  const left = Math.max(t.capacity - t.sold, 0)
+  return `${i + 1}. ${t.name} — ${formatPrice(Number(t.price) || 0)} (${left <= 10 ? `only ${left} left` : `${left} left`})`
+}
+
+function beginTierStep(event: EventRow, tiers: TierRow[], timeZone: string): ActionResult {
+  return stay(
+    EVENT_STATE_CHOOSE_TIER,
+    { eventId: event.id, tierIds: tiers.map((t) => t.id) },
+    [`🎟️ *${event.name}*`, `📅 ${formatWhen(event.start_time, timeZone)}`, "", "Which ticket would you like?", "", tiers.map(tierChoice).join("\n"), "", "Reply with the number, or *cancel*."].join("\n"),
+  )
+}
+
+async function beginPurchase(supabase: SupabaseClient, tenantId: string, timeZone: string): Promise<ActionResult> {
+  const events = (await readOnSaleEvents(supabase, tenantId)).slice(0, MAX_EVENTS_SHOWN)
+  const withTiers: Array<{ event: EventRow; tiers: TierRow[] }> = []
+  for (const event of events) {
+    const tiers = await readSellableTiers(supabase, tenantId, event.id)
+    if (tiers.length > 0) withTiers.push({ event, tiers })
+  }
+
+  if (withTiers.length === 0) {
+    return finish("🎟️ *Buy tickets*\n\nThere are no tickets available right now.", ["My Tickets", "Main Menu"])
+  }
+  if (withTiers.length === 1) return beginTierStep(withTiers[0].event, withTiers[0].tiers, timeZone)
+
+  const list = withTiers.map((x, i) => `${i + 1}. *${x.event.name}*\n   📅 ${formatWhen(x.event.start_time, timeZone)}`).join("\n\n")
+  return stay(
+    EVENT_STATE_CHOOSE_EVENT,
+    { eventIds: withTiers.map((x) => x.event.id) },
+    `🎟️ *Buy tickets*\n\nWhich event?\n\n${list}\n\nReply with the number, or *cancel*.`,
+  )
+}
+
+/** Confirmation text for an issued order. Shared by the bot (Passport) and the webhook (card). */
+export async function buildOrderConfirmation(
+  supabase: SupabaseClient,
+  tenantId: string,
+  orderId: string,
+  heading = "🎉 *Your tickets are confirmed!*",
+): Promise<string> {
+  const { data: order, error } = await supabase
+    .from("event_orders")
+    .select("id, event_id, ticket_type_id, quantity, total, payment_method")
+    .eq("tenant_id", tenantId)
+    .eq("id", orderId)
+    .maybeSingle()
+  if (error || !order) throw new Error("order not found for confirmation")
+
+  const [eventRes, typeRes, ticketRes, timeZone] = await Promise.all([
+    supabase.from("events").select("name, start_time, location").eq("tenant_id", tenantId).eq("id", order.event_id).maybeSingle(),
+    supabase.from("event_ticket_types").select("name").eq("tenant_id", tenantId).eq("id", order.ticket_type_id).maybeSingle(),
+    supabase.from("event_tickets").select("ticket_number").eq("tenant_id", tenantId).eq("order_id", orderId).order("created_at", { ascending: true }),
+    getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ),
+  ])
+  const event = eventRes.data as { name: string; start_time: string; location: string | null } | null
+  const tier = (typeRes.data as { name: string } | null)?.name ?? "Ticket"
+  const numbers = ((ticketRes.data ?? []) as Array<{ ticket_number: string }>).map((t) => t.ticket_number)
+
+  const paid =
+    Number(order.total) <= 0
+      ? "Free"
+      : order.payment_method === "wallet"
+        ? `${formatPrice(Number(order.total))} · paid from your Passport`
+        : order.payment_method === "card"
+          ? `${formatPrice(Number(order.total))} · paid by card`
+          : formatPrice(Number(order.total))
+
+  const lines = [heading, ""]
+  if (event) {
+    lines.push(`*${event.name}*`, `📅 ${formatWhen(event.start_time, timeZone)}`)
+    if (event.location) lines.push(`📍 ${event.location}`)
+    lines.push("")
+  }
+  lines.push(`${order.quantity} × ${tier}`, paid, "", "*Your ticket numbers*", ...numbers.map((n, i) => `${i + 1}. ${n}`), "", "Show a ticket number at the gate.")
+  return lines.join("\n")
+}
+
+/** Quote -> free ticket, or the "how would you like to pay" screen. */
+async function proceedToPayment(
+  supabase: SupabaseClient,
+  tenantId: string,
+  customerId: string,
+  tierId: string,
+  quantity: number,
+  note?: string,
+): Promise<ActionResult> {
+  const q = await quoteEventPurchase(supabase, tenantId, customerId, tierId, quantity)
+  if (!q.ok) return finish(q.message, ["Events", "Main Menu"])
+  const quote = q.quote
+
+  // Free tier: no payment step. The database issues it directly.
+  if (quote.total <= 0) {
+    const res = await buyWithPassport({ supabase, tenantId, customerId, ticketTypeId: tierId, quantity, idempotencyKey: randomUUID() })
+    if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
+    return finish(await buildOrderConfirmation(supabase, tenantId, res.orderId), ["My Tickets", "Main Menu"])
+  }
+
+  const options = await getEventPaymentOptions(supabase, tenantId, customerId, quote.total)
+  const choices: string[] = []
+  const lines = [
+    ...(note ? [note, ""] : []),
+    "🧾 *Order summary*",
+    `${quote.quantity} × ${quote.ticketTypeName} — ${quote.eventName}`,
+    `*Total: ${formatPrice(quote.total)}*`,
+    "",
+  ]
+
+  if (options.passport.ok) {
+    choices.push("Passport")
+    lines.push(`💰 *Passport* (balance ${formatPassportMoney(options.passport.balance, options.passport.currency)})`)
+  } else if (options.passport.reason === "low_balance") {
+    lines.push(`Your Passport balance (${formatPassportMoney(options.passport.balance, options.passport.currency)}) is too low for this order.`)
+  }
+  if (options.card) {
+    choices.push("Card")
+    lines.push("💳 *Card* (secure payment page)")
+  }
+
+  if (choices.length === 0) {
+    return finish(
+      [...lines, "", "Online payment isn't available for this order right now.", BUY_HELP].join("\n"),
+      ["Events", "Main Menu"],
+    )
+  }
+
+  const buttons = [...choices, "Cancel"]
+  lines.push("", "How would you like to pay?")
+  return stay(
+    EVENT_STATE_CHOOSE_PAYMENT,
+    { tierId, quantity, total: quote.total, nonce: randomUUID(), buttons },
+    lines.join("\n"),
+    buttons,
+  )
+}
+
+// ============================================================================
+// STATE CONTINUATION
+// ============================================================================
+
+/** Owns "events_*" states. null = not mine. */
+async function handleState(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult | null> {
+  if (!state.state.startsWith("events_")) return null
+
+  if (!(await isModuleEnabled(tenantId, "events"))) return finish("Sorry, that service isn't available right now.")
+
+  const typed = (message.text ?? message.contentSummary ?? "").trim()
+  if (CANCEL_PATTERN.test(typed)) return finish("No problem, nothing was charged. Send *menu* whenever you need me.")
+
+  const supabase = getSupabaseServerClient()
+  if (!supabase) return finish(UNAVAILABLE_REPLY)
+  const data = (state.data ?? {}) as StateData
+
+  try {
+    const customer = await getCustomer(tenantId, message.from)
+    if (!customer) return finish(UNAVAILABLE_REPLY)
+    const timeZone = await getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ)
+
+    switch (state.state) {
+      case EVENT_STATE_CHOOSE_EVENT: {
+        const ids = (data.eventIds as string[] | undefined) ?? []
+        const n = parseChoice(typed, ids.length)
+        if (n === null) return stay(state.state, data, `Please reply with a number from 1 to ${ids.length}, or *cancel*.`)
+        const events = await readOnSaleEvents(supabase, tenantId)
+        const event = events.find((e) => e.id === ids[n - 1])
+        if (!event) return finish("Sorry, that event is no longer available.", ["Events", "Main Menu"])
+        const tiers = await readSellableTiers(supabase, tenantId, event.id)
+        if (tiers.length === 0) return finish("Sorry, that event just sold out.", ["Events", "Main Menu"])
+        return beginTierStep(event, tiers, timeZone)
+      }
+
+      case EVENT_STATE_CHOOSE_TIER: {
+        const ids = (data.tierIds as string[] | undefined) ?? []
+        const n = parseChoice(typed, ids.length)
+        if (n === null) return stay(state.state, data, `Please reply with a number from 1 to ${ids.length}, or *cancel*.`)
+        const tier = await readTier(supabase, tenantId, ids[n - 1])
+        const left = tier ? Math.max(tier.capacity - tier.sold, 0) : 0
+        if (!tier || left === 0) return finish("Sorry, that ticket just sold out.", ["Events", "Main Menu"])
+        const max = Math.min(MAX_PER_PURCHASE, left)
+        return stay(
+          EVENT_STATE_QUANTITY,
+          { tierId: tier.id },
+          `How many *${tier.name}* tickets would you like? Reply with a number from 1 to ${max}, or *cancel*.`,
+        )
+      }
+
+      case EVENT_STATE_QUANTITY: {
+        const tierId = data.tierId as string | undefined
+        const quantity = parseChoice(typed, MAX_PER_PURCHASE)
+        if (!tierId) return finish(UNAVAILABLE_REPLY)
+        if (quantity === null) return stay(state.state, data, `Please reply with a number from 1 to ${MAX_PER_PURCHASE}, or *cancel*.`)
+        return await proceedToPayment(supabase, tenantId, customer.id, tierId, quantity)
+      }
+
+      case EVENT_STATE_CHOOSE_PAYMENT: {
+        const tierId = data.tierId as string
+        const quantity = Number(data.quantity)
+        const shownTotal = Number(data.total)
+        const nonce = data.nonce as string
+        const buttons = (data.buttons as string[] | undefined) ?? ["Cancel"]
+        const choice = typed.toLowerCase()
+        const wantsPassport = choice.includes("passport")
+        const wantsCard = choice.includes("card")
+        if (!wantsPassport && !wantsCard) {
+          return stay(state.state, data, "Please tap *Passport* or *Card* (or reply *cancel*).", buttons)
+        }
+
+        // Re-ask the database right before taking money: price and availability may have moved.
+        const q = await quoteEventPurchase(supabase, tenantId, customer.id, tierId, quantity)
+        if (!q.ok) return finish(q.message, ["Events", "Main Menu"])
+        if (Math.abs(q.quote.total - shownTotal) > 0.001) {
+          return await proceedToPayment(supabase, tenantId, customer.id, tierId, quantity, "⚠️ The price changed, so here is your updated order.")
+        }
+
+        if (wantsPassport) {
+          if (!buttons.includes("Passport")) return stay(state.state, data, "Passport isn't available for this order. Please choose another option.", buttons)
+          const res = await buyWithPassport({ supabase, tenantId, customerId: customer.id, ticketTypeId: tierId, quantity, idempotencyKey: nonce })
+          if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
+          return finish(await buildOrderConfirmation(supabase, tenantId, res.orderId), ["My Tickets", "Main Menu"])
+        }
+
+        if (!buttons.includes("Card")) return stay(state.state, data, "Card payment isn't available for this order. Please choose another option.", buttons)
+        const card = await startEventCardCheckout({ supabase, tenantId, customerId: customer.id, quote: q.quote })
+        if (!card.ok) return finish(card.message, ["Events", "Main Menu"])
+        const testNote = card.mode === "test" ? "\n\n_Test mode: no real money is charged._" : ""
+        return finish(
+          `💳 *Pay by card*\n\n${q.quote.quantity} × ${q.quote.ticketTypeName} — ${q.quote.eventName}\n*Total: ${formatPrice(q.quote.total)}*\n\nTap the link to pay securely:\n${card.url}\n\nYour tickets will be sent to you here as soon as the payment goes through.${testNote}`,
+        )
+      }
+
+      default:
+        return null
+    }
+  } catch (error) {
+    console.error("[event-tickets] purchase step failed", {
+      tenantId,
+      state: state.state,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return finish(UNAVAILABLE_REPLY)
+  }
+}
+
+// ============================================================================
+// ENTRY POINT
+// ============================================================================
+
+async function handle(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
   // Second lock behind the router's gate. Fails closed (isModuleEnabled returns false on error).
   if (!(await isModuleEnabled(tenantId, "events"))) {
-    return reply("Sorry, that service isn't available right now.")
+    return finish("Sorry, that service isn't available right now.")
   }
 
   const supabase = getSupabaseServerClient()
-  if (!supabase) return reply(UNAVAILABLE_REPLY)
+  if (!supabase) return finish(UNAVAILABLE_REPLY)
 
   const typed = (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
-  const wantsMyTickets = MY_TICKETS_PATTERN.test(typed)
 
   try {
     const timeZone = await getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ)
-    if (!wantsMyTickets) return await buildEventsReply(supabase, tenantId, timeZone)
 
-    const customer = await getCustomer(tenantId, message.from)
-    return await buildMyTicketsReply(supabase, tenantId, customer?.id ?? null, message.from, timeZone)
+    if (MY_TICKETS_PATTERN.test(typed)) {
+      const customer = await getCustomer(tenantId, message.from)
+      return await buildMyTicketsReply(supabase, tenantId, customer?.id ?? null, message.from, timeZone)
+    }
+
+    if (BUY_PATTERN.test(typed)) {
+      const customer = await getCustomer(tenantId, message.from)
+      if (customer) return await beginPurchase(supabase, tenantId, timeZone)
+    }
+
+    return await buildEventsReply(supabase, tenantId, timeZone)
   } catch (error) {
     console.error("[event-tickets] failed to load", {
       tenantId,
       error: error instanceof Error ? error.message : String(error),
     })
-    return reply(UNAVAILABLE_REPLY)
+    return finish(UNAVAILABLE_REPLY)
   }
 }
 
 export const eventTicketsService = {
   handle,
+  handleState,
 }
