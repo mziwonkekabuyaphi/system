@@ -43,13 +43,23 @@ export function yocoModeFromKey(key: string): "test" | "live" {
 }
 
 async function yocoPost<T>(path: string, secretKey: string, body: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+  return yocoRequest<T>("POST", path, secretKey, body, extraHeaders)
+}
+
+async function yocoRequest<T>(
+  method: "GET" | "POST" | "DELETE",
+  path: string,
+  secretKey: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${secretKey}`, ...extraHeaders },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: controller.signal,
     })
     const text = await res.text()
@@ -149,6 +159,26 @@ export async function yocoRegisterWebhook(args: {
     throw new YocoError("Yoco didn't return a webhook secret", 502)
   }
   return { id: data.id, secret: data.secret }
+}
+
+export interface YocoWebhookSubscription {
+  id: string
+  name: string | null
+  url: string
+  mode: string | null
+}
+
+/** Every webhook registered on the shop's Yoco account. (Yoco's list has no status field.) */
+export async function yocoListWebhooks(secretKey: string): Promise<YocoWebhookSubscription[]> {
+  const data = await yocoRequest<{ subscriptions?: Array<{ id?: unknown; name?: unknown; url?: unknown; mode?: unknown }> }>("GET", "/webhooks", secretKey)
+  return (data?.subscriptions ?? [])
+    .filter((w): w is { id: string; url: string; name?: unknown; mode?: unknown } => typeof w.id === "string" && typeof w.url === "string")
+    .map((w) => ({ id: w.id, url: w.url, name: typeof w.name === "string" ? w.name : null, mode: typeof w.mode === "string" ? w.mode : null }))
+}
+
+/** Remove a webhook from the shop's Yoco account. Best used inside try/catch: a missing one is not an error to us. */
+export async function yocoDeleteWebhook(secretKey: string, webhookId: string): Promise<void> {
+  await yocoRequest<unknown>("DELETE", `/webhooks/${encodeURIComponent(webhookId)}`, secretKey)
 }
 
 // ----------------------------------------------------------------------------
