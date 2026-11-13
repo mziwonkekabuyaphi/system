@@ -1,4 +1,4 @@
-// lib/messages/shisha.ts
+// lib/services/messages/shisha.ts
 /**
  * Customer-facing copy for the Shisha Lounge WhatsApp flow (multi-tenant).
  *
@@ -175,6 +175,76 @@ export function requestAcceptedSession(details: {
     `🔌 Device: ${details.deviceCode}\n` +
     `💰 Price: ${formatRands(details.price)}`
   )
+}
+
+/**
+ * Sent when staff approve a session request and the shop takes payment online:
+ * the customer pays first, then staff pick the hookah and start the session.
+ * `testMode` = the shop's Yoco is in test mode (no real money moves).
+ */
+export function requestApprovedPleasePay(details: {
+  station: string | null
+  flavour: string
+  price: number
+  url: string
+  testMode: boolean
+}): string {
+  const stationLine = details.station ? `📍 Station: ${details.station}\n` : ""
+  const testNote = details.testMode ? "\n\n_Test mode: no real money is charged._" : ""
+  return (
+    "✅ Your shisha request is approved!\n\n" +
+    stationLine +
+    `🍃 Flavour: ${details.flavour}\n` +
+    `💰 Amount: ${formatRands(details.price)}\n\n` +
+    "💳 Tap the link to pay securely:\n" +
+    `${details.url}\n\n` +
+    "Your session starts as soon as the payment goes through. Please pay within 24 hours." +
+    testNote
+  )
+}
+
+/** Sent by the payment webhook once the customer's online payment is confirmed. */
+export function paymentReceivedSession(details: { flavour: string | null; price: number }): string {
+  const flavourLine = details.flavour ? `🍃 Flavour: ${details.flavour}\n` : ""
+  return (
+    "✅ *Payment received*, thank you!\n\n" +
+    flavourLine +
+    `💰 Paid: ${formatRands(details.price)}\n\n` +
+    "Staff will start your session shortly."
+  )
+}
+
+/** Sent by the daily expiry job when a payment link was not used in time and the request was closed. */
+export const PAYMENT_LINK_EXPIRED =
+  "⏰ Your shisha request was closed because the payment link wasn't used in time. Please don't pay that link. You can send a new request any time — reply 'shisha'."
+
+/** Staff cancelled a request that was waiting for the customer's payment. */
+export function requestCancelledBeforePayment(reason: string | null): string {
+  const reasonLine = reason ? `\n\nReason: ${reason}` : ""
+  return (
+    `Sorry, staff couldn't take that request after all.${reasonLine}\n\n` +
+    "Please don't pay the payment link you were sent. You can send a new request any time — reply 'shisha'."
+  )
+}
+
+/** Staff rejected a request the customer had already paid for. `refund`: refunded = money returned through
+ *  the card provider; manual = the shop will return it; in_person = it was paid at the counter. */
+export function requestRejectedAfterPayment(reason: string | null, refund: "refunded" | "manual" | "in_person"): string {
+  const reasonLine = reason ? `\n\nReason: ${reason}` : ""
+  const refundLine =
+    refund === "refunded"
+      ? "Your payment has been refunded in full. It can take a few days to show on your statement."
+      : refund === "in_person"
+        ? "Staff will return your payment."
+        : "You will be refunded in full. The shop will sort it out with you."
+  return `Sorry, staff couldn't take that request.${reasonLine}\n\n${refundLine}\n\nYou can send a new request any time — reply 'shisha'.`
+}
+
+/** Sent when an online payment came in but the request can no longer be served (it was closed meanwhile). */
+export function paymentRefundedSession(refunded: boolean): string {
+  return refunded
+    ? "Sorry, we couldn't take your shisha request after all. Your payment has been refunded in full. It can take a few days to show on your statement."
+    : "Sorry, we couldn't take your shisha request after all. You will be refunded in full. The shop has been told and will sort it out with you."
 }
 
 /** `charge` = what was added to the session for this refill (0 = free). */
