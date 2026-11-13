@@ -34,9 +34,12 @@ import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsap
 import { formatPassportMoney } from "@/lib/services/passport"
 import { getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
+import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// The ticket images are drawn and sent AFTER Yoco has been answered; this is how long that may take.
+export const maxDuration = 60
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -302,6 +305,8 @@ async function notifyOrder(db: Db, tenantId: string, orderId: string) {
         console.error("[yoco-webhook] QR image failed", { tenantId, error: error instanceof Error ? error.message : String(error) }),
       )
     }
+    // Branded ticket image: drawn and sent after this webhook has answered Yoco (the text above says it is coming).
+    scheduleOrderTicketImages(tenantId, orderId, phone)
   } catch (error) {
     console.error("[yoco-webhook] ticket message failed (tickets are already issued)", {
       tenantId,
