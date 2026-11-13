@@ -1,537 +1,274 @@
-// lib/services/shisha.ts
+// lib/services/messages/shisha.ts
 /**
- * Shisha Lounge WhatsApp service (multi-tenant, module-gated).
+ * Customer-facing copy for the Shisha Lounge WhatsApp flow (multi-tenant).
  *
- * CONTRACT: implements BOTH interfaces from action-router.ts:
- *   IntentService   -> { intent: "shisha", handle(tenantId, intent, message) }
- *   StatefulService -> { handleState(tenantId, state, message) }
- * plus startShishaFlow(tenantId, phone) for the main-menu row tap.
+ * Differences from the single-business (Rands) version:
+ *   - No wallet / Passport / top-up copy. Payment is handled by staff when
+ *     they approve the request, so nothing here promises a wallet deduction.
+ *   - No brand name anywhere (white-label).
+ *   - No FALLBACK_SESSION_PRICE: a price that can't be read is an error, not
+ *     a silent R250 for a tenant that charges something else.
+ *   - SHISHA_NEXT_STEPS_BUTTONS no longer offers "Order Menu" (that module
+ *     doesn't exist here).
  *
- * MODULE GATE: every entry point re-checks isModuleEnabled(tenantId, "shisha")
- * itself, in addition to the guard at the top of routeAction(). The router
- * guard hides the menu row and stops stale taps; this check means the service
- * stays safe even if it is ever wired into a different route. handleState
- * returns a polite "not available" (and the router clears the state) if the
- * shop switches the module off while a customer is mid-flow.
- *
- * What this file owns: coal refill, end session, issue report, session
- * tracking, the welcome menu and the state dispatcher. Starting a new session
- * lives in shisha-booking.ts. Shared helpers/types live in shisha-shared.ts.
- *
- * Customers are identified through tenant_customers (id + normalised phone),
- * not profiles/wallets, and every query is filtered by tenant_id — see the
- * TENANT SAFETY note in shisha-shared.ts.
+ * "Location" vs "Station": `shisha_locations` is the table name, but every
+ * string a customer reads calls it a "Station".
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js"
-import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { isModuleEnabled } from "@/lib/tenant/modules"
-import * as messages from "@/lib/services/messages/shisha"
-import type { RoutedIntent } from "@/lib/whatsapp/intent-router"
-import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
-import type { ActionResult } from "@/lib/types/action"
-import type { ConversationState } from "@/lib/services/state"
-import {
-  beginLocationStep,
-  continueFlavourStep,
-  continueLocationStep,
-  continueSessionConfirmationStep,
-  trySmartShishaEntry,
-} from "@/lib/services/shisha-booking"
-import {
-  actionResult,
-  blockIfPendingRequest,
-  createShishaRequest,
-  customerOrFilter,
-  extractListSelection,
-  logger,
-  readStateData,
-  resolveCustomerRef,
-  SHISHA_STATE_AWAITING_FLAVOUR,
-  SHISHA_STATE_AWAITING_ISSUE_DESCRIPTION,
-  SHISHA_STATE_AWAITING_ISSUE_SELECTION,
-  SHISHA_STATE_AWAITING_LOCATION,
-  SHISHA_STATE_AWAITING_SESSION_CONFIRMATION,
-  SHISHA_STATE_MENU,
-  SHISHA_STATE_NAMES,
-  type ActiveShishaSession,
-  type ShishaCustomerRef,
-  type ShishaStateData,
-  type ShishaStateName,
-} from "@/lib/services/shisha-shared"
-
-// Re-exported so other modules have one import path for the shisha state names.
-export { SHISHA_STATE_NAMES } from "@/lib/services/shisha-shared"
-
-// ============================================================================
-// SESSION LOOKUP
-// ============================================================================
-
-/**
- * shisha_sessions.remaining_time_seconds is a SNAPSHOT taken at
- * last_refill_time (no trigger/cron decrements it), so the live value is
- * computed at read time. Frozen while paused.
- */
-function computeLiveRemainingSeconds(stored: number, lastRefillTime: string | null, paused: boolean): number {
-  if (paused || !lastRefillTime) return Math.max(0, stored)
-  const elapsed = Math.floor((Date.now() - new Date(lastRefillTime).getTime()) / 1000)
-  return Math.max(0, stored - elapsed)
+/** Formats a rand amount without a redundant ".00" for whole numbers. */
+export function formatRands(amount: number): string {
+  return Number.isInteger(amount) ? `R${amount}` : `R${amount.toFixed(2)}`
 }
 
-/**
- * This customer's live session in THIS tenant. 'paused' is included (the
- * single-business version only matched active/refill, so a paused customer
- * was told they had no session — but shisha_refresh_device() already treats
- * 'paused' as in-use).
- */
-async function getActiveSession(
-  db: SupabaseClient,
-  tenantId: string,
-  who: ShishaCustomerRef,
-): Promise<ActiveShishaSession | null> {
-  const { data, error } = await db
-    .from("shisha_sessions")
-    .select(
-      `
-      id, total_amount, status, remaining_time_seconds, refill_count,
-      last_refill_time, paused,
-      shisha_devices ( device_code ),
-      shisha_products ( name, price, refill_price ),
-      shisha_locations ( name )
-    `,
-    )
-    .eq("tenant_id", tenantId)
-    .or(customerOrFilter(who))
-    .in("status", ["active", "refill", "paused"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<{
-      id: string
-      total_amount: number
-      status: string
-      remaining_time_seconds: number | null
-      refill_count: number | null
-      last_refill_time: string | null
-      paused: boolean | null
-      shisha_devices: { device_code: string | null } | null
-      shisha_products: { name: string | null; price: number | null; refill_price: number | null } | null
-      shisha_locations: { name: string | null } | null
-    }>()
+export const WELCOME_MENU =
+  "💨 *Shisha Lounge*\n\n" +
+  "What would you like to do?\n\n" +
+  "1️⃣ Start a new session (Smoke Now)\n" +
+  "2️⃣ Request a coal refill\n" +
+  "3️⃣ End my session\n" +
+  "4️⃣ Report an issue\n" +
+  "5️⃣ Track my session\n\n" +
+  "Reply with a number."
 
-  if (error) {
-    logger.error("[shisha] failed to fetch active session", { tenantId, error: error.message })
-    return null
-  }
-  if (!data) return null
+export const MENU_CHOICE_INVALID =
+  "I didn't catch that. Reply 1, 2, 3, 4, or 5 to choose an option, or 'menu' to see them again."
 
-  return {
-    id: data.id,
-    deviceCode: data.shisha_devices?.device_code ?? null,
-    locationName: data.shisha_locations?.name ?? null,
-    flavourName: data.shisha_products?.name ?? null,
-    flavourPrice: data.shisha_products?.price != null ? Number(data.shisha_products.price) : null,
-    flavourRefillPrice: data.shisha_products?.refill_price != null ? Number(data.shisha_products.refill_price) : null,
-    amount: Number(data.total_amount),
-    status: data.status,
-    remainingTimeSeconds: computeLiveRemainingSeconds(
-      data.remaining_time_seconds ?? 0,
-      data.last_refill_time,
-      data.paused ?? data.status === "paused",
-    ),
-    refillCount: data.refill_count ?? 0,
-  }
+export const NO_LOCATIONS = "There aren't any shisha stations available right now. Please check with staff."
+
+export const NO_FLAVOURS = "There aren't any flavours available right now. Please check with staff."
+
+export const LOCATION_REQUEST = "Which station? Reply with a number."
+
+export function invalidLocation(count: number): string {
+  return `Please reply with a number between 1 and ${count}.`
 }
 
-/** The customer's live session as a plain summary, for the WhatsApp profile screen.
- *  null = no live session. Throws on a real error so the profile can show
- *  "temporarily unavailable" for this section instead of a wrong "none". */
-export async function getShishaProfileSession(
-  tenantId: string,
-  rawPhone: string,
-): Promise<messages.ActiveSessionSummary | null> {
-  const db = getSupabaseServerClient()
-  if (!db) throw new Error("Supabase client unavailable")
-  const who = await resolveCustomerRef(db, tenantId, rawPhone)
-  const session = await getActiveSession(db, tenantId, who)
-  if (!session) return null
-  return {
-    locationName: session.locationName,
-    flavourName: session.flavourName ?? "Unknown",
-    deviceCode: session.deviceCode,
-    remainingTimeSeconds: session.remainingTimeSeconds,
-    refillCount: session.refillCount,
-    status: session.status as messages.ActiveSessionSummary["status"],
-  }
+export const FLAVOUR_REQUEST = "Which flavour would you like? Reply with a number."
+
+export function invalidFlavour(count: number): string {
+  return `Please reply with a number between 1 and ${count}.`
 }
 
-/** Lightweight yes/no check (throws on a real error) for e.g. a future profile/overview line. */
-export async function checkActiveShishaSession(tenantId: string, rawPhone: string): Promise<boolean> {
-  const db = getSupabaseServerClient()
-  if (!db) throw new Error("Supabase client unavailable")
-  const who = await resolveCustomerRef(db, tenantId, rawPhone)
-  const { data, error } = await db
-    .from("shisha_sessions")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .or(customerOrFilter(who))
-    .in("status", ["active", "refill", "paused"])
-    .limit(1)
-    .maybeSingle<{ id: string }>()
-  if (error) throw error
-  return data !== null
+/** `station` is null when the tenant doesn't use stations (shisha_settings.require_station = false). */
+export function sessionConfirmation(station: string | null, flavour: string, price: number): string {
+  const stationLine = station ? `📍 Station: ${station}\n` : ""
+  return `${stationLine}🍃 Flavour: ${flavour}\n💰 Price: ${formatRands(price)} (staff will confirm payment with you)`
 }
 
-// ============================================================================
-// MENU PARSING
-// ============================================================================
+export const SESSION_CONFIRM_BUTTONS = ["✅ Yes", "❌ No"]
 
-type MenuChoice = "new_session" | "coal_refill" | "end_session" | "report_issue" | "track_session" | null
+export const SESSION_CONFIRMATION_INVALID = "Please tap ✅ Yes or ❌ No below to confirm your session."
 
-function parseMenuChoice(rawMessage: string): MenuChoice {
-  const text = rawMessage.trim().toLowerCase()
-
-  // A pick from the numbered menu: a bare number ("2", "number 2", "option 2").
-  // Deliberately NOT "any digit anywhere" — "I need 2 hookahs" is not option 2.
-  const pick = text.match(/^(?:number|no\.?|option)?\s*(\d{1,2})$/)
-  const selection = pick ? parseInt(pick[1], 10) : null
-  if (selection === 1) return "new_session"
-  if (selection === 2) return "coal_refill"
-  if (selection === 3) return "end_session"
-  if (selection === 4) return "report_issue"
-  if (selection === 5) return "track_session"
-
-  // Specific actions first, so "I want to end my shisha session" is an
-  // end-session request and not a new-session one just because it has "want".
-  if (/refill|coal/.test(text)) return "coal_refill"
-  if (/end session|end my|close/.test(text)) return "end_session"
-  if (/issue|report|problem/.test(text)) return "report_issue"
-  if (/track|my session|session status/.test(text)) return "track_session"
-
-  // New session: explicit phrasing, or a request verb paired with shisha/hookah/hubbly
-  // anywhere in the message ("book a shisha", "can I get a mint hookah", "I need shisha").
-  const namesShisha = /\b(?:shisha|hookah|hubbly)s?\b/.test(text)
-  const wantsOne = /\b(book|reserve|order|buy|start|get|want|need|like|bring|give|have|try)\b/.test(text)
-  if (/new session|start.*session|smoke/.test(text) || (namesShisha && wantsOne)) return "new_session"
-
-  // A bare mention of "hookah" (e.g. the "Track My Hookah" button) means tracking.
-  if (/hookah/.test(text)) return "track_session"
-  return null
-}
-
-// ============================================================================
-// SESSION ACTIONS
-// ============================================================================
-
-async function beginMenu(): Promise<ActionResult> {
-  return actionResult(messages.WELCOME_MENU, { state: SHISHA_STATE_MENU })
-}
-
-async function handleCoalRefillRequest(
-  db: SupabaseClient,
-  tenantId: string,
-  who: ShishaCustomerRef,
-): Promise<ActionResult> {
-  const session = await getActiveSession(db, tenantId, who)
-  if (!session) return actionResult(messages.NO_ACTIVE_SESSION, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-
-  const blocked = await blockIfPendingRequest(db, tenantId, who)
-  if (blocked) return blocked
-
-  try {
-    await createShishaRequest(db, {
-      type: "maintenance",
-      tenantId,
-      who,
-      sessionId: session.id,
-      locationName: session.locationName,
-      flavourName: session.flavourName,
-      deviceCode: session.deviceCode,
-      // The flavour's own REFILL price (shisha_products.refill_price), which staff
-      // set separately from the session price. This is only what the customer is
-      // quoted: staff charge the price in force when they accept. 0 = free refill.
-      amount: session.flavourRefillPrice ?? 0,
-    })
-    return actionResult(
-      messages.coalRefillRequested(session.flavourRefillPrice ?? null),
-      null,
-      messages.SHISHA_NEXT_STEPS_BUTTONS,
-    )
-  } catch (err) {
-    logger.error("[shisha] failed to create maintenance request", {
-      tenantId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return actionResult(messages.UNEXPECTED_ERROR, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
-}
-
-async function trackSession(db: SupabaseClient, tenantId: string, who: ShishaCustomerRef): Promise<ActionResult> {
-  const session = await getActiveSession(db, tenantId, who)
-  if (!session) return actionResult(messages.NO_SESSION_TO_TRACK, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-
-  return actionResult(
-    messages.sessionStatusMessage({
-      locationName: session.locationName,
-      flavourName: session.flavourName ?? "Unknown",
-      deviceCode: session.deviceCode,
-      remainingTimeSeconds: session.remainingTimeSeconds,
-      refillCount: session.refillCount,
-      status: session.status as messages.ActiveSessionSummary["status"],
-    }),
-    null,
-    messages.SHISHA_NEXT_STEPS_BUTTONS,
+export function sessionRequestSent(price: number): string {
+  return (
+    "🆕 Got it — I've sent your session request to staff. They'll set you up shortly " +
+    `and confirm payment of ${formatRands(price)}.`
   )
 }
 
-async function handleEndSessionRequest(
-  db: SupabaseClient,
-  tenantId: string,
-  who: ShishaCustomerRef,
-): Promise<ActionResult> {
-  const session = await getActiveSession(db, tenantId, who)
-  if (!session) return actionResult(messages.NO_ACTIVE_SESSION, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
+export const PRICE_UNAVAILABLE =
+  "I couldn't load the price for that flavour right now. Please try again in a moment, or ask a staff member."
 
-  const blocked = await blockIfPendingRequest(db, tenantId, who)
-  if (blocked) return blocked
+/** Shown after a request is sent, and on any other shisha screen that would otherwise dead-end.
+ *  "🏠 Main Menu" deliberately contains the word "menu" for action-router's global reset match. */
+export const SHISHA_NEXT_STEPS_BUTTONS = ["📡 Track My Hookah", "🏠 Main Menu"]
 
-  try {
-    await createShishaRequest(db, {
-      type: "end_session",
-      tenantId,
-      who,
-      sessionId: session.id,
-      locationName: session.locationName,
-      flavourName: session.flavourName,
-      deviceCode: session.deviceCode,
-      amount: session.amount,
-    })
-    return actionResult(messages.END_SESSION_SENT, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  } catch (err) {
-    logger.error("[shisha] failed to create end_session request", {
-      tenantId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return actionResult(messages.UNEXPECTED_ERROR, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
+export const SESSION_REQUEST_CANCELLED = "No problem, I've cancelled that. Anything else?"
+
+export const NO_ACTIVE_SESSION =
+  "You don't have an active shisha session right now, so there's nothing to update. Want to start one? Reply 'shisha'."
+
+export const PENDING_REQUEST_EXISTS =
+  "⏳ You already have a request with staff — they're on it. Please wait for that to be handled before sending another."
+
+// ============================================================================
+// SESSION TRACKING
+// ============================================================================
+
+export interface ActiveSessionSummary {
+  locationName: string | null
+  flavourName: string
+  deviceCode: string | null
+  remainingTimeSeconds: number
+  refillCount: number
+  status: "active" | "refill" | "paused" | "expired"
 }
 
-async function beginIssueSelection(
-  db: SupabaseClient,
-  tenantId: string,
-  who: ShishaCustomerRef,
-): Promise<ActionResult> {
-  const session = await getActiveSession(db, tenantId, who)
-  if (!session) return actionResult(messages.NO_ACTIVE_SESSION, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-
-  const blocked = await blockIfPendingRequest(db, tenantId, who)
-  if (blocked) return blocked
-
-  return actionResult(messages.issueMenu(), {
-    state: SHISHA_STATE_AWAITING_ISSUE_SELECTION,
-    data: { activeSession: session },
-  })
+function formatRemainingTime(totalSeconds: number): string {
+  const clamped = Math.max(0, Math.round(totalSeconds))
+  const minutes = Math.floor(clamped / 60)
+  const seconds = clamped % 60
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`
 }
 
-async function finalizeIssueReport(
-  db: SupabaseClient,
-  tenantId: string,
-  who: ShishaCustomerRef,
-  session: ActiveShishaSession | undefined,
-  issueKey: string,
-  issueLabel: string,
-): Promise<ActionResult> {
-  const blocked = await blockIfPendingRequest(db, tenantId, who)
-  if (blocked) return blocked
+const SESSION_STATUS_LABEL: Record<ActiveSessionSummary["status"], string> = {
+  active: "🟢 Active",
+  refill: "🔥 Refilling",
+  paused: "⏸️ Paused",
+  expired: "🔴 Expired",
+}
 
-  try {
-    await createShishaRequest(db, {
-      type: "issue_report",
-      tenantId,
-      who,
-      sessionId: session?.id ?? null,
-      locationName: session?.locationName ?? null,
-      flavourName: session?.flavourName ?? null,
-      deviceCode: session?.deviceCode ?? null,
-      issueKey,
-      issueLabel,
-    })
-    return actionResult(messages.issueReportSent(issueLabel), null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  } catch (err) {
-    logger.error("[shisha] failed to create issue_report request", {
-      tenantId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return actionResult(messages.UNEXPECTED_ERROR, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
+export function sessionStatusMessage(session: ActiveSessionSummary): string {
+  const stationLine = session.locationName ? `📍 Station: ${session.locationName}\n` : ""
+  const deviceLine = session.deviceCode ? `\n🔌 Device: ${session.deviceCode}` : ""
+  return (
+    `💨 *Your Hookah Session*\n\n` +
+    stationLine +
+    `🍃 Flavour: ${session.flavourName}${deviceLine}\n` +
+    `${SESSION_STATUS_LABEL[session.status]}\n` +
+    `⏳ Time remaining: ${formatRemainingTime(session.remainingTimeSeconds)}\n` +
+    `🔥 Refills so far: ${session.refillCount}`
+  )
+}
+
+export const NO_SESSION_TO_TRACK =
+  "You don't have an active shisha session to track right now. Want to start one? Reply 'shisha'."
+
+/** Kept for any caller that still imports it. The refill flow now uses coalRefillRequested(). */
+export const COAL_REFILL_SENT = "🔥 Coal refill requested — staff have been notified and are on their way."
+
+/** `price` = what staff will charge for the refill (null/0 = no charge to mention). */
+export function coalRefillRequested(price: number | null): string {
+  const priceLine = price !== null && price > 0 ? `\n💰 Refill: ${formatRands(price)} (staff will confirm payment with you)` : ""
+  return `${COAL_REFILL_SENT}${priceLine}`
+}
+
+export const END_SESSION_SENT = "⏹️ Got it — I've asked staff to come close out your session."
+
+export const ISSUE_TYPES = [
+  { key: "iyatsarha", label: "Iyatsarha" },
+  { key: "weak_smoke", label: "Weak / No Smoke" },
+  { key: "hose", label: "Hose Problem" },
+  { key: "water", label: "Water Needs Changing" },
+  { key: "coal_cold", label: "Coal Not Hot Enough" },
+  { key: "other", label: "Other" },
+] as const
+
+export function issueMenu(): string {
+  const lines = ISSUE_TYPES.map((t, i) => `${i + 1}️⃣ ${t.label}`).join("\n")
+  return `What's the issue? Reply with a number.\n\n${lines}`
+}
+
+export const ISSUE_SELECTION_INVALID = `Please reply with a number from the list.`
+
+export const ISSUE_OTHER_REQUEST = "Please describe the issue in a few words."
+
+export function issueReportSent(label: string): string {
+  return `⚠️ Thanks — I've reported "${label}" to staff. Someone will be over shortly.`
 }
 
 // ============================================================================
-// STATE DISPATCHER
+// STAFF DECISIONS (sent when staff accept or reject a request in the dashboard)
 // ============================================================================
 
-async function continueShishaFlow(
-  db: SupabaseClient,
-  tenantId: string,
-  who: ShishaCustomerRef,
-  stateName: ShishaStateName,
-  stateData: ShishaStateData,
-  rawMessage: string,
-): Promise<ActionResult> {
-  switch (stateName) {
-    case SHISHA_STATE_MENU: {
-      const choice = parseMenuChoice(rawMessage)
-      if (!choice) return actionResult(messages.MENU_CHOICE_INVALID, { state: SHISHA_STATE_MENU })
-      if (choice !== "track_session") {
-        const blocked = await blockIfPendingRequest(db, tenantId, who)
-        if (blocked) return blocked
-      }
-      switch (choice) {
-        case "new_session":
-          return beginLocationStep(db, tenantId)
-        case "coal_refill":
-          return handleCoalRefillRequest(db, tenantId, who)
-        case "end_session":
-          return handleEndSessionRequest(db, tenantId, who)
-        case "report_issue":
-          return beginIssueSelection(db, tenantId, who)
-        case "track_session":
-          return trackSession(db, tenantId, who)
-      }
-    }
-
-    case SHISHA_STATE_AWAITING_LOCATION:
-      return continueLocationStep(db, tenantId, stateData, rawMessage)
-
-    case SHISHA_STATE_AWAITING_FLAVOUR:
-      return continueFlavourStep(db, tenantId, stateData, rawMessage)
-
-    case SHISHA_STATE_AWAITING_SESSION_CONFIRMATION:
-      return continueSessionConfirmationStep(db, tenantId, who, stateData, rawMessage)
-
-    case SHISHA_STATE_AWAITING_ISSUE_SELECTION: {
-      const selection = extractListSelection(rawMessage)
-      const issue = selection !== null ? messages.ISSUE_TYPES[selection - 1] : undefined
-      if (!issue) {
-        return actionResult(messages.ISSUE_SELECTION_INVALID, {
-          state: SHISHA_STATE_AWAITING_ISSUE_SELECTION,
-          data: stateData,
-        })
-      }
-      if (issue.key === "other") {
-        return actionResult(messages.ISSUE_OTHER_REQUEST, {
-          state: SHISHA_STATE_AWAITING_ISSUE_DESCRIPTION,
-          data: stateData,
-        })
-      }
-      return finalizeIssueReport(db, tenantId, who, stateData.activeSession, issue.key, issue.label)
-    }
-
-    case SHISHA_STATE_AWAITING_ISSUE_DESCRIPTION: {
-      const description = rawMessage.trim()
-      if (!description) {
-        return actionResult(messages.ISSUE_OTHER_REQUEST, {
-          state: SHISHA_STATE_AWAITING_ISSUE_DESCRIPTION,
-          data: stateData,
-        })
-      }
-      return finalizeIssueReport(db, tenantId, who, stateData.activeSession, "other", description)
-    }
-
-    default:
-      return beginMenu()
-  }
+export function requestAcceptedSession(details: {
+  station: string | null
+  flavour: string
+  deviceCode: string
+  price: number
+}): string {
+  const stationLine = details.station ? `📍 Station: ${details.station}\n` : ""
+  return (
+    "✅ Your shisha session is confirmed — enjoy!\n\n" +
+    stationLine +
+    `🍃 Flavour: ${details.flavour}\n` +
+    `🔌 Device: ${details.deviceCode}\n` +
+    `💰 Price: ${formatRands(details.price)}`
+  )
 }
 
-// ============================================================================
-// PUBLIC SURFACE
-// ============================================================================
-
-const UNAVAILABLE: ActionResult = { reply: messages.SHISHA_UNAVAILABLE, buttons: [], nextState: null }
-
-/** Main-menu row tap: open the numbered Shisha menu (no text parsing needed). */
-async function startShishaFlow(tenantId: string, _phone: string): Promise<ActionResult> {
-  if (!(await isModuleEnabled(tenantId, "shisha"))) return UNAVAILABLE
-  return beginMenu()
+/**
+ * Sent when staff approve a session request and the shop takes payment online:
+ * the customer pays first, then staff pick the hookah and start the session.
+ * `testMode` = the shop's Yoco is in test mode (no real money moves).
+ */
+export function requestApprovedPleasePay(details: {
+  station: string | null
+  flavour: string
+  price: number
+  url: string
+  testMode: boolean
+}): string {
+  const stationLine = details.station ? `📍 Station: ${details.station}\n` : ""
+  const testNote = details.testMode ? "\n\n_Test mode: no real money is charged._" : ""
+  return (
+    "✅ Your shisha request is approved!\n\n" +
+    stationLine +
+    `🍃 Flavour: ${details.flavour}\n` +
+    `💰 Amount: ${formatRands(details.price)}\n\n` +
+    "💳 Tap the link to pay securely:\n" +
+    `${details.url}\n\n` +
+    "Your session starts as soon as the payment goes through. Please pay within 24 hours." +
+    testNote
+  )
 }
 
-/** Fresh "shisha" intent with no conversation open. */
-async function handle(tenantId: string, _intent: RoutedIntent, message: IncomingMessage): Promise<ActionResult> {
-  if (!(await isModuleEnabled(tenantId, "shisha"))) return UNAVAILABLE
-
-  const db = getSupabaseServerClient()
-  if (!db) {
-    logger.error("[shisha] failed to get Supabase client", { tenantId })
-    return actionResult(messages.TECHNICAL_DIFFICULTY, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
-
-  try {
-    const who = await resolveCustomerRef(db, tenantId, message.from)
-    const rawMessage = message.contentSummary ?? message.text ?? ""
-    const choice = parseMenuChoice(rawMessage)
-
-    // One request at a time: gate every choice that would end in a new row.
-    if (choice && choice !== "track_session") {
-      const blocked = await blockIfPendingRequest(db, tenantId, who)
-      if (blocked) return blocked
-    }
-
-    switch (choice) {
-      case "new_session":
-        return (await trySmartShishaEntry(db, tenantId, rawMessage)) ?? (await beginLocationStep(db, tenantId))
-      case "coal_refill":
-        return await handleCoalRefillRequest(db, tenantId, who)
-      case "end_session":
-        return await handleEndSessionRequest(db, tenantId, who)
-      case "report_issue":
-        return await beginIssueSelection(db, tenantId, who)
-      case "track_session":
-        return await trackSession(db, tenantId, who)
-      default:
-        return await beginMenu()
-    }
-  } catch (unexpectedError) {
-    logger.error("[shisha] unexpected error in handle", {
-      tenantId,
-      error: unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError),
-    })
-    return actionResult(messages.UNEXPECTED_ERROR, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
+/** Sent by the payment webhook once the customer's online payment is confirmed. */
+export function paymentReceivedSession(details: { flavour: string | null; price: number }): string {
+  const flavourLine = details.flavour ? `🍃 Flavour: ${details.flavour}\n` : ""
+  return (
+    "✅ *Payment received*, thank you!\n\n" +
+    flavourLine +
+    `💰 Paid: ${formatRands(details.price)}\n\n` +
+    "Staff will start your session shortly."
+  )
 }
 
-/** In-progress "shisha_*" conversation. Returns null for states this service doesn't own. */
-async function handleState(
-  tenantId: string,
-  state: ConversationState,
-  message: IncomingMessage,
-): Promise<ActionResult | null> {
-  if (!SHISHA_STATE_NAMES.has(state.state)) return null
+/** Sent by the daily expiry job when a payment link was not used in time and the request was closed. */
+export const PAYMENT_LINK_EXPIRED =
+  "⏰ Your shisha request was closed because the payment link wasn't used in time. Please don't pay that link. You can send a new request any time — reply 'shisha'."
 
-  // Module switched off mid-conversation: end the flow politely (nextState: null clears it).
-  if (!(await isModuleEnabled(tenantId, "shisha"))) return UNAVAILABLE
-
-  const db = getSupabaseServerClient()
-  if (!db) {
-    logger.error("[shisha] failed to get Supabase client", { tenantId })
-    return actionResult(messages.TECHNICAL_DIFFICULTY, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
-
-  try {
-    const who = await resolveCustomerRef(db, tenantId, message.from)
-    const rawMessage = message.contentSummary ?? message.text ?? ""
-    return await continueShishaFlow(db, tenantId, who, state.state as ShishaStateName, readStateData(state), rawMessage)
-  } catch (unexpectedError) {
-    logger.error("[shisha] unexpected error in handleState", {
-      tenantId,
-      state: state.state,
-      error: unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError),
-    })
-    return actionResult(messages.UNEXPECTED_ERROR, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
-  }
+/** Staff cancelled a request that was waiting for the customer's payment. */
+export function requestCancelledBeforePayment(reason: string | null): string {
+  const reasonLine = reason ? `\n\nReason: ${reason}` : ""
+  return (
+    `Sorry, staff couldn't take that request after all.${reasonLine}\n\n` +
+    "Please don't pay the payment link you were sent. You can send a new request any time — reply 'shisha'."
+  )
 }
 
-export const shishaService = {
-  intent: "shisha" as const,
-  handle,
-  handleState,
-  startShishaFlow,
+/** Staff rejected a request the customer had already paid for. `refund`: refunded = money returned through
+ *  the card provider; manual = the shop will return it; in_person = it was paid at the counter. */
+export function requestRejectedAfterPayment(reason: string | null, refund: "refunded" | "manual" | "in_person"): string {
+  const reasonLine = reason ? `\n\nReason: ${reason}` : ""
+  const refundLine =
+    refund === "refunded"
+      ? "Your payment has been refunded in full. It can take a few days to show on your statement."
+      : refund === "in_person"
+        ? "Staff will return your payment."
+        : "You will be refunded in full. The shop will sort it out with you."
+  return `Sorry, staff couldn't take that request.${reasonLine}\n\n${refundLine}\n\nYou can send a new request any time — reply 'shisha'.`
 }
+
+/** Sent when an online payment came in but the request can no longer be served (it was closed meanwhile). */
+export function paymentRefundedSession(refunded: boolean): string {
+  return refunded
+    ? "Sorry, we couldn't take your shisha request after all. Your payment has been refunded in full. It can take a few days to show on your statement."
+    : "Sorry, we couldn't take your shisha request after all. You will be refunded in full. The shop has been told and will sort it out with you."
+}
+
+/** `charge` = what was added to the session for this refill (0 = free). */
+export function requestAcceptedRefill(charge: number): string {
+  return charge > 0
+    ? `🔥 Your coal refill is on its way.\n💰 Refill: ${formatRands(charge)}`
+    : "🔥 Your coal refill is on its way."
+}
+
+export function requestAcceptedEnd(total: number): string {
+  return `⏹️ Your session is closed. Thanks for visiting!\n💰 Total: ${formatRands(total)}`
+}
+
+export const REQUEST_ACCEPTED_ISSUE = "🛠️ Thanks for letting us know — staff have seen your report and are on it."
+
+export function requestRejected(reason: string | null): string {
+  const reasonLine = reason ? `\n\nReason: ${reason}` : ""
+  return `Sorry, staff couldn't take that request right now.${reasonLine}\n\nYou can send a new request any time — reply 'shisha'.`
+}
+
+export const TECHNICAL_DIFFICULTY =
+  "Sorry, I'm having a technical issue right now. Please try again in a moment, or ask a staff member for help."
+
+export const UNEXPECTED_ERROR = "Something went wrong on my end. Please try again, or reply 'menu' to start over."
+
+/** Shown when the shop has switched the Shisha module off (stale menu tap, or mid-flow toggle). */
+export const SHISHA_UNAVAILABLE = "Sorry, that service isn't available right now. What would you like to do instead?"
