@@ -2,7 +2,7 @@
 //
 // Only the WhatsApp message-template panel lives here now. Booking rules moved
 // to app/admin/booking/BookingRulesDrawer.tsx and Queue rules to
-// app/admin/queue/QueueRulesDrawer.tsx. Still used by WhatsAppSettingsDrawer
+// app/admin/queue/QueueRulesDrawer.tsx. Still used by Settings > WhatsApp Settings (WhatsAppSettingsPanels)
 // (Inbox), which is why the file keeps its name.
 "use client"
 
