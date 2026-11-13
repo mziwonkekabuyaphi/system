@@ -10,6 +10,9 @@
 //   Messages               -> MessageSettingsPanel (AI default + message wording)
 //
 // Both stay mounted (just hidden) so unsaved edits survive switching between the two.
+// What each lists follows the shop's modules: booking wording and booking templates need Booking, queue ones
+// need Queue, shift texts need Shifts, pay texts need Payroll, and the staff number check needs staff.
+// The AI default is for every WhatsApp conversation, so the Messages tab is always there.
 "use client"
 
 import { useState } from "react"
@@ -25,7 +28,14 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "messages", label: "Messages" },
 ]
 
-export function WhatsAppSettingsPanels({ messageSettings }: { messageSettings: AdminMessageSettings }) {
+export function WhatsAppSettingsPanels({
+  messageSettings,
+  modules,
+}: {
+  messageSettings: AdminMessageSettings
+  /** Effective module state (flags.on). Decides which templates and wording fields are listed. */
+  modules: Record<string, boolean>
+}) {
   const [tab, setTab] = useState<Tab>("connection")
 
   return (
@@ -50,10 +60,14 @@ export function WhatsAppSettingsPanels({ messageSettings }: { messageSettings: A
       </div>
 
       <div className={tab === "connection" ? "" : "hidden"}>
-        <WhatsAppTemplatesPanel />
+        <WhatsAppTemplatesPanel modules={modules} />
       </div>
       <div className={tab === "messages" ? "" : "hidden"}>
-        <MessageSettingsPanel initial={messageSettings} />
+        <MessageSettingsPanel
+          initial={messageSettings}
+          showBooking={modules.booking === true}
+          showQueue={modules.queue === true}
+        />
       </div>
     </div>
   )

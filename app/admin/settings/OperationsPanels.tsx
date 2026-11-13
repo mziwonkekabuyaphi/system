@@ -15,7 +15,17 @@ import { FieldRow, SaveRow, Toggle, inputClass } from "./ui"
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
-export function MessageSettingsPanel({ initial }: { initial: AdminMessageSettings }) {
+export function MessageSettingsPanel({
+  initial,
+  showBooking = true,
+  showQueue = true,
+}: {
+  initial: AdminMessageSettings
+  /** Booking confirmation + reminder wording. Hidden for shops that don't run Booking. */
+  showBooking?: boolean
+  /** Queue joined / almost your turn / called wording. Hidden for shops that don't run Queue. */
+  showQueue?: boolean
+}) {
   const [form, setForm] = useState(initial)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -46,46 +56,54 @@ export function MessageSettingsPanel({ initial }: { initial: AdminMessageSetting
       </div>
 
       <div className="mt-4 space-y-3">
-        <FieldRow label="Booking confirmation">
-          <textarea
-            className={inputClass}
-            rows={2}
-            value={form.bookingConfirmationTemplate ?? ""}
-            onChange={(e) => setForm({ ...form, bookingConfirmationTemplate: e.target.value || null })}
-          />
-        </FieldRow>
-        <FieldRow label="Booking reminder">
-          <textarea
-            className={inputClass}
-            rows={2}
-            value={form.bookingReminderTemplate ?? ""}
-            onChange={(e) => setForm({ ...form, bookingReminderTemplate: e.target.value || null })}
-          />
-        </FieldRow>
-        <FieldRow label="Joined the queue">
-          <textarea
-            className={inputClass}
-            rows={2}
-            value={form.queueJoinedTemplate ?? ""}
-            onChange={(e) => setForm({ ...form, queueJoinedTemplate: e.target.value || null })}
-          />
-        </FieldRow>
-        <FieldRow label="Almost your turn">
-          <textarea
-            className={inputClass}
-            rows={2}
-            value={form.queueAlmostTurnTemplate ?? ""}
-            onChange={(e) => setForm({ ...form, queueAlmostTurnTemplate: e.target.value || null })}
-          />
-        </FieldRow>
-        <FieldRow label="You've been called">
-          <textarea
-            className={inputClass}
-            rows={2}
-            value={form.queueCalledTemplate ?? ""}
-            onChange={(e) => setForm({ ...form, queueCalledTemplate: e.target.value || null })}
-          />
-        </FieldRow>
+        {showBooking && (
+          <>
+          <FieldRow label="Booking confirmation">
+            <textarea
+              className={inputClass}
+              rows={2}
+              value={form.bookingConfirmationTemplate ?? ""}
+              onChange={(e) => setForm({ ...form, bookingConfirmationTemplate: e.target.value || null })}
+            />
+          </FieldRow>
+          <FieldRow label="Booking reminder">
+            <textarea
+              className={inputClass}
+              rows={2}
+              value={form.bookingReminderTemplate ?? ""}
+              onChange={(e) => setForm({ ...form, bookingReminderTemplate: e.target.value || null })}
+            />
+          </FieldRow>
+          </>
+        )}
+        {showQueue && (
+          <>
+          <FieldRow label="Joined the queue">
+            <textarea
+              className={inputClass}
+              rows={2}
+              value={form.queueJoinedTemplate ?? ""}
+              onChange={(e) => setForm({ ...form, queueJoinedTemplate: e.target.value || null })}
+            />
+          </FieldRow>
+          <FieldRow label="Almost your turn">
+            <textarea
+              className={inputClass}
+              rows={2}
+              value={form.queueAlmostTurnTemplate ?? ""}
+              onChange={(e) => setForm({ ...form, queueAlmostTurnTemplate: e.target.value || null })}
+            />
+          </FieldRow>
+          <FieldRow label="You've been called">
+            <textarea
+              className={inputClass}
+              rows={2}
+              value={form.queueCalledTemplate ?? ""}
+              onChange={(e) => setForm({ ...form, queueCalledTemplate: e.target.value || null })}
+            />
+          </FieldRow>
+          </>
+        )}
       </div>
 
       <SaveRow isPending={isPending} onSave={save} message={message} />

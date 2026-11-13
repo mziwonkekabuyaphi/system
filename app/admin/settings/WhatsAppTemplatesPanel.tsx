@@ -49,6 +49,25 @@ const TEMPLATE_INFO: Record<string, { label: string; when: string }> = {
   },
 }
 
+// Which module(s) each template belongs to: it is listed when ANY of them is effective for the shop
+// (module state from the database, see lib/tenant/effective-modules.ts). Staff is the base of every
+// module, so the staff number check shows for any shop that has staff. A key not listed here is always shown.
+const ANY_STAFF = ["staff", "booking", "queue", "shisha", "shifts", "payroll"]
+const TEMPLATE_MODULES: Record<string, string[]> = {
+  booking_confirmation: ["booking"],
+  booking_reminder: ["booking"],
+  waitlist_slot_open: ["booking"],
+  queue_joined: ["queue"],
+  queue_almost_turn: ["queue"],
+  queue_called: ["queue"],
+  staff_whatsapp_verify: ANY_STAFF,
+  staff_rota_published: ["shifts"],
+  staff_shift_changed: ["shifts"],
+  staff_swap_request: ["shifts"],
+  staff_swap_update: ["shifts"],
+  staff_payslip_paid: ["payroll"],
+}
+
 const VARIABLE_LABELS: Record<string, string> = {
   customer_name: "customer's first name",
   business_name: "your business name",
@@ -79,7 +98,7 @@ function preview(t: WhatsAppTemplateDto, body: string): string {
   return body.replace(/\{\{(\d+)\}\}/g, (_, n) => t.exampleValues[Number(n) - 1] ?? "…")
 }
 
-export function WhatsAppTemplatesPanel() {
+export function WhatsAppTemplatesPanel({ modules }: { modules?: Record<string, boolean> } = {}) {
   const [templates, setTemplates] = useState<WhatsAppTemplateDto[] | null>(null)
   const [connected, setConnected] = useState(true)
   const [bodies, setBodies] = useState<Record<string, string>>({})
@@ -251,49 +270,59 @@ export function WhatsAppTemplatesPanel() {
     )
   }
 
-  const customerTemplates = (templates ?? []).filter((t) => !t.key.startsWith("staff_"))
-  const staffTemplates = (templates ?? []).filter((t) => t.key.startsWith("staff_"))
+  // Without `modules` (older callers) everything is shown, as before.
+  const belongsToShop = (t: WhatsAppTemplateDto) => {
+    const needs = TEMPLATE_MODULES[t.key]
+    return !modules || !needs || needs.some((k) => modules[k] === true)
+  }
+  const customerTemplates = (templates ?? []).filter((t) => !t.key.startsWith("staff_") && belongsToShop(t))
+  const staffTemplates = (templates ?? []).filter((t) => t.key.startsWith("staff_") && belongsToShop(t))
+  // A shop with only staff has no customer messages: hide that card, but keep it while loading and while
+  // the shop has no templates yet, because "Set up default templates" lives inside it.
+  const showCustomerCard = templates === null || templates.length === 0 || customerTemplates.length > 0
 
   return (
     <div className="space-y-6">
     {/* Connection status + Connect/Reconnect. After a (re)connect, reload this panel's own "connected" flag. */}
     <WhatsAppConnectionPanel onConnected={() => void load()} />
-    <SettingsCard
-      title="Messages to customers who haven't messaged you"
-      description="WhatsApp only lets you message someone first with a template Meta has approved. Customers who check in at the kiosk have no open chat, so these are what they receive."
-    >
-      {loadError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>}
+    {showCustomerCard && (
+      <SettingsCard
+        title="Messages to customers who haven't messaged you"
+        description="WhatsApp only lets you message someone first with a template Meta has approved. Customers who check in at the kiosk have no open chat, so these are what they receive."
+      >
+        {loadError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>}
 
-      {!connected && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          WhatsApp isn&apos;t connected for this shop yet, so templates can&apos;t be sent to Meta.
-        </p>
-      )}
+        {!connected && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            WhatsApp isn&apos;t connected for this shop yet, so templates can&apos;t be sent to Meta.
+          </p>
+        )}
 
-      {templates === null ? (
-        <p className="text-sm text-stone-500">Loading…</p>
-      ) : templates.length === 0 ? (
-        <div className="space-y-2">
-          <p className="text-sm text-stone-600">No templates set up yet.</p>
-          <button type="button" className={primaryButtonClass} onClick={setUp} disabled={isPending}>
-            Set up default templates
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-stone-500">
-              Keep the wording factual. Promotional wording gets a template re-labelled &ldquo;Marketing&rdquo;, which costs more.
-            </p>
-            <button type="button" className={secondaryButtonClass} onClick={refresh} disabled={isPending || !connected}>
-              {busyKey === "*" ? "Checking…" : "Refresh status"}
+        {templates === null ? (
+          <p className="text-sm text-stone-500">Loading…</p>
+        ) : templates.length === 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm text-stone-600">No templates set up yet.</p>
+            <button type="button" className={primaryButtonClass} onClick={setUp} disabled={isPending}>
+              Set up default templates
             </button>
           </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-stone-500">
+                Keep the wording factual. Promotional wording gets a template re-labelled &ldquo;Marketing&rdquo;, which costs more.
+              </p>
+              <button type="button" className={secondaryButtonClass} onClick={refresh} disabled={isPending || !connected}>
+                {busyKey === "*" ? "Checking…" : "Refresh status"}
+              </button>
+            </div>
 
-          {customerTemplates.map(renderTemplate)}
-        </div>
-      )}
-    </SettingsCard>
+            {customerTemplates.map(renderTemplate)}
+          </div>
+        )}
+      </SettingsCard>
+    )}
 
     {templates !== null && staffTemplates.length > 0 && (
       <SettingsCard
