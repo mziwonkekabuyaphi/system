@@ -39,7 +39,7 @@ import { getCustomer } from "@/lib/services/tenant-customer"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
 import { isModuleEnabled } from "@/lib/tenant/modules"
 import { formatPassportMoney } from "@/lib/services/passport"
-import { getTenantYocoCredentials } from "@/lib/payments/credentials"
+import { getCardOption } from "@/lib/payments/card"
 import { generateTicketQrCode, getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { getTenantDisplayName, scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 import {
@@ -202,11 +202,11 @@ async function buildEventsReply(supabase: SupabaseClient, tenantId: string, time
     return lines.join("\n")
   })
 
-  // Offer "Buy Tickets" only when this shop can take payment here: Passport on, Yoco connected, or a free tier.
+  // Offer "Buy Tickets" only when this shop can take payment here: Passport on, a card provider connected, or a free tier.
   const canBuy =
     tiers.some((t) => Number(t.price) <= 0 && t.capacity > t.sold) ||
     (await isModuleEnabled(tenantId, "wallet")) ||
-    Boolean(await getTenantYocoCredentials(supabase, tenantId))
+    Boolean(await getCardOption(supabase, tenantId))
 
   return {
     reply: ["🎟️ *Upcoming events*", "", blocks.join("\n\n"), "", canBuy ? "Tap *Buy Tickets* to get yours." : BUY_HELP].join("\n"),
