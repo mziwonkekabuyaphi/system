@@ -502,7 +502,7 @@ export function SettingsManager({
       )}
       {activePage.id === "payments" && <PaymentsPanel />}
       {activePage.id === "whatsapp" && initialMessageSettings && (
-        <WhatsAppSettingsPanels messageSettings={initialMessageSettings} />
+        <WhatsAppSettingsPanels messageSettings={initialMessageSettings} modules={flags.on} />
       )}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
