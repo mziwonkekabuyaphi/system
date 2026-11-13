@@ -50,6 +50,9 @@ const PAGE_BG = "#f3f4f6"
 /** Small footer line. Leave "" to never show one; tenants with remove_powered_by also never show it. */
 const POWERED_BY_TEXT = ""
 
+/** Caption under each ticket image on WhatsApp (the ticket number is already on the image). */
+const TICKET_CAPTION = "See you there! 🎉"
+
 const h = React.createElement
 
 // ----------------------------------------------------------------------------
@@ -380,6 +383,8 @@ async function drawTicketPng(d: TicketImageData): Promise<Buffer> {
           d.eventName,
         ),
       ),
+      // Accent stripe (tenant secondary colour) separating the header from the details
+      h("div", { style: { display: "flex", height: 10, backgroundColor: brand.accentColor } }),
       // Details with icons
       h(
         "div",
@@ -485,7 +490,7 @@ export function scheduleOrderTicketImages(tenantId: string, orderId: string, pho
         for (const ticket of data as TicketRow[]) {
           try {
             const url = await buildAndUpload(supabase, tenantId, ticket, brand, timeZone)
-            await sendWhatsAppImageMessage(tenantId, phone, url, `Ticket #${ticket.ticket_number}`)
+            await sendWhatsAppImageMessage(tenantId, phone, url, TICKET_CAPTION)
             sent++
           } catch (err) {
             console.error("[ticket-image] failed for a ticket", { tenantId, ticketId: ticket.id, error: err instanceof Error ? err.message : String(err) })
