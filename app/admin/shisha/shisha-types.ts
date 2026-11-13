@@ -115,9 +115,15 @@ export interface ShishaSession {
 
 export type ShishaRequestType = "order_session" | "maintenance" | "end_session" | "issue_report"
 
-/** A pending WhatsApp request waiting for staff. */
+/** Open request states shown to staff:
+ *  pending = waiting for staff; awaiting_payment = approved, customer has the Yoco link and hasn't paid;
+ *  paid = paid online, waiting for staff to pick a hookah and start the session. */
+export type ShishaRequestStatus = "pending" | "awaiting_payment" | "paid"
+
+/** An open WhatsApp request (waiting for staff, for the customer's payment, or paid and ready to start). */
 export interface ShishaRequest {
   id: string
+  status: ShishaRequestStatus
   requestType: ShishaRequestType
   customerId: string | null
   customerName: string | null
@@ -173,8 +179,11 @@ export interface ShishaSnapshot {
   devices: ShishaDevice[]
   /** Live sessions only (active / refill / paused). */
   sessions: ShishaSession[]
-  /** Requests still waiting for staff, oldest first. */
+  /** Open requests, oldest first (see ShishaRequestStatus). */
   requests: ShishaRequest[]
+  /** Approving a session request sends the customer a payment link (the shop turned online payment on
+   *  AND has an active Yoco connection). Undefined/false = approving works at the counter as before. */
+  onlinePayment?: boolean
   today: ShishaTodaySummary
   /** Only loaded for callers with shisha.manage; null for everyone else, and
    *  null if the ledger couldn't be read (the tab still works without it). */

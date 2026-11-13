@@ -292,7 +292,9 @@ export function ShishaManager({
     [snap],
   )
 
-  const pendingCount = snap?.requests.length ?? 0
+  // Requests staff can act on now: waiting for staff, or paid and ready to start.
+  // (Ones waiting for the customer to pay need nothing from staff.)
+  const pendingCount = snap?.requests.filter((r) => r.status !== "awaiting_payment").length ?? 0
 
   // ---- Print a slip when a customer requests a session -----------------------
   // The WhatsApp message lands on the server, which can't reach the printer (the print
@@ -812,7 +814,8 @@ function RequestsPanel({
       <div>
         <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Requests</h3>
         <p className="mt-0.5 text-sm text-ink-muted">
-          Customers who asked on WhatsApp. They can't send another request until you accept or reject this one.
+          Customers who asked on WhatsApp. They can't send another request until you accept or reject this one
+          {snap.onlinePayment ? ", or until their online payment is done and you've started their session" : ""}.
         </p>
         <label className="mt-3 flex items-start gap-2 text-sm text-ink">
           <input
@@ -860,10 +863,16 @@ function RequestsPanel({
                       {req.customerName && req.customerPhone ? ` · ${req.customerPhone}` : ""}
                     </p>
                   </div>
-                  <Badge className={stale ? "bg-warn/10 text-warn" : "bg-ink/[0.07] text-ink-soft"}>
-                    {timeAgo(req.createdAt, now)}
-                    {stale ? " · waiting" : ""}
-                  </Badge>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {req.status === "paid" && <Badge className="bg-success/10 text-success">Paid · ready to start</Badge>}
+                    {req.status === "awaiting_payment" && (
+                      <Badge className="bg-ink/[0.07] text-ink-soft">Waiting for payment</Badge>
+                    )}
+                    <Badge className={stale && req.status === "pending" ? "bg-warn/10 text-warn" : "bg-ink/[0.07] text-ink-soft"}>
+                      {timeAgo(req.createdAt, now)}
+                      {stale && req.status === "pending" ? " · waiting" : ""}
+                    </Badge>
+                  </div>
                 </div>
 
                 {details && <p className="text-sm text-ink">{details}</p>}
@@ -886,27 +895,49 @@ function RequestsPanel({
                   <p className="text-xs text-warn">That session is paused. Resume it before accepting the refill.</p>
                 )}
 
+                {req.status === "awaiting_payment" && (
+                  <p className="text-xs text-ink-muted">
+                    The customer has the payment link on WhatsApp. This turns into "Paid · ready to start" as soon as
+                    they pay, and you can pick a hookah then.
+                  </p>
+                )}
+                {req.status === "paid" && (
+                  <p className="text-xs text-success">
+                    Paid online by card. Pick a hookah and start the session.
+                  </p>
+                )}
+
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      req.requestType === "issue_report"
-                        ? void onAccept(req, {})
-                        : setActing({ kind: "accept", id: req.id })
-                    }
-                    className={BTN_PRIMARY}
-                  >
-                    {req.requestType === "issue_report" ? "Mark handled" : "Accept"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setActing({ kind: "reject", id: req.id })}
-                    className={BTN}
-                  >
-                    Reject
-                  </button>
+                  {req.status !== "awaiting_payment" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        req.requestType === "issue_report"
+                          ? void onAccept(req, {})
+                          : setActing({ kind: "accept", id: req.id })
+                      }
+                      className={BTN_PRIMARY}
+                    >
+                      {req.requestType === "issue_report"
+                        ? "Mark handled"
+                        : req.status === "paid"
+                          ? "Start session"
+                          : req.requestType === "order_session" && snap.onlinePayment
+                            ? "Approve · send payment link"
+                            : "Accept"}
+                    </button>
+                  )}
+                  {req.status === "pending" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setActing({ kind: "reject", id: req.id })}
+                      className={BTN}
+                    >
+                      Reject
+                    </button>
+                  )}
                   {req.requestType === "order_session" && (
                     <button type="button" onClick={() => onPrintSlip(req)} className={BTN}>
                       Print slip
@@ -921,14 +952,33 @@ function RequestsPanel({
 
       <AdminDialog
         open={acting?.kind === "accept" && target !== null}
-        title={target ? `Accept · ${REQUEST_TYPE_LABEL[target.requestType]}` : "Accept"}
+        title={
+          target
+            ? target.status === "paid"
+              ? "Start session"
+              : `${target.requestType === "order_session" && snap.onlinePayment ? "Approve" : "Accept"} · ${REQUEST_TYPE_LABEL[target.requestType]}`
+            : "Accept"
+        }
         onClose={() => !busy && setActing(null)}
       >
         {target && acting?.kind === "accept" && (
           <>
-            {target.requestType === "order_session" && (
+            {target.requestType === "order_session" && target.status === "pending" && snap.onlinePayment && (
+              <ApproveForPaymentForm
+                key={target.id}
+                req={target}
+                currency={snap.currency}
+                busy={busy}
+                onCancel={() => setActing(null)}
+                onSubmit={async () => {
+                  if (await onAccept(target, {})) setActing(null)
+                }}
+              />
+            )}
+            {target.requestType === "order_session" && (target.status === "paid" || !snap.onlinePayment) && (
               <AcceptSessionForm
                 key={target.id}
+                paid={target.status === "paid"}
                 req={target}
                 devices={freeDevices}
                 stations={activeStations}
@@ -1005,8 +1055,51 @@ function RequestSummary({ req, currency }: { req: ShishaRequest; currency: strin
   )
 }
 
+/** Online payment is on: approving only sends the customer a payment link. The hookah is picked
+ *  later, once the customer has paid (then the request shows as "Paid · ready to start"). */
+function ApproveForPaymentForm({
+  req,
+  currency,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  req: ShishaRequest
+  currency: string
+  busy: boolean
+  onCancel: () => void
+  onSubmit: () => Promise<void>
+}) {
+  const blocked = req.flavourIssue !== null
+  return (
+    <div className="space-y-4">
+      <RequestSummary req={req} currency={currency} />
+      <p className="text-sm text-ink">
+        The customer gets a payment link on WhatsApp for{" "}
+        {req.currentAmount !== null ? formatMoney(req.currentAmount, currency) : "the session price"} (today's price).
+        You'll pick the hookah after they've paid.
+      </p>
+      {blocked && (
+        <p className="text-xs text-accent">
+          {req.flavourIssue === "missing" ? "That flavour is no longer on the menu." : "That flavour is out of stock."}{" "}
+          Fix that first, or reject the request.
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
+          Cancel
+        </button>
+        <button type="button" disabled={busy || blocked} onClick={() => void onSubmit()} className={BTN_PRIMARY}>
+          {busy ? "Sending…" : "Send payment link"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AcceptSessionForm({
   req,
+  paid = false,
   devices,
   stations,
   requireStation,
@@ -1016,6 +1109,8 @@ function AcceptSessionForm({
   onSubmit,
 }: {
   req: ShishaRequest
+  /** The customer already paid online: payment method is fixed to Card. */
+  paid?: boolean
   devices: ShishaDevice[]
   stations: ShishaStation[]
   requireStation: boolean
@@ -1097,16 +1192,20 @@ function AcceptSessionForm({
         </label>
       )}
 
-      <label className="block space-y-1 text-sm">
-        <span className="text-ink-muted">Paid by</span>
-        <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
-          {PAYMENT_METHODS.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {paid ? (
+        <p className="text-sm text-ink">Paid online by card. Nothing to collect.</p>
+      ) : (
+        <label className="block space-y-1 text-sm">
+          <span className="text-ink-muted">Paid by</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)} className={FIELD}>
+            {PAYMENT_METHODS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} disabled={busy} className={BTN}>
@@ -1116,7 +1215,7 @@ function AcceptSessionForm({
           type="button"
           disabled={busy || !deviceId || stationMissing || flavourBlocked}
           onClick={() =>
-            void onSubmit({ deviceId, locationId: effectiveStationId || null, paymentMethod: method })
+            void onSubmit({ deviceId, locationId: effectiveStationId || null, paymentMethod: paid ? "card" : method })
           }
           className={BTN_PRIMARY}
         >
@@ -1124,7 +1223,9 @@ function AcceptSessionForm({
             ? "Starting…"
             : stationMissing
               ? "Pick a station"
-              : `Accept${req.currentAmount !== null ? ` · ${formatMoney(req.currentAmount, currency)}` : ""}`}
+              : paid
+                ? "Start session"
+                : `Accept${req.currentAmount !== null ? ` · ${formatMoney(req.currentAmount, currency)}` : ""}`}
         </button>
       </div>
     </div>

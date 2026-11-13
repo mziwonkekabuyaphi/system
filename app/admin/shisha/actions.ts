@@ -27,6 +27,8 @@ import { requireTenantPermission, type PermissionKey } from "@/lib/tenant/requir
 import { MODULE_KEYS, isTenantModuleEnabled } from "@/lib/services/plans"
 import * as messages from "@/lib/services/messages/shisha"
 import { notifyShishaCustomer } from "@/lib/services/shisha-notify"
+import { getCardOption } from "@/lib/payments/card"
+import { startShishaCardCheckout } from "@/lib/payments/shisha-checkout"
 import { loadShishaSettings, loadShishaSnapshot } from "./shisha-data"
 import {
   PAYMENT_METHODS,
@@ -788,6 +790,14 @@ export async function updateShishaSettings(input: {
 //   5. message the customer; a failed send only produces a warning, never an undo.
 // Fee events are written by the database triggers off steps 3's INSERT / refill_count
 // change, so exactly one fee per accepted request and none for reject / issue / end.
+//
+// ONLINE PAYMENT (order_session only): when the shop has shisha_settings.online_payment_enabled
+// AND an active Yoco connection, accepting does NOT pick a hookah or start a session. It moves the
+// request pending -> awaiting_payment (same compare-and-set guard, so a double tap runs once),
+// creates the Yoco link and WhatsApps it to the customer. The webhook marks it 'paid' later
+// (Phase 3) and staff then pick the hookah. If the link can't be made, the request goes back to
+// 'pending'. With the switch off, no Yoco, or an amount under Yoco's minimum, accepting works
+// exactly as before.
 // ============================================================================
 
 const REQUEST_STALE = "That request was already handled. Refreshing."
@@ -805,7 +815,13 @@ interface RequestRow {
   amount: number | string | null
 }
 
-async function loadPendingRequest(ctx: Ctx, id: string): Promise<{ row: RequestRow } | { error: string }> {
+/** Loads a request staff may act on. Normally only 'pending'. With `allowPaid`, an order_session that the
+ *  customer has already paid online ('paid') is allowed too (that is the "start the session" step). */
+async function loadPendingRequest(
+  ctx: Ctx,
+  id: string,
+  opts: { allowPaid?: boolean } = {},
+): Promise<{ row: RequestRow } | { error: string }> {
   if (typeof id !== "string" || !UUID_RE.test(id)) return { error: "Request not found." }
   const { data, error } = await ctx.supabase
     .from("shisha_requests")
@@ -816,32 +832,44 @@ async function loadPendingRequest(ctx: Ctx, id: string): Promise<{ row: RequestR
   if (error) return { error: error.message }
   const row = data as RequestRow | null
   if (!row) return { error: "Request not found." }
-  if (row.status !== "pending") return { error: REQUEST_STALE }
-  return { row }
+  if (row.status === "pending") return { row }
+  if (row.status === "paid" && row.request_type === "order_session") {
+    return opts.allowPaid ? { row } : { error: "This request is already paid. Start the session from the Requests tab." }
+  }
+  if (row.status === "awaiting_payment") return { error: "This request is waiting for the customer to pay." }
+  return { error: REQUEST_STALE }
 }
 
-/** pending -> approved, once. Returns an error message, or null when this call won. */
-async function claimRequest(ctx: Ctx, id: string): Promise<string | null> {
+/** pending -> approved, once (or paid -> approved when staff start a paid session).
+ *  Returns an error message, or null when this call won. */
+async function claimRequest(ctx: Ctx, id: string, from: "pending" | "paid" = "pending"): Promise<string | null> {
   const { data, error } = await ctx.supabase
     .from("shisha_requests")
     .update({ status: "approved", responded_at: new Date().toISOString(), handled_by: ctx.actorId })
     .eq("id", id)
     .eq("tenant_id", ctx.tenantId)
-    .eq("status", "pending")
+    .eq("status", from)
     .select("id")
   if (error) return error.message
   if (!data || data.length === 0) return REQUEST_STALE
   return null
 }
 
-/** Undo a claim whose work failed, so the request is pending again (and the customer isn't stuck). */
-async function releaseRequest(ctx: Ctx, id: string): Promise<void> {
+/** Undo a claim whose work failed, so the request is pending again (and the customer isn't stuck).
+ *  `fromStatus`: the status the claim moved it to ('approved', or 'awaiting_payment' for online payment). */
+async function releaseRequest(
+  ctx: Ctx,
+  id: string,
+  fromStatus: "approved" | "awaiting_payment" = "approved",
+  /** 'paid' when a paid session failed to start: the customer's money is in, so it must go back to paid. */
+  backTo: "pending" | "paid" = "pending",
+): Promise<void> {
   const { error } = await ctx.supabase
     .from("shisha_requests")
-    .update({ status: "pending", responded_at: null, handled_by: null })
+    .update({ status: backTo, responded_at: null, handled_by: null })
     .eq("id", id)
     .eq("tenant_id", ctx.tenantId)
-    .eq("status", "approved")
+    .eq("status", fromStatus)
   if (error) console.error("[shisha] couldn't release a request after a failed accept", { id, error: error.message })
 }
 
@@ -908,7 +936,7 @@ export async function acceptShishaRequest(input: {
   const s = await scoped("shisha.operate")
   if (!s.ok) return s
 
-  const loaded = await loadPendingRequest(s, input.requestId)
+  const loaded = await loadPendingRequest(s, input.requestId, { allowPaid: true })
   if ("error" in loaded) return fail(loaded.error)
   const req = loaded.row
 
@@ -926,14 +954,122 @@ export async function acceptShishaRequest(input: {
   }
 }
 
+/** Does this shop take shisha payments online? ready = switch on AND a card provider connected
+ *  (the same check the checkout itself uses, so the two can never disagree).
+ *  `minAmount` = the smallest amount that provider accepts. A missing shisha_settings row counts as off. */
+async function onlinePaymentReady(ctx: Ctx): Promise<{ ready: false } | { ready: true; minAmount: number } | { error: string }> {
+  const { data, error } = await ctx.supabase
+    .from("shisha_settings")
+    .select("online_payment_enabled")
+    .eq("tenant_id", ctx.tenantId)
+    .maybeSingle()
+  if (error) return { error: "Couldn't check the online payment setting. Please try again." }
+  if (!(data as { online_payment_enabled: boolean } | null)?.online_payment_enabled) return { ready: false }
+  try {
+    const option = await getCardOption(ctx.supabase, ctx.tenantId)
+    return option ? { ready: true, minAmount: option.minAmount } : { ready: false }
+  } catch (err) {
+    console.error("[shisha] card connection check failed", { tenantId: ctx.tenantId, error: err instanceof Error ? err.message : String(err) })
+    return { error: "Couldn't check the card payment connection. Please try again." }
+  }
+}
+
+/**
+ * Online-payment branch of accepting an order_session request.
+ * Returns null when this request should NOT be paid online (caller continues with the normal flow),
+ * otherwise the final result for staff.
+ */
+async function tryApproveForPayment(ctx: Ctx, req: RequestRow): Promise<ShishaActionResult | null> {
+  const online = await onlinePaymentReady(ctx)
+  if ("error" in online) return fail(online.error)
+  if (!online.ready) return null
+  if (!req.flavour_name) return null // the normal flow explains this to staff
+
+  // The flavour and its price as they are NOW: the customer pays today's price, not the quoted one.
+  const { data: productData, error: productError } = await ctx.supabase
+    .from("shisha_products")
+    .select("id, name, price, is_available")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("name", req.flavour_name)
+    .is("archived_at", null)
+    .limit(1)
+    .maybeSingle()
+  if (productError) return fail(productError.message)
+  const product = productData as { id: string; name: string; price: number | string; is_available: boolean } | null
+  if (!product) {
+    return fail(`"${req.flavour_name}" is no longer on the menu. Reject this request, or start a session at the counter.`)
+  }
+  if (!product.is_available) return fail(`"${product.name}" is out of stock. Mark it in stock, or reject this request.`)
+
+  const price = round2(Number(product.price))
+  // Under the card provider's minimum (or free): no card link is possible, so use the normal counter flow.
+  if (!(price >= online.minAmount)) return null
+
+  // Claim: pending -> awaiting_payment, once. Also records the price the customer is being asked to pay.
+  const { data: claimed, error: claimError } = await ctx.supabase
+    .from("shisha_requests")
+    .update({ status: "awaiting_payment", responded_at: new Date().toISOString(), handled_by: ctx.actorId, amount: price })
+    .eq("id", req.id)
+    .eq("tenant_id", ctx.tenantId)
+    .eq("status", "pending")
+    .select("id")
+  if (claimError) return fail(claimError.message)
+  if (!claimed || claimed.length === 0) return fail(REQUEST_STALE)
+
+  const checkout = await startShishaCardCheckout({
+    supabase: ctx.supabase,
+    tenantId: ctx.tenantId,
+    requestId: req.id,
+    customerId: req.customer_id,
+    amount: price,
+    flavourName: product.name,
+  })
+  if (!checkout.ok) {
+    // No link exists, so nobody can pay: put it back so staff can retry or reject.
+    await releaseRequest(ctx, req.id, "awaiting_payment")
+    return fail(checkout.message)
+  }
+
+  const notifyWarning = await notifyShishaCustomer(
+    ctx.tenantId,
+    req.customer_phone,
+    messages.requestApprovedPleasePay({
+      station: req.location_name,
+      flavour: product.name,
+      price,
+      url: checkout.url,
+      testMode: checkout.mode === "test",
+    }),
+  )
+  // The customer could not be messaged: give staff the link so they can pass it on.
+  const warning = notifyWarning ? `${notifyWarning} Payment link: ${checkout.url}` : null
+  return {
+    ok: true,
+    message: `Payment link sent (${messages.formatRands(price)}). The session can start once it's paid.`,
+    ...(warning ? { warning } : {}),
+  }
+}
+
 async function acceptOrderSession(
   ctx: Ctx,
   req: RequestRow,
   input: { deviceId?: string | null; locationId?: string | null; paymentMethod?: string | null },
 ): Promise<ShishaActionResult> {
+  // A request the customer already paid online: staff only pick the hookah (and station) here.
+  const alreadyPaid = req.status === "paid"
+
+  // Online payment first: it needs no hookah yet. null = not applicable, carry on as before.
+  if (!alreadyPaid) {
+    const paying = await tryApproveForPayment(ctx, req)
+    if (paying) return paying
+  }
+
   if (!input.deviceId) return fail("Pick a hookah for this session.")
-  const paymentMethod = PAYMENT_METHODS.find((m) => m.value === input.paymentMethod)?.value ?? null
-  if (input.paymentMethod && !paymentMethod) return fail("Pick a valid payment method.")
+  // Paid online = paid by card, whatever the screen sent.
+  const paymentMethod = alreadyPaid
+    ? "card"
+    : (PAYMENT_METHODS.find((m) => m.value === input.paymentMethod)?.value ?? null)
+  if (!alreadyPaid && input.paymentMethod && !paymentMethod) return fail("Pick a valid payment method.")
   if (!req.flavour_name) return fail("This request has no flavour. Reject it, or start the session at the counter.")
 
   // The flavour as it is NOW (the customer is charged today's price, not the quoted one).
@@ -947,10 +1083,21 @@ async function acceptOrderSession(
     .maybeSingle()
   if (productError) return fail(productError.message)
   const product = productData as { id: string; name: string; is_available: boolean } | null
+  // A paid request can't simply be rejected (the customer's money is in), so don't suggest it.
   if (!product) {
-    return fail(`"${req.flavour_name}" is no longer on the menu. Reject this request, or start a session at the counter.`)
+    return fail(
+      alreadyPaid
+        ? `"${req.flavour_name}" is no longer on the menu, but this request is already paid. Put it back on the menu to start the session.`
+        : `"${req.flavour_name}" is no longer on the menu. Reject this request, or start a session at the counter.`,
+    )
   }
-  if (!product.is_available) return fail(`"${product.name}" is out of stock. Mark it in stock, or reject this request.`)
+  if (!product.is_available) {
+    return fail(
+      alreadyPaid
+        ? `"${product.name}" is out of stock, but this request is already paid. Mark it in stock to start the session.`
+        : `"${product.name}" is out of stock. Mark it in stock, or reject this request.`,
+    )
+  }
 
   // Station: what staff picked, else the one the customer asked for (by name, if it's still active).
   let locationId = input.locationId || null
@@ -968,7 +1115,7 @@ async function acceptOrderSession(
     locationId = (stationData as { id: string } | null)?.id ?? null
   }
 
-  const claimError = await claimRequest(ctx, req.id)
+  const claimError = await claimRequest(ctx, req.id, alreadyPaid ? "paid" : "pending")
   if (claimError) return fail(claimError)
 
   const started = await startSessionCore(ctx, {
@@ -980,7 +1127,7 @@ async function acceptOrderSession(
     paymentMethod,
   })
   if (!started.ok) {
-    await releaseRequest(ctx, req.id)
+    await releaseRequest(ctx, req.id, "approved", alreadyPaid ? "paid" : "pending")
     return started
   }
 

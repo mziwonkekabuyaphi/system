@@ -18,6 +18,7 @@ import {
   type ShishaDeviceStatus,
   type ShishaFlavour,
   type ShishaRequest,
+  type ShishaRequestStatus,
   type ShishaRequestType,
   type ShishaSession,
   type ShishaSettings,
@@ -33,6 +34,7 @@ const REQUEST_LIMIT = 200
 
 interface RequestRow {
   id: string
+  status: ShishaRequestStatus
   request_type: ShishaRequestType
   session_id: string | null
   customer_id: string | null
@@ -108,8 +110,20 @@ export async function loadShishaSnapshot(
   const dayStart = startOfDayUtc(todayKey, timezone).toISOString()
   const dayEnd = startOfDayUtc(addDaysKey(todayKey, 1), timezone).toISOString()
 
-  const [settings, usage, shopRes, currencyRes, stationsRes, flavoursRes, devicesRes, liveRes, todayRes, requestsRes] =
-    await Promise.all([
+  const [
+    settings,
+    usage,
+    shopRes,
+    currencyRes,
+    stationsRes,
+    flavoursRes,
+    devicesRes,
+    liveRes,
+    todayRes,
+    requestsRes,
+    onlineSettingRes,
+    yocoRes,
+  ] = await Promise.all([
     loadShishaSettings(supabase, tenantId),
     // Fee ledger: only for callers allowed to see it (shisha.manage).
     options.includeUsage ? loadShishaUsage(supabase, tenantId) : Promise.resolve(null),
@@ -146,16 +160,25 @@ export async function loadShishaSnapshot(
       .gte("created_at", dayStart)
       .lt("created_at", dayEnd)
       .limit(5000),
-    // Requests waiting for staff, oldest first (the one waiting longest on top).
+    // Open requests, oldest first (the one waiting longest on top): waiting for staff,
+    // waiting for the customer to pay online, or paid and ready to start.
     supabase
       .from("shisha_requests")
       .select(
-        "id, request_type, session_id, customer_id, customer_phone, location_name, flavour_name, device_code, amount, request_data, created_at",
+        "id, status, request_type, session_id, customer_id, customer_phone, location_name, flavour_name, device_code, amount, request_data, created_at",
       )
       .eq("tenant_id", tenantId)
-      .eq("status", "pending")
+      .in("status", ["pending", "awaiting_payment", "paid"])
       .order("created_at", { ascending: true })
       .limit(REQUEST_LIMIT),
+    // Online payment: the shop's switch, and whether an active Yoco connection exists (no secrets read here).
+    supabase.from("shisha_settings").select("online_payment_enabled").eq("tenant_id", tenantId).maybeSingle(),
+    supabase
+      .from("tenant_payment_integrations")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("provider", "yoco")
+      .eq("status", "active"),
   ])
 
   if (currencyRes.error) throw new Error(`Failed to load currency: ${currencyRes.error.message}`)
@@ -262,6 +285,7 @@ export async function loadShishaSnapshot(
 
     return {
       id: r.id,
+      status: r.status,
       requestType: r.request_type,
       customerId: r.customer_id,
       customerName: r.customer_id ? (customerName.get(r.customer_id) ?? null) : null,
@@ -299,6 +323,12 @@ export async function loadShishaSnapshot(
     devices,
     sessions,
     requests,
+    // A failed lookup counts as "off": the tab keeps working and the server decides at approve time anyway.
+    onlinePayment:
+      !onlineSettingRes.error &&
+      !yocoRes.error &&
+      Boolean((onlineSettingRes.data as { online_payment_enabled?: boolean } | null)?.online_payment_enabled) &&
+      (yocoRes.count ?? 0) > 0,
     today: {
       sessions: todayRows.length,
       revenue: todayRows.reduce((sum, r) => sum + Number(r.total_amount ?? 0), 0),
