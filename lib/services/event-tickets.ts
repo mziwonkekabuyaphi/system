@@ -41,6 +41,7 @@ import { isModuleEnabled } from "@/lib/tenant/modules"
 import { formatPassportMoney } from "@/lib/services/passport"
 import { getTenantYocoCredentials } from "@/lib/payments/credentials"
 import { generateTicketQrCode, getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
+import { getTenantDisplayName, scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 import {
   buyWithPassport,
   getEventPaymentOptions,
@@ -421,11 +422,12 @@ export async function buildOrderConfirmation(
     .maybeSingle()
   if (error || !order) throw new Error("order not found for confirmation")
 
-  const [eventRes, typeRes, ticketRes, timeZone] = await Promise.all([
+  const [eventRes, typeRes, ticketRes, timeZone, shopName] = await Promise.all([
     supabase.from("events").select("name, start_time, location").eq("tenant_id", tenantId).eq("id", order.event_id).maybeSingle(),
     supabase.from("event_ticket_types").select("name").eq("tenant_id", tenantId).eq("id", order.ticket_type_id).maybeSingle(),
     supabase.from("event_tickets").select("ticket_number").eq("tenant_id", tenantId).eq("order_id", orderId).order("created_at", { ascending: true }),
     getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ),
+    getTenantDisplayName(supabase, tenantId),
   ])
   const event = eventRes.data as { name: string; start_time: string; location: string | null } | null
   const tier = (typeRes.data as { name: string } | null)?.name ?? "Ticket"
@@ -447,13 +449,17 @@ export async function buildOrderConfirmation(
     lines.push("")
   }
   lines.push(`${order.quantity} × ${tier}`, paid, "", "*Your ticket numbers*", ...numbers.map((n, i) => `${i + 1}. ${n}`), "", "Show the QR code (or a ticket number) at the gate.")
+  // The branded ticket image takes about 30 seconds, so tell the customer it is coming (see ticket-image.ts).
+  lines.push("", `⏳ *${shopName}* is generating your ticket image. It will arrive here in about 30 seconds, so no need to worry. Your QR code already works.`)
   return lines.join("\n")
 }
 
 /** Confirmation text, then one QR image per ticket (sent after the text, see ActionResult.media). */
-async function confirmedOrderReply(supabase: SupabaseClient, tenantId: string, orderId: string): Promise<ActionResult> {
+async function confirmedOrderReply(supabase: SupabaseClient, tenantId: string, orderId: string, phone: string): Promise<ActionResult> {
   const text = await buildOrderConfirmation(supabase, tenantId, orderId)
   const media = await getOrderTicketQrs(supabase, tenantId, orderId)
+  // Runs after the reply (text + QR codes) has gone out, then sends the ticket images.
+  scheduleOrderTicketImages(tenantId, orderId, phone)
   return { ...finish(text, ["My Tickets", "Main Menu"]), ...(media.length > 0 ? { media } : {}) }
 }
 
@@ -461,6 +467,7 @@ async function confirmedOrderReply(supabase: SupabaseClient, tenantId: string, o
 async function proceedToPayment(
   supabase: SupabaseClient,
   tenantId: string,
+  phone: string,
   customerId: string,
   tierId: string,
   quantity: number,
@@ -474,7 +481,7 @@ async function proceedToPayment(
   if (quote.total <= 0) {
     const res = await buyWithPassport({ supabase, tenantId, customerId, ticketTypeId: tierId, quantity, idempotencyKey: randomUUID() })
     if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
-    return await confirmedOrderReply(supabase, tenantId, res.orderId)
+    return await confirmedOrderReply(supabase, tenantId, res.orderId, phone)
   }
 
   const options = await getEventPaymentOptions(supabase, tenantId, customerId, quote.total)
@@ -570,7 +577,7 @@ async function handleState(tenantId: string, state: ConversationState, message: 
         const quantity = parseChoice(typed, MAX_PER_PURCHASE)
         if (!tierId) return finish(UNAVAILABLE_REPLY)
         if (quantity === null) return stay(state.state, data, `Please reply with a number from 1 to ${MAX_PER_PURCHASE}, or *cancel*.`)
-        return await proceedToPayment(supabase, tenantId, customer.id, tierId, quantity)
+        return await proceedToPayment(supabase, tenantId, message.from, customer.id, tierId, quantity)
       }
 
       case EVENT_STATE_CHOOSE_PAYMENT: {
@@ -590,14 +597,14 @@ async function handleState(tenantId: string, state: ConversationState, message: 
         const q = await quoteEventPurchase(supabase, tenantId, customer.id, tierId, quantity)
         if (!q.ok) return finish(q.message, ["Events", "Main Menu"])
         if (Math.abs(q.quote.total - shownTotal) > 0.001) {
-          return await proceedToPayment(supabase, tenantId, customer.id, tierId, quantity, "⚠️ The price changed, so here is your updated order.")
+          return await proceedToPayment(supabase, tenantId, message.from, customer.id, tierId, quantity, "⚠️ The price changed, so here is your updated order.")
         }
 
         if (wantsPassport) {
           if (!buttons.includes("Passport")) return stay(state.state, data, "Passport isn't available for this order. Please choose another option.", buttons)
           const res = await buyWithPassport({ supabase, tenantId, customerId: customer.id, ticketTypeId: tierId, quantity, idempotencyKey: nonce })
           if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
-          return await confirmedOrderReply(supabase, tenantId, res.orderId)
+          return await confirmedOrderReply(supabase, tenantId, res.orderId, message.from)
         }
 
         if (!buttons.includes("Card")) return stay(state.state, data, "Card payment isn't available for this order. Please choose another option.", buttons)
