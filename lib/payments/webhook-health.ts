@@ -24,7 +24,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { getAppBaseUrl, getTenantYocoCredentials } from "./credentials"
+import { getAppBaseUrl, getIntegrationConnection, webhookUrlFor } from "./credentials"
 import { YocoError, yocoDeleteWebhook, yocoListWebhooks, yocoRegisterWebhook } from "./yoco"
 
 export type HealthOutcome = "healthy" | "cleaned_duplicates" | "re_registered" | "key_rejected" | "skipped" | "failed"
@@ -39,11 +39,14 @@ export interface HealthSummary {
   failed: number
 }
 
-async function checkOne(db: SupabaseClient, integration: { id: string; tenant_id: string; provider_webhook_id: string | null }, base: string): Promise<{ outcome: HealthOutcome; removed: number }> {
-  const creds = await getTenantYocoCredentials(db, integration.tenant_id)
-  if (!creds) return { outcome: "skipped", removed: 0 }
+async function checkOne(db: SupabaseClient, integration: { id: string; tenant_id: string; provider_webhook_id: string | null }): Promise<{ outcome: HealthOutcome; removed: number }> {
+  // The shop's own Yoco key, read by integration id (works the same whatever other provider a shop may use later).
+  const connection = await getIntegrationConnection(db, integration.id)
+  const secretKey = connection?.secrets.secretKey
+  if (!connection || connection.provider !== "yoco" || connection.status !== "active" || !secretKey) return { outcome: "skipped", removed: 0 }
+  const creds = { secretKey }
 
-  const url = `${base}/api/webhooks/yoco/${integration.id}`
+  const url = webhookUrlFor("yoco", integration.id)
 
   let subs
   try {
@@ -91,9 +94,15 @@ async function checkOne(db: SupabaseClient, integration: { id: string; tenant_id
       p_description: "Yoco webhook secret",
     })
     if (vaultError || !secretId) throw new Error("vault write failed")
+    // The database reads `secret_ids` first and only falls back to the legacy webhook_secret_id column when
+    // secret_ids is empty (payments_secret_ids). Keep BOTH current, or the new webhook would be verified
+    // against the OLD secret and every payment notice would be rejected.
+    const { data: current } = await db.from("tenant_payment_integrations").select("secret_ids").eq("id", integration.id).maybeSingle()
+    const ids = (current?.secret_ids ?? {}) as Record<string, string>
+    const secretIds = Object.keys(ids).length > 0 ? { secret_ids: { ...ids, webhookSecret: secretId as string } } : {}
     const { error: saveError } = await db
       .from("tenant_payment_integrations")
-      .update({ webhook_secret_id: secretId as string, provider_webhook_id: webhook.id, updated_at: new Date().toISOString() })
+      .update({ webhook_secret_id: secretId as string, ...secretIds, provider_webhook_id: webhook.id, updated_at: new Date().toISOString() })
       .eq("id", integration.id)
     if (saveError) throw new Error("save failed")
     return { outcome: "re_registered", removed: 0 }
@@ -113,7 +122,7 @@ async function checkOne(db: SupabaseClient, integration: { id: string; tenant_id
 export async function runWebhookHealthCheck(db: SupabaseClient): Promise<HealthSummary> {
   const summary: HealthSummary = { checked: 0, healthy: 0, reRegistered: 0, duplicatesRemoved: 0, keyRejected: 0, skipped: 0, failed: 0 }
 
-  const base = getAppBaseUrl()
+  getAppBaseUrl() // fail early (throws) if the public URL isn't configured
   const { data, error } = await db
     .from("tenant_payment_integrations")
     .select("id, tenant_id, provider_webhook_id")
@@ -124,7 +133,7 @@ export async function runWebhookHealthCheck(db: SupabaseClient): Promise<HealthS
   for (const row of (data ?? []) as Array<{ id: string; tenant_id: string; provider_webhook_id: string | null }>) {
     summary.checked += 1
     try {
-      const { outcome, removed } = await checkOne(db, row, base)
+      const { outcome, removed } = await checkOne(db, row)
       summary.duplicatesRemoved += removed
       if (outcome === "healthy" || outcome === "cleaned_duplicates") summary.healthy += 1
       else if (outcome === "re_registered") summary.reRegistered += 1
