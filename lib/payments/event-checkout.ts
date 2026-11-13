@@ -1,6 +1,7 @@
 // lib/payments/event-checkout.ts
 /**
- * Paying for event tickets on WhatsApp: quote, pay from the Passport, or pay by card on the SHOP'S OWN Yoco account.
+ * Paying for event tickets on WhatsApp: quote, pay from the Passport, or pay by card on the SHOP'S OWN card provider
+ * (Yoco, Ozow, ... whichever the shop connected; see providers/).
  *
  * Passport: one database call (event_purchase_ticket_whatsapp). The debit and the tickets are one transaction there.
  * Card:     we only START a checkout here. Tickets are issued by the signed webhook after the payment is verified
@@ -9,13 +10,11 @@
  * Everything the customer is shown (price, availability) comes from event_quote_whatsapp, the database's own answer.
  */
 
-import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { isModuleEnabled } from "@/lib/tenant/modules"
 import { readPassportSummary } from "@/lib/services/passport"
-import { getAppBaseUrl, getTenantYocoCredentials } from "./credentials"
-import { YOCO_MIN_AMOUNT, YocoError, yocoCreateCheckout } from "./yoco"
+import { cardFailureMessage, getCardOption, startCardPayment } from "./card"
 
 /** Database messages that are written for customers; anything else becomes a generic apology. */
 const FRIENDLY_DB_MESSAGE = /Only \d+ left|not on sale|has ended|between 1 and|Passport|balance|Invalid ticket|Customer not found|not enabled/i
@@ -92,7 +91,7 @@ export async function getEventPaymentOptions(
   customerId: string,
   total: number,
 ): Promise<PaymentOptions> {
-  const [walletOn, creds] = await Promise.all([isModuleEnabled(tenantId, "wallet"), getTenantYocoCredentials(supabase, tenantId)])
+  const [walletOn, option] = await Promise.all([isModuleEnabled(tenantId, "wallet"), getCardOption(supabase, tenantId)])
 
   let passport: PaymentOptions["passport"] = { ok: false, balance: 0, currency: "ZAR", reason: "module_off" }
   if (walletOn) {
@@ -103,7 +102,7 @@ export async function getEventPaymentOptions(
     else passport = { ok: true, balance: summary.balance, currency: summary.currency, reason: "ok" }
   }
 
-  return { passport, card: Boolean(creds) && total >= YOCO_MIN_AMOUNT, cardMode: creds?.mode ?? null }
+  return { passport, card: Boolean(option) && total >= (option?.minAmount ?? Infinity), cardMode: option?.mode ?? null }
 }
 
 // ----------------------------------------------------------------------------
@@ -136,7 +135,7 @@ export async function buyWithPassport(args: {
 }
 
 // ----------------------------------------------------------------------------
-// Pay by card: start a Yoco checkout (tickets are issued later, by the webhook)
+// Pay by card: start a checkout with the shop's own provider (tickets are issued later, by the webhook)
 // ----------------------------------------------------------------------------
 
 export type StartCardResult =
@@ -151,61 +150,28 @@ export async function startEventCardCheckout(args: {
 }): Promise<StartCardResult> {
   const { supabase, tenantId, customerId, quote } = args
 
-  const creds = await getTenantYocoCredentials(supabase, tenantId)
-  if (!creds) return { ok: false, message: "Card payment isn't set up for this shop yet." }
-  if (quote.total < YOCO_MIN_AMOUNT) return { ok: false, message: `Card payments start at R${YOCO_MIN_AMOUNT}.` }
+  const option = await getCardOption(supabase, tenantId)
+  if (!option) return { ok: false, message: "Card payment isn't set up for this shop yet." }
+  if (quote.total < option.minAmount) return { ok: false, message: `Card payments start at R${option.minAmount}.` }
 
-  // The attempt is recorded BEFORE Yoco is asked, with everything needed to issue the tickets later.
-  const paymentId = randomUUID()
-  const { error: insertError } = await supabase.from("tenant_payments").insert({
-    id: paymentId,
-    tenant_id: tenantId,
-    integration_id: creds.integrationId,
-    provider: "yoco",
+  // The attempt is recorded BEFORE the provider is asked, with everything needed to issue the tickets later.
+  const attempt = await startCardPayment({
+    supabase,
+    tenantId,
+    option,
     purpose: "event_order",
-    purpose_id: paymentId,
     amount: quote.total,
-    currency: "ZAR",
-    status: "creating",
-    metadata: {
+    description: `${quote.eventName} tickets`,
+    recordMetadata: {
       customer_id: customerId,
       ticket_type_id: quote.ticketTypeId,
       event_id: quote.eventId,
       quantity: quote.quantity,
     },
+    idempotencyPrefix: "event",
   })
-  if (insertError) {
-    console.error("[event-checkout] could not record payment attempt", { tenantId, error: insertError.message })
-    return { ok: false, message: GENERIC }
+  if (!attempt.ok) {
+    return { ok: false, message: attempt.stage === "record" ? GENERIC : cardFailureMessage(attempt.error, GENERIC) }
   }
-
-  try {
-    const base = getAppBaseUrl()
-    const checkout = await yocoCreateCheckout({
-      secretKey: creds.secretKey,
-      amount: quote.total,
-      successUrl: `${base}/pay/result?status=success`,
-      cancelUrl: `${base}/pay/result?status=cancelled`,
-      failureUrl: `${base}/pay/result?status=failed`,
-      metadata: { paymentId },
-      idempotencyKey: `event-${paymentId}`,
-    })
-    const { error: saveError } = await supabase
-      .from("tenant_payments")
-      .update({ status: "pending", provider_checkout_id: checkout.id, checkout_url: checkout.redirectUrl, updated_at: new Date().toISOString() })
-      .eq("id", paymentId)
-    if (saveError) throw new Error(`Failed to save checkout: ${saveError.message}`)
-    return { ok: true, url: checkout.redirectUrl, mode: checkout.processingMode ?? creds.mode }
-  } catch (error) {
-    // The customer never gets a link, so nobody can pay for this attempt.
-    await supabase.from("tenant_payments").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", paymentId)
-    console.error("[event-checkout] card checkout failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
-    return {
-      ok: false,
-      message:
-        error instanceof YocoError && error.status === 401
-          ? "Card payments aren't working for this shop right now. Please ask a team member."
-          : GENERIC,
-    }
-  }
+  return { ok: true, url: attempt.url, mode: attempt.mode }
 }

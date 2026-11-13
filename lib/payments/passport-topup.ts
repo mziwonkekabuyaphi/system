@@ -1,21 +1,19 @@
 // lib/payments/passport-topup.ts
 /**
- * Start a Passport top-up paid on the SHOP'S OWN Yoco account.
+ * Start a Passport top-up paid on the SHOP'S OWN card provider (Yoco, Ozow, ... whichever is connected).
  *
  * Order matters, because it decides what can go wrong with someone's money:
  *   1. wallet_create_topup_whatsapp  -> a PENDING top-up row (all the shop's rules checked in the database)
- *   2. tenant_payments row ('creating') BEFORE asking Yoco, so there is always a record of the attempt
- *   3. create the Yoco checkout (idempotency key = the top-up id, so a retry can't create two)
- *   4. save the checkout id on the payment row, mark it 'pending'
- *   5. only now hand the link to the customer
- * If step 3 or 4 fails, the top-up is failed and the customer never receives a link, so nobody can pay
+ *   2. startCardPayment (card.ts)    -> tenant_payments row BEFORE asking the provider, then the checkout
+ *                                       (idempotency key = the top-up id), then the checkout id saved
+ *   3. only now is the link handed to the customer
+ * If the checkout fails, the top-up is failed and the customer never receives a link, so nobody can pay
  * for something we can't match. The credit itself happens ONLY in the signed webhook.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { getAppBaseUrl, getTenantYocoCredentials } from "./credentials"
-import { YOCO_MIN_AMOUNT, YocoError, yocoCreateCheckout } from "./yoco"
+import { cardFailureMessage, getCardOption, startCardPayment } from "./card"
 
 export interface TopupAvailability {
   available: boolean
@@ -25,24 +23,29 @@ export interface TopupAvailability {
   mode: "test" | "live" | null
 }
 
-/** Online top-up is available only when the shop allows it AND has an active Yoco connection. */
+/** Online top-up is available only when the shop allows it AND has an active card provider that can charge in the Passport's currency. */
 export async function getTopupAvailability(supabase: SupabaseClient, tenantId: string): Promise<TopupAvailability> {
   const none: TopupAvailability = { available: false, min: 0, max: 0, currency: "ZAR", mode: null }
 
-  const [{ data: settings, error }, creds] = await Promise.all([
-    supabase.from("wallet_settings").select("allow_customer_topup, min_topup, max_topup, currency").eq("tenant_id", tenantId).maybeSingle(),
-    getTenantYocoCredentials(supabase, tenantId),
-  ])
+  const { data: settings, error } = await supabase
+    .from("wallet_settings")
+    .select("allow_customer_topup, min_topup, max_topup, currency")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
   if (error) throw new Error(`Failed to read wallet settings: ${error.message}`)
   // No settings row yet = the database defaults apply when the first wallet is made; treat as not open.
-  if (!settings || !settings.allow_customer_topup || !creds) return none
+  if (!settings || !settings.allow_customer_topup) return none
+
+  const currency = (settings.currency as string) || "ZAR"
+  const option = await getCardOption(supabase, tenantId, currency)
+  if (!option) return none
 
   return {
     available: true,
-    min: Math.max(Number(settings.min_topup) || 0, YOCO_MIN_AMOUNT),
+    min: Math.max(Number(settings.min_topup) || 0, option.minAmount),
     max: Number(settings.max_topup) || 0,
-    currency: (settings.currency as string) || "ZAR",
-    mode: creds.mode,
+    currency,
+    mode: option.mode,
   }
 }
 
@@ -59,15 +62,17 @@ export async function startPassportTopup(args: {
   const { supabase, tenantId, customerId } = args
   const amount = Math.round(args.amount * 100) / 100
 
-  const creds = await getTenantYocoCredentials(supabase, tenantId)
-  if (!creds) return { ok: false, reason: "not_connected", message: "Card top-up isn't set up for this shop yet." }
+  const { data: settings } = await supabase.from("wallet_settings").select("currency").eq("tenant_id", tenantId).maybeSingle()
+  const option = await getCardOption(supabase, tenantId, (settings?.currency as string | undefined) || "ZAR")
+  if (!option) return { ok: false, reason: "not_connected", message: "Card top-up isn't set up for this shop yet." }
+  if (amount < option.minAmount) return { ok: false, reason: "rejected", message: `Card payments start at R${option.minAmount}.` }
 
   // 1. Pending top-up. The database re-checks module, customer, limits, wallet status and balance cap.
   const { data: topup, error: topupError } = await supabase.rpc("wallet_create_topup_whatsapp", {
     p_tenant_id: tenantId,
     p_customer_id: customerId,
     p_amount: amount,
-    p_provider: "yoco",
+    p_provider: option.provider.id,
   })
   if (topupError || !topup) {
     // These messages are written for customers (limits, blocked wallet); anything else falls back to generic.
@@ -77,64 +82,31 @@ export async function startPassportTopup(args: {
   }
   const topupRow = topup as { id: string; amount: number | string }
 
-  // 2. Record the attempt before involving Yoco.
-  const { data: payment, error: payError } = await supabase
-    .from("tenant_payments")
-    .insert({
-      tenant_id: tenantId,
-      integration_id: creds.integrationId,
-      provider: "yoco",
-      purpose: "wallet_topup",
-      purpose_id: topupRow.id,
-      amount,
-      currency: "ZAR",
-      status: "creating",
-    })
-    .select("id")
-    .single()
-  if (payError || !payment) {
+  // 2. Record the attempt, then the provider's checkout.
+  const attempt = await startCardPayment({
+    supabase,
+    tenantId,
+    option,
+    purpose: "wallet_topup",
+    purposeId: topupRow.id,
+    amount,
+    description: "Passport top-up",
+    providerMetadata: { topupId: topupRow.id },
+    idempotencyPrefix: "topup",
+  })
+  if (!attempt.ok) {
+    // The customer never got a link, so nobody can pay for this attempt. Close the top-up off.
     await supabase.rpc("wallet_fail_topup", { p_topup_id: topupRow.id, p_status: "failed" })
-    return { ok: false, reason: "unavailable", message: "I couldn't start that top-up. Please try again." }
+    if (attempt.stage === "record") {
+      return { ok: false, reason: "unavailable", message: "I couldn't start that top-up. Please try again." }
+    }
+    return {
+      ok: false,
+      reason: "unavailable",
+      message: cardFailureMessage(attempt.error, "I couldn't start that top-up. Please try again in a moment."),
+    }
   }
 
-  // 3 + 4. Checkout on the shop's own Yoco account.
-  try {
-    const base = getAppBaseUrl()
-    const checkout = await yocoCreateCheckout({
-      secretKey: creds.secretKey,
-      amount,
-      successUrl: `${base}/pay/result?status=success`,
-      cancelUrl: `${base}/pay/result?status=cancelled`,
-      failureUrl: `${base}/pay/result?status=failed`,
-      metadata: { paymentId: payment.id as string, topupId: topupRow.id },
-      idempotencyKey: `topup-${topupRow.id}`,
-    })
-
-    const { error: saveError } = await supabase
-      .from("tenant_payments")
-      .update({
-        status: "pending",
-        provider_checkout_id: checkout.id,
-        checkout_url: checkout.redirectUrl,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", payment.id)
-    if (saveError) throw new Error(`Failed to save checkout: ${saveError.message}`)
-
-    await supabase.from("wallet_topups").update({ provider_reference: checkout.id, checkout_url: checkout.redirectUrl }).eq("id", topupRow.id)
-    return { ok: true, url: checkout.redirectUrl, mode: checkout.processingMode ?? creds.mode }
-  } catch (error) {
-    // The customer never got a link, so nobody can pay for this attempt. Close it off.
-    await supabase.from("tenant_payments").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", payment.id)
-    await supabase.rpc("wallet_fail_topup", { p_topup_id: topupRow.id, p_status: "failed" })
-    console.error("[payments] checkout creation failed", {
-      tenantId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-    const message =
-      error instanceof YocoError && error.status === 401
-        ? "Card payments aren't working for this shop right now. Please ask a team member."
-        : "I couldn't start that top-up. Please try again in a moment."
-    return { ok: false, reason: "unavailable", message }
-  }
+  await supabase.from("wallet_topups").update({ provider_reference: attempt.checkoutId, checkout_url: attempt.url }).eq("id", topupRow.id)
+  return { ok: true, url: attempt.url, mode: attempt.mode }
 }

@@ -19,6 +19,8 @@
 
 import crypto from "node:crypto"
 
+import { ProviderError } from "./providers/types"
+
 const API_BASE = "https://payments.yoco.com/api"
 const TIMEOUT_MS = 10_000
 
@@ -26,9 +28,9 @@ const TIMEOUT_MS = 10_000
 export const YOCO_MIN_AMOUNT = 2
 export const WEBHOOK_TOLERANCE_SECONDS = 180
 
-export class YocoError extends Error {
-  constructor(message: string, public readonly status: number) {
-    super(message)
+export class YocoError extends ProviderError {
+  constructor(message: string, status: number) {
+    super(message, status)
     this.name = "YocoError"
   }
 }
