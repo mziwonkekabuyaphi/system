@@ -71,6 +71,9 @@ export const EVENT_STATE_CHOOSE_PAYMENT = "events_choose_payment"
 
 const MAX_PER_PURCHASE = 10
 const BUY_PATTERN = /\bbuy\b/
+/** Button label for paying on the secure online payment page (older chats may still hold a "Card" button). */
+const PAY_NOW_BUTTON = "Pay Now"
+
 const CANCEL_PATTERN = /^(cancel|no|stop|back|menu|main menu|nevermind|never mind)[.!]*$/i
 
 const UNAVAILABLE_REPLY = "Sorry, I couldn't load that right now. Please try again in a moment."
@@ -501,8 +504,8 @@ async function proceedToPayment(
     lines.push(`Your Passport balance (${formatPassportMoney(options.passport.balance, options.passport.currency)}) is too low for this order.`)
   }
   if (options.card) {
-    choices.push("Card")
-    lines.push("💳 *Card* (secure payment page)")
+    choices.push(PAY_NOW_BUTTON)
+    lines.push("💳 *Online Payment* (Secure Payment page)")
   }
 
   if (choices.length === 0) {
@@ -588,9 +591,9 @@ async function handleState(tenantId: string, state: ConversationState, message: 
         const buttons = (data.buttons as string[] | undefined) ?? ["Cancel"]
         const choice = typed.toLowerCase()
         const wantsPassport = choice.includes("passport")
-        const wantsCard = choice.includes("card")
+        const wantsCard = choice.includes("pay now") || choice.includes("card") || choice.includes("online")
         if (!wantsPassport && !wantsCard) {
-          return stay(state.state, data, "Please tap *Passport* or *Card* (or reply *cancel*).", buttons)
+          return stay(state.state, data, `Please tap *Passport* or *${PAY_NOW_BUTTON}* (or reply *cancel*).`, buttons)
         }
 
         // Re-ask the database right before taking money: price and availability may have moved.
@@ -607,7 +610,7 @@ async function handleState(tenantId: string, state: ConversationState, message: 
           return await confirmedOrderReply(supabase, tenantId, res.orderId, message.from)
         }
 
-        if (!buttons.includes("Card")) return stay(state.state, data, "Card payment isn't available for this order. Please choose another option.", buttons)
+        if (!buttons.includes(PAY_NOW_BUTTON) && !buttons.includes("Card")) return stay(state.state, data, "Online payment isn't available for this order. Please choose another option.", buttons)
         const card = await startEventCardCheckout({ supabase, tenantId, customerId: customer.id, quote: q.quote })
         if (!card.ok) return finish(card.message, ["Events", "Main Menu"])
         const testNote = card.mode === "test" ? "\n\n_Test mode: no real money is charged._" : ""
