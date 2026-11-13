@@ -343,7 +343,7 @@ export function BookingRulesDrawer({
               )}
               <p className="text-xs text-ink-muted">
                 Reminders go out within about 5 minutes of the time above. Customers who messaged your WhatsApp in the last 24 hours get a normal
-                message. Everyone else only gets it if they&apos;ve agreed to WhatsApp updates and your reminder template (Inbox → WhatsApp settings
+                message. Everyone else only gets it if they&apos;ve agreed to WhatsApp updates and your reminder template (Settings → WhatsApp Settings
                 → Connection &amp; templates) is approved by WhatsApp.
               </p>
             </DrawerGroup>
