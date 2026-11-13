@@ -466,6 +466,32 @@ async function confirmedOrderReply(supabase: SupabaseClient, tenantId: string, o
   return { ...finish(text, ["My Tickets", "Main Menu"]), ...(media.length > 0 ? { media } : {}) }
 }
 
+/** One message: order summary + Yoco link. Used when card is the only way to pay, and after "Pay Now". */
+async function cardCheckoutReply(
+  supabase: SupabaseClient,
+  tenantId: string,
+  customerId: string,
+  quote: Parameters<typeof startEventCardCheckout>[0]["quote"],
+  note?: string,
+): Promise<ActionResult> {
+  const card = await startEventCardCheckout({ supabase, tenantId, customerId, quote })
+  if (!card.ok) return finish(card.message, ["Events", "Main Menu"])
+  const testNote = card.mode === "test" ? "\n\n_Test mode: no real money is charged._" : ""
+  return finish(
+    [
+      ...(note ? [note, ""] : []),
+      "🧾 *Order summary*",
+      `${quote.quantity} × ${quote.ticketTypeName} — ${quote.eventName}`,
+      `*Total: ${formatPrice(quote.total)}*`,
+      "",
+      "💳 Tap the link to pay securely:",
+      card.url,
+      "",
+      "Your tickets will be sent to you here as soon as the payment goes through.",
+    ].join("\n") + testNote,
+  )
+}
+
 /** Quote -> free ticket, or the "how would you like to pay" screen. */
 async function proceedToPayment(
   supabase: SupabaseClient,
@@ -488,6 +514,12 @@ async function proceedToPayment(
   }
 
   const options = await getEventPaymentOptions(supabase, tenantId, customerId, quote.total)
+
+  // Card is the only way to pay: no menu, send summary + link straight away.
+  if (options.card && !options.passport.ok) {
+    return await cardCheckoutReply(supabase, tenantId, customerId, quote, note)
+  }
+
   const choices: string[] = []
   const lines = [
     ...(note ? [note, ""] : []),
@@ -611,12 +643,7 @@ async function handleState(tenantId: string, state: ConversationState, message: 
         }
 
         if (!buttons.includes(PAY_NOW_BUTTON) && !buttons.includes("Card")) return stay(state.state, data, "Online payment isn't available for this order. Please choose another option.", buttons)
-        const card = await startEventCardCheckout({ supabase, tenantId, customerId: customer.id, quote: q.quote })
-        if (!card.ok) return finish(card.message, ["Events", "Main Menu"])
-        const testNote = card.mode === "test" ? "\n\n_Test mode: no real money is charged._" : ""
-        return finish(
-          `💳 *Pay by card*\n\n${q.quote.quantity} × ${q.quote.ticketTypeName} — ${q.quote.eventName}\n*Total: ${formatPrice(q.quote.total)}*\n\nTap the link to pay securely:\n${card.url}\n\nYour tickets will be sent to you here as soon as the payment goes through.${testNote}`,
-        )
+        return await cardCheckoutReply(supabase, tenantId, customer.id, q.quote)
       }
 
       default:
