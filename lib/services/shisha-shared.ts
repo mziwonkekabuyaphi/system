@@ -236,17 +236,22 @@ export interface CreateShishaRequestParams {
   issueLabel?: string | null
 }
 
+/** Statuses that mean "this customer's request is still open": waiting for staff,
+ *  waiting for the customer to pay online, or paid and waiting for staff to start it. */
+const OPEN_REQUEST_STATUSES = ["pending", "awaiting_payment", "paid"]
+
 /**
- * One-request-at-a-time gate: true if this customer already has ANY pending
- * shisha_requests row in THIS tenant. Fails OPEN on a DB error (staff triage
- * is the backstop), same tradeoff as the single-business version.
+ * One-request-at-a-time gate: true if this customer already has an OPEN
+ * shisha_requests row (pending, awaiting_payment or paid) in THIS tenant.
+ * Fails OPEN on a DB error (staff triage is the backstop), same tradeoff as
+ * the single-business version.
  */
 export async function hasPendingRequest(db: SupabaseClient, tenantId: string, who: ShishaCustomerRef): Promise<boolean> {
   const { data, error } = await db
     .from("shisha_requests")
     .select("id")
     .eq("tenant_id", tenantId)
-    .eq("status", "pending")
+    .in("status", OPEN_REQUEST_STATUSES)
     .or(customerOrFilter(who))
     .limit(1)
     .maybeSingle<{ id: string }>()
