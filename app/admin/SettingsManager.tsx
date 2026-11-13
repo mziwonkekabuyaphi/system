@@ -10,6 +10,7 @@ import type {
   AdminClockSettings,
   AdminDisplaySettings,
   AdminKioskSettings,
+  AdminMessageSettings,
   AdminPlan,
   AdminQueueSettings,
   AdminService,
@@ -25,10 +26,11 @@ import { KioskPanel } from "./settings/KioskPanels"
 import { PaymentsPanel } from "./payments/PaymentsPanel"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
+import { WhatsAppSettingsPanels } from "./settings/WhatsAppSettingsPanels"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "whatsapp"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -104,6 +106,12 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <path d="M12 6.7V12" />
       <path d="M8.2 12h7.6l1.3 7.3a1 1 0 0 1-1 1.2H7.9a1 1 0 0 1-1-1.2z" />
       <path d="M15.8 14c2.4.2 3.7 1.3 3.7 3" />
+    </RailIcon>
+  ),
+  whatsapp: (p) => (
+    <RailIcon {...p}>
+      <path d="M20 11.5a8 8 0 0 1-11.9 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z" />
+      <path d="M9 9.2c.3 2.4 2.4 4.5 4.8 4.8l1.2-1.2-1.7-.9-.8.6c-.9-.4-1.6-1.1-2-2l.6-.8-.9-1.7Z" />
     </RailIcon>
   ),
   passport: (p) => (
@@ -198,6 +206,15 @@ const SETTINGS_NAV: Array<{
         module: "display", // needs Booking or Queue (module_requires); a Booking-only shop gets a display too
       },
       {
+        // Moved from the Inbox drawer. Appears only while the `whatsapp` module is effective (its own
+        // switch on AND Booking, Queue, Shisha or Shifts on, per module_requires), like Shisha/Passport.
+        id: "whatsapp",
+        label: "WhatsApp Settings",
+        title: "WhatsApp Settings",
+        description: "Your number, approved templates, and what customers are sent.",
+        anyOf: ["whatsapp"],
+      },
+      {
         id: "shisha",
         label: "Shisha settings",
         title: "Shisha settings",
@@ -245,6 +262,7 @@ export function SettingsManager({
   initialClockSettings,
   initialQueueSettings,
   initialBusinessHours,
+  initialMessageSettings,
   onQueueSettingsChange,
   modules,
   bookingEnabled = true,
@@ -282,6 +300,8 @@ export function SettingsManager({
   initialClockSettings: AdminClockSettings
   initialQueueSettings: AdminQueueSettings
   initialBusinessHours: AdminBusinessHours
+  /** message_settings row for Settings > WhatsApp Settings > Messages (owner-only, like all of Settings). */
+  initialMessageSettings?: AdminMessageSettings
   /** Tells AdminView when Kiosk > Services saves queue settings, so Live Queue > Queue rules stays current. */
   onQueueSettingsChange?: (next: AdminQueueSettings) => void
   /** Module state from the database resolver (page.tsx -> getEffectiveModules().flags()). Decides which
@@ -333,6 +353,7 @@ export function SettingsManager({
       // Permissions still apply on top of the module state: shisha.view, wallet.view, services.manage.
       .filter((i) => i.id !== "shisha" || shishaEnabled)
       .filter((i) => i.id !== "passport" || passportEnabled)
+      .filter((i) => i.id !== "whatsapp" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "services" || servicesManage),
   })).filter((g) => g.items.length > 0)
   const settingsPages = settingsNav.flatMap((g) => g.items)
@@ -480,6 +501,9 @@ export function SettingsManager({
         />
       )}
       {activePage.id === "payments" && <PaymentsPanel />}
+      {activePage.id === "whatsapp" && initialMessageSettings && (
+        <WhatsAppSettingsPanels messageSettings={initialMessageSettings} />
+      )}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
       {activePage.id === "private-label" && (

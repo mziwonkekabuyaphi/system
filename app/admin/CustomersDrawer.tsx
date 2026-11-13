@@ -1,7 +1,7 @@
 // app/admin/CustomersDrawer.tsx
 //
 // Right-hand overlay panel for the customer list, opened from the Inbox page.
-// Same pattern as WhatsAppSettingsDrawer: the Inbox stays underneath, and
+// Same pattern as the Inbox analytics drawer: the Inbox stays underneath, and
 // closing the panel (x button, Escape, or a click on the dark backdrop) puts
 // you straight back where you were.
 //

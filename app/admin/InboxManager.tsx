@@ -34,8 +34,7 @@ import { SettingsSwitch } from "@/components/admin/SettingsSwitch"
 import { AnalyticsDashboard } from "./AnalyticsDashboard"
 import { CustomersDrawer } from "./CustomersDrawer"
 import { getConversationThread, sendAgentMessage, setConversationAiState } from "./inbox-actions"
-import type { AdminAiState, AdminConversationSummary, AdminInboxStats, AdminMessage, AdminMessageSettings } from "./types"
-import { WhatsAppSettingsDrawer } from "./WhatsAppSettingsDrawer"
+import type { AdminAiState, AdminConversationSummary, AdminInboxStats, AdminMessage } from "./types"
 
 type Filter = "all" | "ai_active" | "needs_human" | "unread"
 
@@ -138,12 +137,6 @@ const IconUsers = () => (
     <path d="M16 14.2c2.6.3 4.5 2.3 4.5 5.3" />
   </Svg>
 )
-const IconGear = () => (
-  <Svg>
-    <circle cx="12" cy="12" r="3" />
-    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
-  </Svg>
-)
 const IconCard = () => (
   <Svg>
     <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -183,13 +176,10 @@ function Avatar({ conversation, size }: { conversation: AdminConversationSummary
 export function InboxManager({
   initialConversations,
   initialStats,
-  initialMessageSettings,
   timezone,
 }: {
   initialConversations: AdminConversationSummary[]
   initialStats: AdminInboxStats
-  /** message_settings row for the WhatsApp settings drawer (owner-only, like the Inbox itself). */
-  initialMessageSettings: AdminMessageSettings
   /** Shop timezone, used by the Customers view (moved here from the sidebar). */
   timezone: string
 }) {
@@ -199,7 +189,6 @@ export function InboxManager({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showAnalytics, setShowAnalytics] = useState(false)
   const [customersOpen, setCustomersOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
 
   const [messages, setMessages] = useState<AdminMessage[]>([])
@@ -300,9 +289,6 @@ export function InboxManager({
               </button>
               <button type="button" onClick={() => setCustomersOpen(true)} className={ICON_BTN} title="Customers" aria-label="Customers">
                 <IconUsers />
-              </button>
-              <button type="button" onClick={() => setSettingsOpen(true)} className={ICON_BTN} title="WhatsApp settings" aria-label="WhatsApp settings">
-                <IconGear />
               </button>
             </div>
           </div>
@@ -588,13 +574,6 @@ export function InboxManager({
 
       {/* Customers: right-hand overlay panel, so the Inbox stays right behind it */}
       <CustomersDrawer open={customersOpen} onClose={() => setCustomersOpen(false)} timezone={timezone} />
-
-      {/* WhatsApp settings: right-hand overlay panel */}
-      <WhatsAppSettingsDrawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        messageSettings={initialMessageSettings}
-      />
     </div>
   )
 }

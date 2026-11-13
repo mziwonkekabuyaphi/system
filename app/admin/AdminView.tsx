@@ -458,7 +458,7 @@ export function AdminView({
   // Which tabs this shop + caller can see. Booking and Queue are optional
   // products. Analytics, Billing and Settings stay available.
   // (Services now lives in Settings > Customer Journey, next to Kiosk and Display.
-  //  Customers now lives on the Inbox page, next to Analytics and WhatsApp settings.)
+  //  Customers now lives on the Inbox page, next to Analytics; WhatsApp settings moved to Settings.)
   const hasBookingOrQueue = bookingEnabled || queueEnabled
   // Every module talks to its customers over WhatsApp (the tenant customer interface), so the
   // Inbox is available as soon as ANY module is on: Booking, Queue, Shisha, Staff (which also
@@ -853,7 +853,6 @@ export function AdminView({
             <InboxManager
               initialConversations={initialConversations}
               initialStats={initialInboxStats}
-              initialMessageSettings={initialMessageSettings!}
               timezone={timezone}
             />
           )}
@@ -891,6 +890,7 @@ export function AdminView({
               initialQueueSettings={queueSettings!}
               onQueueSettingsChange={setQueueSettings}
               initialBusinessHours={initialBusinessHours!}
+              initialMessageSettings={initialMessageSettings!}
               modules={settingsModules}
               bookingEnabled={bookingEnabled}
               queueEnabled={queueEnabled}
