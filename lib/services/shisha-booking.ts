@@ -24,6 +24,7 @@ import { getAiModelName } from "@/lib/ai/openai"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import * as messages from "@/lib/services/messages/shisha"
 import type { ActionResult } from "@/lib/types/action"
+import type { ChoiceRow } from "@/lib/whatsapp/utils/choice-list"
 import {
   actionResult,
   blockIfPendingRequest,
@@ -33,12 +34,17 @@ import {
   getAvailableFlavours,
   getFlavourPrice,
   getRequireStation,
+  listResult,
   logger,
   SHISHA_STATE_AWAITING_FLAVOUR,
   SHISHA_STATE_AWAITING_LOCATION,
   SHISHA_STATE_AWAITING_SESSION_CONFIRMATION,
   type NamedRow,
   type ShishaCustomerRef,
+  tappedIndex,
+  TAP_FLAVOUR,
+  TAP_FLAVOUR_MORE,
+  TAP_LOCATION,
   type ShishaStateData,
 } from "@/lib/services/shisha-shared"
 
@@ -81,10 +87,45 @@ export async function beginLocationStep(db: SupabaseClient, tenantId: string): P
     return actionResult(messages.NO_LOCATIONS, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
   }
 
-  const list = locations.map((l, i) => `${i + 1}️⃣ ${l.name}`).join("\n")
-  return actionResult(`${messages.LOCATION_REQUEST}\n\n${list}`, {
-    state: SHISHA_STATE_AWAITING_LOCATION,
-    data: { pendingLocations: locations },
+  // One station: nothing to ask.
+  if (locations.length === 1) return beginFlavourStep(db, tenantId, locations[0].name)
+
+  return listResult(
+    messages.LOCATION_REQUEST,
+    "Choose station",
+    [{ title: "Stations", rows: locations.map((l, i) => ({ id: `${TAP_LOCATION}${i}`, title: l.name })) }],
+    { state: SHISHA_STATE_AWAITING_LOCATION, data: { pendingLocations: locations } },
+  )
+}
+
+/** A list holds 10 rows: nine flavours plus one "more" row when there are more than ten. */
+const FLAVOUR_PAGE_SIZE = 9
+
+/** The flavour list, with the price under each name. Pages through long menus from the saved state (no database read). */
+function flavourListResult(flavours: NamedRow[], selectedLocation: string | null, page: number): ActionResult {
+  const paged = flavours.length > 10
+  const lastPage = Math.floor((flavours.length - 1) / FLAVOUR_PAGE_SIZE)
+  const current = paged ? Math.min(Math.max(page, 0), lastPage) : 0
+  const start = current * FLAVOUR_PAGE_SIZE
+  const shown = paged ? flavours.slice(start, start + FLAVOUR_PAGE_SIZE) : flavours
+
+  const rows: ChoiceRow[] = shown.map((f, i) => ({
+    id: `${TAP_FLAVOUR}${start + i}`,
+    title: f.name,
+    ...(f.price != null ? { description: messages.formatRands(f.price) } : {}),
+  }))
+  if (paged) {
+    rows.push(
+      current < lastPage
+        ? { id: `${TAP_FLAVOUR_MORE}${current + 1}`, title: "More flavours ▸" }
+        : { id: `${TAP_FLAVOUR_MORE}0`, title: "◂ Back to the first" },
+    )
+  }
+
+  const body = `${selectedLocation ? `📍 ${selectedLocation}\n\n` : ""}${messages.FLAVOUR_REQUEST}`
+  return listResult(body, "Choose flavour", [{ title: "Flavours", rows }], {
+    state: SHISHA_STATE_AWAITING_FLAVOUR,
+    data: { selectedLocation, pendingFlavours: flavours },
   })
 }
 
@@ -98,11 +139,14 @@ async function beginFlavourStep(
     return actionResult(messages.NO_FLAVOURS, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
   }
 
-  const list = flavours.map((f, i) => `${i + 1}️⃣ ${f.name}`).join("\n")
-  return actionResult(`${messages.FLAVOUR_REQUEST}\n\n${list}`, {
-    state: SHISHA_STATE_AWAITING_FLAVOUR,
-    data: { selectedLocation, pendingFlavours: flavours },
-  })
+  // One flavour: nothing to ask, go straight to the confirmation (live price, never the list's).
+  if (flavours.length === 1) {
+    const price = await getFlavourPrice(db, tenantId, flavours[0].name)
+    if (price === null) return actionResult(messages.PRICE_UNAVAILABLE, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
+    return beginSessionConfirmation(selectedLocation, flavours[0].name, price)
+  }
+
+  return flavourListResult(flavours, selectedLocation, 0)
 }
 
 function beginSessionConfirmation(
@@ -258,8 +302,11 @@ export async function continueLocationStep(
   tenantId: string,
   stateData: ShishaStateData,
   rawMessage: string,
+  tapId: string | null = null,
 ): Promise<ActionResult> {
-  const selection = extractListSelection(rawMessage)
+  // A list tap carries the row's index; a typed number still works for older chats.
+  const tapped = tappedIndex(tapId, TAP_LOCATION)
+  const selection = tapped !== null ? tapped + 1 : extractListSelection(rawMessage)
   const locations = stateData.pendingLocations ?? []
   if (selection === null || !locations[selection - 1]) {
     return actionResult(messages.invalidLocation(locations.length), {
@@ -275,9 +322,18 @@ export async function continueFlavourStep(
   tenantId: string,
   stateData: ShishaStateData,
   rawMessage: string,
+  tapId: string | null = null,
 ): Promise<ActionResult> {
-  const selection = extractListSelection(rawMessage)
   const flavours = stateData.pendingFlavours ?? []
+
+  // "More flavours ▸" row: show the next page from the saved list.
+  if (tapId?.startsWith(TAP_FLAVOUR_MORE)) {
+    const page = Number(tapId.slice(TAP_FLAVOUR_MORE.length))
+    if (Number.isInteger(page)) return flavourListResult(flavours, stateData.selectedLocation ?? null, page)
+  }
+
+  const tapped = tappedIndex(tapId, TAP_FLAVOUR)
+  const selection = tapped !== null ? tapped + 1 : extractListSelection(rawMessage)
   if (selection === null || !flavours[selection - 1]) {
     return actionResult(messages.invalidFlavour(flavours.length), {
       state: SHISHA_STATE_AWAITING_FLAVOUR,

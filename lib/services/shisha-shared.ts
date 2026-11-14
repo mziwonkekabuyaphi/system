@@ -23,6 +23,7 @@ import { normalizePhoneNumber } from "@/lib/utils/phone"
 import * as messages from "@/lib/services/messages/shisha"
 import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
+import { buildChoiceList, type ChoiceSection } from "@/lib/whatsapp/utils/choice-list"
 
 // Local logger so this module has no dependency on a utils/logger path.
 export const logger = {
@@ -64,6 +65,8 @@ export const SHISHA_STATE_NAMES: ReadonlySet<string> = new Set([
 
 export interface NamedRow {
   name: string
+  /** Shown under a flavour in the tap list. Not set for stations. */
+  price?: number | null
 }
 
 export interface ActiveShishaSession {
@@ -190,7 +193,7 @@ export async function getActiveLocations(db: SupabaseClient, tenantId: string): 
 export async function getAvailableFlavours(db: SupabaseClient, tenantId: string): Promise<NamedRow[]> {
   const { data, error } = await db
     .from("shisha_products")
-    .select("name")
+    .select("name, price")
     .eq("tenant_id", tenantId)
     .eq("is_available", true)
     .is("archived_at", null)
@@ -199,7 +202,10 @@ export async function getAvailableFlavours(db: SupabaseClient, tenantId: string)
     logger.error("[shisha] failed to fetch flavours", { tenantId, error: error.message })
     return []
   }
-  return data ?? []
+  return ((data ?? []) as Array<{ name: string; price: number | string | null }>).map((row) => ({
+    name: row.name,
+    price: row.price != null ? Number(row.price) : null,
+  }))
 }
 
 /** The flavour's live price, or null if it can't be read (callers must handle null — no silent default). */
@@ -306,4 +312,38 @@ export function extractListSelection(rawMessage: string): number | null {
   const wordedMatch = trimmed.match(/\b(\d{1,2})\b/)
   if (wordedMatch) return parseInt(wordedMatch[1], 10)
   return null
+}
+
+// ============================================================================
+// TAP-ONLY LISTS
+// ============================================================================
+// Every row of a shisha list carries one of these ids (WhatsApp returns it as message.interactiveId).
+// The shared "sh_" prefix is what action-router.ts uses to keep these taps out of its reset-word check,
+// so a flavour called "Stop & Go" can't throw the customer back to the main menu.
+
+export const SHISHA_TAP_PREFIX = "sh_"
+export const TAP_MENU = "sh_menu:"
+export const TAP_LOCATION = "sh_loc:"
+export const TAP_FLAVOUR = "sh_flv:"
+export const TAP_FLAVOUR_MORE = "sh_flv_more:"
+export const TAP_ISSUE = "sh_issue:"
+
+/** The number in a tapped row id ("sh_loc:2" -> 2), or null for typed text or a different tap. */
+export function tappedIndex(tapId: string | null | undefined, prefix: string): number | null {
+  if (!tapId || !tapId.startsWith(prefix)) return null
+  const n = Number(tapId.slice(prefix.length))
+  return Number.isInteger(n) && n >= 0 ? n : null
+}
+
+/**
+ * One WhatsApp list as the whole reply. The main reply is left empty on purpose:
+ * send-action-result.ts skips an empty reply, so the list (with `body` as its text) is ONE message.
+ */
+export function listResult(
+  body: string,
+  buttonText: string,
+  sections: ChoiceSection[],
+  nextState: { state: ShishaStateName; data?: ShishaStateData },
+): ActionResult {
+  return { reply: "", buttons: [], nextState, followUp: [buildChoiceList(body, buttonText, sections)] }
 }
