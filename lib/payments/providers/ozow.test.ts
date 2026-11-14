@@ -180,7 +180,7 @@ describe("payment request", () => {
     const out = await ozowCreatePaymentRequest(base)
     assert.deepEqual(out, { paymentRequestId: "pr-1", url: "https://pay.ozow.com/pr-1/Secure" })
     assert.ok(seen)
-    const s = seen as { url: string; init: RequestInit }
+    const s = seen as unknown as { url: string; init: RequestInit }
     assert.equal(s.url, "https://api.ozow.com/postpaymentrequest")
     assert.equal((s.init.headers as Record<string, string>).ApiKey, "api-key-abcd")
     const body = JSON.parse(s.init.body as string)

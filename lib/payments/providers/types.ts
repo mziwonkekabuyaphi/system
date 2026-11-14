@@ -13,7 +13,7 @@
  * Server-only. Secrets are never logged and never put in an error message.
  */
 
-export type ProviderId = "yoco" | "ozow" | "peach"
+export type ProviderId = "yoco" | "ozow" | "peach" | "paystack"
 export type PaymentMode = "test" | "live"
 
 /** An error from a provider's API. `status` is the HTTP status, or 0 when the provider couldn't be reached. */
@@ -133,6 +133,11 @@ export interface CardProvider {
   readonly disconnectNote: string
   /** Shown when the provider rejects the credentials. */
   readonly invalidCredentialsMessage: string
+  /**
+   * Set only for providers that can NOT be told our notice address through an API (e.g. Paystack): the owner has to
+   * paste it into the provider's own dashboard. Settings > Payments then shows these instructions with the address.
+   */
+  readonly webhookSetup?: { instructions: string }
 
   connect(req: ConnectRequest): Promise<ConnectResult>
   createCheckout(req: CheckoutRequest): Promise<CheckoutResult>
