@@ -1,13 +1,28 @@
 // app/pay/result/page.tsx
 //
-// Where Yoco's hosted checkout sends the customer afterwards. Deliberately dumb and shop-neutral:
-// it never trusts the query string for anything that matters. The Passport is credited only by the
-// signed webhook, and the customer gets a WhatsApp message when that happens.
+// Where the payment page sends the customer afterwards. Deliberately dumb and shop-neutral:
+//   Yoco / Ozow: ?status=success|cancelled|failed  (the page only displays; the signed notice does the work)
+//   Paystack:    ?reference=pay-...&trxref=...      (we additionally ask Paystack whether it was paid, see
+//                                                    lib/payments/paystack-reconcile.ts. The URL itself is never
+//                                                    trusted for anything that matters.)
+// The Passport / tickets are credited only by the verified payment, and the customer gets a WhatsApp message.
+
+import { reconcilePaystackReference } from "@/lib/payments/paystack-reconcile"
+
+export const dynamic = "force-dynamic"
 
 const COPY: Record<string, { title: string; body: string }> = {
   success: {
     title: "Payment received",
-    body: "Thank you! Your Passport updates in a few seconds, and you'll get a WhatsApp message when it's done. You can go back to WhatsApp now.",
+    body: "Thank you! Your Passport or tickets update in a few seconds, and you'll get a WhatsApp message when it's done. You can go back to WhatsApp now.",
+  },
+  pending: {
+    title: "Confirming your payment",
+    body: "We're confirming your payment. This usually takes a few seconds, and you'll get a WhatsApp message as soon as it's done. You can go back to WhatsApp now.",
+  },
+  problem: {
+    title: "We received your payment",
+    body: "We couldn't complete your order, so you'll be refunded in full. The shop has been told. Check WhatsApp for details.",
   },
   cancelled: {
     title: "Payment cancelled",
@@ -19,9 +34,23 @@ const COPY: Record<string, { title: string; body: string }> = {
   },
 }
 
-export default async function PayResultPage({ searchParams }: { searchParams: Promise<{ status?: string }> | { status?: string } }) {
-  const { status } = await searchParams
-  const copy = COPY[status ?? ""] ?? COPY.failed
+type Params = { status?: string; reference?: string; trxref?: string }
+
+export default async function PayResultPage({ searchParams }: { searchParams: Promise<Params> | Params }) {
+  const q = await searchParams
+
+  let key = q.status ?? ""
+  const reference = q.reference ?? q.trxref
+  if (reference) {
+    // Only references in our own Paystack format that match a payment we created are looked at; anything else is "unknown".
+    const result = await reconcilePaystackReference(reference)
+    if (result === "confirmed") key = "success"
+    else if (result === "pending") key = "pending"
+    else if (result === "problem") key = "problem"
+    else if (result === "failed") key = "failed"
+  }
+  const copy = COPY[key] ?? COPY.failed
+
   return (
     <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "2rem", fontFamily: "system-ui, sans-serif" }}>
       <div style={{ maxWidth: 420, textAlign: "center" }}>
