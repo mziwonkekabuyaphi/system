@@ -192,7 +192,7 @@ export function requestApprovedPleasePay(details: {
     `🍃 ${details.flavour} · ${formatRands(details.price)}\n\n` +
     "💳 Tap the link to pay securely:\n" +
     `${details.url}\n\n` +
-    "Your session starts as soon as the payment goes through. Please pay within 24 hours." +
+    "Your session starts as soon as the payment goes through. Please pay within 10 minutes, or the request will be closed." +
     testNote
   )
 }
@@ -202,9 +202,9 @@ export function paymentReceivedSession(details: { flavour: string | null; price:
   return `✅ *Payment received* (${formatRands(details.price)}), thank you! Staff will start your session shortly.`
 }
 
-/** Sent by the daily expiry job when a payment link was not used in time and the request was closed. */
+/** Sent by the expiry job (runs every minute) when a payment link was not paid within 10 minutes and the request was closed. */
 export const PAYMENT_LINK_EXPIRED =
-  "⏰ Your shisha request was closed because the payment link wasn't used in time. Please don't pay that link. You can send a new request any time — reply 'shisha'."
+  "⏰ Your shisha request was closed because the payment wasn't made within 10 minutes. Please don't pay that link. You can send a new request any time — reply 'shisha'."
 
 /** Staff cancelled a request that was waiting for the customer's payment. */
 export function requestCancelledBeforePayment(reason: string | null): string {
