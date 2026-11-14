@@ -71,7 +71,12 @@ export async function handleProviderWebhook(req: Request, providerId: string, in
   let outcome = "ignored"
   try {
     if (event.type === "succeeded") {
-      outcome = await settleSucceeded({ db, provider, connection, event, deliveryId })
+      if (provider.confirmSucceeded && !(await provider.confirmSucceeded({ connection, event }))) {
+        outcome = "not_confirmed_by_provider" // verified notice, but the provider's own records don't agree: credit nothing
+        console.error(`${tag} provider did not confirm a succeeded notice, NOT credited`, { integrationId, deliveryId })
+      } else {
+        outcome = await settleSucceeded({ db, provider, connection, event, deliveryId })
+      }
     } else if (event.type === "failed") {
       outcome = "failed_attempt_logged" // see header: never fail the payment here
     }
