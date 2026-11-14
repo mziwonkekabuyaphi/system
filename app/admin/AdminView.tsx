@@ -813,7 +813,8 @@ export function AdminView({
               canOperate={staffPermissions.shishaOperate}
               canManage={staffPermissions.shishaManage}
               section={shishaSection}
-              onSectionChange={(next) => setTab(SECTION_SHISHA_TAB[next])}
+              // Falls back to the Counter if an older ShishaManager still asks for the removed Requests page.
+              onSectionChange={(next) => setTab(SECTION_SHISHA_TAB[next] ?? "shishaCounter")}
             />
           )}
           {/* One Customer accounts page for the three sidebar entries, same idea as Shisha above. */}
