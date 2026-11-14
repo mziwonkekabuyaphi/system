@@ -74,11 +74,10 @@ const PRINTED_REQUESTS_KEY = "shishaPrintedRequests"
 const MAX_SLIP_AGE_MS = 30 * 60_000
 
 /** Which Shisha page to show. Chosen from the sidebar (AdminView). Settings like session length live in Settings > Shisha settings. */
-export type ShishaSection = "counter" | "requests" | "sessions" | "flavours" | "devices" | "stations"
+export type ShishaSection = "counter" | "sessions" | "flavours" | "devices" | "stations"
 type Section = ShishaSection
 export const SHISHA_SECTION_LABELS: Record<ShishaSection, string> = {
   counter: "Counter",
-  requests: "Requests",
   sessions: "Sessions",
   flavours: "Flavours",
   devices: "Hookahs",
@@ -484,7 +483,7 @@ export function ShishaManager({
         </div>
       )}
 
-      {canOperate && pendingCount > 0 && section !== "requests" && (
+      {canOperate && pendingCount > 0 && section !== "counter" && (
         <div
           role="status"
           className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn"
@@ -492,7 +491,7 @@ export function ShishaManager({
           <span>
             {pendingCount} customer {pendingCount === 1 ? "request is" : "requests are"} waiting for staff.
           </span>
-          <button type="button" onClick={() => onSectionChange("requests")} className={BTN}>
+          <button type="button" onClick={() => onSectionChange("counter")} className={BTN}>
             Review
           </button>
         </div>
@@ -511,6 +510,19 @@ export function ShishaManager({
         )
       ) : (
         <>
+          {section === "counter" && canOperate && snap.requests.length > 0 && (
+            <RequestsPanel
+              snap={snap}
+              busy={busy}
+              occupiedDeviceIds={occupiedDeviceIds}
+              onAccept={(req, input) =>
+                run(() => acceptShishaRequest({ requestId: req.id, ...input }), "Request accepted.")
+              }
+              onReject={(req, reason) => run(() => rejectShishaRequest(req.id, reason), "Request rejected.")}
+              onPrintSlip={(req) => void printSlipNow(req)}
+            />
+          )}
+
           {section === "counter" && canOperate && (
             <ShishaCounter
               snap={snap}
@@ -522,19 +534,6 @@ export function ShishaManager({
               onResume={(s) => void run(() => resumeSession(s.id), `${s.deviceCode} resumed.`)}
               onRefill={(s) => void run(() => refillSession(s.id), refillText(s))}
               onEnd={(s, method) => run(() => endSession(s.id, method), `${s.deviceCode} session ended.`)}
-            />
-          )}
-
-          {section === "requests" && canOperate && (
-            <RequestsPanel
-              snap={snap}
-              busy={busy}
-              occupiedDeviceIds={occupiedDeviceIds}
-              onAccept={(req, input) =>
-                run(() => acceptShishaRequest({ requestId: req.id, ...input }), "Request accepted.")
-              }
-              onReject={(req, reason) => run(() => rejectShishaRequest(req.id, reason), "Request rejected.")}
-              onPrintSlip={(req) => void printSlipNow(req)}
             />
           )}
 
