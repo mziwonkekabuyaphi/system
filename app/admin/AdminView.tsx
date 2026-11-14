@@ -332,8 +332,8 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "shishaFlavours", label: "Flavours", icon: ShishaFlavoursIcon },
   { id: "shishaHookahs", label: "Hookahs", icon: HookahIcon },
   { id: "shishaStations", label: "Stations", icon: ShishaStationsIcon },
-  { id: "passportOverview", label: "Overview", icon: PassportOverviewIcon },
-  { id: "passportAccounts", label: "Accounts", icon: PassportAccountsIcon },
+  { id: "passportOverview", label: "Account overview", icon: PassportOverviewIcon },
+  { id: "passportAccounts", label: "Customer accounts", icon: PassportAccountsIcon },
   { id: "passportRefunds", label: "Refunds", icon: PassportRefundsIcon },
   { id: "eventsList", label: "Events", icon: EventsIcon },
   { id: "eventsBoxOffice", label: "Box office", icon: BoxOfficeIcon },
@@ -352,11 +352,24 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
   { label: "Control Centre", ids: ["today", "queue", "inbox", "staff"] },
   // Shown only while Shisha is switched on. Each entry is one page of the Shisha area.
   { label: "Shisha", ids: ["shishaCounter", "shishaSessions", "shishaFlavours", "shishaHookahs", "shishaStations"] },
-  // Shown only while Passport (the customer wallet) is switched on and the caller can view it.
-  { label: "Passport", ids: ["passportOverview", "passportAccounts", "passportRefunds"] },
-  // Shown only while Events is switched on and the caller holds the matching permissions.
-  // The VVIP pages sit under Events but have their own module switch (needs Events), so a shop can run Events without them.
-  { label: "Events", ids: ["eventsList", "eventsBoxOffice", "eventsGate", "vvipTables", "vvipTabs"] },
+  // Customer accounts (the "Passport" wallet) and Events share one group: Events needs the wallet (module_requires),
+  // so wherever Events is on, the customer-account pages are there too. Each entry shows only if its own module is on
+  // and the caller holds the matching permission. The VVIP pages have their own switch (needs Events).
+  // A shop with the wallet but no Events has no Events pages, so the heading reads "Customer accounts" (see
+  // navGroupLabel below).
+  {
+    label: "Events",
+    ids: [
+      "passportOverview",
+      "passportAccounts",
+      "passportRefunds",
+      "eventsList",
+      "eventsBoxOffice",
+      "eventsGate",
+      "vvipTables",
+      "vvipTabs",
+    ],
+  },
   { label: "Analytics", ids: ["analytics"] },
   { label: "System", ids: ["billing", "settings"] },
 ]
@@ -531,6 +544,8 @@ export function AdminView({
   const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
   const vvipSection = VVIP_TAB_SECTION[tab] ?? null
   // A shop with no Booking/Queue has little else, so its Shisha pages go at the top of the sidebar.
+  // The shared Events group is headed "Customer accounts" when the shop has the wallet but not Events.
+  const navGroupLabel = (label: string) => (label === "Events" && !eventsEnabled ? "Customer accounts" : label)
   const navGroups = hasBookingOrQueue ? NAV_GROUPS : [NAV_GROUPS[1], NAV_GROUPS[0], ...NAV_GROUPS.slice(2)]
 
   // Branding is lifted into state (seeded from the server-fetched
@@ -684,7 +699,7 @@ export function AdminView({
                       expanded ? "!opacity-50 delay-100" : ""
                     }`}
                   >
-                    {group.label}
+                    {navGroupLabel(group.label)}
                   </p>
                 </div>
                 {items.map((t) => {
@@ -760,7 +775,13 @@ export function AdminView({
               {brandName}
             </h1>
             <p className="mt-1 text-sm text-stone-500">
-              {shishaSection ? "Shisha · " : passportSection ? "Passport · " : eventsSection || vvipSection ? "Events · " : ""}
+              {shishaSection
+                ? "Shisha · "
+                : passportSection
+                  ? `${navGroupLabel("Events")} · `
+                  : eventsSection || vvipSection
+                    ? "Events · "
+                    : ""}
               {TABS.find((t) => t.id === tab)?.label ?? ""}
             </p>
           </div>
@@ -795,7 +816,7 @@ export function AdminView({
               onSectionChange={(next) => setTab(SECTION_SHISHA_TAB[next])}
             />
           )}
-          {/* One Passport page for the three sidebar entries, same idea as Shisha above. */}
+          {/* One Customer accounts page for the three sidebar entries, same idea as Shisha above. */}
           {passportSection && isTabVisible(tab) && (
             <PassportManager
               timezone={timezone}
