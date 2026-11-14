@@ -4,6 +4,7 @@
 import { useEffect, useState, useTransition } from "react"
 
 import { refreshShisha, updateShishaSettings } from "../shisha/actions"
+import { readAutoPrintRequests, writeAutoPrintRequests } from "../shisha/shisha-autoprint"
 import type { ShishaSettings } from "../shisha/shisha-types"
 import { SettingsCard, inputClass, primaryButtonClass } from "./ui"
 
@@ -33,7 +34,46 @@ export function ShishaSettingsPanel({ canManage }: { canManage: boolean }) {
 
   if (loadError) return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{loadError}</p>
   if (!settings) return <p className="text-sm text-stone-500">Loading…</p>
-  return <ShishaSettingsForm initial={settings} canManage={canManage} />
+  return (
+    <div className="space-y-6">
+      <ShishaSettingsForm initial={settings} canManage={canManage} />
+      <SlipPrintingCard />
+    </div>
+  )
+}
+
+// This PC only: stored in this browser, so it is not limited to managers and does not
+// change anything for other devices. The Shisha page does the printing, so it must stay
+// open on the PC with the receipt printer.
+function SlipPrintingCard() {
+  const [autoPrint, setAutoPrint] = useState(false)
+
+  useEffect(() => {
+    setAutoPrint(readAutoPrintRequests())
+  }, [])
+
+  function change(on: boolean) {
+    setAutoPrint(on)
+    writeAutoPrintRequests(on)
+  }
+
+  return (
+    <SettingsCard
+      title="Request slips (this PC)"
+      description="A choice for this computer only. Other computers are not affected."
+    >
+      <div className="max-w-md space-y-1">
+        <label className="flex items-center gap-2 text-sm text-stone-800">
+          <input type="checkbox" checked={autoPrint} onChange={(e) => change(e.target.checked)} />
+          Print a slip on this PC when a customer requests a session
+        </label>
+        <p className="text-xs text-stone-500">
+          Turn this on only on the PC with the receipt printer, and keep the Shisha page open there. Requests that
+          arrive while the page is closed are not printed.
+        </p>
+      </div>
+    </SettingsCard>
+  )
 }
 
 function ShishaSettingsForm({ initial, canManage }: { initial: ShishaSettings; canManage: boolean }) {
