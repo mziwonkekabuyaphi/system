@@ -332,14 +332,14 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "shishaFlavours", label: "Flavours", icon: ShishaFlavoursIcon },
   { id: "shishaHookahs", label: "Hookahs", icon: HookahIcon },
   { id: "shishaStations", label: "Stations", icon: ShishaStationsIcon },
-  { id: "passportOverview", label: "Account overview", icon: PassportOverviewIcon },
+  { id: "passportOverview", label: "Overview", icon: PassportOverviewIcon },
   { id: "passportAccounts", label: "Customer accounts", icon: PassportAccountsIcon },
   { id: "passportRefunds", label: "Refunds", icon: PassportRefundsIcon },
-  { id: "eventsList", label: "Events", icon: EventsIcon },
+  { id: "eventsList", label: "Event management", icon: EventsIcon },
   { id: "eventsBoxOffice", label: "Box office", icon: BoxOfficeIcon },
-  { id: "eventsGate", label: "Gate", icon: GateIcon },
-  { id: "vvipTables", label: "VVIP tables", icon: VvipTablesIcon },
-  { id: "vvipTabs", label: "VVIP tabs", icon: VvipTabsIcon },
+  { id: "eventsGate", label: "Gate scanner", icon: GateIcon },
+  { id: "vvipTables", label: "Tables", icon: VvipTablesIcon },
+  { id: "vvipTabs", label: "Table tabs", icon: VvipTabsIcon },
   { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
   { id: "staff", label: "Staff", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
@@ -362,12 +362,12 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
     ids: [
       "passportOverview",
       "passportAccounts",
-      "passportRefunds",
       "eventsList",
       "eventsBoxOffice",
       "eventsGate",
       "vvipTables",
       "vvipTabs",
+      "passportRefunds",
     ],
   },
   { label: "Analytics", ids: ["analytics"] },
@@ -543,10 +543,10 @@ export function AdminView({
   const passportSection = PASSPORT_TAB_SECTION[tab] ?? null
   const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
   const vvipSection = VVIP_TAB_SECTION[tab] ?? null
-  // A shop with no Booking/Queue has little else, so its Shisha pages go at the top of the sidebar.
   // The shared Events group is headed "Customer accounts" when the shop has the wallet but not Events.
   const navGroupLabel = (label: string) => (label === "Events" && !eventsEnabled ? "Customer accounts" : label)
-  const navGroups = hasBookingOrQueue ? NAV_GROUPS : [NAV_GROUPS[1], NAV_GROUPS[0], ...NAV_GROUPS.slice(2)]
+  // Control Centre is always first; the other groups follow in NAV_GROUPS order.
+  const navGroups = NAV_GROUPS
 
   // Branding is lifted into state (seeded from the server-fetched
   // initialBranding) so the sidebar badge and header logo update the
