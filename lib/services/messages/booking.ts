@@ -96,17 +96,74 @@ export function dateOptionsMessage(dateOptions: Array<{ label: string }>): strin
   return `Which day works for you? 📅\n\n${lines.join("\n")}\n\nReply with a number.`
 }
 
-export function slotsListMessage(serviceName: string, dateLabel: string, slots: BookingSlot[]): string {
-  const lines = slots.map((s, i) => `${i + 1}. ${s.label}`)
-  return `Available times for *${serviceName}* on ${dateLabel}:\n\n${lines.join("\n")}\n\nReply with a number.`
+/** How many times are shown per screen in the booking flow. */
+export const SLOTS_PAGE_SIZE = 12
+
+/** Number of the last page (0-based) for a list of slots. */
+export function lastSlotsPage(total: number): number {
+  return Math.max(0, Math.ceil(total / SLOTS_PAGE_SIZE) - 1)
+}
+
+function slotHour(label: string): number {
+  const hour = Number(label.slice(0, 2))
+  return Number.isFinite(hour) ? hour : 0
+}
+
+/**
+ * Times grouped under Morning / Afternoon / Evening. Numbers always count from the
+ * start of the FULL list, so "reply with a number" maps to the same slot on every page.
+ *   page = "all"  -> every slot (used by the reschedule flow, which has no paging)
+ *   page = 0,1,.. -> SLOTS_PAGE_SIZE slots at a time, with a "more" hint when there are further ones
+ */
+export function slotsListMessage(
+  serviceName: string,
+  dateLabel: string,
+  slots: BookingSlot[],
+  page: number | "all" = "all",
+): string {
+  const start = page === "all" ? 0 : page * SLOTS_PAGE_SIZE
+  const end = page === "all" ? slots.length : start + SLOTS_PAGE_SIZE
+  const visible = slots.slice(start, end)
+
+  const groups: Array<{ title: string; lines: string[] }> = [
+    { title: "🌅 Morning", lines: [] },
+    { title: "☀️ Afternoon", lines: [] },
+    { title: "🌙 Evening", lines: [] },
+  ]
+  visible.forEach((s, i) => {
+    const hour = slotHour(s.label)
+    const group = hour < 12 ? groups[0] : hour < 17 ? groups[1] : groups[2]
+    group.lines.push(`${start + i + 1}. ${s.label}`)
+  })
+
+  const body = groups
+    .filter((g) => g.lines.length > 0)
+    .map((g) => `*${g.title}*\n${g.lines.join("\n")}`)
+    .join("\n\n")
+
+  const hasMore = page !== "all" && end < slots.length
+  const ask = hasMore ? "Reply with a number, or *more* for later times." : "Reply with a number."
+  return `Available times for *${serviceName}* on ${dateLabel}:\n\n${body}\n\n${ask}`
+}
+
+/** "13:30" + 90 minutes -> "15:00". Works on the shop-local label, so no timezone maths is needed. */
+function addMinutesToLabel(label: string, minutes: number): string | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(label.trim())
+  if (!match) return null
+  const total = (Number(match[1]) * 60 + Number(match[2]) + Math.round(minutes)) % (24 * 60)
+  const h = String(Math.floor(total / 60)).padStart(2, "0")
+  const m = String(total % 60).padStart(2, "0")
+  return `${h}:${m}`
 }
 
 export function confirmationMessage(service: CatalogService, dateLabel: string, slot: BookingSlot): string {
+  const end = addMinutesToLabel(slot.label, service.durationMinutes)
   return (
     `Just to confirm ✅\n\n` +
     `*Service:* ${service.name}\n` +
     `*Price:* R${service.price}\n` +
-    `*When:* ${dateLabel} at ${slot.label}\n\n` +
+    `*When:* ${dateLabel}, ${end ? `${slot.label} to ${end}` : `at ${slot.label}`}\n` +
+    `*Duration:* ${service.durationMinutes} min\n\n` +
     `Reply *yes* to confirm, or *no* to cancel.`
   )
 }
