@@ -3,7 +3,7 @@
 // app/admin/payments/actions.ts
 //
 // Server Actions for "Settings > Payments": connect / disconnect the shop's OWN card-payment provider
-// (Yoco today; Ozow and others as their adapters are registered in lib/payments/providers).
+// (Yoco, Ozow, Paystack: whichever adapters are registered in lib/payments/providers).
 // Same layers as app/admin/events/actions.ts:
 //   1. requireTenantPermission("settings.manage") proves the signed-in user may manage THIS shop's
 //      settings. The tenantId comes from their membership, never from the browser.
@@ -34,7 +34,15 @@ export interface PaymentSettings {
   /** Providers this build can connect. */
   providers: ProviderInfo[]
   /** The shop's active provider, or null. */
-  active: { provider: string; label: string; mode: "test" | "live" | null; keyHint: string | null; lastEventAt: string | null } | null
+  active: {
+    provider: string
+    label: string
+    mode: "test" | "live" | null
+    keyHint: string | null
+    lastEventAt: string | null
+    /** Only for providers that can't be told our notice address automatically (e.g. Paystack): the owner pastes it in the provider's dashboard. */
+    webhookSetup: { url: string; instructions: string } | null
+  } | null
   /** Most recent problem on the shop's connection (also shown when nothing is active any more). */
   lastError: string | null
   /** Ticket payments that came in but could not be issued or refunded automatically. */
@@ -57,13 +65,24 @@ async function scope() {
 /** camelCase field name -> snake_case, for Vault secret names. */
 const snake = (name: string) => name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`).replace(/[^a-z0-9_]/g, "")
 
+/** The address the owner has to paste into the provider's dashboard, for providers that need it. null for the others. */
+function webhookSetupFor(providerId: string, integrationId: string): { url: string; instructions: string } | null {
+  const setup = getProvider(providerId)?.webhookSetup
+  if (!setup) return null
+  try {
+    return { url: webhookUrlFor(providerId, integrationId), instructions: setup.instructions }
+  } catch {
+    return null
+  }
+}
+
 export async function loadPaymentSettings(): Promise<ActionResult<PaymentSettings>> {
   const s = await scope()
   if (!s.ok) return s
 
   const { data: rows, error } = await s.db
     .from("tenant_payment_integrations")
-    .select("provider, status, mode, key_hint, last_error, last_event_at, updated_at")
+    .select("id, provider, status, mode, key_hint, last_error, last_event_at, updated_at")
     .eq("tenant_id", s.tenantId)
     .order("updated_at", { ascending: false })
   if (error) return { ok: false, error: GENERIC_ERROR }
@@ -96,6 +115,7 @@ export async function loadPaymentSettings(): Promise<ActionResult<PaymentSetting
             mode: (active.mode as "test" | "live" | null) ?? null,
             keyHint: (active.key_hint as string | null) ?? null,
             lastEventAt: (active.last_event_at as string | null) ?? null,
+            webhookSetup: webhookSetupFor(active.provider as string, active.id as string),
           }
         : null,
       lastError: (latest?.last_error as string | null) ?? null,

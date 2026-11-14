@@ -119,6 +119,19 @@ export function PaymentsPanel() {
             {info.active.lastEventAt ? `Last payment notice received ${new Date(info.active.lastEventAt).toLocaleString("en-ZA")}.` : "No payment notice received yet."}
           </p>
           {info.active.mode === "test" && <p className="text-xs text-amber-600">Test mode: payments are practice only. Connect your live details when you&apos;re ready.</p>}
+          {info.active.webhookSetup && (
+            <div className="mt-2 space-y-2 rounded-xl bg-amber-500/10 p-3">
+              <p className="text-xs font-semibold text-stone-800">One more step: {info.active.webhookSetup.instructions}</p>
+              <code className="block break-all rounded-lg bg-stone-500/10 px-2 py-1.5 font-mono text-xs text-stone-800">{info.active.webhookSetup.url}</code>
+              <button
+                type="button"
+                className={BTN_GHOST}
+                onClick={() => { void navigator.clipboard?.writeText(info.active?.webhookSetup?.url ?? "") }}
+              >
+                Copy address
+              </button>
+            </div>
+          )}
         </div>
       )}
 
