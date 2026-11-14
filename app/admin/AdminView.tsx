@@ -44,7 +44,6 @@ type Tab =
   | "today"
   | "queue"
   | "shishaCounter"
-  | "shishaRequests"
   | "shishaSessions"
   | "shishaFlavours"
   | "shishaHookahs"
@@ -66,7 +65,6 @@ type Tab =
 /** Sidebar entry -> the Shisha page it opens. */
 const SHISHA_TAB_SECTION: Partial<Record<Tab, ShishaSection>> = {
   shishaCounter: "counter",
-  shishaRequests: "requests",
   shishaSessions: "sessions",
   shishaFlavours: "flavours",
   shishaHookahs: "devices",
@@ -74,7 +72,6 @@ const SHISHA_TAB_SECTION: Partial<Record<Tab, ShishaSection>> = {
 }
 const SECTION_SHISHA_TAB: Record<ShishaSection, Tab> = {
   counter: "shishaCounter",
-  requests: "shishaRequests",
   sessions: "shishaSessions",
   flavours: "shishaFlavours",
   devices: "shishaHookahs",
@@ -214,15 +211,6 @@ function ShishaCounterIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-function ShishaRequestsIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2H4.5z" />
-      <path d="M10 20.5a2 2 0 0 0 4 0" />
-    </svg>
-  )
-}
-
 function ShishaSessionsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -340,7 +328,6 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "today", label: "Appointments", icon: CalendarIcon },
   { id: "queue", label: "Live Queue", icon: TicketIcon },
   { id: "shishaCounter", label: "Counter", icon: ShishaCounterIcon },
-  { id: "shishaRequests", label: "Requests", icon: ShishaRequestsIcon },
   { id: "shishaSessions", label: "Sessions", icon: ShishaSessionsIcon },
   { id: "shishaFlavours", label: "Flavours", icon: ShishaFlavoursIcon },
   { id: "shishaHookahs", label: "Hookahs", icon: HookahIcon },
@@ -364,7 +351,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
 const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
   { label: "Control Centre", ids: ["today", "queue", "inbox", "staff"] },
   // Shown only while Shisha is switched on. Each entry is one page of the Shisha area.
-  { label: "Shisha", ids: ["shishaCounter", "shishaRequests", "shishaSessions", "shishaFlavours", "shishaHookahs", "shishaStations"] },
+  { label: "Shisha", ids: ["shishaCounter", "shishaSessions", "shishaFlavours", "shishaHookahs", "shishaStations"] },
   // Shown only while Passport (the customer wallet) is switched on and the caller can view it.
   { label: "Passport", ids: ["passportOverview", "passportAccounts", "passportRefunds"] },
   // Shown only while Events is switched on and the caller holds the matching permissions.
@@ -480,9 +467,8 @@ export function AdminView({
       case "shishaHookahs":
       case "shishaStations":
         return shishaEnabled && staffPermissions.shishaView
-      // The counter and the customer request queue are for staff who run sessions.
+      // The counter (which also holds the customer request queue) is for staff who run sessions.
       case "shishaCounter":
-      case "shishaRequests":
         return shishaEnabled && staffPermissions.shishaView && staffPermissions.shishaOperate
       // Events: module on + the permission for that page. Every action re-checks both server-side.
       case "eventsList":
@@ -798,7 +784,7 @@ export function AdminView({
               onQueueSettingsSaved={setQueueSettings}
             />
           )}
-          {/* One Shisha page for all six sidebar entries, so moving between them keeps the live data
+          {/* One Shisha page for all five sidebar entries, so moving between them keeps the live data
               (no reload). The sidebar entry decides which page it shows. */}
           {shishaSection && isTabVisible(tab) && (
             <ShishaManager
