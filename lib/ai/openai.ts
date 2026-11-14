@@ -1,22 +1,25 @@
 // lib/ai/openai.ts
 /**
- * OpenAI client for the QLess assistant — tenant-agnostic, env-configured.
+ * Free-text AI replies for the QLess assistant (the shop concierge).
  * ---------------------------------------------------------------------------
- * Adapted from the old Rands `lib/ai/claude.ts`. What changed:
- *   - No `ai_settings` table. That row was a single global admin override for
- *     one business; QLess is multi-tenant, so per-shop switching lives in
- *     lib/ai/settings.ts (message_settings.ai_enabled_default) instead.
- *   - Names say what they are (generateAiText, not generateClaudeResponse).
- *   - Never throws: every failure comes back as { success: false, error } so
- *     a bad key / timeout / OpenAI outage can only ever cost the customer the
- *     "smart" part, never the whole reply.
+ * Despite the file name this is no longer tied to one vendor or one key: every call goes through the
+ * tenant AI gateway (lib/ai/gateway.ts), which picks the tenant's own key (BYOK) or QLess's platform
+ * key (managed), enforces their monthly limit, and records tokens and cost against the tenant.
  *
- * Env vars (set in Vercel):
- *   OPENAI_API_KEY   required
- *   OPENAI_MODEL     optional, default gpt-4o-mini
- *   OPENAI_TIMEOUT   optional, ms, default 8000 (WhatsApp wants fast replies;
- *                    the old 20s default is too slow for a live chat)
+ *   - Never throws: every failure comes back as { success: false, error } so a bad key, a timeout,
+ *     a spent budget or a provider outage can only ever cost the customer the "smart" part, never
+ *     the whole reply.
+ *
+ * Env vars (set in Vercel). Only used for tenants on QLess-managed AI; BYOK tenants use their own
+ * key and chosen model:
+ *   OPENAI_API_KEY   QLess's platform key
+ *   OPENAI_MODEL     optional model for managed tenants
+ *   OPENAI_TIMEOUT   optional, ms, default 8000 (WhatsApp wants fast replies). Applies to everyone.
  */
+
+import { generateText } from "ai"
+
+import { AiUnavailableError, redactSecrets, withTenantAi } from "@/lib/ai/gateway"
 
 export type AiMessageRole = "user" | "assistant"
 
@@ -26,6 +29,8 @@ export interface AiMessage {
 }
 
 export interface AiTextRequest {
+  /** Whose AI account this call is billed to. Required. */
+  tenantId: string
   systemPrompt: string
   userMessage: string
   /** Plain data the model may use. Serialised as JSON under the system prompt. */
@@ -40,23 +45,12 @@ export interface AiTextRequest {
 export interface AiTextResponse {
   success: boolean
   message: string
+  /** The model that answered (empty if the call never started). */
   model: string
   error?: string
 }
 
-const DEFAULT_MODEL = "gpt-4o-mini"
 const DEFAULT_TIMEOUT_MS = 8000
-
-/** Model name shared by every AI call (also used by the `ai` SDK callers). */
-export function getAiModelName(): string {
-  return process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL
-}
-
-/** True when an API key is present. Cheap check callers can use to skip AI. */
-export function isAiConfigured(): boolean {
-  const key = process.env.OPENAI_API_KEY?.trim()
-  return Boolean(key && key.length >= 20)
-}
 
 function getTimeoutMs(override?: number): number {
   if (override && override >= 1000) return override
@@ -65,11 +59,10 @@ function getTimeoutMs(override?: number): number {
 }
 
 export async function generateAiText(request: AiTextRequest): Promise<AiTextResponse> {
-  const model = getAiModelName()
-  const fail = (error: string): AiTextResponse => ({ success: false, message: "", model, error })
+  let modelId = ""
+  const fail = (error: string): AiTextResponse => ({ success: false, message: "", model: modelId, error })
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim()
-  if (!apiKey) return fail("OPENAI_API_KEY environment variable is required")
+  if (!request.tenantId) return fail("tenantId is required")
   if (!request.systemPrompt) return fail("System prompt is required")
   if (!request.userMessage?.trim()) return fail("User message is required")
 
@@ -78,51 +71,30 @@ export async function generateAiText(request: AiTextRequest): Promise<AiTextResp
     system += `\n\nSHOP DATA (the ONLY facts you may use):\n${JSON.stringify(request.context)}`
   }
 
-  const body = {
-    model,
-    messages: [
-      { role: "system", content: system },
-      ...(request.conversation ?? []),
-      { role: "user", content: request.userMessage },
-    ],
-    max_tokens: request.maxTokens ?? 400,
-    temperature: request.temperature ?? 0.3,
-  }
-
   const timeout = getTimeoutMs(request.timeoutMs)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeout)
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(body),
-      signal: controller.signal,
+    const text = await withTenantAi({ tenantId: request.tenantId, purpose: "concierge_reply" }, async (model, ctx) => {
+      modelId = ctx.modelId
+      const result = await generateText({
+        model,
+        system,
+        messages: [...(request.conversation ?? []), { role: "user", content: request.userMessage }],
+        maxOutputTokens: request.maxTokens ?? 400,
+        temperature: request.temperature ?? 0.3,
+        abortSignal: controller.signal,
+      })
+      return { value: result.text, usage: result.usage }
     })
 
-    if (!response.ok) {
-      let detail = `HTTP ${response.status}`
-      try {
-        const json = (await response.json()) as { error?: { message?: string } }
-        if (json?.error?.message) detail = json.error.message
-      } catch {
-        /* keep the HTTP status */
-      }
-      return fail(`OpenAI API error (${response.status}): ${detail}`)
-    }
-
-    const data = (await response.json()) as {
-      model?: string
-      choices?: Array<{ message?: { content?: string | null } }>
-    }
-    const text = data.choices?.[0]?.message?.content
-    if (typeof text !== "string" || !text.trim()) return fail("No text content in OpenAI response")
-
-    return { success: true, message: text.trim(), model: data.model || model }
+    if (!text.trim()) return fail("No text content in the AI response")
+    return { success: true, message: text.trim(), model: modelId }
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") return fail(`Request timed out after ${timeout}ms`)
-    return fail(error instanceof Error ? error.message : "Unknown error")
+    if (error instanceof AiUnavailableError) return fail(error.message)
+    if (controller.signal.aborted) return fail(`Request timed out after ${timeout}ms`)
+    return fail(redactSecrets(error instanceof Error ? error.message : "Unknown error"))
   } finally {
     clearTimeout(timer)
   }

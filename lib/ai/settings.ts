@@ -1,22 +1,26 @@
 // lib/ai/settings.ts
 /**
- * Per-shop AI switch. Replaces the old single-row `ai_settings` table.
+ * "May AI run for this shop right now?" Two independent switches, both must allow it:
  *
- * A shop's owner turns the assistant's AI off by setting
- * message_settings.ai_enabled_default = false. A missing row, or any read
- * error, means "on" — a settings hiccup must not silently make every shop
- * dumb. A missing OPENAI_API_KEY means "off" regardless.
- * Cached for a few seconds so a burst of messages doesn't re-read it each time.
+ *   1. The tenant's AI account (lib/ai/gateway.ts): AI switched on in Settings > AI, a working key
+ *      (their own, or QLess's for managed shops), and this month's estimated spend under their limit.
+ *      If that can't be determined (database error) the answer is NO: an unreadable budget must not
+ *      turn into free AI at QLess's expense.
+ *   2. The per-shop "AI replies by default" switch, message_settings.ai_enabled_default, unchanged.
+ *      A missing row, or a read error, means "on": a settings hiccup must not silently make every
+ *      shop dumb. Cached for a few seconds so a burst of messages doesn't re-read it each time.
+ *
+ * When this returns false, every caller already falls back to the plain menu flow.
  */
 
+import { isTenantAiAvailable } from "@/lib/ai/gateway"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
-import { isAiConfigured } from "@/lib/ai/openai"
 
 const CACHE_MS = 15_000
 const cache = new Map<string, { enabled: boolean; at: number }>()
 
 export async function isAiEnabledForTenant(tenantId: string): Promise<boolean> {
-  if (!isAiConfigured()) return false
+  if (!(await isTenantAiAvailable(tenantId))) return false
 
   const hit = cache.get(tenantId)
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.enabled

@@ -1294,6 +1294,7 @@ async function trySmartBooking(
     if (services.length === 0 || dateOptions.length === 0) return null
 
     const parsed = await extractBookingRequest(
+      tenantId,
       text,
       services.map((s) => ({ name: s.name, durationMinutes: s.durationMinutes })),
       dateOptions,

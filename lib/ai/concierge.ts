@@ -118,6 +118,7 @@ export async function answerShopQuestion(
     }
 
     const ai = await generateAiText({
+      tenantId,
       systemPrompt: SYSTEM_PROMPT,
       userMessage: question,
       context: context as Record<string, unknown>,
