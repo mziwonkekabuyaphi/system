@@ -18,9 +18,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { generateObject } from "ai"
-import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
-import { getAiModelName } from "@/lib/ai/openai"
+import { withTenantAi } from "@/lib/ai/gateway"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import * as messages from "@/lib/services/messages/shisha"
 import type { ActionResult } from "@/lib/types/action"
@@ -172,7 +171,7 @@ export const smartShishaEntrySchema = z.object({
 
 export type SmartShishaEntry = z.infer<typeof smartShishaEntrySchema>
 
-export async function extractSmartShishaEntry(rawText: string): Promise<SmartShishaEntry | null> {
+export async function extractSmartShishaEntry(tenantId: string, rawText: string): Promise<SmartShishaEntry | null> {
   if (!rawText.trim()) return null
 
   // A real abort (not Promise.race), so a timed-out request is cancelled, not billed in the background.
@@ -180,22 +179,24 @@ export async function extractSmartShishaEntry(rawText: string): Promise<SmartShi
   const timer = setTimeout(() => controller.abort(), 3000)
 
   try {
-    const { object } = await generateObject({
-      model: openai(process.env.OPENAI_CLASSIFIER_MODEL?.trim() || getAiModelName()),
-      schema: smartShishaEntrySchema,
-      system:
-        "Extract a shisha lounge request from a WhatsApp message sent to a venue's concierge.\n" +
-        "- locationName: the specific area/lounge/section requested (e.g. 'rooftop', 'garden', 'vip lounge'), " +
-        "or null if no location is mentioned.\n" +
-        "- flavourName: the specific shisha flavour requested (e.g. 'mint', 'double apple', 'blueberry'), or " +
-        "null if no flavour is mentioned.\n" +
-        "Never guess or infer a name that wasn't stated — use null for anything not clearly and explicitly " +
-        "stated. Ignore generic words like 'shisha', 'hookah', or 'session' themselves.",
-      prompt: rawText,
-      temperature: 0,
-      abortSignal: controller.signal,
+    return await withTenantAi({ tenantId, purpose: "shisha_entry" }, async (model) => {
+      const result = await generateObject({
+        model,
+        schema: smartShishaEntrySchema,
+        system:
+          "Extract a shisha lounge request from a WhatsApp message sent to a venue's concierge.\n" +
+          "- locationName: the specific area/lounge/section requested (e.g. 'rooftop', 'garden', 'vip lounge'), " +
+          "or null if no location is mentioned.\n" +
+          "- flavourName: the specific shisha flavour requested (e.g. 'mint', 'double apple', 'blueberry'), or " +
+          "null if no flavour is mentioned.\n" +
+          "Never guess or infer a name that wasn't stated — use null for anything not clearly and explicitly " +
+          "stated. Ignore generic words like 'shisha', 'hookah', or 'session' themselves.",
+        prompt: rawText,
+        temperature: 0,
+        abortSignal: controller.signal,
+      })
+      return { value: result.object, usage: result.usage }
     })
-    return object
   } catch (error) {
     logger.error("[shisha][smart-entry] extractSmartShishaEntry failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -234,7 +235,7 @@ export async function trySmartShishaEntry(
   const messageHasMoreToOffer = rawMessage.trim().split(/\s+/).length > 2
 
   if (needsExtraction && messageHasMoreToOffer && (await isAiEnabledForTenant(tenantId))) {
-    const extracted = await extractSmartShishaEntry(rawMessage)
+    const extracted = await extractSmartShishaEntry(tenantId, rawMessage)
     if (extracted) {
       if (requireStation && !matchedLocation && extracted.locationName) {
         matchedLocation = resolveNamedRow(extracted.locationName, locations)

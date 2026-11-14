@@ -1,8 +1,7 @@
 import { generateObject } from "ai"
-import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 
-import { getAiModelName } from "@/lib/ai/openai"
+import { withTenantAi } from "@/lib/ai/gateway"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
 
 /**
@@ -1144,6 +1143,8 @@ export async function routeIntent(
   options?: {
     /** false = never call the model (shop has AI off, over the hourly cap, etc.). Default true. */
     allowAi?: boolean
+    /** Whose AI account the classification is billed to. Without it the model is never called. */
+    tenantId?: string
   },
 ): Promise<RoutedIntent> {
   const text = buildClassificationText(message)
@@ -1208,7 +1209,8 @@ export async function routeIntent(
   }
 
   // ── AI OFF / SKIPPED ────────────────────────────────────────────────
-  if (options?.allowAi === false) {
+  const aiTenantId = options?.tenantId
+  if (options?.allowAi === false || !aiTenantId) {
     return applyLowConfidenceFloor(buildAiFailureResult(context, "AI disabled or skipped"))
   }
 
@@ -1224,15 +1226,20 @@ export async function routeIntent(
   try {
     console.log("[IntentRouter] AI fallback used for:", text)
 
-    const { object } = await generateObject({
-      // Optional cheaper model just for classification (six labels).
-      model: openai(process.env.OPENAI_CLASSIFIER_MODEL?.trim() || getAiModelName()),
-      schema: intentSchema,
-      system: SYSTEM_PROMPT,
-      prompt: text,
-      temperature: 0,
-      maxOutputTokens: 40, // AI SDK v4: use `maxTokens`
-      abortSignal: controller.signal,
+    // Through the tenant AI gateway: uses the shop's own key (or QLess's, for managed shops),
+    // enforces their monthly limit and records tokens + cost. Throws if AI isn't available for
+    // them, which lands in the catch below like any other classification failure.
+    const object = await withTenantAi({ tenantId: aiTenantId, purpose: "intent_classification" }, async (model) => {
+      const result = await generateObject({
+        model,
+        schema: intentSchema,
+        system: SYSTEM_PROMPT,
+        prompt: text,
+        temperature: 0,
+        maxOutputTokens: 40, // AI SDK v4: use `maxTokens`
+        abortSignal: controller.signal,
+      })
+      return { value: result.object, usage: result.usage }
     })
 
     const reconciled = reconcileAiResult(object, context, isContinuation)

@@ -27,10 +27,11 @@ import { PaymentsPanel } from "./payments/PaymentsPanel"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
 import { WhatsAppSettingsPanels } from "./settings/WhatsAppSettingsPanels"
+import { AiSettingsPanel } from "./settings/AiSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "whatsapp"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "whatsapp" | "ai"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -112,6 +113,12 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
     <RailIcon {...p}>
       <path d="M20 11.5a8 8 0 0 1-11.9 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z" />
       <path d="M9 9.2c.3 2.4 2.4 4.5 4.8 4.8l1.2-1.2-1.7-.9-.8.6c-.9-.4-1.6-1.1-2-2l.6-.8-.9-1.7Z" />
+    </RailIcon>
+  ),
+  ai: (p) => (
+    <RailIcon {...p}>
+      <path d="M12 3.5l1.6 4.4 4.4 1.6-4.4 1.6L12 15.5l-1.6-4.4L6 9.5l4.4-1.6z" />
+      <path d="M18 15l.7 1.8 1.8.7-1.8.7L18 20l-.7-1.8-1.8-.7 1.8-.7z" />
     </RailIcon>
   ),
   passport: (p) => (
@@ -212,6 +219,15 @@ const SETTINGS_NAV: Array<{
         label: "WhatsApp Settings",
         title: "WhatsApp Settings",
         description: "Your number, approved templates, and what customers are sent.",
+        anyOf: ["whatsapp"],
+      },
+      {
+        // The assistant's AI account: bring-your-own key, spending limit and usage. Same visibility
+        // as WhatsApp Settings (it only matters while the WhatsApp assistant is on).
+        id: "ai",
+        label: "AI",
+        title: "AI",
+        description: "Your AI account, spending limit and what the assistant has used.",
         anyOf: ["whatsapp"],
       },
       {
@@ -354,6 +370,7 @@ export function SettingsManager({
       .filter((i) => i.id !== "shisha" || shishaEnabled)
       .filter((i) => i.id !== "passport" || passportEnabled)
       .filter((i) => i.id !== "whatsapp" || initialMessageSettings !== undefined)
+      .filter((i) => i.id !== "ai" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "services" || servicesManage),
   })).filter((g) => g.items.length > 0)
   const settingsPages = settingsNav.flatMap((g) => g.items)
@@ -504,6 +521,7 @@ export function SettingsManager({
       {activePage.id === "whatsapp" && initialMessageSettings && (
         <WhatsAppSettingsPanels messageSettings={initialMessageSettings} modules={flags.on} />
       )}
+      {activePage.id === "ai" && <AiSettingsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
       {activePage.id === "private-label" && (

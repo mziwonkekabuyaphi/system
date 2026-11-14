@@ -144,7 +144,7 @@ export async function processIncomingMessage(
 
     const intent = skip
       ? SKIPPED
-      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi })
+      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi, tenantId })
 
     // STEP 4: Route the message to the appropriate handler.
     const result = await routeAction(tenantId, intent, state, message)
