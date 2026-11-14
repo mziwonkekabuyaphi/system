@@ -31,39 +31,37 @@ export const WELCOME_MENU =
   "Reply with a number."
 
 export const MENU_CHOICE_INVALID =
-  "I didn't catch that. Reply 1, 2, 3, 4, or 5 to choose an option, or 'menu' to see them again."
+  "I didn't catch that. Please tap *Choose option* on the list above, or reply 'menu' to start over."
 
 export const NO_LOCATIONS = "There aren't any shisha stations available right now. Please check with staff."
 
 export const NO_FLAVOURS = "There aren't any flavours available right now. Please check with staff."
 
-export const LOCATION_REQUEST = "Which station? Reply with a number."
+export const LOCATION_REQUEST = "📍 Which station would you like?"
 
-export function invalidLocation(count: number): string {
-  return `Please reply with a number between 1 and ${count}.`
+export function invalidLocation(_count: number): string {
+  return "Please pick a station from the list above (tap *Choose station*)."
 }
 
-export const FLAVOUR_REQUEST = "Which flavour would you like? Reply with a number."
+export const FLAVOUR_REQUEST = "🍃 Which flavour would you like?"
 
-export function invalidFlavour(count: number): string {
-  return `Please reply with a number between 1 and ${count}.`
+export function invalidFlavour(_count: number): string {
+  return "Please pick a flavour from the list above (tap *Choose flavour*)."
 }
 
 /** `station` is null when the tenant doesn't use stations (shisha_settings.require_station = false). */
 export function sessionConfirmation(station: string | null, flavour: string, price: number): string {
   const stationLine = station ? `📍 Station: ${station}\n` : ""
-  return `${stationLine}🍃 Flavour: ${flavour}\n💰 Price: ${formatRands(price)} (staff will confirm payment with you)`
+  return `${stationLine}🍃 Flavour: ${flavour}\n💰 Price: ${formatRands(price)}\n\nSend this request to staff?`
 }
 
 export const SESSION_CONFIRM_BUTTONS = ["✅ Yes", "❌ No"]
 
 export const SESSION_CONFIRMATION_INVALID = "Please tap ✅ Yes or ❌ No below to confirm your session."
 
-export function sessionRequestSent(price: number): string {
-  return (
-    "🆕 Got it — I've sent your session request to staff. They'll set you up shortly " +
-    `and confirm payment of ${formatRands(price)}.`
-  )
+/** The flavour and price were just shown on the confirmation, so they are not repeated here. */
+export function sessionRequestSent(_price?: number): string {
+  return "🆕 Sent to staff! They'll approve your request shortly and you'll hear back right here."
 }
 
 export const PRICE_UNAVAILABLE =
@@ -149,7 +147,9 @@ export function issueMenu(): string {
   return `What's the issue? Reply with a number.\n\n${lines}`
 }
 
-export const ISSUE_SELECTION_INVALID = `Please reply with a number from the list.`
+export const ISSUE_SELECTION_INVALID = "Please pick an issue from the list above (tap *Choose issue*)."
+
+export const ISSUE_PROMPT = "⚠️ What's the issue?"
 
 export const ISSUE_OTHER_REQUEST = "Please describe the issue in a few words."
 
@@ -168,13 +168,8 @@ export function requestAcceptedSession(details: {
   price: number
 }): string {
   const stationLine = details.station ? `📍 Station: ${details.station}\n` : ""
-  return (
-    "✅ Your shisha session is confirmed — enjoy!\n\n" +
-    stationLine +
-    `🍃 Flavour: ${details.flavour}\n` +
-    `🔌 Device: ${details.deviceCode}\n` +
-    `💰 Price: ${formatRands(details.price)}`
-  )
+  // Flavour and price were already shown (request, approval, payment), so only the new facts are sent.
+  return "✅ Your shisha session is confirmed — enjoy!\n\n" + stationLine + `🔌 Device: ${details.deviceCode}`
 }
 
 /**
@@ -192,10 +187,9 @@ export function requestApprovedPleasePay(details: {
   const stationLine = details.station ? `📍 Station: ${details.station}\n` : ""
   const testNote = details.testMode ? "\n\n_Test mode: no real money is charged._" : ""
   return (
-    "✅ Your shisha request is approved!\n\n" +
+    "✅ Approved!\n\n" +
     stationLine +
-    `🍃 Flavour: ${details.flavour}\n` +
-    `💰 Amount: ${formatRands(details.price)}\n\n` +
+    `🍃 ${details.flavour} · ${formatRands(details.price)}\n\n` +
     "💳 Tap the link to pay securely:\n" +
     `${details.url}\n\n` +
     "Your session starts as soon as the payment goes through. Please pay within 24 hours." +
@@ -205,13 +199,7 @@ export function requestApprovedPleasePay(details: {
 
 /** Sent by the payment webhook once the customer's online payment is confirmed. */
 export function paymentReceivedSession(details: { flavour: string | null; price: number }): string {
-  const flavourLine = details.flavour ? `🍃 Flavour: ${details.flavour}\n` : ""
-  return (
-    "✅ *Payment received*, thank you!\n\n" +
-    flavourLine +
-    `💰 Paid: ${formatRands(details.price)}\n\n` +
-    "Staff will start your session shortly."
-  )
+  return `✅ *Payment received* (${formatRands(details.price)}), thank you! Staff will start your session shortly.`
 }
 
 /** Sent by the daily expiry job when a payment link was not used in time and the request was closed. */
