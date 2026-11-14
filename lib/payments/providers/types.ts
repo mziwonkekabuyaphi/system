@@ -139,6 +139,13 @@ export interface CardProvider {
   /** Synchronous: signature checks are local. Must verify against the RAW body. */
   verifyWebhook(args: { rawBody: string; headers: Headers; connection: ProviderConnection }): WebhookVerification
 
+  /**
+   * Optional second opinion, asked only for a verified "succeeded" notice before anything is credited:
+   * true = go ahead, false = the provider doesn't confirm it (nothing is credited, the notice is logged).
+   * May throw on a provider outage: the notice is then retried by the provider.
+   */
+  confirmSucceeded?(args: { connection: ProviderConnection; event: NormalisedWebhook }): Promise<boolean>
+
   /** Remove our webhook from the shop's account at the provider (called on disconnect, best effort). Optional. */
   removeWebhook?(args: { connection: ProviderConnection; providerWebhookId: string }): Promise<void>
 

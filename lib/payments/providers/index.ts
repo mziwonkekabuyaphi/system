@@ -7,11 +7,13 @@
  * 'ozow' and 'peach' (so the schema never has to wait for the code).
  */
 
+import { ozowProvider } from "./ozow"
 import { yocoProvider } from "./yoco"
 import type { CardProvider, ProviderId } from "./types"
 
 const REGISTRY: Partial<Record<ProviderId, CardProvider>> = {
   yoco: yocoProvider,
+  ozow: ozowProvider,
 }
 
 /** null for an unknown or not-yet-implemented provider. */
