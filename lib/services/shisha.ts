@@ -44,6 +44,7 @@ import {
   createShishaRequest,
   customerOrFilter,
   extractListSelection,
+  listResult,
   logger,
   readStateData,
   resolveCustomerRef,
@@ -56,6 +57,9 @@ import {
   SHISHA_STATE_NAMES,
   type ActiveShishaSession,
   type ShishaCustomerRef,
+  tappedIndex,
+  TAP_ISSUE,
+  TAP_MENU,
   type ShishaStateData,
   type ShishaStateName,
 } from "@/lib/services/shisha-shared"
@@ -222,8 +226,52 @@ function parseMenuChoice(rawMessage: string): MenuChoice {
 // SESSION ACTIONS
 // ============================================================================
 
-async function beginMenu(): Promise<ActionResult> {
-  return actionResult(messages.WELCOME_MENU, { state: SHISHA_STATE_MENU })
+/** The choice behind a tapped menu row (ids are built in beginMenu below). */
+const MENU_TAP_CHOICES: Record<string, MenuChoice> = {
+  [`${TAP_MENU}new`]: "new_session",
+  [`${TAP_MENU}refill`]: "coal_refill",
+  [`${TAP_MENU}end`]: "end_session",
+  [`${TAP_MENU}issue`]: "report_issue",
+  [`${TAP_MENU}track`]: "track_session",
+}
+
+/**
+ * Entry from the main menu. With no live session there is only one thing to do, so skip the menu and
+ * go straight to the station/flavour list (a pending request is reported here, before they pick anything).
+ * With a live session: one list with refill, track, issue, end (and a new session).
+ * The row titles contain the words parseMenuChoice already understands, so a tap on an old list
+ * (no conversation open any more) still lands on the right action as typed text.
+ */
+async function beginMenu(db: SupabaseClient, tenantId: string, who: ShishaCustomerRef): Promise<ActionResult> {
+  const session = await getActiveSession(db, tenantId, who)
+  if (!session) {
+    const blocked = await blockIfPendingRequest(db, tenantId, who)
+    if (blocked) return blocked
+    return beginLocationStep(db, tenantId)
+  }
+
+  const refillPrice = session.flavourRefillPrice
+  return listResult(
+    "💨 *Shisha Lounge*\n\nWhat would you like to do?",
+    "Choose option",
+    [
+      {
+        title: "Your session",
+        rows: [
+          {
+            id: `${TAP_MENU}refill`,
+            title: "🔥 Coal refill",
+            ...(refillPrice ? { description: messages.formatRands(refillPrice) } : {}),
+          },
+          { id: `${TAP_MENU}track`, title: "📡 Track my session" },
+          { id: `${TAP_MENU}issue`, title: "⚠️ Report an issue" },
+          { id: `${TAP_MENU}end`, title: "⏹️ End my session" },
+          { id: `${TAP_MENU}new`, title: "💨 New session" },
+        ],
+      },
+    ],
+    { state: SHISHA_STATE_MENU },
+  )
 }
 
 async function handleCoalRefillRequest(
@@ -326,10 +374,12 @@ async function beginIssueSelection(
   const blocked = await blockIfPendingRequest(db, tenantId, who)
   if (blocked) return blocked
 
-  return actionResult(messages.issueMenu(), {
-    state: SHISHA_STATE_AWAITING_ISSUE_SELECTION,
-    data: { activeSession: session },
-  })
+  return listResult(
+    messages.ISSUE_PROMPT,
+    "Choose issue",
+    [{ title: "Issues", rows: messages.ISSUE_TYPES.map((t, i) => ({ id: `${TAP_ISSUE}${i}`, title: t.label })) }],
+    { state: SHISHA_STATE_AWAITING_ISSUE_SELECTION, data: { activeSession: session } },
+  )
 }
 
 async function finalizeIssueReport(
@@ -376,10 +426,12 @@ async function continueShishaFlow(
   stateName: ShishaStateName,
   stateData: ShishaStateData,
   rawMessage: string,
+  tapId: string | null = null,
 ): Promise<ActionResult> {
   switch (stateName) {
     case SHISHA_STATE_MENU: {
-      const choice = parseMenuChoice(rawMessage)
+      // A list tap first; typed text (and a tap on an old list) goes through the same parser as before.
+      const choice = (tapId ? MENU_TAP_CHOICES[tapId] : null) ?? parseMenuChoice(rawMessage)
       if (!choice) return actionResult(messages.MENU_CHOICE_INVALID, { state: SHISHA_STATE_MENU })
       if (choice !== "track_session") {
         const blocked = await blockIfPendingRequest(db, tenantId, who)
@@ -400,16 +452,17 @@ async function continueShishaFlow(
     }
 
     case SHISHA_STATE_AWAITING_LOCATION:
-      return continueLocationStep(db, tenantId, stateData, rawMessage)
+      return continueLocationStep(db, tenantId, stateData, rawMessage, tapId)
 
     case SHISHA_STATE_AWAITING_FLAVOUR:
-      return continueFlavourStep(db, tenantId, stateData, rawMessage)
+      return continueFlavourStep(db, tenantId, stateData, rawMessage, tapId)
 
     case SHISHA_STATE_AWAITING_SESSION_CONFIRMATION:
       return continueSessionConfirmationStep(db, tenantId, who, stateData, rawMessage)
 
     case SHISHA_STATE_AWAITING_ISSUE_SELECTION: {
-      const selection = extractListSelection(rawMessage)
+      const tapped = tappedIndex(tapId, TAP_ISSUE)
+      const selection = tapped !== null ? tapped + 1 : extractListSelection(rawMessage)
       const issue = selection !== null ? messages.ISSUE_TYPES[selection - 1] : undefined
       if (!issue) {
         return actionResult(messages.ISSUE_SELECTION_INVALID, {
@@ -438,7 +491,7 @@ async function continueShishaFlow(
     }
 
     default:
-      return beginMenu()
+      return beginMenu(db, tenantId, who)
   }
 }
 
@@ -448,10 +501,26 @@ async function continueShishaFlow(
 
 const UNAVAILABLE: ActionResult = { reply: messages.SHISHA_UNAVAILABLE, buttons: [], nextState: null }
 
-/** Main-menu row tap: open the numbered Shisha menu (no text parsing needed). */
-async function startShishaFlow(tenantId: string, _phone: string): Promise<ActionResult> {
+/** Main-menu row tap: straight to the station/flavour list, or the session menu if they have a live session. */
+async function startShishaFlow(tenantId: string, phone: string): Promise<ActionResult> {
   if (!(await isModuleEnabled(tenantId, "shisha"))) return UNAVAILABLE
-  return beginMenu()
+
+  const db = getSupabaseServerClient()
+  if (!db) {
+    logger.error("[shisha] failed to get Supabase client", { tenantId })
+    return actionResult(messages.TECHNICAL_DIFFICULTY, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
+  }
+
+  try {
+    const who = await resolveCustomerRef(db, tenantId, phone)
+    return await beginMenu(db, tenantId, who)
+  } catch (unexpectedError) {
+    logger.error("[shisha] unexpected error in startShishaFlow", {
+      tenantId,
+      error: unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError),
+    })
+    return actionResult(messages.UNEXPECTED_ERROR, null, messages.SHISHA_NEXT_STEPS_BUTTONS)
+  }
 }
 
 /** Fresh "shisha" intent with no conversation open. */
@@ -487,7 +556,7 @@ async function handle(tenantId: string, _intent: RoutedIntent, message: Incoming
       case "track_session":
         return await trackSession(db, tenantId, who)
       default:
-        return await beginMenu()
+        return await beginMenu(db, tenantId, who)
     }
   } catch (unexpectedError) {
     logger.error("[shisha] unexpected error in handle", {
@@ -518,7 +587,15 @@ async function handleState(
   try {
     const who = await resolveCustomerRef(db, tenantId, message.from)
     const rawMessage = message.contentSummary ?? message.text ?? ""
-    return await continueShishaFlow(db, tenantId, who, state.state as ShishaStateName, readStateData(state), rawMessage)
+    return await continueShishaFlow(
+      db,
+      tenantId,
+      who,
+      state.state as ShishaStateName,
+      readStateData(state),
+      rawMessage,
+      message.interactiveId ?? null,
+    )
   } catch (unexpectedError) {
     logger.error("[shisha] unexpected error in handleState", {
       tenantId,
