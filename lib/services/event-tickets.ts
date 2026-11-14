@@ -18,6 +18,8 @@
  *
  * STATES (all prefixed "events_"; this service owns them, module-gated on "events"):
  *   events_choose_event -> events_choose_tier -> events_quantity -> events_choose_payment
+ *   Tap-only: event and ticket are WhatsApp lists (ids evt_event:/evt_tier:), quantity is 1/2/"3 or more"
+ *   buttons, payment is the Pay Now link. Typed numbers still work for older chats.
  * Menu taps are routed by id in action-router.ts; the buttons come back as typed text that the intent
  * router's exact-phrase fast path maps to the "events" intent.
  * MODULE GATE: action-router.ts gates the row / typed intent, and handle() checks the switch
@@ -42,6 +44,7 @@ import { formatPassportMoney } from "@/lib/services/passport"
 import { getCardOption } from "@/lib/payments/card"
 import { generateTicketQrCode, getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { getTenantDisplayName, scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
+import { buildChoiceList, clip } from "@/lib/whatsapp/utils/choice-list"
 import {
   buyWithPassport,
   getEventPaymentOptions,
@@ -73,6 +76,16 @@ const MAX_PER_PURCHASE = 10
 const BUY_PATTERN = /\bbuy\b/
 /** Button label for paying on the secure online payment page (older chats may still hold a "Card" button). */
 const PAY_NOW_BUTTON = "Pay Now"
+
+// Tap-only purchase: ids carried by the list rows (WhatsApp returns them as message.interactiveId).
+// The "evt_" prefix is also what action-router.ts uses to keep these taps out of its reset-word check.
+const ID_EVENT = "evt_event:"
+const ID_TIER = "evt_tier:"
+const ID_MY_TICKETS = "evt_my"
+/** One list holds 10 rows; one is kept for "My tickets". */
+const MAX_TIER_ROWS = 9
+/** Third quantity button when more than 3 tickets can be bought; the customer then types the number. */
+const QTY_MORE_BUTTON = "3 or more"
 
 const CANCEL_PATTERN = /^(cancel|no|stop|back|menu|main menu|nevermind|never mind)[.!]*$/i
 
@@ -167,6 +180,15 @@ async function readOnSaleEvents(supabase: SupabaseClient, tenantId: string): Pro
 // EVENTS LIST
 // ============================================================================
 
+/** Offer buying only when this shop can take payment here: Passport on, a card provider connected, or a free tier. */
+async function canBuyHere(supabase: SupabaseClient, tenantId: string, tiers: TierRow[]): Promise<boolean> {
+  return (
+    tiers.some((t) => Number(t.price) <= 0 && t.capacity > t.sold) ||
+    (await isModuleEnabled(tenantId, "wallet")) ||
+    Boolean(await getCardOption(supabase, tenantId))
+  )
+}
+
 function tierLine(t: TierRow): string {
   const left = Math.max(t.capacity - t.sold, 0)
   const status = left === 0 ? "sold out" : left <= 10 ? `only ${left} left` : `${left} left`
@@ -203,10 +225,7 @@ async function buildEventsReply(supabase: SupabaseClient, tenantId: string, time
   })
 
   // Offer "Buy Tickets" only when this shop can take payment here: Passport on, a card provider connected, or a free tier.
-  const canBuy =
-    tiers.some((t) => Number(t.price) <= 0 && t.capacity > t.sold) ||
-    (await isModuleEnabled(tenantId, "wallet")) ||
-    Boolean(await getCardOption(supabase, tenantId))
+  const canBuy = await canBuyHere(supabase, tenantId, tiers)
 
   return {
     reply: ["🎟️ *Upcoming events*", "", blocks.join("\n\n"), "", canBuy ? "Tap *Buy Tickets* to get yours." : BUY_HELP].join("\n"),
@@ -376,20 +395,62 @@ async function readSellableTiers(supabase: SupabaseClient, tenantId: string, eve
   return ((data ?? []) as TierRow[]).filter((t) => t.capacity > t.sold)
 }
 
-function tierChoice(t: TierRow, i: number): string {
+/** The id of a tapped list row with this prefix, or null (typed text, or some other tap). */
+function tappedId(message: IncomingMessage, prefix: string): string | null {
+  const id = message.interactiveId
+  return id && id.startsWith(prefix) ? id.slice(prefix.length) : null
+}
+
+/** "General · R150", with "Only 15 left" shown only when stock is low. The name is cut first so the price always shows. */
+function tierRow(t: TierRow) {
+  const price = formatPrice(Number(t.price) || 0)
   const left = Math.max(t.capacity - t.sold, 0)
-  return `${i + 1}. ${t.name} — ${formatPrice(Number(t.price) || 0)} (${left <= 10 ? `only ${left} left` : `${left} left`})`
+  return {
+    id: `${ID_TIER}${t.id}`,
+    title: `${clip(t.name, 24 - 3 - price.length)} · ${price}`,
+    ...(left <= 10 ? { description: `Only ${left} left` } : {}),
+  }
 }
 
+const MY_TICKETS_ROW = { title: "More", rows: [{ id: ID_MY_TICKETS, title: "My tickets" }] }
+
+/** Event header, then one list: tap a ticket. Replaces the old "Which ticket? Reply with the number" screen. */
 function beginTierStep(event: EventRow, tiers: TierRow[], timeZone: string): ActionResult {
-  return stay(
-    EVENT_STATE_CHOOSE_TIER,
-    { eventId: event.id, tierIds: tiers.map((t) => t.id) },
-    [`🎟️ *${event.name}*`, `📅 ${formatWhen(event.start_time, timeZone)}`, "", "Which ticket would you like?", "", tiers.map(tierChoice).join("\n"), "", "Reply with the number, or *cancel*."].join("\n"),
-  )
+  const shown = tiers.slice(0, MAX_TIER_ROWS)
+  const header = [
+    `🎟️ *${event.name}*`,
+    `📅 ${formatWhen(event.start_time, timeZone)}`,
+    ...(event.location ? [`📍 ${event.location}`] : []),
+  ].join("\n")
+  return {
+    // Empty main reply on purpose: send-action-result.ts skips it, so the header lives in the list body.
+    ...stay(EVENT_STATE_CHOOSE_TIER, { eventId: event.id, tierIds: shown.map((t) => t.id) }, ""),
+    followUp: [
+      buildChoiceList(`${header}\n\nWhich ticket would you like?`, "Choose ticket", [
+        { title: "Tickets", rows: shown.map(tierRow) },
+        MY_TICKETS_ROW,
+      ]),
+    ],
+  }
 }
 
-async function beginPurchase(supabase: SupabaseClient, tenantId: string, timeZone: string): Promise<ActionResult> {
+/** 1 / 2 / "3 or more" buttons (only as many as are actually left). Only the big number is ever typed. */
+function quantityStep(tier: TierRow, max: number): ActionResult {
+  const buttons = max <= 3 ? Array.from({ length: max }, (_, i) => String(i + 1)) : ["1", "2", QTY_MORE_BUTTON]
+  return stay(EVENT_STATE_QUANTITY, { tierId: tier.id, max }, `How many *${tier.name}* tickets?`, buttons)
+}
+
+/**
+ * Starts the tap-only purchase: the ticket list (one event) or the event list (several).
+ * With onlyIfPayable it returns null when there is nothing to buy or this shop cannot take
+ * payment here, so the caller can fall back to the read-only events text.
+ */
+async function beginPurchase(
+  supabase: SupabaseClient,
+  tenantId: string,
+  timeZone: string,
+  opts: { onlyIfPayable?: boolean } = {},
+): Promise<ActionResult | null> {
   const events = (await readOnSaleEvents(supabase, tenantId)).slice(0, MAX_EVENTS_SHOWN)
   const withTiers: Array<{ event: EventRow; tiers: TierRow[] }> = []
   for (const event of events) {
@@ -398,16 +459,29 @@ async function beginPurchase(supabase: SupabaseClient, tenantId: string, timeZon
   }
 
   if (withTiers.length === 0) {
+    if (opts.onlyIfPayable) return null
     return finish("🎟️ *Buy tickets*\n\nThere are no tickets available right now.", ["My Tickets", "Main Menu"])
   }
+  if (opts.onlyIfPayable && !(await canBuyHere(supabase, tenantId, withTiers.flatMap((x) => x.tiers)))) return null
+
   if (withTiers.length === 1) return beginTierStep(withTiers[0].event, withTiers[0].tiers, timeZone)
 
-  const list = withTiers.map((x, i) => `${i + 1}. *${x.event.name}*\n   📅 ${formatWhen(x.event.start_time, timeZone)}`).join("\n\n")
-  return stay(
-    EVENT_STATE_CHOOSE_EVENT,
-    { eventIds: withTiers.map((x) => x.event.id) },
-    `🎟️ *Buy tickets*\n\nWhich event?\n\n${list}\n\nReply with the number, or *cancel*.`,
-  )
+  return {
+    ...stay(EVENT_STATE_CHOOSE_EVENT, { eventIds: withTiers.map((x) => x.event.id) }, ""),
+    followUp: [
+      buildChoiceList("🎟️ *Upcoming events*\n\nWhich event would you like?", "Choose event", [
+        {
+          title: "Events",
+          rows: withTiers.map(({ event }) => ({
+            id: `${ID_EVENT}${event.id}`,
+            title: event.name,
+            description: [formatWhen(event.start_time, timeZone), event.location].filter(Boolean).join(" · "),
+          })),
+        },
+        MY_TICKETS_ROW,
+      ]),
+    ],
+  }
 }
 
 /** Confirmation text for an issued order. Shared by the bot (Passport) and the webhook (card). */
@@ -579,13 +653,20 @@ async function handleState(tenantId: string, state: ConversationState, message: 
     if (!customer) return finish(UNAVAILABLE_REPLY)
     const timeZone = await getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ)
 
+    // "My tickets" row at the bottom of either list.
+    if (message.interactiveId === ID_MY_TICKETS) {
+      return await buildMyTicketsReply(supabase, tenantId, customer.id, message.from, timeZone)
+    }
+
     switch (state.state) {
       case EVENT_STATE_CHOOSE_EVENT: {
         const ids = (data.eventIds as string[] | undefined) ?? []
+        // A list tap carries the event id; a typed number still works for old chats.
         const n = parseChoice(typed, ids.length)
-        if (n === null) return stay(state.state, data, `Please reply with a number from 1 to ${ids.length}, or *cancel*.`)
+        const eventId = tappedId(message, ID_EVENT) ?? (n !== null ? ids[n - 1] : null)
+        if (!eventId) return stay(state.state, data, "Please pick an event from the list above (tap *Choose event*), or reply *cancel*.")
         const events = await readOnSaleEvents(supabase, tenantId)
-        const event = events.find((e) => e.id === ids[n - 1])
+        const event = events.find((e) => e.id === eventId)
         if (!event) return finish("Sorry, that event is no longer available.", ["Events", "Main Menu"])
         const tiers = await readSellableTiers(supabase, tenantId, event.id)
         if (tiers.length === 0) return finish("Sorry, that event just sold out.", ["Events", "Main Menu"])
@@ -595,23 +676,27 @@ async function handleState(tenantId: string, state: ConversationState, message: 
       case EVENT_STATE_CHOOSE_TIER: {
         const ids = (data.tierIds as string[] | undefined) ?? []
         const n = parseChoice(typed, ids.length)
-        if (n === null) return stay(state.state, data, `Please reply with a number from 1 to ${ids.length}, or *cancel*.`)
-        const tier = await readTier(supabase, tenantId, ids[n - 1])
+        const tierId = tappedId(message, ID_TIER) ?? (n !== null ? ids[n - 1] : null)
+        if (!tierId) return stay(state.state, data, "Please pick a ticket from the list above (tap *Choose ticket*), or reply *cancel*.")
+        const tier = await readTier(supabase, tenantId, tierId)
         const left = tier ? Math.max(tier.capacity - tier.sold, 0) : 0
         if (!tier || left === 0) return finish("Sorry, that ticket just sold out.", ["Events", "Main Menu"])
         const max = Math.min(MAX_PER_PURCHASE, left)
-        return stay(
-          EVENT_STATE_QUANTITY,
-          { tierId: tier.id },
-          `How many *${tier.name}* tickets would you like? Reply with a number from 1 to ${max}, or *cancel*.`,
-        )
+        // Only one left: nothing to ask, go straight to payment.
+        if (max === 1) return await proceedToPayment(supabase, tenantId, message.from, customer.id, tier.id, 1)
+        return quantityStep(tier, max)
       }
 
       case EVENT_STATE_QUANTITY: {
         const tierId = data.tierId as string | undefined
-        const quantity = parseChoice(typed, MAX_PER_PURCHASE)
+        const max = Number(data.max) || MAX_PER_PURCHASE
         if (!tierId) return finish(UNAVAILABLE_REPLY)
-        if (quantity === null) return stay(state.state, data, `Please reply with a number from 1 to ${MAX_PER_PURCHASE}, or *cancel*.`)
+        // "3 or more" button: this is the only time the customer types a number.
+        if (typed.toLowerCase() === QTY_MORE_BUTTON.toLowerCase()) {
+          return stay(state.state, data, `Type how many you need (3 to ${max}).`)
+        }
+        const quantity = parseChoice(typed, max)
+        if (quantity === null) return stay(state.state, data, `Please type a number from 1 to ${max}, or *cancel*.`)
         return await proceedToPayment(supabase, tenantId, message.from, customer.id, tierId, quantity)
       }
 
@@ -682,9 +767,18 @@ async function handle(tenantId: string, _intent: RoutedIntent, message: Incoming
       return await buildMyTicketsReply(supabase, tenantId, customer?.id ?? null, message.from, timeZone)
     }
 
-    if (BUY_PATTERN.test(typed)) {
-      const customer = await getCustomer(tenantId, message.from)
-      if (customer) return await beginPurchase(supabase, tenantId, timeZone)
+    const customer = await getCustomer(tenantId, message.from)
+
+    if (BUY_PATTERN.test(typed) && customer) {
+      const purchase = await beginPurchase(supabase, tenantId, timeZone)
+      if (purchase) return purchase
+    }
+
+    // "Events" itself now goes straight to the tap list (the old read-only events text repeated
+    // what the ticket list shows). Shops that can't take payment here keep the read-only view.
+    if (customer) {
+      const purchase = await beginPurchase(supabase, tenantId, timeZone, { onlyIfPayable: true })
+      if (purchase) return purchase
     }
 
     return await buildEventsReply(supabase, tenantId, timeZone)
