@@ -11,7 +11,7 @@
 
 import { BRAND_BG, BRAND_BORDER, BRAND_FOCUS_BORDER, BRAND_ON } from "@/components/admin/brand"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
 import {
   DEFAULT_PAYMENT_METHOD,
@@ -425,6 +425,7 @@ export function ShishaCounter({
   timezone,
   busy,
   occupiedDeviceIds,
+  requestsSlot,
   onStart,
   onPause,
   onResume,
@@ -435,6 +436,8 @@ export function ShishaCounter({
   timezone: string
   busy: boolean
   occupiedDeviceIds: Set<string>
+  /** Customer requests waiting for staff: shown at the top of the Live now list, above the running sessions. */
+  requestsSlot?: ReactNode
   onStart: (input: CounterStartInput) => Promise<boolean>
   onPause: (s: ShishaSession) => void
   onResume: (s: ShishaSession) => void
@@ -923,6 +926,8 @@ export function ShishaCounter({
         <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">
           Live now <span className="text-sm text-ink-muted">({rows.length})</span>
         </h3>
+
+        {requestsSlot}
 
         {rows.length === 0 && (
           <div className={`${CARD} px-4 py-8 text-center text-sm text-ink-muted`}>No live sessions. Start one on the left.</div>

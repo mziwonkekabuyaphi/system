@@ -510,25 +510,27 @@ export function ShishaManager({
         )
       ) : (
         <>
-          {section === "counter" && canOperate && snap.requests.length > 0 && (
-            <RequestsPanel
-              snap={snap}
-              busy={busy}
-              occupiedDeviceIds={occupiedDeviceIds}
-              onAccept={(req, input) =>
-                run(() => acceptShishaRequest({ requestId: req.id, ...input }), "Request accepted.")
-              }
-              onReject={(req, reason) => run(() => rejectShishaRequest(req.id, reason), "Request rejected.")}
-              onPrintSlip={(req) => void printSlipNow(req)}
-            />
-          )}
-
           {section === "counter" && canOperate && (
             <ShishaCounter
               snap={snap}
               timezone={timezone}
               busy={busy}
               occupiedDeviceIds={occupiedDeviceIds}
+              requestsSlot={
+                snap.requests.length > 0 ? (
+                  <RequestsPanel
+                    embedded
+                    snap={snap}
+                    busy={busy}
+                    occupiedDeviceIds={occupiedDeviceIds}
+                    onAccept={(req, input) =>
+                      run(() => acceptShishaRequest({ requestId: req.id, ...input }), "Request accepted.")
+                    }
+                    onReject={(req, reason) => run(() => rejectShishaRequest(req.id, reason), "Request rejected.")}
+                    onPrintSlip={(req) => void printSlipNow(req)}
+                  />
+                ) : null
+              }
               onStart={(input) => run(() => startSession(input), "Session started.")}
               onPause={(s) => void run(() => pauseSession(s.id), `${s.deviceCode} paused.`)}
               onResume={(s) => void run(() => resumeSession(s.id), `${s.deviceCode} resumed.`)}
@@ -778,6 +780,7 @@ function RequestsPanel({
   onAccept,
   onReject,
   onPrintSlip,
+  embedded = false,
 }: {
   snap: ShishaSnapshot
   busy: boolean
@@ -785,6 +788,8 @@ function RequestsPanel({
   onAccept: (req: ShishaRequest, input: AcceptInput) => Promise<boolean>
   onReject: (req: ShishaRequest, reason: string) => Promise<boolean>
   onPrintSlip: (req: ShishaRequest) => void
+  /** Shown at the top of the Counter's "Live now" list: a compact heading instead of the full intro. */
+  embedded?: boolean
 }) {
   const now = useNow(15_000)
   const [acting, setActing] = useState<{ kind: "accept" | "reject"; id: string } | null>(null)
@@ -804,13 +809,19 @@ function RequestsPanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Requests</h3>
-        <p className="mt-0.5 text-sm text-ink-muted">
-          Customers who asked on WhatsApp. They can't send another request until you accept or reject this one
-          {snap.onlinePayment ? ", or until their online payment is done and you've started their session" : ""}.
-        </p>
-      </div>
+      {embedded ? (
+        <h4 className="text-sm font-medium text-warn">
+          Requests waiting <span className="text-ink-muted">({snap.requests.length})</span>
+        </h4>
+      ) : (
+        <div>
+          <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Requests</h3>
+          <p className="mt-0.5 text-sm text-ink-muted">
+            Customers who asked on WhatsApp. They can't send another request until you accept or reject this one
+            {snap.onlinePayment ? ", or until their online payment is done and you've started their session" : ""}.
+          </p>
+        </div>
+      )}
 
       {snap.requests.length === 0 ? (
         <EmptyState>No requests waiting. New ones appear here within {STAFF_REFRESH_MS / 1000} seconds.</EmptyState>
