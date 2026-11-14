@@ -341,7 +341,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "vvipTables", label: "Tables", icon: VvipTablesIcon },
   { id: "vvipTabs", label: "Table tabs", icon: VvipTabsIcon },
   { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
-  { id: "staff", label: "Staff", icon: UsersIcon },
+  { id: "staff", label: "Workforce", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
   { id: "billing", label: "Billing & Plans", icon: CreditCardIcon },
   { id: "settings", label: "Settings", icon: GearIcon },
@@ -349,7 +349,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
 
 // Sidebar sections, in the same spirit as Rands: day-to-day work, then analytics on its own, then system.
 const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
-  { label: "Control Centre", ids: ["today", "queue", "inbox", "staff"] },
+  { label: "Control Centre", ids: ["today", "queue", "inbox"] },
   // Shown only while Shisha is switched on. Each entry is one page of the Shisha area.
   { label: "Shisha", ids: ["shishaCounter", "shishaSessions", "shishaFlavours", "shishaHookahs", "shishaStations"] },
   // Customer accounts (the "Passport" wallet) and Events share one group: Events needs the wallet (module_requires),
@@ -371,7 +371,7 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
     ],
   },
   { label: "Analytics", ids: ["analytics"] },
-  { label: "System", ids: ["billing", "settings"] },
+  { label: "System", ids: ["staff", "billing", "settings"] },
 ]
 
 export function AdminView({
