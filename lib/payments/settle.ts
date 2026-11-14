@@ -22,6 +22,7 @@ import { formatPassportMoney } from "@/lib/services/passport"
 import { getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
+import * as shishaMessages from "@/lib/services/messages/shisha"
 
 import type { StoredConnection } from "./credentials"
 import type { CardProvider, NormalisedWebhook } from "./providers"
@@ -118,7 +119,90 @@ export async function settleSucceeded(args: {
     return "tickets_issued"
   }
 
+  if (payment.purpose === "shisha_request") {
+    return await settleShishaRequest(db, provider, connection, payment, event.providerPaymentId)
+  }
+
   return "ignored_unknown_purpose"
+}
+
+/**
+ * A verified payment for a shisha session request (amount and checkout already matched by the caller).
+ * awaiting_payment -> paid, once (conditional UPDATE). The session is NOT started here: staff pick the hookah.
+ * If the request is no longer waiting for this payment (closed meanwhile), the money is refunded, never kept.
+ * Throws on OUR failures so the provider retries; every step is safe to repeat.
+ */
+async function settleShishaRequest(
+  db: Db,
+  provider: CardProvider,
+  connection: StoredConnection,
+  payment: { id: unknown; tenant_id: unknown; purpose_id: unknown; amount: unknown; provider_checkout_id: unknown; metadata: unknown },
+  providerPaymentId: string | null,
+): Promise<string> {
+  const tenantId = connection.tenantId
+  const paymentId = payment.id as string
+  const requestId = payment.purpose_id as string
+
+  const { data: req, error: readError } = await db
+    .from("shisha_requests")
+    .select("id, status, customer_phone, flavour_name, request_data")
+    .eq("id", requestId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (readError) throw new Error(`shisha request lookup failed: ${readError.message}`)
+
+  if (!req) {
+    return await refundAfterFailedFulfilment(db, provider, connection, payment, "request not found", "shisha")
+  }
+
+  if (req.status === "paid") {
+    // Marked paid by THIS payment (a retry after a crash between the two writes): just finish the bookkeeping.
+    const paidBy = ((req.request_data as Record<string, unknown> | null) ?? {}).payment_id
+    if (paidBy === paymentId) {
+      await markSucceeded(db, paymentId, providerPaymentId)
+      return "shisha_already_paid"
+    }
+    // Staff recorded it as paid in person (cash/EFT/counter card) and the customer ALSO paid the link: refund this one.
+    return await refundAfterFailedFulfilment(db, provider, connection, payment, "request already paid another way", "shisha")
+  }
+
+  if (req.status !== "awaiting_payment") {
+    return await refundAfterFailedFulfilment(db, provider, connection, payment, `request was ${req.status}`, "shisha")
+  }
+
+  const requestData = (req.request_data as Record<string, unknown> | null) ?? {}
+  const { data: updated, error: updateError } = await db
+    .from("shisha_requests")
+    .update({
+      status: "paid",
+      request_data: { ...requestData, payment_id: paymentId, paid_at: new Date().toISOString() },
+    })
+    .eq("id", requestId)
+    .eq("tenant_id", tenantId)
+    .eq("status", "awaiting_payment")
+    .select("id")
+  if (updateError) throw new Error(`shisha request update failed: ${updateError.message}`)
+  // Changed under us: let the provider retry, the next pass sees the new status.
+  if (!updated || updated.length === 0) throw new Error("shisha request changed while marking paid")
+
+  await markSucceeded(db, paymentId, providerPaymentId)
+
+  // Best effort: the request is already marked paid whether or not this message goes.
+  try {
+    if (req.customer_phone) {
+      await sendWhatsAppTextMessage(
+        tenantId,
+        req.customer_phone as string,
+        shishaMessages.paymentReceivedSession({ flavour: (req.flavour_name as string | null) ?? null, price: Number(payment.amount) }),
+      )
+    }
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] shisha payment message failed (request is already paid)`, {
+      tenantId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+  return "shisha_paid"
 }
 
 async function markSucceeded(db: Db, paymentId: string, providerPaymentId: string | null) {
@@ -142,8 +226,9 @@ async function refundAfterFailedFulfilment(
   db: Db,
   provider: CardProvider,
   connection: StoredConnection,
-  payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown },
+  payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown; purpose_id?: unknown },
   reason: string,
+  kind: "tickets" | "shisha" = "tickets",
 ): Promise<string> {
   const paymentId = payment.id as string
   const checkoutId = payment.provider_checkout_id as string
@@ -175,12 +260,31 @@ async function refundAfterFailedFulfilment(
     await recordProblem(
       db,
       connection.integrationId,
-      `A ticket payment came in but the tickets could not be issued, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`,
+      kind === "shisha"
+        ? `A shisha payment came in but the request could no longer be served, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
+        : `A ticket payment came in but the tickets could not be issued, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`,
     )
   }
 
+  if (kind === "shisha") {
+    await notifyShishaRefund(db, provider, connection.tenantId, payment.purpose_id as string | undefined, refunded)
+    return refunded ? "refunded_shisha_request_closed" : "refund_needed_shisha_request_closed"
+  }
   await notifyOrderFailed(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
   return refunded ? "refunded_tickets_unavailable" : "refund_needed_tickets_unavailable"
+}
+
+/** Best effort: tells the customer why their shisha payment is being refunded. */
+async function notifyShishaRefund(db: Db, provider: CardProvider, tenantId: string, requestId: string | undefined, refunded: boolean) {
+  try {
+    if (!requestId) return
+    const { data } = await db.from("shisha_requests").select("customer_phone").eq("id", requestId).eq("tenant_id", tenantId).maybeSingle()
+    const phone = data?.customer_phone as string | null | undefined
+    if (!phone) return
+    await sendWhatsAppTextMessage(tenantId, phone, shishaMessages.paymentRefundedSession(refunded))
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] shisha refund message failed`, { tenantId, error: error instanceof Error ? error.message : String(error) })
+  }
 }
 
 /** Best effort: the money is already safely in the Passport whether or not this message goes. */
