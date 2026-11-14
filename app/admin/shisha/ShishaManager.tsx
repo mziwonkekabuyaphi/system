@@ -12,6 +12,11 @@ import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_ON } from "@/components/admin/brand
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
+import {
+  AUTOPRINT_REQUESTS_KEY,
+  readAutoPrintEnabledAt,
+  readAutoPrintRequests,
+} from "./shisha-autoprint"
 import { printRequestSlip, slipProblem, toPlain, type RequestSlip } from "./shisha-request-print"
 import { ShishaCounter, StationTag } from "./ShishaCounter"
 import { ShishaDisplayDrawer } from "./ShishaDisplayDrawer"
@@ -62,9 +67,8 @@ const REFRESH_MS = 30_000
 const STAFF_REFRESH_MS = 10_000
 /** A request waiting longer than this is highlighted. */
 const STALE_REQUEST_MS = 5 * 60_000
-/** Auto-print setting + which requests already got a slip. Both live in THIS browser:
- *  only the PC the receipt printer is plugged into should have auto-print on. */
-const AUTOPRINT_REQUESTS_KEY = "shishaAutoPrintRequests"
+/** Which requests already got a slip (lives in THIS browser). The auto-print switch itself
+ *  is in Settings > Shisha settings; see shisha-autoprint.ts. */
 const PRINTED_REQUESTS_KEY = "shishaPrintedRequests"
 /** A request older than this is never auto-printed (e.g. the tab was closed for hours). */
 const MAX_SLIP_AGE_MS = 30 * 60_000
@@ -300,13 +304,14 @@ export function ShishaManager({
   // The WhatsApp message lands on the server, which can't reach the printer (the print
   // agent only listens on the shop PC). So THIS page, open on that PC, does the printing:
   // each refresh it looks for new session requests and sends them to the agent.
+  // The on/off switch lives in Settings > Shisha settings (per PC, in localStorage).
   const [autoPrintRequests, setAutoPrintRequests] = useState(false)
   const printedRequests = useRef<Set<string>>(new Set())
   const slipPrinting = useRef(false)
 
   useEffect(() => {
     try {
-      if (localStorage.getItem(AUTOPRINT_REQUESTS_KEY) === "true") setAutoPrintRequests(true)
+      setAutoPrintRequests(readAutoPrintRequests())
       const saved: unknown = JSON.parse(localStorage.getItem(PRINTED_REQUESTS_KEY) ?? "[]")
       if (Array.isArray(saved)) {
         printedRequests.current = new Set(saved.filter((x): x is string => typeof x === "string"))
@@ -314,6 +319,12 @@ export function ShishaManager({
     } catch {
       // Storage blocked: duplicates are still prevented while this tab stays open.
     }
+    // Pick up the switch being flipped in another tab (e.g. the Settings page).
+    function onStorage(e: StorageEvent) {
+      if (e.key === AUTOPRINT_REQUESTS_KEY) setAutoPrintRequests(readAutoPrintRequests())
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
   }, [])
 
   const rememberPrinted = useCallback(() => {
@@ -352,10 +363,13 @@ export function ShishaManager({
   useEffect(() => {
     if (!autoPrintRequests || !canOperate || !snap || slipPrinting.current) return
     const now = Date.now()
+    // Requests that were already waiting when auto-print was switched on are not printed.
+    const enabledAt = readAutoPrintEnabledAt()
     const fresh = snap.requests.filter(
       (r) =>
         r.requestType === "order_session" &&
         !printedRequests.current.has(r.id) &&
+        new Date(r.createdAt).getTime() >= enabledAt &&
         now - new Date(r.createdAt).getTime() < MAX_SLIP_AGE_MS,
     )
     if (fresh.length === 0) return
@@ -376,20 +390,6 @@ export function ShishaManager({
       }
     })()
   }, [snap, autoPrintRequests, canOperate, slipFor, rememberPrinted])
-
-  function changeAutoPrintRequests(on: boolean) {
-    setAutoPrintRequests(on)
-    try {
-      localStorage.setItem(AUTOPRINT_REQUESTS_KEY, String(on))
-    } catch {
-      /* ignore */
-    }
-    if (on && snap) {
-      // Requests already waiting are not printed retroactively.
-      for (const r of snap.requests) printedRequests.current.add(r.id)
-      rememberPrinted()
-    }
-  }
 
   async function printSlipNow(req: ShishaRequest) {
     if (!snap) return
@@ -534,8 +534,6 @@ export function ShishaManager({
                 run(() => acceptShishaRequest({ requestId: req.id, ...input }), "Request accepted.")
               }
               onReject={(req, reason) => run(() => rejectShishaRequest(req.id, reason), "Request rejected.")}
-              autoPrint={autoPrintRequests}
-              onAutoPrintChange={changeAutoPrintRequests}
               onPrintSlip={(req) => void printSlipNow(req)}
             />
           )}
@@ -780,8 +778,6 @@ function RequestsPanel({
   occupiedDeviceIds,
   onAccept,
   onReject,
-  autoPrint,
-  onAutoPrintChange,
   onPrintSlip,
 }: {
   snap: ShishaSnapshot
@@ -789,8 +785,6 @@ function RequestsPanel({
   occupiedDeviceIds: Set<string>
   onAccept: (req: ShishaRequest, input: AcceptInput) => Promise<boolean>
   onReject: (req: ShishaRequest, reason: string) => Promise<boolean>
-  autoPrint: boolean
-  onAutoPrintChange: (on: boolean) => void
   onPrintSlip: (req: ShishaRequest) => void
 }) {
   const now = useNow(15_000)
@@ -817,20 +811,6 @@ function RequestsPanel({
           Customers who asked on WhatsApp. They can't send another request until you accept or reject this one
           {snap.onlinePayment ? ", or until their online payment is done and you've started their session" : ""}.
         </p>
-        <label className="mt-3 flex items-start gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            className="mt-0.5"
-            checked={autoPrint}
-            onChange={(e) => onAutoPrintChange(e.target.checked)}
-          />
-          <span>
-            Print a slip on this PC when a customer requests a session
-            <span className="block text-xs text-ink-muted">
-              Turn this on only on the PC with the receipt printer, and keep this page open there.
-            </span>
-          </span>
-        </label>
       </div>
 
       {snap.requests.length === 0 ? (
