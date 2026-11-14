@@ -192,6 +192,7 @@ import {
   servicesListMessage,
   dateOptionsMessage,
   slotsListMessage,
+  lastSlotsPage,
   confirmationMessage,
   invalidSelectionMessage,
   startOverMessage,
@@ -345,6 +346,8 @@ interface BookingStateData {
   dateOptions?: Array<{ date: string; label: string }>
   selectedDate?: string
   pendingSlots?: BookingSlot[]
+  /** Which screen of times the customer is on (0 = first). Typing "more" moves to the next. */
+  slotPage?: number
   selectedSlot?: BookingSlot
   /** The staff member the customer asked for ("book with Sipho"). Only ever set when
    *  booking_settings.allow_customer_staff_choice is on; createBooking() re-checks it. */
@@ -1294,7 +1297,6 @@ async function trySmartBooking(
     if (services.length === 0 || dateOptions.length === 0) return null
 
     const parsed = await extractBookingRequest(
-      tenantId,
       text,
       services.map((s) => ({ name: s.name, durationMinutes: s.durationMinutes })),
       dateOptions,
@@ -1340,7 +1342,7 @@ async function trySmartBooking(
       }
     }
 
-    const withDate: BookingStateData = { ...data, selectedDate: chosen.date, pendingSlots: slots }
+    const withDate: BookingStateData = { ...data, selectedDate: chosen.date, pendingSlots: slots, slotPage: 0 }
 
     const slot = pickSlotByTime(slots, parsed.time)
     if (slot) {
@@ -1353,7 +1355,7 @@ async function trySmartBooking(
 
     const notFree = parsed.time ? `Sorry, ${parsed.time} isn't available on ${chosen.label}. Here's what is free:\n\n` : ""
     return {
-      reply: staffPrefix(requestedStaff) + notFree + slotsListMessage(service.name, chosen.label, slots),
+      reply: staffPrefix(requestedStaff) + notFree + slotsListMessage(service.name, chosen.label, slots, 0),
       buttons: [],
       nextState: { state: BOOKING_STATE_TIME_SELECTION, data: mergeBookingData(withDate, {}) },
     }
@@ -1692,21 +1694,18 @@ export async function buildDateOptions(tenantId: string): Promise<Array<{ date: 
   const options: Array<{ date: string; label: string }> = []
   for (let i = 0; i <= daysToOffer; i++) {
     const dateISO = addDaysToDateString(today, i)
-    const label =
-      i === 0
-        ? "Today"
-        : i === 1
-          ? "Tomorrow"
-          : // Anchored at UTC noon purely so formatting this pure calendar
-            // date can't roll over to the adjacent day in any timezone —
-            // dateISO already IS the tenant-local calendar date, no further
-            // timezone conversion is needed just to format it as text.
-            new Date(`${dateISO}T12:00:00.000Z`).toLocaleDateString("en-ZA", {
-              weekday: "short",
-              day: "numeric",
-              month: "short",
-              timeZone: "UTC",
-            })
+    // Anchored at UTC noon purely so formatting this pure calendar
+    // date can't roll over to the adjacent day in any timezone —
+    // dateISO already IS the tenant-local calendar date, no further
+    // timezone conversion is needed just to format it as text.
+    const formatted = new Date(`${dateISO}T12:00:00.000Z`).toLocaleDateString("en-ZA", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    })
+    // "Today" / "Tomorrow" always carry the real date, so there is never any doubt which day it is.
+    const label = i === 0 ? `Today (${formatted})` : i === 1 ? `Tomorrow (${formatted})` : formatted
     options.push({ date: dateISO, label })
   }
 
@@ -1779,11 +1778,11 @@ async function handleDateSelection(tenantId: string, state: ConversationState, m
   }
 
   return {
-    reply: staffPrefix(data.requestedStaff) + slotsListMessage(visit.name, chosen.label, slots),
+    reply: staffPrefix(data.requestedStaff) + slotsListMessage(visit.name, chosen.label, slots, 0),
     buttons: [],
     nextState: {
       state: BOOKING_STATE_TIME_SELECTION,
-      data: mergeBookingData(data, { selectedDate: chosen.date, pendingSlots: slots }),
+      data: mergeBookingData(data, { selectedDate: chosen.date, pendingSlots: slots, slotPage: 0 }),
     },
   }
 }
@@ -1795,6 +1794,21 @@ async function handleDateSelection(tenantId: string, state: ConversationState, m
 async function handleTimeSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const slots = data.pendingSlots ?? []
+  const dateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate ?? ""
+
+  // "more" -> next screen of times (wraps back to the first after the last).
+  if (normalizedReplyText(message) === "more" && data.selectedService) {
+    const last = lastSlotsPage(slots.length)
+    const current = data.slotPage ?? 0
+    const nextPage = current >= last ? 0 : current + 1
+    const visit = combineServices([data.selectedService, ...(data.extraServices ?? [])])
+    return {
+      reply: staffPrefix(data.requestedStaff) + slotsListMessage(visit.name, dateLabel, slots, nextPage),
+      buttons: [],
+      nextState: { state: BOOKING_STATE_TIME_SELECTION, data: mergeBookingData(data, { slotPage: nextPage }) },
+    }
+  }
+
   const index = Number(rawReplyText(message)) - 1
 
   if (!Number.isInteger(index) || index < 0 || index >= slots.length) {
@@ -1803,7 +1817,6 @@ async function handleTimeSelection(tenantId: string, state: ConversationState, m
 
   const selectedSlot = slots[index]
   const selectedService = data.selectedService
-  const dateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate ?? ""
 
   if (!selectedService) {
     return { reply: startOverMessage(), buttons: [], nextState: null }
