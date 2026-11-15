@@ -8,9 +8,12 @@
  * public.ai_model_pricing. No router changes.
  */
 
-import type { LanguageModel } from "ai"
+import type { LanguageModel, generateText } from "ai"
 
-export type AiProviderId = "openai"
+/** Vendor-specific call options, in the shape the AI SDK accepts. */
+type ProviderOptions = NonNullable<Parameters<typeof generateText>[0]["providerOptions"]>
+
+export type AiProviderId = "openai" | "anthropic"
 
 export type AiErrorCode =
   | "invalid_api_key" // 401: wrong or revoked key. Marks a BYOK key invalid so we stop calling.
@@ -28,6 +31,13 @@ export interface AiProviderError {
   message: string
 }
 
+/** Per-call generation settings a call site asks for. A provider may adjust them (see tuneCall). */
+export interface AiCallSettings {
+  temperature?: number
+  maxOutputTokens?: number
+  providerOptions?: ProviderOptions
+}
+
 export type KeyCheck = { ok: true } | ({ ok: false } & AiProviderError)
 
 export interface AiProvider {
@@ -35,6 +45,8 @@ export interface AiProvider {
   readonly label: string
   /** Where the tenant creates a key. Shown beside the key field. */
   readonly keyHelpUrl: string
+  /** Shape hint for the key field, e.g. "sk-…". */
+  readonly keyPlaceholder: string
 
   /** Offline shape check only. Catches paste mistakes; does not prove the key works. */
   looksLikeKey(apiKey: string): boolean
@@ -43,6 +55,14 @@ export interface AiProvider {
   platformApiKey(): string | null
 
   createModel(apiKey: string, modelId: string): LanguageModel
+
+  /**
+   * Adjusts the settings a call site asked for so they are valid for this vendor's models. Call sites
+   * spread the result into generateText/generateObject, so they never mention a vendor. Omit when the
+   * settings can be used as they are. (Claude 5.x models reject temperature and think by default, so
+   * a tiny output cap needs headroom there.)
+   */
+  tuneCall?(settings: AiCallSettings): AiCallSettings
 
   /** Turns anything a model call can throw into a stable code + safe message. */
   classifyError(error: unknown): AiProviderError

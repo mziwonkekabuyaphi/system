@@ -82,8 +82,7 @@ export async function generateAiText(request: AiTextRequest): Promise<AiTextResp
         model,
         system,
         messages: [...(request.conversation ?? []), { role: "user", content: request.userMessage }],
-        maxOutputTokens: request.maxTokens ?? 400,
-        temperature: request.temperature ?? 0.3,
+        ...ctx.tune({ maxOutputTokens: request.maxTokens ?? 400, temperature: request.temperature ?? 0.3 }),
         abortSignal: controller.signal,
       })
       return { value: result.text, usage: result.usage }

@@ -23,6 +23,7 @@
 import type { LanguageModel, LanguageModelUsage } from "ai"
 
 import { getProvider } from "@/lib/ai/providers"
+import type { AiCallSettings } from "@/lib/ai/providers"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
 export type AiPurpose = "intent_classification" | "booking_parser" | "shisha_entry" | "concierge_reply"
@@ -144,6 +145,9 @@ export interface AiRunContext {
   modelId: string
   provider: string
   keySource: AiKeySource
+  /** Spread into generateText/generateObject: `...ctx.tune({ temperature: 0, maxOutputTokens: 40 })`.
+   *  Makes the settings valid for whichever vendor this tenant uses. */
+  tune: (settings: AiCallSettings) => AiCallSettings
 }
 
 /** What `run` hands back: the value for the caller, plus the SDK's usage so it can be billed. */
@@ -200,6 +204,7 @@ export async function withTenantAi<T>(
     modelId: pickModelId(resolved, purpose),
     provider: resolved.provider,
     keySource: resolved.keySource,
+    tune: (settings) => provider.tuneCall?.(settings) ?? settings,
   }
 
   const startedAt = Date.now()

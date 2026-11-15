@@ -16,7 +16,7 @@
  */
 
 import { getTenantAiStatus, invalidateTenantAiCache, redactSecrets } from "@/lib/ai/gateway"
-import { getProvider } from "@/lib/ai/providers"
+import { getProvider, listProviders } from "@/lib/ai/providers"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 
@@ -27,6 +27,15 @@ export interface AiModelOption {
   label: string
   inputUsdPer1m: number
   outputUsdPer1m: number
+}
+
+/** A vendor the owner can choose when adding a key, with the models listed for it. */
+export interface AiProviderOption {
+  id: string
+  label: string
+  keyHelpUrl: string
+  keyPlaceholder: string
+  models: AiModelOption[]
 }
 
 export interface AiUsageRow {
@@ -47,6 +56,8 @@ export interface AiSettingsDto {
   keyHelpUrl: string
   model: string
   models: AiModelOption[]
+  /** Every supported vendor with its models, for choosing one when adding or replacing a key. */
+  providers: AiProviderOption[]
   keyStatus: "none" | "active" | "invalid"
   keyLast4: string | null
   keySavedAt: string | null
@@ -109,8 +120,7 @@ export async function getAiSettings(): Promise<Result<{ settings: AiSettingsDto 
     const [pricing, monthly, breakdown, status] = await Promise.all([
       supabase
         .from("ai_model_pricing")
-        .select("model, display_name, input_usd_per_1m, output_usd_per_1m")
-        .eq("provider", row.provider)
+        .select("provider, model, display_name, input_usd_per_1m, output_usd_per_1m")
         .eq("is_active", true)
         .order("input_usd_per_1m", { ascending: true }),
       supabase
@@ -126,6 +136,14 @@ export async function getAiSettings(): Promise<Result<{ settings: AiSettingsDto 
     const costZar = num(monthly.data?.cost_zar)
     const limit = row.monthly_limit_zar == null ? null : num(row.monthly_limit_zar)
 
+    const toOption = (m: { model: unknown; display_name: unknown; input_usd_per_1m: unknown; output_usd_per_1m: unknown }): AiModelOption => ({
+      id: String(m.model),
+      label: String(m.display_name),
+      inputUsdPer1m: num(m.input_usd_per_1m),
+      outputUsdPer1m: num(m.output_usd_per_1m),
+    })
+    const pricingRows = pricing.data ?? []
+
     const settings: AiSettingsDto = {
       mode: row.mode === "managed" ? "managed" : "byok",
       enabled: row.enabled === true,
@@ -133,12 +151,16 @@ export async function getAiSettings(): Promise<Result<{ settings: AiSettingsDto 
       providerLabel: provider?.label ?? row.provider,
       keyHelpUrl: provider?.keyHelpUrl ?? "",
       model: row.model,
-      models: (pricing.data ?? []).map((m) => ({
-        id: String(m.model),
-        label: String(m.display_name),
-        inputUsdPer1m: num(m.input_usd_per_1m),
-        outputUsdPer1m: num(m.output_usd_per_1m),
-      })),
+      models: pricingRows.filter((m) => m.provider === row.provider).map(toOption),
+      providers: listProviders()
+        .map((p) => ({
+          id: p.id,
+          label: p.label,
+          keyHelpUrl: p.keyHelpUrl,
+          keyPlaceholder: p.keyPlaceholder,
+          models: pricingRows.filter((m) => m.provider === p.id).map(toOption),
+        }))
+        .filter((p) => p.models.length > 0),
       keyStatus: row.key_status === "active" || row.key_status === "invalid" ? row.key_status : "none",
       keyLast4: row.key_last4 ?? null,
       keySavedAt: row.key_saved_at ?? null,
@@ -227,8 +249,12 @@ export async function updateAiSettings(input: {
   }
 }
 
-/** Checks the key with the provider, then stores it encrypted. Switches the shop to its own key (BYOK). */
-export async function saveAiKey(apiKey: string): Promise<Result> {
+/**
+ * Checks the key with the provider, then stores it encrypted. Switches the shop to its own key (BYOK).
+ * `providerId` / `modelId` let the owner move to another vendor in the same step; without them the
+ * shop keeps its current provider and model.
+ */
+export async function saveAiKey(apiKey: string, providerId?: string, modelId?: string): Promise<Result> {
   try {
     const { tenantId, supabase } = await ownerContext()
     const key = typeof apiKey === "string" ? apiKey.trim() : ""
@@ -240,17 +266,35 @@ export async function saveAiKey(apiKey: string): Promise<Result> {
       .maybeSingle()
     if (!current) return { success: false, error: "AI settings are not set up for this shop yet." }
 
-    const provider = getProvider(current.provider)
+    const targetId = (typeof providerId === "string" && providerId.trim()) || current.provider
+    const provider = getProvider(targetId)
     if (!provider) return { success: false, error: "This AI provider isn't supported." }
     if (!provider.looksLikeKey(key)) {
-      return { success: false, error: `That doesn't look like an ${provider.label} API key. Copy the whole key, starting with "sk-".` }
+      return { success: false, error: `That doesn't look like a ${provider.label} API key. Copy the whole key from your ${provider.label} account.` }
     }
 
+    // Model for the new key: the one asked for, else the shop's current one (same vendor), else the vendor's cheapest.
+    const { data: listed } = await supabase
+      .from("ai_model_pricing")
+      .select("model")
+      .eq("provider", provider.id)
+      .eq("is_active", true)
+      .order("input_usd_per_1m", { ascending: true })
+    const available = (listed ?? []).map((m) => String(m.model))
+    const wanted = (typeof modelId === "string" && modelId.trim()) || (provider.id === current.provider ? current.model : "")
+    const model = wanted && available.includes(wanted) ? wanted : available[0]
+    if (!model) return { success: false, error: "No models are available for that provider yet." }
+
     // Managed shops move onto their own key, so check it can use the model they'll end up on.
-    const check = await provider.validateKey(key, current.model)
+    const check = await provider.validateKey(key, model)
     if (!check.ok) return { success: false, error: check.message }
 
-    const { error } = await supabase.rpc("ai_save_tenant_key", { p_tenant_id: tenantId, p_api_key: key })
+    const switching = provider.id !== current.provider || model !== current.model
+    const { error } = await supabase.rpc("ai_save_tenant_key", {
+      p_tenant_id: tenantId,
+      p_api_key: key,
+      ...(switching ? { p_provider: provider.id, p_model: model } : {}),
+    })
     if (error) return { success: false, error: "Could not store the key. Please try again." }
 
     invalidateTenantAiCache(tenantId)
