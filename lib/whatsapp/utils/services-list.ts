@@ -3,8 +3,8 @@
  * The QLess main menu — an interactive WhatsApp LIST with six core rows:
  * My Profile (always first), Book Now, Join Queue, Check Status, Reschedule, Cancel Now,
  * plus a seventh "Shisha Lounge" row ONLY for tenants with the shisha module on,, a
- * "My Passport" (wallet) row ONLY for tenants with the wallet module on, and an "Events" row ONLY for
- * tenants with the events module on.
+ * "My Passport" (wallet) row ONLY for tenants with the wallet module on, an "Events" row ONLY for
+ * tenants with the events module on, and an "Order Now" row ONLY for tenants with the orders module on.
  *
  * Same idea as the old Rands "services list": the menu is sent as a
  * `followUp` message after a short greeting, and every row has a fixed id.
@@ -24,6 +24,8 @@
  *   - row title:         24 characters
  *   - row description:   72 characters
  *   - rows in total:     10
+ *     (a shop with every module on would have 11, so the Reschedule row is dropped first:
+ *      a typed "reschedule" still opens that flow, see RESCHEDULE_REQUEST_PATTERN in action-router.ts)
  *
  * White-label: no shop or brand name appears in the menu.
  */
@@ -43,6 +45,8 @@ export const MENU_ROW_IDS = {
   wallet: "menu_wallet",
   // Only shown for tenants with the "events" module switched on (see buildServicesListMessage).
   events: "menu_events",
+  // Only shown for tenants with the "orders" module switched on (see buildServicesListMessage).
+  orders: "menu_orders",
   // Only shown to a verified staff member of a tenant with the "shifts" module on.
   staff: "menu_staff",
 } as const
@@ -61,10 +65,11 @@ export function isMenuRowId(id: string | null | undefined): id is MenuRowId {
  *   so a caller that forgets the flag can never show a module the tenant doesn't have.
  * @param options.wallet Include the My Passport row (tenant has the wallet module on). Same default-false rule.
  * @param options.events Include the Events row (tenant has the events module on). Same default-false rule.
+ * @param options.orders Include the Order Now row (tenant has the orders module on). Same default-false rule.
  */
 export function buildServicesListMessage(
   bodyText: string,
-  options: { shisha?: boolean; staff?: boolean; wallet?: boolean; events?: boolean } = {},
+  options: { shisha?: boolean; staff?: boolean; wallet?: boolean; events?: boolean; orders?: boolean } = {},
 ): FollowUpMessage {
   const moduleRows = options.shisha
     ? [
@@ -93,10 +98,64 @@ export function buildServicesListMessage(
         },
       ]
     : []
+  const orderRows = options.orders
+    ? [
+        {
+          id: MENU_ROW_IDS.orders,
+          title: "🛒 Order Now", // 12 chars
+          description: "Browse the menu and order for collection",
+        },
+      ]
+    : []
   // Per-sender, never per-shop: only a verified staff member of a shop with Shifts on sees it.
   const staffRows = options.staff
     ? [{ id: MENU_ROW_IDS.staff, title: "👷 Staff area", description: "Your shifts, swaps and approvals" }]
     : []
+
+  const rows = [
+    // Always first: it's the customer's home screen, so it stays on top
+    // however many other rows the shop's switches leave in the list.
+    {
+      id: MENU_ROW_IDS.profile,
+      title: "👤 My Profile",
+      description: "See where you stand with this shop",
+    },
+    {
+      id: MENU_ROW_IDS.book,
+      title: "📅 Book Now",
+      description: "Pick a service, a day and a time",
+    },
+    {
+      id: MENU_ROW_IDS.queue,
+      title: "🚶 Join Queue",
+      description: "Walk-in? Get a ticket and wait your turn",
+    },
+    {
+      id: MENU_ROW_IDS.status,
+      title: "🔎 Check Status",
+      description: "See your booking or your place in the queue",
+    },
+    {
+      id: MENU_ROW_IDS.reschedule,
+      title: "🔁 Reschedule", // 13 chars
+      description: "Move your booking to another day or time",
+    },
+    {
+      id: MENU_ROW_IDS.cancel,
+      title: "❌ Cancel Now",
+      description: "Cancel your booking or leave the queue",
+    },
+    ...moduleRows,
+    ...walletRows,
+    ...eventRows,
+    ...orderRows,
+    ...staffRows,
+  ]
+
+  // WhatsApp silently drops rows past 10, and it drops the LAST ones (the Orders / Staff rows).
+  // Drop the least essential row instead; a typed "reschedule" still works.
+  const MAX_ROWS = 10
+  const fitted = rows.length > MAX_ROWS ? rows.filter((row) => row.id !== MENU_ROW_IDS.reschedule) : rows
 
   return {
     reply: bodyText,
@@ -105,44 +164,7 @@ export function buildServicesListMessage(
       sections: [
         {
           title: "What can I do for you?", // 21 chars
-          rows: [
-            // Always first: it's the customer's home screen, so it stays on top
-            // however many other rows the shop's switches leave in the list.
-            {
-              id: MENU_ROW_IDS.profile,
-              title: "👤 My Profile",
-              description: "See where you stand with this shop",
-            },
-            {
-              id: MENU_ROW_IDS.book,
-              title: "📅 Book Now",
-              description: "Pick a service, a day and a time",
-            },
-            {
-              id: MENU_ROW_IDS.queue,
-              title: "🚶 Join Queue",
-              description: "Walk-in? Get a ticket and wait your turn",
-            },
-            {
-              id: MENU_ROW_IDS.status,
-              title: "🔎 Check Status",
-              description: "See your booking or your place in the queue",
-            },
-            {
-              id: MENU_ROW_IDS.reschedule,
-              title: "🔁 Reschedule", // 13 chars
-              description: "Move your booking to another day or time",
-            },
-            {
-              id: MENU_ROW_IDS.cancel,
-              title: "❌ Cancel Now",
-              description: "Cancel your booking or leave the queue",
-            },
-            ...moduleRows,
-            ...walletRows,
-            ...eventRows,
-            ...staffRows,
-          ],
+          rows: fitted,
         },
       ],
     },
