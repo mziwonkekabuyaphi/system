@@ -1,8 +1,8 @@
 // File: lib/services/orders/orders.management.ts
 import type { ActionResult } from '@/lib/types/action';
-import * as messages from '@/lib/services/messages/orders';
+import * as messages from '@/lib/messages/orders';
 import type { CartItem, OrderItemRow, OrderRow, OrdersStateData } from './orders.types';
-import { CART_ACTION_BUTTONS, ORDER_STATE_AWAITING_CART_ACTION, TRACKING_BUTTONS } from './orders.types';
+import { CART_VIEW_BUTTONS, ORDER_STATE_AWAITING_CART_ACTION, TRACKING_BUTTONS } from './orders.types';
 import type { TenantContext } from './orders.tenant';
 import { actionResult, addItemToCart, cartToLineItems, validateProductAvailability } from './orders.helpers';
 import {
@@ -151,6 +151,6 @@ export async function handleRepeatOrder(
   return actionResult(
     messages.cartSummaryMessage(cartToLineItems(cart)),
     { state: ORDER_STATE_AWAITING_CART_ACTION, data: nextData },
-    CART_ACTION_BUTTONS,
+    CART_VIEW_BUTTONS,
   );
 }

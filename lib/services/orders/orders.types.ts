@@ -111,7 +111,19 @@ export const ORDER_STATE_AWAITING_SCHEDULE_CHOICE = 'order_awaiting_schedule_cho
 // WhatsApp has no time-slot dropdown. See parseScheduleTime.
 export const ORDER_STATE_AWAITING_SCHEDULE_TIME = 'order_awaiting_schedule_time';
 
+// Welcome screen shown on a fresh "order" entry: Order Now / Track My Order.
+export const ORDER_STATE_AWAITING_WELCOME = 'order_awaiting_welcome';
+
+// Category list shown (numbered) before any products — the customer picks a category first.
+export const ORDER_STATE_AWAITING_CATEGORY = 'order_awaiting_category';
+
+// "Remove Items" was tapped in the cart: waiting for the number of the line to remove.
+export const ORDER_STATE_AWAITING_REMOVE_ITEM = 'order_awaiting_remove_item';
+
 export type OrdersStateName =
+  | typeof ORDER_STATE_AWAITING_WELCOME
+  | typeof ORDER_STATE_AWAITING_CATEGORY
+  | typeof ORDER_STATE_AWAITING_REMOVE_ITEM
   | typeof ORDER_STATE_AWAITING_SELECTION
   | typeof ORDER_STATE_AWAITING_QUANTITY
   | typeof ORDER_STATE_AWAITING_PAYMENT_METHOD
@@ -120,6 +132,15 @@ export type OrdersStateName =
   | typeof ORDER_STATE_AWAITING_CART_ACTION
   | typeof ORDER_STATE_AWAITING_SCHEDULE_CHOICE
   | typeof ORDER_STATE_AWAITING_SCHEDULE_TIME;
+
+/** One row of the category list: a group of the tenant's categories shown as a single choice. */
+export interface PendingCategory {
+  label: string;
+  /** product_categories.id values to fetch products for. */
+  categoryIds: string[];
+  /** First category key in the group (used as the list's category). */
+  key: string;
+}
 
 export interface PendingSelectionItem {
   productId: string;
@@ -159,6 +180,8 @@ export interface OrdersStateData {
    * list without having to reopen it after each add.
    */
   pendingSelection?: PendingSelectionItem[];
+  /** Numbered category list currently shown (ORDER_STATE_AWAITING_CATEGORY). */
+  pendingCategories?: PendingCategory[];
   category?: ProductCategory;
   /**
    * The shopping cart for this session — every item the customer has
@@ -231,7 +254,16 @@ export interface OrdersStateData {
 // topupOrCardButtons() in orders.tenant.ts.
 
 // Shown right after an item lands in the cart — "add another item, or pay now?"
-export const CART_ACTION_BUTTONS = ['Checkout', 'Add More'];
+export const CART_ACTION_BUTTONS = ['Continue Shopping', 'View Cart', 'Checkout'];
+
+// Shown when the cart itself is on screen.
+export const CART_VIEW_BUTTONS = ['Continue Shopping', 'Remove Items', 'Checkout'];
+
+// Shown with an empty cart.
+export const EMPTY_CART_BUTTONS = ['Continue Shopping'];
+
+// Welcome screen.
+export const WELCOME_BUTTONS = ['Order Now', 'Track My Order'];
 
 // Shown right after "checkout" — mirrors order-now.js's collect modal choice.
 export const SCHEDULE_CHOICE_BUTTONS = ['Collect Now', 'Schedule Later'];

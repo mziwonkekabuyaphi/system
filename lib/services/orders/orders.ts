@@ -43,7 +43,7 @@
  */
 
 import { logger } from '@/lib/whatsapp/utils/logger';
-import * as messages from '@/lib/services/messages/orders';
+import * as messages from '@/lib/messages/orders';
 import type { RoutedIntent } from '@/lib/whatsapp/intent-router';
 import type { IncomingMessage } from '@/lib/whatsapp/parse-webhook';
 import type { ActionResult } from '@/lib/types/action';
@@ -53,14 +53,16 @@ import type { CartItem, OrdersStateData, OrdersStateName, ProductRow } from './o
 import { ORDERING_NOT_AVAILABLE, paymentButtons, type TenantContext } from './orders.tenant';
 import {
   ORDER_STATE_AWAITING_CART_ACTION,
+  ORDER_STATE_AWAITING_CATEGORY,
   ORDER_STATE_AWAITING_CONFIRMATION,
   ORDER_STATE_AWAITING_PAYMENT_METHOD,
   ORDER_STATE_AWAITING_QUANTITY,
+  ORDER_STATE_AWAITING_REMOVE_ITEM,
   ORDER_STATE_AWAITING_SCHEDULE_CHOICE,
   ORDER_STATE_AWAITING_SCHEDULE_TIME,
   ORDER_STATE_AWAITING_SELECTION,
   ORDER_STATE_AWAITING_TOPUP_OR_CARD,
-  CART_ACTION_BUTTONS,
+  ORDER_STATE_AWAITING_WELCOME,
   CONFIRM_YES_NO_BUTTONS,
   SCHEDULE_CHOICE_BUTTONS,
 } from './orders.types';
@@ -68,7 +70,6 @@ import {
 import {
   actionResult,
   addItemToCart,
-  cartToLineItems,
   extractQuantity,
   getCart,
   type ParsedOrderMessage,
@@ -97,7 +98,11 @@ import {
   beginQuantityStep,
   beginScheduleChoiceStep,
   beginScheduleTimeStep,
+  beginCategoryReply,
+  beginRemoveItemStep,
+  beginWelcomeReply,
   buildFullMenuView,
+  viewCartReply,
 } from './orders.flow-selection';
 
 import {
@@ -129,6 +134,25 @@ export type { TenantContext } from './orders.tenant';
 // handleState's "browse something else mid-selection" escape hatch below)
 // ============================================================================
 
+/** Category list first — the customer opens one category (or asks for "all") instead of facing every product. */
+async function showCategories(ctx: TenantContext, cart: CartItem[]): Promise<ActionResult> {
+  const products = await getFullMenu(ctx);
+  if (products.length === 0) {
+    return actionResult(messages.EMPTY_MENU);
+  }
+  return beginCategoryReply(ctx, products, cart);
+}
+
+/** Every product on one numbered list (reply "all" on the category screen). */
+async function showFullMenu(ctx: TenantContext, cart: CartItem[]): Promise<ActionResult> {
+  const products = await getFullMenu(ctx);
+  if (products.length === 0) {
+    return actionResult(messages.EMPTY_MENU);
+  }
+  const { text, pendingSelection } = buildFullMenuView(ctx, products);
+  return actionResult(text, { state: ORDER_STATE_AWAITING_SELECTION, data: { pendingSelection, cart } });
+}
+
 async function handleFreshOrderRequest(
   ctx: TenantContext,
   phone: string,
@@ -152,12 +176,7 @@ async function handleFreshOrderRequest(
 
   // --- fresh conversation entry points -------------------------------------------------------
   if (parsed.intent === 'show_menu') {
-    const products = await getFullMenu(ctx);
-    if (products.length === 0) {
-      return actionResult(messages.EMPTY_MENU);
-    }
-    const { text, pendingSelection } = buildFullMenuView(ctx, products);
-    return actionResult(text, { state: ORDER_STATE_AWAITING_SELECTION, data: { pendingSelection, cart: existingCart } });
+    return showCategories(ctx, existingCart);
   }
 
   if (parsed.intent === 'show_category' && parsed.category) {
@@ -282,6 +301,72 @@ async function continueOrdersFlow(
   }
 
   switch (stateName) {
+    case ORDER_STATE_AWAITING_WELCOME: {
+      const typed = rawMessage.trim().toLowerCase();
+      if (/\b(order now|order|start|menu|browse|shop)\b/.test(typed) && !/\b(track|cancel|history)\b/.test(typed)) {
+        return showCategories(ctx, getCart(stateData));
+      }
+      if (/\bcart\b/.test(typed)) {
+        return viewCartReply(getCart(stateData), stateData);
+      }
+      return handleFreshOrderRequest(ctx, phone, parsed, getCart(stateData));
+    }
+
+    case ORDER_STATE_AWAITING_CATEGORY: {
+      const cart = getCart(stateData);
+      const typed = rawMessage.trim().toLowerCase();
+
+      let categoryIndex: number | null = null;
+      if (parsed.intent === 'select_number' && parsed.selectionNumber) {
+        categoryIndex = parsed.selectionNumber - 1;
+      } else if (/^\d{1,2}$/.test(typed)) {
+        categoryIndex = parseInt(typed, 10) - 1;
+      }
+
+      if (categoryIndex !== null) {
+        const category = stateData.pendingCategories?.[categoryIndex];
+        if (!category) {
+          return actionResult(
+            messages.selectionOutOfRange(stateData.pendingCategories?.length ?? 0),
+            { state: ORDER_STATE_AWAITING_CATEGORY, data: stateData },
+          );
+        }
+        const products = await getProductsByCategoryIds(ctx, category.categoryIds);
+        return beginProductSelectionReply(category.label, category.key, products, cart);
+      }
+
+      if (/^(all|show all|full menu|the full menu|everything|whole menu)[.!]*$/.test(typed)) {
+        return showFullMenu(ctx, cart);
+      }
+      if (cart.length > 0 && /\b(checkout|pay now)\b/.test(typed)) {
+        return beginScheduleChoiceStep(ctx, cart);
+      }
+      if (/\bcart\b/.test(typed)) {
+        return viewCartReply(cart, stateData);
+      }
+      return handleFreshOrderRequest(ctx, phone, parsed, cart);
+    }
+
+    case ORDER_STATE_AWAITING_REMOVE_ITEM: {
+      const cart = getCart(stateData);
+      const typed = rawMessage.trim().toLowerCase();
+
+      if (/^(back|cancel|keep|no|done|view cart)[.!]*$/.test(typed)) {
+        return viewCartReply(cart, stateData);
+      }
+      if (/^(all|clear|everything|clear cart|empty|empty cart)[.!]*$/.test(typed)) {
+        return viewCartReply([], stateData, '🗑️ Your cart has been emptied.');
+      }
+      if (/^\d{1,2}$/.test(typed)) {
+        const index = parseInt(typed, 10) - 1;
+        const removed = cart[index];
+        if (removed) {
+          return viewCartReply(cart.filter((_, i) => i !== index), stateData, `🗑️ Removed ${removed.name}.`);
+        }
+      }
+      return beginRemoveItemStep(cart, stateData);
+    }
+
     case ORDER_STATE_AWAITING_SELECTION: {
       let selectedIndex: number | null = null;
 
@@ -363,16 +448,16 @@ async function continueOrdersFlow(
         return beginScheduleChoiceStep(ctx, cart);
       }
 
-      if (/\bcart\b/i.test(normalized)) {
-        return actionResult(
-          messages.cartSummaryMessage(cartToLineItems(cart)),
-          { state: ORDER_STATE_AWAITING_CART_ACTION, data: stateData },
-          CART_ACTION_BUTTONS,
-        );
+      if (/\bremove\b/i.test(normalized) && !/\d/.test(normalized)) {
+        return beginRemoveItemStep(cart, stateData);
       }
 
-      if (/\badd (more|another)\b/i.test(normalized)) {
-        return handleFreshOrderRequest(ctx, phone, { intent: 'show_menu' }, cart);
+      if (/\bcart\b/i.test(normalized)) {
+        return viewCartReply(cart, stateData);
+      }
+
+      if (/\b(continue shopping|add (more|another)|keep shopping)\b/i.test(normalized)) {
+        return showCategories(ctx, cart);
       }
 
       // A bare number against the list last shown to this customer — add
@@ -523,6 +608,10 @@ async function handleOrder(
       parsedIntent: parsed.intent,
       viaInteractive: Boolean(message.interactiveId),
     });
+    // A plain "menu" / "order" / menu-row tap with nothing in progress opens the branded welcome screen.
+    if (parsed.intent === 'show_menu' && !parsed.tableLabel) {
+      return beginWelcomeReply(ctx);
+    }
     return await handleFreshOrderRequest(ctx, phone, parsed);
   } catch (unexpectedError) {
     logger.error('[orders] unexpected error in handleOrder', {
@@ -534,6 +623,9 @@ async function handleOrder(
 }
 
 const ORDER_STATE_NAMES: ReadonlySet<string> = new Set([
+  ORDER_STATE_AWAITING_WELCOME,
+  ORDER_STATE_AWAITING_CATEGORY,
+  ORDER_STATE_AWAITING_REMOVE_ITEM,
   ORDER_STATE_AWAITING_SELECTION,
   ORDER_STATE_AWAITING_QUANTITY,
   ORDER_STATE_AWAITING_PAYMENT_METHOD,
