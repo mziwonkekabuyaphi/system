@@ -252,6 +252,7 @@ export const peachProvider: CardProvider = {
   prerequisite: {
     instructions:
       "Before connecting: in your Peach Payments Dashboard open Checkout > Allowlisted domains, click Add domain and add this domain. Peach only accepts payment requests from allowlisted domains (a live domain is checked by Peach first, which can take a little while).",
+    showDomain: true,
   },
 
   async connect({ fields, webhookUrl }) {
