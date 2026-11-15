@@ -26,12 +26,14 @@ import { KioskPanel } from "./settings/KioskPanels"
 import { PaymentsPanel } from "./payments/PaymentsPanel"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
+import { OrderSettingsPanel } from "./orders/OrderSettingsPanel"
+import type { AdminOrderSettings, AdminOrderVendor } from "./orders/types"
 import { WhatsAppSettingsPanels } from "./settings/WhatsAppSettingsPanels"
 import { AiSettingsPanel } from "./settings/AiSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "whatsapp" | "ai"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "whatsapp" | "ai"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -119,6 +121,12 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
     <RailIcon {...p}>
       <path d="M12 3.5l1.6 4.4 4.4 1.6-4.4 1.6L12 15.5l-1.6-4.4L6 9.5l4.4-1.6z" />
       <path d="M18 15l.7 1.8 1.8.7-1.8.7L18 20l-.7-1.8-1.8-.7 1.8-.7z" />
+    </RailIcon>
+  ),
+  orders: (p) => (
+    <RailIcon {...p}>
+      <path d="M5 7h14l-1.2 11.5a1 1 0 0 1-1 .9H7.2a1 1 0 0 1-1-.9z" />
+      <path d="M9 7a3 3 0 0 1 6 0" />
     </RailIcon>
   ),
   passport: (p) => (
@@ -244,6 +252,13 @@ const SETTINGS_NAV: Array<{
         description: "Top-up limits and whether customers can top up their own Passport.",
         anyOf: ["wallet"],
       },
+      {
+        id: "orders",
+        label: "Order settings",
+        title: "Order settings",
+        description: "Payment methods, scheduling, minimum age and how customers order on WhatsApp.",
+        anyOf: ["orders"],
+      },
     ],
   },
 ]
@@ -289,6 +304,12 @@ export function SettingsManager({
   passportManage = false,
   initialServices = [],
   servicesManage = true,
+  ordersEnabled = false,
+  ordersManage = false,
+  ordersSettings = null,
+  ordersVendors = [],
+  onOrdersSettingsSaved,
+  ordersError = null,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -339,6 +360,16 @@ export function SettingsManager({
   initialServices?: AdminService[]
   /** Whether the caller has services.manage. The Services page is hidden without it. */
   servicesManage?: boolean
+  /** Order management switched on for this shop and the caller has orders.view. Shows Settings > Order settings. */
+  ordersEnabled?: boolean
+  /** Caller has orders.manage (can save Order settings). */
+  ordersManage?: boolean
+  /** Shared with Order management (held in AdminView), so a save here shows up there at once. */
+  ordersSettings?: AdminOrderSettings | null
+  ordersVendors?: AdminOrderVendor[]
+  onOrdersSettingsSaved?: (next: AdminOrderSettings) => void
+  /** Set when the orders data failed to load in page.tsx. */
+  ordersError?: string | null
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
   // Kept here (not only inside the panels) so the summary tiles on Shop details follow a save.
@@ -369,6 +400,7 @@ export function SettingsManager({
       // Permissions still apply on top of the module state: shisha.view, wallet.view, services.manage.
       .filter((i) => i.id !== "shisha" || shishaEnabled)
       .filter((i) => i.id !== "passport" || passportEnabled)
+      .filter((i) => i.id !== "orders" || ordersEnabled)
       .filter((i) => i.id !== "whatsapp" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "ai" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "services" || servicesManage),
@@ -524,6 +556,21 @@ export function SettingsManager({
       {activePage.id === "ai" && <AiSettingsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
+      {activePage.id === "orders" &&
+        (ordersSettings && onOrdersSettingsSaved ? (
+          // key: remount with fresh form state if the settings object is replaced after a save
+          <OrderSettingsPanel
+            key={ordersSettings.configured ? "saved" : "new"}
+            settings={ordersSettings}
+            onSaved={onOrdersSettingsSaved}
+            vendors={ordersVendors}
+            canManage={ordersManage}
+          />
+        ) : (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            Order settings couldn&rsquo;t load{ordersError ? `: ${ordersError}` : "."} Check that the orders tables exist in the database, then refresh.
+          </div>
+        ))}
       {activePage.id === "private-label" && (
         <PrivateLabelPanel
           plan={initialPlan}

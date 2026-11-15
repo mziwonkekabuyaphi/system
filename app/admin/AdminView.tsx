@@ -14,7 +14,7 @@ import { EventsManager } from "./events/EventsManager"
 import type { EventsPermissions, EventsSection } from "./events/types"
 import { VvipManager } from "./vvip/VvipManager"
 import { OrdersManager } from "./orders/OrdersManager"
-import type { OrdersData, OrdersPermissions, OrdersSection } from "./orders/types"
+import type { AdminOrderSettings, AdminOrderVendor, OrdersData, OrdersPermissions, OrdersSection } from "./orders/types"
 import type { VvipPermissions, VvipSection } from "./vvip/types"
 import { SettingsManager } from "./SettingsManager"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
@@ -61,7 +61,6 @@ type Tab =
   | "ordersBoard"
   | "ordersProducts"
   | "ordersCatalogue"
-  | "ordersSettings"
   | "inbox"
   | "staff"
   | "analytics"
@@ -123,7 +122,6 @@ const ORDERS_TAB_SECTION: Partial<Record<Tab, OrdersSection>> = {
   ordersBoard: "board",
   ordersProducts: "products",
   ordersCatalogue: "catalogue",
-  ordersSettings: "settings",
 }
 
 const SIDEBAR_COLLAPSED = 65 // px
@@ -347,15 +345,6 @@ function OrdersCatalogueIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-function OrdersSettingsIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-    </svg>
-  )
-}
-
 function VvipTabsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -392,7 +381,6 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "ordersBoard", label: "Orders", icon: OrdersBoardIcon },
   { id: "ordersProducts", label: "Products", icon: OrdersProductsIcon },
   { id: "ordersCatalogue", label: "Categories & vendors", icon: OrdersCatalogueIcon },
-  { id: "ordersSettings", label: "Order settings", icon: OrdersSettingsIcon },
   { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
   { id: "staff", label: "Workforce", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
@@ -424,7 +412,7 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
     ],
   },
   // Shown only while Order management is switched on (and the caller has orders.view).
-  { label: "Order management", ids: ["ordersBoard", "ordersProducts", "ordersCatalogue", "ordersSettings"] },
+  { label: "Order management", ids: ["ordersBoard", "ordersProducts", "ordersCatalogue"] },
   { label: "Analytics", ids: ["analytics"] },
   { label: "System", ids: ["staff", "billing", "settings"] },
 ]
@@ -565,7 +553,6 @@ export function AdminView({
       case "ordersBoard":
       case "ordersProducts":
       case "ordersCatalogue":
-      case "ordersSettings":
         return ordersEnabled && ordersPermissions.view
       // Passport: module switched on + wallet.view (page.tsx zeroes the permissions when it is off).
       // The actions re-check both server-side.
@@ -616,6 +603,10 @@ export function AdminView({
   const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
   const vvipSection = VVIP_TAB_SECTION[tab] ?? null
   const ordersSection = ORDERS_TAB_SECTION[tab] ?? null
+  // Order settings and vendors are shared by Order management (Products, Categories & vendors) and
+  // Settings > Order settings, so they live here and both read/write the same copy.
+  const [ordersSettings, setOrdersSettings] = useState<AdminOrderSettings | null>(initialOrdersData?.settings ?? null)
+  const [ordersVendors, setOrdersVendors] = useState<AdminOrderVendor[]>(initialOrdersData?.vendors ?? [])
   // The shared Events group is headed "Customer accounts" when the shop has the wallet but not Events.
   const navGroupLabel = (label: string) => (label === "Events" && !eventsEnabled ? "Customer accounts" : label)
   // Control Centre is always first; the other groups follow in NAV_GROUPS order.
@@ -934,16 +925,19 @@ export function AdminView({
           )}
           {/* One Order management page for the four sidebar entries, so orders, products and the catalogue
               stay loaded while moving between them (same idea as Shisha/Events above). */}
-          {ordersSection && isTabVisible(tab) && initialOrdersData && (
+          {ordersSection && isTabVisible(tab) && initialOrdersData && ordersSettings && (
             <OrdersManager
               section={ordersSection}
               initialData={initialOrdersData}
+              settings={ordersSettings}
+              vendors={ordersVendors}
+              onVendorsChange={setOrdersVendors}
               permissions={ordersPermissions}
               timezone={timezone}
               currency={initialTenantSettings?.currency ?? "ZAR"}
             />
           )}
-          {ordersSection && isTabVisible(tab) && !initialOrdersData && (
+          {ordersSection && isTabVisible(tab) && (!initialOrdersData || !ordersSettings) && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               Order management couldn&rsquo;t load{initialOrdersError ? `: ${initialOrdersError}` : "."} Check that the orders
               tables exist in the database, then refresh.
@@ -1000,6 +994,12 @@ export function AdminView({
               passportManage={staffPermissions.walletManage}
               initialServices={initialServices}
               servicesManage={staffPermissions.servicesManage}
+              ordersEnabled={ordersEnabled && ordersPermissions.view}
+              ordersManage={ordersPermissions.manage}
+              ordersSettings={ordersSettings}
+              ordersVendors={ordersVendors}
+              onOrdersSettingsSaved={setOrdersSettings}
+              ordersError={initialOrdersError}
             />
           )}
         </main>
