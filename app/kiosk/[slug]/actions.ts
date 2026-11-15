@@ -59,8 +59,12 @@ import {
   BOOKING_ALREADY_IN_QUEUE,
   BOOKING_SERVICE_REQUIRED,
   BOOKING_TOO_MANY_SERVICES,
+  BOOKING_PAYMENT_UNAVAILABLE,
+  BOOKING_PAYMENT_LINK_FAILED,
   type BookingSlot,
 } from "@/lib/services/booking"
+import { formatMoneyFor } from "@/lib/services/orders/orders.tenant"
+import QRCode from "qrcode"
 import { joinQueue, formatQueueTicketNumber, QUEUE_TOO_MANY_SERVICES } from "@/lib/services/queue"
 import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled, isProductNotEnabledError } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
@@ -396,7 +400,27 @@ export interface KioskBookingTicket {
   slotLabel: string
 }
 
-export async function submitKioskBooking(slug: string, input: KioskBookingInput): Promise<KioskActionResult<KioskBookingTicket>> {
+/**
+ * The shop requires payment for bookings: the slot is held and the customer pays by card before the booking
+ * is confirmed. The kiosk shows `qrDataUrl` (scan with a phone) or, on a customer's own phone, a Pay button
+ * for `paymentUrl`, then polls checkKioskBookingPayment() and shows `ticket` once the webhook has confirmed it.
+ */
+export interface KioskBookingPayment {
+  kind: "booking_payment"
+  bookingId: string
+  paymentUrl: string
+  /** PNG data URL of a QR code for paymentUrl. */
+  qrDataUrl: string
+  amountLabel: string
+  holdMinutes: number
+  /** The ticket to show (and print) once the payment has gone through. */
+  ticket: KioskBookingTicket
+}
+
+export async function submitKioskBooking(
+  slug: string,
+  input: KioskBookingInput,
+): Promise<KioskActionResult<KioskBookingTicket | KioskBookingPayment>> {
   if (!isPlausiblePhoneNumber(input.phone)) return { ok: false, error: "Please enter a valid cellphone number." }
 
   try {
@@ -428,6 +452,9 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       dateISO: input.dateISO,
       slot: input.slot,
       phone: input.phone,
+      // A shop that requires payment gets a held slot + card link instead of an instant booking.
+      payment: "auto",
+      channel: "kiosk",
     })
 
     // WhatsApp asks for the name AFTER confirming, since the phone is
@@ -446,6 +473,35 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
       serviceName: serviceNames,
       dateLabel: input.dateLabel,
       slotLabel: input.slot.label,
+    }
+
+    // Waiting for payment: nothing is confirmed yet. Send the link by WhatsApp too (best effort), and let the
+    // kiosk show a QR code. The signed webhook confirms the booking and messages the customer once paid.
+    if (result.status === "awaiting_payment" && result.payment) {
+      const amountLabel = formatMoneyFor(result.payment.currency, result.payment.amount)
+      try {
+        if (await kioskWhatsAppAllowed(tenantId)) await sendWhatsAppTextMessage(
+          tenantId,
+          input.phone,
+          `Hi${name ? ` ${name}` : ""}! To confirm your booking${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}, ` +
+            `please pay ${amountLabel} here: ${result.payment.url}\n\nWe're holding your time for ${result.payment.holdMinutes} minutes.`,
+        )
+      } catch (sendError) {
+        console.error("[kiosk] Booking payment link WhatsApp send failed", { tenantId, error: sendError })
+      }
+      const qrDataUrl = await QRCode.toDataURL(result.payment.url, { margin: 1, width: 360, errorCorrectionLevel: "M" })
+      return {
+        ok: true,
+        data: {
+          kind: "booking_payment",
+          bookingId: result.bookingId,
+          paymentUrl: result.payment.url,
+          qrDataUrl,
+          amountLabel,
+          holdMinutes: result.payment.holdMinutes,
+          ticket,
+        },
+      }
     }
 
     try {
@@ -478,6 +534,12 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     if (error instanceof Error && error.message === BOOKING_SERVICE_REQUIRED) {
       return { ok: false, error: "Please choose a service." }
     }
+    if (error instanceof Error && error.message === BOOKING_PAYMENT_UNAVAILABLE) {
+      return { ok: false, error: "Card payments aren't available right now. Please check in with staff." }
+    }
+    if (error instanceof Error && error.message === BOOKING_PAYMENT_LINK_FAILED) {
+      return { ok: false, error: "We couldn't create the payment link. Please try again." }
+    }
     // Still in the walk-in line (including a booking already moved into it): the database
     // refuses a second booking. Without this the customer only saw "Something went wrong".
     if (error instanceof Error && error.message === BOOKING_ALREADY_IN_QUEUE) {
@@ -501,6 +563,62 @@ export async function submitKioskBooking(slug: string, input: KioskBookingInput)
     }
     console.error("[kiosk] submitKioskBooking failed", { slug, error })
     return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
+  }
+}
+
+export type KioskBookingPaymentState = "waiting" | "paid" | "expired"
+
+/**
+ * Polled by the "Scan to pay" screen. Only reads the booking's own status, which the signed payment webhook
+ * moves from awaiting_payment to confirmed: nothing the browser sends can mark a booking paid.
+ */
+export async function checkKioskBookingPayment(slug: string, bookingId: string): Promise<KioskActionResult<{ state: KioskBookingPaymentState }>> {
+  try {
+    const tenantId = await resolveKioskTenantId(slug)
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return { ok: false, error: "Something went wrong. Please try again." }
+    // Let a hold that ran out release itself, so the screen can say so.
+    await supabase.rpc("bookings_expire_unpaid", { p_tenant_id: tenantId })
+    const { data, error } = await supabase.from("bookings").select("status").eq("id", bookingId).eq("tenant_id", tenantId).maybeSingle()
+    if (error) return { ok: false, error: "Something went wrong. Please try again." }
+    const status = data?.status as string | undefined
+    if (status === "confirmed" || status === "completed") return { ok: true, data: { state: "paid" } }
+    if (status === "awaiting_payment") return { ok: true, data: { state: "waiting" } }
+    return { ok: true, data: { state: "expired" } }
+  } catch (error) {
+    console.error("[kiosk] checkKioskBookingPayment failed", { slug, error })
+    return { ok: false, error: "Something went wrong. Please try again." }
+  }
+}
+
+/**
+ * The customer backs out of paying: release the held time now instead of making the next customer wait for the
+ * hold to run out. Only touches a booking that is still awaiting payment. A link paid after this is refunded
+ * automatically by the webhook.
+ */
+export async function cancelKioskBookingPayment(slug: string, bookingId: string): Promise<KioskActionResult<null>> {
+  try {
+    const tenantId = await resolveKioskTenantId(slug)
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return { ok: false, error: "Something went wrong. Please try again." }
+    const { error } = await supabase
+      .from("bookings")
+      .update({ status: "cancelled" })
+      .eq("id", bookingId)
+      .eq("tenant_id", tenantId)
+      .eq("status", "awaiting_payment")
+    if (error) return { ok: false, error: "Something went wrong. Please try again." }
+    await supabase
+      .from("tenant_payments")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .eq("purpose", "booking_payment")
+      .eq("purpose_id", bookingId)
+      .in("status", ["creating", "pending"])
+    return { ok: true, data: null }
+  } catch (error) {
+    console.error("[kiosk] cancelKioskBookingPayment failed", { slug, error })
+    return { ok: false, error: "Something went wrong. Please try again." }
   }
 }
 
