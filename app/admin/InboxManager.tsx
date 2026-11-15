@@ -301,7 +301,7 @@ export function InboxManager({
 
   return (
     <div className="space-y-3">
-      <div className="grid h-[calc(100dvh-11rem)] min-h-[32rem] overflow-hidden rounded-xl border border-line bg-card shadow-sm md:grid-cols-[22rem_minmax(0,1fr)]">
+      <div className="grid h-[calc(100dvh-6.5rem)] min-h-[32rem] w-full overflow-hidden rounded-xl border border-line bg-card shadow-sm md:grid-cols-[22rem_minmax(0,1fr)] xl:grid-cols-[26rem_minmax(0,1fr)]">
         {/* ================= Conversation list ================= */}
         <aside className={`min-h-0 flex-col border-line bg-card md:border-r ${selected ? "hidden md:flex" : "flex"}`}>
           <div className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-line px-4 py-3">
