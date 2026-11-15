@@ -120,11 +120,11 @@ export function OrdersBoard({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Open orders" value={openCount} />
-        <Stat label="New" value={columns[0].list.length} />
-        <Stat label="Scheduled" value={orders.filter((o) => o.status === "scheduled").length} />
-        <Stat label="Awaiting card payment" value={orders.filter((o) => o.status === "pending").length} />
+      <div className="grid grid-cols-2 items-stretch gap-3 lg:grid-cols-4">
+        <Stat label="Open orders" value={openCount} hint="New, preparing or ready" />
+        <Stat label="New" value={columns[0].list.length} hint="Waiting to be made" />
+        <Stat label="Scheduled" value={orders.filter((o) => o.status === "scheduled").length} hint="Booked for later" />
+        <Stat label="Awaiting payment" value={orders.filter((o) => o.status === "pending").length} hint="Card checkout not finished" />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

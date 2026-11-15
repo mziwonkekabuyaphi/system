@@ -89,11 +89,24 @@ export function Pill({ tone = "neutral", children }: { tone?: Tone; children: Re
   return <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", TONES[tone])}>{children}</span>
 }
 
-export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "warn" }) {
+/**
+ * Summary tile. Same look as the Shisha / Appointments / Live Queue tiles: accent edge on the left
+ * (the red stripe in the dark theme), uppercase label, serif number, hint underneath. Every tile in a
+ * row should pass a `hint` so the row stays the same height; h-full + min-h keeps them equal anyway.
+ */
+export function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; hint?: string; tone?: "warn" }) {
   return (
-    <div className={cx(cardCls, "px-4 py-3")}>
-      <p className={cx("text-2xl font-semibold tabular-nums", tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-admin-text")}>{value}</p>
-      <p className="mt-0.5 text-xs text-admin-text/60">{label}</p>
+    <div className="h-full min-h-[6.25rem] min-w-0 rounded-lg border border-line border-l-[3px] border-l-accent bg-card px-4 py-3 shadow-sm">
+      <p className="truncate text-xs uppercase tracking-wide text-ink-muted">{label}</p>
+      <p
+        className={cx(
+          "mt-1 truncate font-[family-name:var(--font-admin-serif)] text-3xl tabular-nums",
+          tone === "warn" ? "text-amber-600 dark:text-amber-400" : "text-ink",
+        )}
+      >
+        {value}
+      </p>
+      {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
     </div>
   )
 }

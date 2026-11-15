@@ -103,11 +103,11 @@ export function ProductsPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Orderable now" value={live.length} />
-        <Stat label="Out of stock" value={outOfStock.length} tone={outOfStock.length ? "warn" : undefined} />
-        <Stat label="Draft or hidden" value={notLive.length} />
-        <Stat label="Average price" value={money(avgPrice, currency)} />
+      <div className="grid grid-cols-2 items-stretch gap-3 lg:grid-cols-4">
+        <Stat label="Orderable now" value={live.length} hint="Active and switched on" />
+        <Stat label="Out of stock" value={outOfStock.length} tone={outOfStock.length ? "warn" : undefined} hint="Tracked items at zero" />
+        <Stat label="Draft or hidden" value={notLive.length} hint="Not shown to customers" />
+        <Stat label="Average price" value={money(avgPrice, currency)} hint="Across active products" />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
