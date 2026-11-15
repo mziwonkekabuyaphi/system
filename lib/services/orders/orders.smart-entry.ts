@@ -34,7 +34,7 @@
 import { generateObject } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
-import * as messages from '@/lib/messages/orders';
+import * as messages from '@/lib/services/messages/orders';
 import type { IncomingMessage } from '@/lib/whatsapp/parse-webhook';
 import type { ActionResult } from '@/lib/types/action';
 import type { CartItem, CustomerPaymentChoice, ProductRow } from './orders.types';
