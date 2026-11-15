@@ -127,6 +127,7 @@ export function QueueRulesDrawer({
       onClose={requestClose}
       title="Queue rules"
       subtitle="How the walk-in line behaves for this location."
+      width="lg"
       footer={
         <>
           {message && (
