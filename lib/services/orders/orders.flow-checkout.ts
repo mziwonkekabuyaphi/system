@@ -135,7 +135,7 @@ export function beginOrderConfirmation(
     tableLabel ? `Table: ${tableLabel}` : undefined,
     scheduledLabel ? messages.scheduleConfirmedLabel(scheduledLabel) : undefined,
     '',
-    'Reply *yes* to confirm or *no* to cancel.',
+    'Tap *Yes* to confirm, or *No* to cancel.',
   ]
     .filter(Boolean)
     .join('\n');
