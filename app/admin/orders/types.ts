@@ -5,7 +5,7 @@
 // that maps between them.
 
 /** Sidebar entry -> the Orders page it opens (same idea as ShishaSection). */
-export type OrdersSection = "board" | "products" | "catalogue" | "settings"
+export type OrdersSection = "board" | "products" | "catalogue"
 
 /** orders.view / orders.operate / orders.manage, resolved in app/admin/page.tsx.
  *  All false when the Orders module is switched off for the shop.

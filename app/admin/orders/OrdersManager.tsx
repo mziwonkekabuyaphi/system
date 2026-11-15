@@ -7,23 +7,30 @@
 // vendors keeps everything loaded with no refetch. The sidebar entry decides
 // which section shows; AdminView passes it in as `section`.
 
-import { useState } from "react"
+import { useState, type Dispatch, type SetStateAction } from "react"
 
 import { CatalogueSetup } from "./CatalogueSetup"
-import { OrderSettingsPanel } from "./OrderSettingsPanel"
 import { OrdersBoard } from "./OrdersBoard"
 import { ProductsPanel } from "./ProductsPanel"
-import type { OrdersData, OrdersPermissions, OrdersSection } from "./types"
+import type { AdminOrderSettings, AdminOrderVendor, OrdersData, OrdersPermissions, OrdersSection } from "./types"
 
 export function OrdersManager({
   section,
   initialData,
+  settings,
+  vendors,
+  onVendorsChange,
   permissions,
   timezone,
   currency,
 }: {
   section: OrdersSection
   initialData: OrdersData
+  /** Order settings and vendors live in AdminView: Settings > Order settings edits the same copies,
+   *  so Products (default vendor) and Categories & vendors never show a stale value. */
+  settings: AdminOrderSettings
+  vendors: AdminOrderVendor[]
+  onVendorsChange: Dispatch<SetStateAction<AdminOrderVendor[]>>
   permissions: OrdersPermissions
   timezone: string
   currency: string
@@ -31,8 +38,6 @@ export function OrdersManager({
   const [orders, setOrders] = useState(initialData.orders)
   const [products, setProducts] = useState(initialData.products)
   const [categories, setCategories] = useState(initialData.categories)
-  const [vendors, setVendors] = useState(initialData.vendors)
-  const [settings, setSettings] = useState(initialData.settings)
 
   const canManage = permissions.manage
   const canOperate = permissions.operate || permissions.manage
@@ -54,11 +59,7 @@ export function OrdersManager({
         />
       )}
       {section === "catalogue" && (
-        <CatalogueSetup categories={categories} onCategoriesChange={setCategories} vendors={vendors} onVendorsChange={setVendors} products={products} canManage={canManage} />
-      )}
-      {section === "settings" && (
-        // key: remount with fresh form state if the settings object is replaced after a save
-        <OrderSettingsPanel key={settings.configured ? "saved" : "new"} settings={settings} onSaved={setSettings} vendors={vendors} canManage={canManage} />
+        <CatalogueSetup categories={categories} onCategoriesChange={setCategories} vendors={vendors} onVendorsChange={onVendorsChange} products={products} canManage={canManage} />
       )}
     </>
   )
