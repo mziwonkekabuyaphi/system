@@ -151,6 +151,23 @@ export function PaymentsPanel() {
 
       {showForm && provider && (
         <div className="space-y-3">
+          {provider.prerequisite && (
+            <div className="space-y-2 rounded-xl bg-amber-500/10 p-3">
+              <p className="text-xs font-semibold text-stone-800">{provider.prerequisite.instructions}</p>
+              {provider.prerequisite.domain && (
+                <>
+                  <code className="block break-all rounded-lg bg-stone-500/10 px-2 py-1.5 font-mono text-xs text-stone-800">{provider.prerequisite.domain}</code>
+                  <button
+                    type="button"
+                    className={BTN_GHOST}
+                    onClick={() => { void navigator.clipboard?.writeText(provider.prerequisite?.domain ?? "") }}
+                  >
+                    Copy domain
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {provider.fields.map((f) => (
             <div key={f.name} className="space-y-1">
               <label className={LABEL} htmlFor={`pay-${provider.id}-${f.name}`}>{f.label}</label>

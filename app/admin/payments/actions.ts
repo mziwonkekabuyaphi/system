@@ -3,7 +3,7 @@
 // app/admin/payments/actions.ts
 //
 // Server Actions for "Settings > Payments": connect / disconnect the shop's OWN card-payment provider
-// (Yoco, Ozow, Paystack: whichever adapters are registered in lib/payments/providers).
+// (Yoco, Ozow, Paystack, Peach: whichever adapters are registered in lib/payments/providers).
 // Same layers as app/admin/events/actions.ts:
 //   1. requireTenantPermission("settings.manage") proves the signed-in user may manage THIS shop's
 //      settings. The tenantId comes from their membership, never from the browser.
@@ -27,6 +27,8 @@ export interface ProviderInfo {
   label: string
   description: string
   disconnectNote: string
+  /** Shown before connecting (e.g. "add this domain to your Peach Allowlisted domains"), with this app's domain. */
+  prerequisite: { instructions: string; domain: string } | null
   fields: Array<{ name: string; label: string; secret: boolean; placeholder?: string; help?: string }>
 }
 
@@ -64,6 +66,15 @@ async function scope() {
 
 /** camelCase field name -> snake_case, for Vault secret names. */
 const snake = (name: string) => name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`).replace(/[^a-z0-9_]/g, "")
+
+/** This app's public domain (what a provider has to allowlist). Empty if the public URL isn't configured yet. */
+function appDomain(): string {
+  try {
+    return new URL(getAppBaseUrl()).host
+  } catch {
+    return ""
+  }
+}
 
 /** The address the owner has to paste into the provider's dashboard, for providers that need it. null for the others. */
 function webhookSetupFor(providerId: string, integrationId: string): { url: string; instructions: string } | null {
@@ -106,6 +117,7 @@ export async function loadPaymentSettings(): Promise<ActionResult<PaymentSetting
         label: p.label,
         description: p.description,
         disconnectNote: p.disconnectNote,
+        prerequisite: p.prerequisite ? { instructions: p.prerequisite.instructions, domain: appDomain() } : null,
         fields: p.fields.map((f) => ({ ...f })),
       })),
       active: active
