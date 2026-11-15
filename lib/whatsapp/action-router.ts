@@ -21,6 +21,10 @@
  * An explicit "menu" / "start over" (or a bare "cancel" while a booking is
  * half-done) also shows the menu, with a shorter lead-in instead of the greeting.
  *
+ * ORDERS (new): a shop with the "orders" module on gets an "Order Now" menu row, the typed "order" intent,
+ * and the order_* conversation states (lib/services/orders/orders.ts, reached through the adapter near the
+ * top of this file, because that service wants a loaded tenant context rather than a bare tenantId).
+ *
  * RESCHEDULE (new): a typed "reschedule" / "move my booking" request opens the
  * move-my-booking flow (lib/services/reschedule.ts) before anything else, and
  * the reschedule_* states are owned by that service.
@@ -71,6 +75,7 @@ import { profileService } from "@/lib/services/profile"
 import { shishaService } from "@/lib/services/shisha"
 import { passportService } from "@/lib/services/passport"
 import { eventTicketsService } from "@/lib/services/event-tickets"
+import { ordersService, loadTenantContext } from "@/lib/services/orders/orders"
 import { getStaffForPhone, staffBotService, STAFF_ID_PREFIX, STAFF_MAIN_MENU_TAP } from "@/lib/services/staff-bot"
 import { conciergeService } from "@/lib/ai/concierge"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
@@ -116,7 +121,31 @@ type Handler = IntentService["handle"]
 // with the module on (guard at the top of routeAction + a check inside the service).
 // passportService owns the "passport_*" states (top-up amount); eventTicketsService owns "events_*" (buying tickets).
 // Both are module-gated like shisha.
-const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService, shishaService, passportService, eventTicketsService]
+// ordersService owns the "order_*" states (see the adapter below; also module-gated).
+
+/**
+ * The orders service takes a loaded TenantContext (shop settings, categories, vendors) instead of a bare
+ * tenantId, so this adapter loads it (briefly cached inside loadTenantContext) and hands it over. A null
+ * context (module off / ordering not set up yet) makes the service answer "ordering is not available".
+ */
+async function ordersContext(tenantId: string) {
+  const supabase = getSupabaseServerClient()
+  if (!supabase) return null
+  return loadTenantContext(supabase, tenantId)
+}
+
+const ordersHandler: Handler = async (tenantId, intent, message) =>
+  ordersService.handleOrder(intent, message, await ordersContext(tenantId))
+
+const ordersStateService: StatefulService = {
+  async handleState(tenantId, state, message) {
+    // Only load the shop context for states this service owns.
+    if (!state.state.startsWith("order_")) return null
+    return ordersService.handleState(state, message, await ordersContext(tenantId))
+  },
+}
+
+const stateHandlers: StatefulService[] = [bookingService, queueService, cancelService, rescheduleService, shishaService, passportService, eventTicketsService, ordersStateService]
 
 const intentHandlers: Record<string, Handler> = {
   booking: bookingService.handleBooking.bind(bookingService),
@@ -132,6 +161,9 @@ const intentHandlers: Record<string, Handler> = {
   // Module-gated ("events"): never reached for a tenant without it (see routeAction step -1a2).
   // Stateless and read-only for now: the events on sale, or the customer's own tickets.
   events: eventTicketsService.handle,
+  // Module-gated ("orders"): never reached for a tenant without it (see routeAction step -1a3).
+  // Stateful: the order_* states are owned by ordersStateService above.
+  order: ordersHandler,
 }
 
 /**
@@ -153,16 +185,19 @@ const MENU_ROW_HANDLERS: Record<string, Handler> = {
   [MENU_ROW_IDS.shisha]: (tenantId, _intent, message) => shishaService.startShishaFlow(tenantId, message.from),
   [MENU_ROW_IDS.wallet]: passportReply,
   [MENU_ROW_IDS.events]: eventTicketsService.handle,
+  // A tap lands in handleOrder as a fresh request and opens the menu (orders.ts treats any tap as "show menu").
+  [MENU_ROW_IDS.orders]: ordersHandler,
 }
 
 // `unhandled: true` marks a genuine "we don't know what to do" reply —
 // handover.ts's shouldEscalate() uses this flag, not raw intent confidence.
 // A function, not a constant: the menu it carries depends on which modules the tenant has on.
 async function unknownStateReply(tenantId: string, phone?: string): Promise<ActionResult> {
-  const [shisha, wallet, events, products, staffIdentity] = await Promise.all([
+  const [shisha, wallet, events, orders, products, staffIdentity] = await Promise.all([
     isModuleEnabled(tenantId, "shisha"),
     isModuleEnabled(tenantId, "wallet"),
     isModuleEnabled(tenantId, "events"),
+    isModuleEnabled(tenantId, "orders"),
     getWhatsAppProducts(tenantId),
     phone ? getStaffForPhone(tenantId, phone) : Promise.resolve(null),
   ])
@@ -173,7 +208,7 @@ async function unknownStateReply(tenantId: string, phone?: string): Promise<Acti
     nextState: null,
     unhandled: true,
     followUp: [
-      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha, staff, wallet, events }), hiddenMenuRows(products)),
+      withoutRows(buildServicesListMessage("Tap below to choose what you'd like to do 👇", { shisha, staff, wallet, events, orders }), hiddenMenuRows(products)),
     ],
   }
 }
@@ -217,6 +252,7 @@ function resolveOwningIntent(stateName: string): Intent | null {
   if (stateName.startsWith("shisha_")) return "shisha"
   if (stateName.startsWith("passport_")) return "wallet"
   if (stateName.startsWith("events_")) return "events"
+  if (stateName.startsWith("order_")) return "order"
   return null
 }
 
@@ -320,10 +356,11 @@ const NOTHING_ON_REPLY = "Sorry, this shop doesn't take bookings or queue entrie
  * (the web link line is simply left out).
  */
 async function buildEntryReply(tenantId: string, message: IncomingMessage, greet: boolean): Promise<ActionResult> {
-  const [shishaOn, walletOn, eventsOn, products, staffIdentity] = await Promise.all([
+  const [shishaOn, walletOn, eventsOn, ordersOn, products, staffIdentity] = await Promise.all([
     isModuleEnabled(tenantId, "shisha"),
     isModuleEnabled(tenantId, "wallet"),
     isModuleEnabled(tenantId, "events"),
+    isModuleEnabled(tenantId, "orders"),
     getWhatsAppProducts(tenantId),
     getStaffForPhone(tenantId, message.from),
   ])
@@ -331,6 +368,7 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
     shisha: shishaOn,
     wallet: walletOn,
     events: eventsOn,
+    orders: ordersOn,
     staff: staffIdentity !== null,
   })
   // Only offer what this shop actually runs (a Booking-only shop never sees Join Queue, and so on).
@@ -338,7 +376,7 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
 
   // Neither Booking nor Queue (e.g. a shisha-only venue): nothing to book or queue for here.
   // A shop with only the Passport on still has something to offer (balance), so it is not a dead end.
-  if (!products.booking && !products.queue && !shishaOn && !walletOn && !eventsOn) {
+  if (!products.booking && !products.queue && !shishaOn && !walletOn && !eventsOn && !ordersOn) {
     // A verified staff member of a staff-only shop gets the staff menu instead of a dead end.
     if (staffIdentity) return staffBotService.entry(tenantId, staffIdentity)
     return { reply: NOTHING_ON_REPLY, buttons: [], nextState: null }
@@ -400,6 +438,7 @@ async function buildEntryReply(tenantId: string, message: IncomingMessage, greet
   if (shishaOn) can.push("start a shisha session")
   if (walletOn) can.push("check your Passport balance")
   if (eventsOn) can.push("see upcoming events and your tickets")
+  if (ordersOn) can.push("order from our menu")
   const orList = (items: string[]) =>
     items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`
   const helpLine = can.length > 0 ? `I can help you ${orList(can)}.` : ""
@@ -538,6 +577,24 @@ export async function routeAction(
       return { ...fresh, reply: "Sorry, that service isn't available right now. What would you like to do instead?" }
     }
     intent = { ...intent, intent: "support" }
+  }
+
+  // ── -1a3. MODULE GATE (orders) ─────────────────────────────────────
+  // Same shape as the gates above, plus mid-flow: orders has conversation states (order_*), so a shop
+  // that switches the module off while a customer is mid-order must not leave them stuck in it.
+  // The switch is only read when an orders tap, an order_* state or an "order" intent shows up.
+  {
+    const ordersTap = message.interactiveId === MENU_ROW_IDS.orders
+    const ordersMidFlow = Boolean(state?.state.startsWith("order_"))
+    if ((ordersTap || ordersMidFlow || intent?.intent === "order") && !(await isModuleEnabled(tenantId, "orders"))) {
+      if (ordersTap || ordersMidFlow) {
+        await stateService.clearState(tenantId, message.from)
+        const fresh = await buildEntryReply(tenantId, message, false)
+        return { ...fresh, reply: "Sorry, that service isn't available right now. What would you like to do instead?" }
+      }
+      // A typed request is handled like any other question (concierge / greeting + menu).
+      intent = { ...intent, intent: "support" }
+    }
   }
 
   // ── -1b. MODULE GATE (booking / queue) ─────────────────────────────

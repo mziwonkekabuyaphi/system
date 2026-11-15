@@ -281,7 +281,7 @@ async function loadOrderContext(supabase: SupabaseClient, tenantId: string, orde
     supabase.from("event_ticket_types").select("name, price").eq("tenant_id", tenantId).eq("id", order.ticket_type_id).maybeSingle(),
     // Best-effort: the name is a nice-to-have, so a missing column or row just hides that line.
     order.customer_id
-      ? supabase.from("tenant_customers").select("name").eq("tenant_id", tenantId).eq("id", order.customer_id).maybeSingle()
+      ? supabase.from("tenant_customers").select("full_name").eq("tenant_id", tenantId).eq("id", order.customer_id).maybeSingle()
       : Promise.resolve({ data: null }),
   ])
   const event = eventRes.data as { name: string; start_time: string; end_time: string | null; location: string | null } | null
@@ -296,7 +296,7 @@ async function loadOrderContext(supabase: SupabaseClient, tenantId: string, orde
     tierName: type?.name?.trim() || "Ticket",
     price: Number(type?.price) || 0,
     quantity: Number(order.quantity) || fallbackCount,
-    customerName: ((customerRes.data as { name?: string | null } | null)?.name ?? "").trim() || null,
+    customerName: ((customerRes.data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null,
   }
 }
 

@@ -1,7 +1,8 @@
 import { generateObject } from "ai"
+import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 
-import { withTenantAi } from "@/lib/ai/gateway"
+import { getAiModelName } from "@/lib/ai/openai"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
 
 /**
@@ -94,6 +95,10 @@ const INTENTS = [
   "events",  // Events & tickets: what is on, and the customer's own tickets. MODULE-GATED per
              // tenant exactly like "shisha" / "wallet": action-router.ts downgrades it to "support"
              // for any tenant that has the events module off.
+  "order",   // Ordering products (food, drinks...) from the shop's menu, and tracking / repeating /
+             // cancelling such an order. MODULE-GATED per tenant exactly like "shisha" / "wallet" /
+             // "events": action-router.ts downgrades it to "support" for any tenant that has the
+             // orders module off.
   "support", // Needs a human: complaints, reschedule, running late, shop questions
   "unknown", // Greetings, chit-chat, or not enough information
 ] as const
@@ -360,6 +365,32 @@ const EVENT_PHRASES = new Set([
   "event tickets",
 ])
 
+// Exact phrases for ordering from the shop's menu (and managing such an order). Exact on purpose.
+// These are checked BEFORE the cancel / status fast paths, so "cancel my order" and "track my order"
+// reach the orders service instead of the booking cancel / status flows. The reply buttons
+// "Track My Order" / "Order Now" arrive here as plain text too.
+const ORDER_PHRASES = new Set([
+  "order",
+  "order now",
+  "place an order",
+  "make an order",
+  "order food",
+  "order drinks",
+  "order a drink",
+  "my order",
+  "my orders",
+  "order history",
+  "track my order",
+  "track order",
+  "where is my order",
+  "repeat my order",
+  "repeat my last order",
+  "reorder",
+  "order again",
+  "cancel my order",
+  "cancel order",
+])
+
 /**
  * Lowercases and strips punctuation/emoji so "Cancel!", "❌ Cancel Now" and
  * "[button reply] Check Status" all compare as plain words. A leading
@@ -445,6 +476,11 @@ function checkCancelOrStatusFastPath(normalized: string): RoutedIntent | null {
 
 function checkIntentFastPath(text: string): RoutedIntent | null {
   const normalized = normalizeForFastPath(text)
+
+  // Orders first, so "cancel my order" / "track my order" never fall into the booking flows below.
+  if (ORDER_PHRASES.has(normalized)) {
+    return { intent: "order", confidence: 0.95, reasoning: "Fast-path: order request" }
+  }
 
   // Cancel / status first: "cancel my appointment" contains a booking word,
   // and must NOT be read as a request for a new booking.
@@ -571,6 +607,24 @@ in. Examples of how the same intents sound locally:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AVAILABLE INTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+order
+Customer wants to order food, drinks or other products from the shop's menu for
+collection, or to track, repeat or cancel such an order. Only for products from a
+menu: appointments and the walk-in queue are "booking", and a question about
+whether the shop sells something or about prices is "support".
+
+Examples:
+
+I want to order
+
+2 castle lagers please
+
+buy a burger and chips
+
+where is my order
+
+repeat my last order
 
 events
 Customer wants to know what events are on, or to see their own event tickets.
@@ -1143,8 +1197,6 @@ export async function routeIntent(
   options?: {
     /** false = never call the model (shop has AI off, over the hourly cap, etc.). Default true. */
     allowAi?: boolean
-    /** Whose AI account the classification is billed to. Without it the model is never called. */
-    tenantId?: string
   },
 ): Promise<RoutedIntent> {
   const text = buildClassificationText(message)
@@ -1209,8 +1261,7 @@ export async function routeIntent(
   }
 
   // ── AI OFF / SKIPPED ────────────────────────────────────────────────
-  const aiTenantId = options?.tenantId
-  if (options?.allowAi === false || !aiTenantId) {
+  if (options?.allowAi === false) {
     return applyLowConfidenceFloor(buildAiFailureResult(context, "AI disabled or skipped"))
   }
 
@@ -1226,19 +1277,15 @@ export async function routeIntent(
   try {
     console.log("[IntentRouter] AI fallback used for:", text)
 
-    // Through the tenant AI gateway: uses the shop's own key (or QLess's, for managed shops),
-    // enforces their monthly limit and records tokens + cost. Throws if AI isn't available for
-    // them, which lands in the catch below like any other classification failure.
-    const object = await withTenantAi({ tenantId: aiTenantId, purpose: "intent_classification" }, async (model, ctx) => {
-      const result = await generateObject({
-        model,
-        schema: intentSchema,
-        system: SYSTEM_PROMPT,
-        prompt: text,
-        ...ctx.tune({ temperature: 0, maxOutputTokens: 40 }),
-        abortSignal: controller.signal,
-      })
-      return { value: result.object, usage: result.usage }
+    const { object } = await generateObject({
+      // Optional cheaper model just for classification (six labels).
+      model: openai(process.env.OPENAI_CLASSIFIER_MODEL?.trim() || getAiModelName()),
+      schema: intentSchema,
+      system: SYSTEM_PROMPT,
+      prompt: text,
+      temperature: 0,
+      maxOutputTokens: 40, // AI SDK v4: use `maxTokens`
+      abortSignal: controller.signal,
     })
 
     const reconciled = reconcileAiResult(object, context, isContinuation)

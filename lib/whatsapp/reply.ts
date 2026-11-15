@@ -130,11 +130,13 @@ export async function processIncomingMessage(
     // Skip the model entirely when the result would be ignored, when the shop
     // has AI off, while the customer is typing their name, or over the hourly cap.
     const skip = intentIsIrrelevant(message, state)
-    // Free-text steps where the customer types a name or an amount: no classifier call is worth paying for.
+    // Free-text steps where the customer types a name, an amount, a product or a time: no classifier call is
+    // worth paying for (and in an order_* step the answer to "which product?" must never be read as a shop question).
     const inNameStep =
       (state?.state === "booking_awaiting_name" ||
         state?.state === "passport_topup_amount" ||
-        state?.state.startsWith("events_")) &&
+        state?.state.startsWith("events_") ||
+        state?.state.startsWith("order_")) &&
       !(message.text ?? "").includes("?")
     const allowAi =
       !skip &&
@@ -144,7 +146,7 @@ export async function processIncomingMessage(
 
     const intent = skip
       ? SKIPPED
-      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi, tenantId })
+      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi })
 
     // STEP 4: Route the message to the appropriate handler.
     const result = await routeAction(tenantId, intent, state, message)
