@@ -24,7 +24,7 @@ import {
   updateEventTicketSettings,
   type EventSettingsConfig,
 } from "../events/event-settings-actions"
-import { ColorField, FieldRow, SaveRow, SettingsCard, Toggle, inputClass, secondaryButtonClass } from "./ui"
+import { CardSaveRow, ColorField, FieldRow, SettingsCard, Toggle, inputClass } from "./ui"
 
 type Message = { ok: boolean; text: string } | null
 
@@ -90,6 +90,13 @@ function SalesRulesCard({ initial }: { initial: EventSalesRules }) {
   }
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
 
+  function discard() {
+    setMaxPerPurchase(String(saved.maxPerPurchase))
+    setMaxPerCustomer(saved.maxPerCustomer == null ? "" : String(saved.maxPerCustomer))
+    setStopMinutes(String(saved.stopSalesMinutesBefore))
+    setMessage(null)
+  }
+
   function save() {
     setMessage(null)
     startTransition(async () => {
@@ -107,6 +114,7 @@ function SalesRulesCard({ initial }: { initial: EventSalesRules }) {
     <SettingsCard
       title="Sales rules"
       description="Checked on every WhatsApp purchase, so they can't be bypassed from the chat. Box office sales aren't limited."
+      footer={<CardSaveRow dirty={dirty} isPending={isPending} onSave={save} onDiscard={discard} message={message} />}
     >
       <div className="space-y-4">
         <FieldRow label="Tickets per purchase (1-10)" hint="The most a customer can buy in one go.">
@@ -132,17 +140,6 @@ function SalesRulesCard({ initial }: { initial: EventSalesRules }) {
         >
           <input type="number" min={0} max={10080} className={inputClass} value={stopMinutes} onChange={(e) => setStopMinutes(e.target.value)} />
         </FieldRow>
-
-        <div className="flex items-center gap-3 border-t border-line pt-4">
-          <button type="button" onClick={save} disabled={isPending || !dirty} className="rounded-md bg-stone-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
-            {isPending ? "Saving…" : "Save changes"}
-          </button>
-          {message ? (
-            <span className={`text-sm ${message.ok ? "text-success" : "text-red-700"}`}>{message.text}</span>
-          ) : (
-            <span className="text-xs text-ink-muted">{dirty ? "You have unsaved changes." : "All changes saved."}</span>
-          )}
-        </div>
       </div>
     </SettingsCard>
   )
@@ -202,6 +199,18 @@ function TicketCard({ config }: { config: EventSettingsConfig }) {
     <SettingsCard
       title="Event ticket"
       description="After a customer buys on WhatsApp they get a branded ticket image with a QR code, on top of the text confirmation."
+      footer={
+        <CardSaveRow
+          dirty={dirty}
+          isPending={isPending}
+          onSave={save}
+          onDiscard={() => {
+            setForm(baseline)
+            setMessage(null)
+          }}
+          message={message}
+        />
+      }
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
@@ -307,11 +316,6 @@ function TicketCard({ config }: { config: EventSettingsConfig }) {
             <p className="text-xs text-stone-400">Sample event. Shows your saved logo and name.</p>
           </div>
         </div>
-
-        <button type="button" className={secondaryButtonClass} onClick={() => setForm(baseline)} disabled={isPending || !dirty}>
-          Discard changes
-        </button>
-        <SaveRow isPending={isPending} onSave={save} message={message} />
       </div>
     </SettingsCard>
   )
