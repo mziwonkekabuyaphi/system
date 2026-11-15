@@ -67,6 +67,9 @@ export type PermissionKey =
   | "vvip.view"
   | "vvip.operate"
   | "vvip.manage"
+  | "orders.view"
+  | "orders.operate"
+  | "orders.manage"
 
 
 export type PermissionCheckResult =
