@@ -48,6 +48,8 @@ export interface EventsManagerProps {
   /** Passport (the customer wallet) is on AND the caller can charge it (wallet.operate or
    *  wallet.manage), so Box office offers Passport as a way to pay. */
   canChargePassport: boolean
+  /** Jumps to Settings > Event settings. Omitted when the caller can't open Settings, which hides the gear. */
+  onOpenSettings?: () => void
 }
 
 type Flash = { tone: "good" | "bad"; text: string } | null
@@ -70,7 +72,7 @@ function totals(event: EventSummary) {
   return { capacity, sold, soldOut: capacity > 0 && sold >= capacity }
 }
 
-export function EventsManager({ section, onSectionChange, permissions, timezone, currency = "ZAR", canChargePassport }: EventsManagerProps) {
+export function EventsManager({ section, onSectionChange, permissions, timezone, currency = "ZAR", canChargePassport, onOpenSettings }: EventsManagerProps) {
   const tz = safeTimezone(timezone)
   const [events, setEvents] = useState<EventSummary[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -187,6 +189,17 @@ export function EventsManager({ section, onSectionChange, permissions, timezone,
               >
                 <Icon name="chart-pie" />
               </button>
+              {permissions.eventsManage && onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  title="Event settings"
+                  aria-label="Event settings"
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-500/10 ${FOCUS}`}
+                >
+                  <Icon name="gear" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void refresh()}
