@@ -58,6 +58,13 @@ export const CANCEL_NOW_BUTTON = ["❌ Cancel Now"]
  */
 export const CONFIRM_BUTTONS = ["✅ Yes", "❌ No"]
 
+/**
+ * The booking confirm screen only (reschedule has its own set). "Other time" sends the customer back to
+ * the free-times list for the same service instead of cancelling the whole booking. handleConfirm() reads
+ * the words "other time"; never put "cancel" in a button title (action-router.ts resets the chat on it).
+ */
+export const BOOKING_CONFIRM_BUTTONS = ["✅ Yes", "🕒 Other time", "❌ No"]
+
 export const ENTRY_CHOICE_BOOK_BUTTON = "📅 Book a time"
 export const ENTRY_CHOICE_QUEUE_BUTTON = "🚶 Join the queue"
 export const ENTRY_CHOICE_BUTTONS = [ENTRY_CHOICE_BOOK_BUTTON, ENTRY_CHOICE_QUEUE_BUTTON]
@@ -164,12 +171,29 @@ export function confirmationMessage(service: CatalogService, dateLabel: string, 
     `*Price:* R${service.price}\n` +
     `*When:* ${dateLabel}, ${end ? `${slot.label} to ${end}` : `at ${slot.label}`}\n` +
     `*Duration:* ${service.durationMinutes} min\n\n` +
-    `Reply *yes* to confirm, or *no* to cancel.`
+    `Tap *Yes* to confirm, or *Other time* to pick a different one.`
   )
 }
 
 export function invalidSelectionMessage(max: number): string {
   return `Please reply with a number between 1 and ${max}.`
+}
+
+/** A list tap was expected (the list is still in the chat above). */
+export function pickFromListMessage(): string {
+  return "Please pick one from the list above (tap the button under it), or reply *menu* to start over."
+}
+
+/** Nothing is free on any of the days we offer. */
+export function noTimesAvailableMessage(): string {
+  return "Sorry, there's nothing free in the days we're taking bookings for right now. Please try again later, or contact the shop directly."
+}
+
+/** A day the customer chose (or typed, e.g. "tomorrow 3pm") has nothing free. Shown above the list that follows. */
+export function noSlotsOnDayMessage(dateLabel: string, staffName?: string): string {
+  return staffName
+    ? `${staffName} has nothing free on ${dateLabel}, sorry. Here's what is:`
+    : `Nothing is free on ${dateLabel}, sorry. Here's what is:`
 }
 
 export function startOverMessage(): string {
@@ -221,7 +245,7 @@ export function missingBookingDataMessage(): string {
 }
 
 export function confirmYesNoReminderMessage(): string {
-  return "Reply *yes* to confirm, or *no* to cancel."
+  return "Please tap *Yes* to confirm, *Other time* to change it, or *No* to cancel."
 }
 
 export function bookingErrorMessage(): string {

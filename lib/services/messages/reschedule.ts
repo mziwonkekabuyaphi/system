@@ -19,6 +19,13 @@ export const RESCHEDULE_BUTTON = ["🔁 Reschedule"]
 
 export const CANCEL_OR_RESCHEDULE_BUTTONS = [...CANCEL_NOW_BUTTON, ...RESCHEDULE_BUTTON]
 
+/**
+ * The "Move your booking?" confirm screen. "Other time" goes back to the free-times list instead of
+ * ending the flow. handleConfirm() in reschedule.ts reads the words "other time"; keep "cancel" out of
+ * every button title (action-router.ts resets the chat on it).
+ */
+export const RESCHEDULE_CONFIRM_BUTTONS = ["✅ Yes", "🕒 Other time", "❌ No"]
+
 export interface RescheduleOption {
   id: string
   /** Ready-to-show line, e.g. "📅 Fade + Beard — Tue 14 Oct, 10:30 (Ref ABC123)". */
@@ -37,6 +44,16 @@ export function formatLeadTime(minutes: number): string {
 
 export function rescheduleNothingMessage(): string {
   return "I couldn't find an upcoming booking to move. You can book a new appointment from the menu below 👇"
+}
+
+/** Body of the "which booking?" list (the bookings themselves are the list rows). */
+export function rescheduleChooseBody(): string {
+  return "Which booking would you like to move? 📅"
+}
+
+/** Nothing free on any day we offer: the booking is left exactly as it is. */
+export function rescheduleNoTimesMessage(): string {
+  return "Sorry, there's nothing free in the days we're taking bookings for right now, so I can't move your booking. It stays exactly as it is — please try again later."
 }
 
 export function rescheduleChooseMessage(options: RescheduleOption[]): string {
@@ -63,7 +80,7 @@ export function rescheduleConfirmMessage(args: {
     `Move your *${args.serviceName}*?\n\n` +
     `From: ${args.currentLabel}\n` +
     `To: *${args.newDateLabel} at ${args.slotLabel}*\n\n` +
-    `Reply *Yes* to confirm or *No* to keep your current time.`
+    `Tap *Yes* to move it, *Other time* to pick another, or *No* to keep your current time.`
   )
 }
 
@@ -88,7 +105,7 @@ export function rescheduleUnchangedMessage(): string {
 }
 
 export function rescheduleConfirmReminderMessage(): string {
-  return "Please reply *Yes* to move your booking, or *No* to keep your current time."
+  return "Please tap *Yes* to move your booking, *Other time* to pick another, or *No* to keep your current time."
 }
 
 export function rescheduleTooLateMessage(windowMinutes: number): string {
