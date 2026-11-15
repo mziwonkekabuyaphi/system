@@ -35,7 +35,7 @@ import { EventSettingsPanel } from "./settings/EventSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "ai"
+export type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "ai"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -328,6 +328,7 @@ export function SettingsManager({
   onOrdersSettingsSaved,
   ordersError = null,
   eventsManage = true,
+  initialSubTab,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -391,8 +392,11 @@ export function SettingsManager({
   /** Caller has events.manage (needed to read and save Event settings). Defaults to true so an un-updated
    *  parent keeps working; the server actions re-check the permission on every call either way. */
   eventsManage?: boolean
+  /** Open on this page instead of Shop details (e.g. the Events page's gear opens "events"). Falls back to the
+   *  first page when it isn't listed for this shop. */
+  initialSubTab?: SubTab
 }) {
-  const [subTab, setSubTab] = useState<SubTab>("general")
+  const [subTab, setSubTab] = useState<SubTab>(initialSubTab ?? "general")
   // Kept here (not only inside the panels) so the summary tiles on Shop details follow a save.
   const [shopInfo, setShopInfo] = useState(initialSettings)
   const [shopHours, setShopHours] = useState(initialBusinessHours)

@@ -16,7 +16,7 @@ import { VvipManager } from "./vvip/VvipManager"
 import { OrdersManager } from "./orders/OrdersManager"
 import type { AdminOrderSettings, AdminOrderVendor, OrdersData, OrdersPermissions, OrdersSection } from "./orders/types"
 import type { VvipPermissions, VvipSection } from "./vvip/types"
-import { SettingsManager } from "./SettingsManager"
+import { SettingsManager, type SubTab as SettingsSubTab } from "./SettingsManager"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 import { sidebarStyleVars } from "./sidebar-theme"
 import { StaffManager } from "./staff/StaffManager"
@@ -584,6 +584,12 @@ export function AdminView({
   // Settings > Kiosk > Services). Held here so each always opens with what the
   // other last saved. Null unless the caller has settings.manage.
   const [queueSettings, setQueueSettings] = useState(initialQueueSettings)
+  // Which Settings page to open on, set by a shortcut from another area (the Events page's gear).
+  // Cleared as soon as Settings is left, so opening Settings from the sidebar starts at Shop details.
+  const [settingsStart, setSettingsStart] = useState<SettingsSubTab | null>(null)
+  useEffect(() => {
+    if (tab !== "settings") setSettingsStart(null)
+  }, [tab])
 
   // Booking rules live on the Appointments tab now (Booking rules overlay).
   // Null unless the caller has settings.manage.
@@ -901,6 +907,14 @@ export function AdminView({
               section={eventsSection}
               onSectionChange={(next) => setTab(SECTION_EVENTS_TAB[next])}
               permissions={eventsPermissions}
+              onOpenSettings={
+                staffPermissions.settingsManage
+                  ? () => {
+                      setSettingsStart("events")
+                      setTab("settings")
+                    }
+                  : undefined
+              }
               timezone={timezone}
               currency={initialTenantSettings?.currency ?? "ZAR"}
               // Passport pays for tickets only when it is on (page.tsx zeroes walletView when off)
@@ -1001,6 +1015,8 @@ export function AdminView({
               ordersVendors={ordersVendors}
               onOrdersSettingsSaved={setOrdersSettings}
               ordersError={initialOrdersError}
+              eventsManage={eventsEnabled && eventsPermissions.eventsManage}
+              initialSubTab={settingsStart ?? undefined}
             />
           )}
         </main>
