@@ -34,7 +34,7 @@ const SWITCHABLE: Spec[] = [
   { key: "shisha", label: "Shisha", icon: "💨", blurb: "Sessions, coal refills and tracking", defaultOn: false, planGated: false, group: "product" },
   { key: "staff", label: "Staff Management", icon: "👷", blurb: "Staff profiles and team management", hint: "R30 per staff, only when sold alone", defaultOn: false, planGated: false, group: "product" },
   { key: "orders", label: "Order management", icon: "🛒", blurb: "Catalogue, vendors and WhatsApp ordering with a live order board", defaultOn: false, planGated: false, group: "product" },
-  { key: "wallet", label: "Passport (customer wallet)", icon: "🪪", blurb: "A balance customers top up and spend", defaultOn: false, planGated: false, group: "product" },
+  { key: "wallet", label: "Customer Wallets", icon: "🪪", blurb: "A balance customers top up and spend", defaultOn: false, planGated: false, group: "product" },
   { key: "events", label: "Events & ticketing", icon: "🎟️", blurb: "Events, ticket sales and QR gate check-in", defaultOn: false, planGated: false, group: "product" },
   { key: "shifts", label: "Shifts", icon: "🗓️", blurb: "Rosters, swaps and approvals", defaultOn: false, planGated: false, group: "addon" },
   { key: "payroll", label: "Payroll", icon: "💵", blurb: "Staff pay runs", defaultOn: false, planGated: false, group: "addon" },
