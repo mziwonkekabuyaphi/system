@@ -23,6 +23,7 @@ import { ClockPanel } from "./settings/ClockPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
+import { DomainPanel } from "./settings/DomainPanel"
 import { PaymentsPanel } from "./payments/PaymentsPanel"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
@@ -33,7 +34,7 @@ import { AiSettingsPanel } from "./settings/AiSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "whatsapp" | "ai"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "custom-domain" | "staff" | "payments" | "shisha" | "passport" | "orders" | "whatsapp" | "ai"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -68,6 +69,13 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <circle cx="7.5" cy="11" r="1" />
       <circle cx="10" cy="7.5" r="1" />
       <circle cx="14.5" cy="7.5" r="1" />
+    </RailIcon>
+  ),
+  "custom-domain": (p) => (
+    <RailIcon {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 010 18M12 3a14 14 0 000 18" />
     </RailIcon>
   ),
   staff: (p) => (
@@ -178,6 +186,14 @@ const SETTINGS_NAV: Array<{
         title: "Branding (Private Label)",
         description:
           "Your name, logo and colours. Shown on the kiosk, the public display, the staff clock-in and customer messages.",
+      },
+      {
+        // Own switch (Platform > Modules > Custom domain). Hidden until the platform admin turns it on.
+        id: "custom-domain",
+        label: "Custom domain",
+        title: "Custom domain",
+        description: "Show your booking page, kiosk and display on your own web address, like book.yourshop.com.",
+        anyOf: ["custom_domain"],
       },
       {
         // Every module has staff, so this page is shared by every shop (no `module` / `anyOf`).
@@ -549,6 +565,7 @@ export function SettingsManager({
           canCustomizeBranding={canCustomizeBranding ?? initialPlan === "business"}
         />
       )}
+      {activePage.id === "custom-domain" && <DomainPanel />}
       {activePage.id === "payments" && <PaymentsPanel />}
       {activePage.id === "whatsapp" && initialMessageSettings && (
         <WhatsAppSettingsPanels messageSettings={initialMessageSettings} modules={flags.on} />
