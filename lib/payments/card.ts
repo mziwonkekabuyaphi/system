@@ -61,7 +61,7 @@ export async function startCardPayment(args: {
   supabase: SupabaseClient
   tenantId: string
   option: CardOption
-  purpose: "wallet_topup" | "event_order" | "order_payment"
+  purpose: "wallet_topup" | "event_order" | "order_payment" | "booking_payment"
   /** The thing being paid for (the top-up id, or the orders payment attempt id). Omit for event orders: the payment is its own purpose id. */
   purposeId?: string
   amount: number
@@ -70,9 +70,9 @@ export async function startCardPayment(args: {
   recordMetadata?: Record<string, unknown>
   /** Sent to the provider as metadata (strings only). */
   providerMetadata?: Record<string, string>
-  /** "topup", "event" or "order". The provider idempotency key is `<prefix>-<purposeId or paymentId>`, so a retry of the
+  /** "topup", "event", "order" or "booking". The provider idempotency key is `<prefix>-<purposeId or paymentId>`, so a retry of the
    *  same top-up (or the same payment attempt) can never create a second checkout. */
-  idempotencyPrefix: "topup" | "event" | "order"
+  idempotencyPrefix: "topup" | "event" | "order" | "booking"
 }): Promise<StartCardPaymentResult> {
   const { supabase, tenantId, option } = args
   const paymentId = randomUUID()

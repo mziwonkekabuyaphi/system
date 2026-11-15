@@ -24,6 +24,8 @@ import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 import * as shishaMessages from "@/lib/services/messages/shisha"
 import { confirmOrderPaymentByAttempt } from "@/lib/services/orders/orders.flow-checkout"
+import { bookingPaidConfirmedMessage, bookingPaymentRefundedMessage } from "@/lib/services/messages/booking"
+import { formatMoneyFor } from "@/lib/services/orders/orders.tenant"
 
 import type { StoredConnection } from "./credentials"
 import type { CardProvider, NormalisedWebhook } from "./providers"
@@ -126,6 +128,10 @@ export async function settleSucceeded(args: {
 
   if (payment.purpose === "order_payment") {
     return await settleOrderPayment(db, provider, connection, payment, event.providerPaymentId)
+  }
+
+  if (payment.purpose === "booking_payment") {
+    return await settleBookingPayment(db, provider, connection, payment, event.providerPaymentId)
   }
 
   return "ignored_unknown_purpose"
@@ -258,7 +264,7 @@ async function refundAfterFailedFulfilment(
   connection: StoredConnection,
   payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown; purpose_id?: unknown },
   reason: string,
-  kind: "tickets" | "shisha" | "order" = "tickets",
+  kind: "tickets" | "shisha" | "order" | "booking" = "tickets",
 ): Promise<string> {
   const paymentId = payment.id as string
   const checkoutId = payment.provider_checkout_id as string
@@ -294,6 +300,8 @@ async function refundAfterFailedFulfilment(
         ? `A shisha payment came in but the request could no longer be served, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
         : kind === "order"
         ? `An order payment came in but the order had already been cancelled, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
+        : kind === "booking"
+        ? `A booking payment came in after the held time had run out, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
         : `A ticket payment came in but the tickets could not be issued, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`,
     )
   }
@@ -301,6 +309,10 @@ async function refundAfterFailedFulfilment(
   if (kind === "shisha") {
     await notifyShishaRefund(db, provider, connection.tenantId, payment.purpose_id as string | undefined, refunded)
     return refunded ? "refunded_shisha_request_closed" : "refund_needed_shisha_request_closed"
+  }
+  if (kind === "booking") {
+    await notifyBookingRefund(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
+    return refunded ? "refunded_booking_not_held" : "refund_needed_booking_not_held"
   }
   if (kind === "order") {
     await notifyOrderPaymentRefund(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
@@ -406,5 +418,160 @@ async function notifyOrderFailed(db: Db, provider: CardProvider, tenantId: strin
     )
   } catch (error) {
     console.error(`[${provider.id}-webhook] refund message failed`, { tenantId, error: error instanceof Error ? error.message : String(error) })
+  }
+}
+
+/**
+ * A verified payment for a held booking (amount and checkout already matched by the caller). purpose_id is the
+ * booking id. awaiting_payment -> confirmed, once (conditional UPDATE). If the held time has already been
+ * released (the hold ran out and the booking was cancelled), the money is refunded in full, never kept.
+ * Throws on OUR failures so the provider retries; every step is safe to repeat.
+ */
+async function settleBookingPayment(
+  db: Db,
+  provider: CardProvider,
+  connection: StoredConnection,
+  payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown; purpose_id?: unknown },
+  providerPaymentId: string | null,
+): Promise<string> {
+  const tenantId = connection.tenantId
+  const paymentId = payment.id as string
+  const bookingId = payment.purpose_id as string
+
+  const { data: booking, error: readError } = await db
+    .from("bookings")
+    .select("id, status")
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (readError) throw new Error(`booking lookup failed: ${readError.message}`)
+  if (!booking) return await refundAfterFailedFulfilment(db, provider, connection, payment, "booking not found", "booking")
+
+  if (booking.status === "awaiting_payment") {
+    const { data: updated, error: updateError } = await db
+      .from("bookings")
+      .update({ status: "confirmed" })
+      .eq("id", bookingId)
+      .eq("tenant_id", tenantId)
+      .eq("status", "awaiting_payment")
+      .select("id")
+    if (updateError) throw new Error(`booking confirm failed: ${updateError.message}`)
+    // Changed under us (probably the hold just expired): let the provider retry, the next pass sees the new status.
+    if (!updated || updated.length === 0) throw new Error("booking changed while confirming payment")
+  } else if (booking.status === "confirmed" || booking.status === "completed") {
+    // A retry after a crash between the two writes: only this payment confirms a held booking.
+    await markSucceeded(db, paymentId, providerPaymentId)
+    return "booking_already_confirmed"
+  } else {
+    return await refundAfterFailedFulfilment(db, provider, connection, payment, `booking was ${booking.status}`, "booking")
+  }
+
+  await markSucceeded(db, paymentId, providerPaymentId)
+  await notifyBookingPaid(db, provider, tenantId, bookingId, payment.metadata as Record<string, unknown> | null)
+  return "booking_paid"
+}
+
+/** Whether the customer may be messaged after paying at the kiosk (same rule as the kiosk's own confirmation text). */
+async function mayMessageKioskCustomer(db: Db, tenantId: string): Promise<boolean> {
+  try {
+    const { data } = await db.from("tenant_branding").select("kiosk_show_whatsapp_optin").eq("tenant_id", tenantId).maybeSingle()
+    return data?.kiosk_show_whatsapp_optin !== false
+  } catch {
+    return true
+  }
+}
+
+/** Best effort: the booking is already confirmed whether or not these messages go. */
+async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: string, bookingId: string, metadata: Record<string, unknown> | null) {
+  try {
+    if (metadata?.channel === "kiosk" && !(await mayMessageKioskCustomer(db, tenantId))) return
+
+    const { data: b } = await db
+      .from("bookings")
+      .select(
+        `id, customer_id, start_time, end_time, booking_reference, ticket_number,
+         services!bookings_service_id_fkey ( name, price ),
+         booking_services ( position, services ( name, price ) )`,
+      )
+      .eq("id", bookingId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (!b) return
+
+    const { data: cust } = await db.from("tenant_customers").select("name, phone").eq("id", b.customer_id as string).eq("tenant_id", tenantId).maybeSingle()
+    const phone = (cust?.phone as string | null) ?? null
+    if (!phone) return
+
+    // Services in the order the customer picked them (falls back to the primary service).
+    type Svc = { name: string; price: number }
+    const linked = ((b.booking_services as unknown as Array<{ position: number; services: Svc | Svc[] | null }> | null) ?? [])
+      .slice()
+      .sort((x, y) => x.position - y.position)
+      .map((r) => (Array.isArray(r.services) ? r.services[0] : r.services))
+      .filter((s): s is Svc => !!s)
+    const primary = Array.isArray(b.services) ? (b.services[0] as Svc | undefined) : (b.services as unknown as Svc | null)
+    const services = linked.length > 0 ? linked : primary ? [primary] : []
+    const serviceNames = services.map((s) => s.name)
+    const totalPrice = services.reduce((sum, s) => sum + Number(s.price), 0)
+
+    const { getTenantTimezone } = await import("@/lib/services/shared/tenant-scheduling")
+    const timeZone = await getTenantTimezone(db, tenantId)
+    const start = new Date(b.start_time as string)
+    const slotLabel =
+      new Intl.DateTimeFormat("en-ZA", { weekday: "short", day: "numeric", month: "short", timeZone }).format(start) +
+      " at " +
+      new Intl.DateTimeFormat("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(start)
+
+    const { formatBookingTicketNumber } = await import("@/lib/services/ticket-format")
+    const { data: prefixRow } = await db.from("booking_settings").select("booking_number_prefix").eq("tenant_id", tenantId).maybeSingle()
+    const ticketLabel =
+      b.ticket_number == null ? null : formatBookingTicketNumber(b.ticket_number as number, (prefixRow?.booking_number_prefix as string | undefined)?.trim() || "B")
+
+    const { data: pay } = await db.from("tenant_payments").select("amount, currency").eq("purpose", "booking_payment").eq("purpose_id", bookingId).maybeSingle()
+    const amountLabel = formatMoneyFor((pay?.currency as string | undefined) ?? "ZAR", Number(pay?.amount ?? totalPrice))
+
+    await sendWhatsAppTextMessage(
+      tenantId,
+      phone,
+      bookingPaidConfirmedMessage({
+        customerName: (cust?.name as string | null) ?? null,
+        serviceName: serviceNames.join(" + ") || "Appointment",
+        slotLabel,
+        bookingReference: b.booking_reference as string,
+        ticketLabel,
+        amountLabel,
+      }),
+    )
+
+    // The branded ticket image, like a normal WhatsApp booking. Never throws; null just means no image.
+    const { tryGenerateBookingTicketUrl } = await import("@/lib/whatsapp/booking-ticket-image")
+    const ticketUrl = await tryGenerateBookingTicketUrl(tenantId, {
+      bookingId,
+      bookingReference: b.booking_reference as string,
+      customerName: (cust?.name as string | null) ?? null,
+      customerPhone: phone,
+      serviceNames,
+      totalPrice,
+      startTime: b.start_time as string,
+      endTime: b.end_time as string,
+    })
+    if (ticketUrl) await sendWhatsAppImageMessage(tenantId, phone, ticketUrl)
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] booking confirmation message failed (booking is already confirmed)`, {
+      tenantId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+/** Best effort: tells the customer why their booking payment is being refunded. */
+async function notifyBookingRefund(db: Db, provider: CardProvider, tenantId: string, metadata: Record<string, unknown> | null, refunded: boolean) {
+  try {
+    if (metadata?.channel === "kiosk" && !(await mayMessageKioskCustomer(db, tenantId))) return
+    const phone = await phoneForCustomer(db, tenantId, (metadata?.customer_id as string | undefined) ?? undefined)
+    if (!phone) return
+    await sendWhatsAppTextMessage(tenantId, phone, bookingPaymentRefundedMessage(refunded))
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] booking refund message failed`, { tenantId, error: error instanceof Error ? error.message : String(error) })
   }
 }
