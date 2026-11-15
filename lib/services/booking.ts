@@ -172,33 +172,43 @@ import {
 } from "@/lib/services/shared/multi-select"
 
 import { CANCEL_OR_RESCHEDULE_BUTTONS } from "@/lib/services/messages/reschedule"
+import {
+  LIST_ROWS,
+  dayHint,
+  listReply,
+  loadDayAvailability,
+  pageRows,
+  soonestChoices,
+  soonestSections,
+  tappedNumber,
+  type DayAvailability,
+} from "@/lib/services/shared/tap-lists"
+import type { ChoiceRow, ChoiceSection } from "@/lib/whatsapp/utils/choice-list"
 
 import { matchStaffRequest, pickStaffForSlot, type StaffCandidate } from "@/lib/services/shared/staff-request"
 import {
   staffRequestedLine,
   staffInactiveMessage,
   staffAmbiguousMessage,
-  staffNoSlotsMessage,
   staffNoLongerAvailableMessage,
   staffChoiceOffMessage,
 } from "@/lib/services/messages/booking-staff"
 
 import {
+  BOOKING_CONFIRM_BUTTONS,
   CANCEL_BUTTON,
-  CONFIRM_BUTTONS,
   ENTRY_CHOICE_BUTTONS,
   entryChoicePromptMessage,
   entryChoiceInvalidMessage,
   servicesListMessage,
-  dateOptionsMessage,
-  slotsListMessage,
-  lastSlotsPage,
   confirmationMessage,
   invalidSelectionMessage,
+  noSlotsOnDayMessage,
+  noTimesAvailableMessage,
+  pickFromListMessage,
   startOverMessage,
   noServicesMessage,
   servicesLoadErrorMessage,
-  noSlotsMessage,
   availabilityErrorMessage,
   slotStaleMessage,
   bookingWindowClosedMessage,
@@ -229,6 +239,8 @@ import {
 const BOOKING_STATE_REBOOK_OFFER = "booking_rebook_offer"
 const BOOKING_STATE_ENTRY_CHOICE = "booking_entry_choice"
 const BOOKING_STATE_SERVICE_SELECTION = "booking_service_selection"
+const BOOKING_STATE_SOONEST_SELECTION = "booking_soonest_selection"
+const BOOKING_STATE_STAFF_SELECTION = "booking_staff_selection"
 const BOOKING_STATE_DATE_SELECTION = "booking_date_selection"
 const BOOKING_STATE_TIME_SELECTION = "booking_time_selection"
 const BOOKING_STATE_CONFIRM = "booking_confirm"
@@ -343,11 +355,14 @@ interface BookingStateData {
   extraServices?: BookingServiceOffer[]
   /** booking_settings.max_services_per_booking when the list was shown. */
   maxServices?: number
-  dateOptions?: Array<{ date: string; label: string }>
+  /** `hint` ("5 times · from 09:00") is shown under the day in the day list. */
+  dateOptions?: Array<{ date: string; label: string; hint?: string }>
+  /** The "earliest free times" list that was shown, so a tap on a row maps back to a date + slot. */
+  pendingChoices?: Array<{ date: string; dateLabel: string; slot: BookingSlot }>
+  /** The team members offered by "Choose team member" (only when the shop lets customers choose). */
+  staffOptions?: Array<{ id: string; name: string }>
   selectedDate?: string
   pendingSlots?: BookingSlot[]
-  /** Which screen of times the customer is on (0 = first). Typing "more" moves to the next. */
-  slotPage?: number
   selectedSlot?: BookingSlot
   /** The staff member the customer asked for ("book with Sipho"). Only ever set when
    *  booking_settings.allow_customer_staff_choice is on; createBooking() re-checks it. */
@@ -1325,40 +1340,26 @@ async function trySmartBooking(
 
     // Service only (a time without a date can't be trusted) -> date screen.
     const chosen = parsed.date ? dateOptions.find((d) => d.date === parsed.date) : undefined
-    if (!chosen) {
-      return {
-        reply: dateOptionsMessage(dateOptions),
-        buttons: [],
-        nextState: { state: BOOKING_STATE_DATE_SELECTION, data: mergeBookingData(data, {}) },
-      }
-    }
+    if (!chosen) return presentSoonest(tenantId, data)
 
     const slots = await getAvailableSlots(tenantId, chosen.date, service.durationMinutes, undefined, requestedStaff?.id)
     if (slots.length === 0) {
-      return {
-        reply: `${requestedStaff ? staffNoSlotsMessage(requestedStaff.name) : noSlotsMessage()}\n\n${dateOptionsMessage(dateOptions)}`,
-        buttons: [],
-        nextState: { state: BOOKING_STATE_DATE_SELECTION, data: mergeBookingData(data, {}) },
-      }
+      return presentSoonest(tenantId, data, noSlotsOnDayMessage(chosen.label, requestedStaff?.name))
     }
 
-    const withDate: BookingStateData = { ...data, selectedDate: chosen.date, pendingSlots: slots, slotPage: 0 }
+    const withDate: BookingStateData = { ...data, selectedDate: chosen.date, pendingSlots: slots }
 
     const slot = pickSlotByTime(slots, parsed.time)
     if (slot) {
       return {
         reply: staffPrefix(requestedStaff) + confirmationMessage(service, chosen.label, slot),
-        buttons: CONFIRM_BUTTONS,
+        buttons: BOOKING_CONFIRM_BUTTONS,
         nextState: { state: BOOKING_STATE_CONFIRM, data: mergeBookingData(withDate, { selectedSlot: slot }) },
       }
     }
 
-    const notFree = parsed.time ? `Sorry, ${parsed.time} isn't available on ${chosen.label}. Here's what is free:\n\n` : ""
-    return {
-      reply: staffPrefix(requestedStaff) + notFree + slotsListMessage(service.name, chosen.label, slots, 0),
-      buttons: [],
-      nextState: { state: BOOKING_STATE_TIME_SELECTION, data: mergeBookingData(withDate, {}) },
-    }
+    const notFree = parsed.time ? `Sorry, ${parsed.time} isn't available on ${chosen.label}. Here's what is free:` : ""
+    return timeListReply(withDate, service.name, chosen.label, slots, 0, notFree)
   } catch (error) {
     console.error("[booking] smart booking failed, using normal flow", { tenantId, error })
     return null
@@ -1513,23 +1514,9 @@ async function handleRebookOffer(tenantId: string, state: ConversationState, mes
       )
     }
 
-    case "other_time": {
-      // Services are already chosen: skip straight to the date list.
-      const dateOptions = data.dateOptions?.length ? data.dateOptions : await buildDateOptions(tenantId)
-      return {
-        reply: dateOptionsMessage(dateOptions),
-        buttons: [],
-        nextState: {
-          state: BOOKING_STATE_DATE_SELECTION,
-          data: mergeBookingData(data, {
-            dateOptions,
-            selectedDate: undefined,
-            selectedSlot: undefined,
-            pendingSlots: undefined,
-          }),
-        },
-      }
-    }
+    case "other_time":
+      // Services are already chosen: skip straight to the earliest free times.
+      return presentSoonest(tenantId, { ...data, selectedDate: undefined, selectedSlot: undefined, pendingSlots: undefined })
 
     case "something_else":
       // No phone passed, so this can't loop back into the offer.
@@ -1588,6 +1575,22 @@ export async function presentServices(
     console.error("[booking] Could not read max services, using 1", { tenantId, error })
   }
 
+  // One service per booking (the usual shop): tap a row. A shop that lets customers combine services
+  // keeps the typed "1,3" list below, because a WhatsApp list can only select one row.
+  if (maxServices <= 1) {
+    // Nothing to choose: straight to the earliest free times.
+    if (services.length === 1) {
+      return presentSoonest(tenantId, {
+        services,
+        maxServices,
+        selectedService: services[0],
+        extraServices: [],
+        ...(requestedStaff ? { requestedStaff } : {}),
+      })
+    }
+    return serviceListReply(services, maxServices, requestedStaff, 0)
+  }
+
   return {
     reply: staffPrefix(requestedStaff) + servicesListMessage(services, maxServices),
     buttons: [],
@@ -1610,32 +1613,15 @@ async function startNoServiceBooking(
   durationMinutes: number,
   requestedStaff?: { id: string; name: string },
 ): Promise<ActionResult> {
-  let dateOptions: Array<{ date: string; label: string }>
-  try {
-    dateOptions = await buildDateOptions(tenantId)
-  } catch (error) {
-    console.error("[booking] Error building date options (no-service booking)", { tenantId, error })
-    return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
-  }
-  if (dateOptions.length === 0) {
-    return { reply: noSlotsMessage(), buttons: [], nextState: null }
-  }
-
   const placeholder: BookingServiceOffer = { id: NO_SERVICE_ID, name: NO_SERVICE_LABEL, price: 0, durationMinutes }
 
-  return {
-    reply: staffPrefix(requestedStaff) + dateOptionsMessage(dateOptions),
-    buttons: [],
-    nextState: {
-      state: BOOKING_STATE_DATE_SELECTION,
-      data: {
-        selectedService: placeholder,
-        dateOptions,
-        noService: true,
-        ...(requestedStaff ? { requestedStaff } : {}),
-      },
-    },
-  }
+  // No services list: straight to the earliest free times.
+  return presentSoonest(tenantId, {
+    selectedService: placeholder,
+    extraServices: [],
+    noService: true,
+    ...(requestedStaff ? { requestedStaff } : {}),
+  })
 }
 
 // ============================================================================
@@ -1717,45 +1703,110 @@ async function handleServiceSelection(tenantId: string, state: ConversationState
   const services = data.services ?? []
   const maxServices = data.maxServices ?? 1
 
-  const picks = parseServicePicks(rawReplyText(message), services.length, maxServices)
-  if (!picks.ok) {
-    return {
-      reply: picks.reason === "too_many" ? tooManyServicesMessage(maxServices) : invalidSelectionMessage(services.length),
-      buttons: [],
-      nextState: state,
+  // "More ▸" row on a long service list.
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) return serviceListReply(services, maxServices, data.requestedStaff, page)
+
+  let chosen: BookingServiceOffer[]
+  const tapped = tappedNumber(message, TAP_SERVICE)
+  if (tapped !== null && services[tapped]) {
+    chosen = [services[tapped]]
+  } else {
+    // Typed answer: a number, or "1,3" for shops that allow several services.
+    const picks = parseServicePicks(rawReplyText(message), services.length, maxServices)
+    if (!picks.ok) {
+      return {
+        reply: message.interactiveId
+          ? pickFromListMessage()
+          : picks.reason === "too_many"
+            ? tooManyServicesMessage(maxServices)
+            : invalidSelectionMessage(services.length),
+        buttons: [],
+        nextState: state,
+      }
     }
+    chosen = picks.indexes.map((i) => services[i])
   }
 
-  const chosen = picks.indexes.map((i) => services[i])
   const [selectedService, ...extraServices] = chosen
-  const dateOptions = await buildDateOptions(tenantId)
-
-  return {
-    reply: dateOptionsMessage(dateOptions),
-    buttons: [],
-    nextState: {
-      state: BOOKING_STATE_DATE_SELECTION,
-      data: mergeBookingData(data, { selectedService, extraServices, dateOptions }),
-    },
-  }
+  return presentSoonest(tenantId, { ...data, selectedService, extraServices })
 }
 
 // ============================================================================
-// STEP 3: date → time slots
+// STEP 3: earliest free times (one list across all days)
+// ============================================================================
+
+async function handleSoonestSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+  const data = getBookingData(state)
+
+  // "📅 Other day": the days that actually have free times.
+  if (message.interactiveId === TAP_OTHER_DAY) return dayListReply(data, 0)
+
+  // "👤 Choose team member": only offered when the shop allows it; re-checked here (it may have been switched off).
+  if (message.interactiveId === TAP_PICK_STAFF) {
+    const staff = await loadStaffOptions(tenantId)
+    if (staff.length < 2) return presentSoonest(tenantId, data)
+    return staffListReply(data, staff, 0)
+  }
+
+  const index = tappedNumber(message, TAP_SLOT) ?? Number(rawReplyText(message)) - 1
+  const choice = Number.isInteger(index) ? data.pendingChoices?.[index] : undefined
+  if (!choice) return { reply: pickFromListMessage(), buttons: [], nextState: state }
+
+  return confirmStep(data, choice.date, choice.dateLabel, choice.slot)
+}
+
+// ============================================================================
+// STEP 3a: "Choose team member" → earliest times for that person
+// ============================================================================
+
+async function handleStaffSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+  const data = getBookingData(state)
+  const staff = data.staffOptions ?? []
+
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) return staffListReply(data, staff, page)
+
+  // Back to the shop's automatic assignment (whoever is free soonest).
+  if (message.interactiveId === TAP_STAFF_ANY) {
+    return presentSoonest(tenantId, { ...data, requestedStaff: undefined })
+  }
+
+  const index = tappedNumber(message, TAP_STAFF)
+  const picked = index !== null ? staff[index] : undefined
+  if (!picked) return { reply: pickFromListMessage(), buttons: [], nextState: state }
+
+  // createBooking() re-checks that this person is active and free, and that staff choice is still on.
+  return presentSoonest(tenantId, { ...data, requestedStaff: { id: picked.id, name: picked.name } }, "", () =>
+    Promise.resolve(
+      staffListReply(data, staff, 0, `${picked.name} has nothing free in the days we're taking bookings for. Please pick someone else:`),
+    ),
+  )
+}
+
+// ============================================================================
+// STEP 3b: "Other day" → date → time slots
 // ============================================================================
 
 async function handleDateSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const dateOptions = data.dateOptions ?? []
   const selectedService = data.selectedService
-  const index = Number(rawReplyText(message)) - 1
 
   if (!selectedService) {
     return { reply: startOverMessage(), buttons: [], nextState: null }
   }
 
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) return dayListReply(data, page)
+
+  const index = tappedNumber(message, TAP_DAY) ?? Number(rawReplyText(message)) - 1
   if (!Number.isInteger(index) || index < 0 || index >= dateOptions.length) {
-    return { reply: invalidSelectionMessage(dateOptions.length), buttons: [], nextState: state }
+    return {
+      reply: message.interactiveId ? pickFromListMessage() : invalidSelectionMessage(dateOptions.length),
+      buttons: [],
+      nextState: state,
+    }
   }
 
   const chosen = dateOptions[index]
@@ -1770,70 +1821,43 @@ async function handleDateSelection(tenantId: string, state: ConversationState, m
     return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
   }
 
-  if (slots.length === 0) {
-    const reply = data.requestedStaff
-      ? `${staffNoSlotsMessage(data.requestedStaff.name)}\n\n${dateOptionsMessage(dateOptions)}`
-      : noSlotsMessage()
-    return { reply, buttons: [], nextState: { state: BOOKING_STATE_DATE_SELECTION, data } }
-  }
+  // Normally impossible (the day list only shows days with free times), but a slot can be taken in between.
+  if (slots.length === 0) return dayListReply(data, 0, noSlotsOnDayMessage(chosen.label, data.requestedStaff?.name))
 
-  return {
-    reply: staffPrefix(data.requestedStaff) + slotsListMessage(visit.name, chosen.label, slots, 0),
-    buttons: [],
-    nextState: {
-      state: BOOKING_STATE_TIME_SELECTION,
-      data: mergeBookingData(data, { selectedDate: chosen.date, pendingSlots: slots, slotPage: 0 }),
-    },
-  }
+  return timeListReply({ ...data, selectedDate: chosen.date, pendingSlots: slots }, visit.name, chosen.label, slots, 0)
 }
 
 // ============================================================================
 // STEP 4: time slot → confirmation summary
 // ============================================================================
 
-async function handleTimeSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+async function handleTimeSelection(_tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const data = getBookingData(state)
   const slots = data.pendingSlots ?? []
-  const dateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate ?? ""
+  const selectedService = data.selectedService
 
-  // "more" -> next screen of times (wraps back to the first after the last).
-  if (normalizedReplyText(message) === "more" && data.selectedService) {
-    const last = lastSlotsPage(slots.length)
-    const current = data.slotPage ?? 0
-    const nextPage = current >= last ? 0 : current + 1
-    const visit = combineServices([data.selectedService, ...(data.extraServices ?? [])])
+  if (!selectedService || !data.selectedDate) {
+    return { reply: startOverMessage(), buttons: [], nextState: null }
+  }
+  if (message.interactiveId === TAP_OTHER_DAY) return dayListReply(data, 0)
+
+  const dateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) {
+    const visit = combineServices([selectedService, ...(data.extraServices ?? [])])
+    return timeListReply(data, visit.name, dateLabel, slots, page)
+  }
+
+  const index = tappedNumber(message, TAP_TIME) ?? Number(rawReplyText(message)) - 1
+  if (!Number.isInteger(index) || index < 0 || index >= slots.length) {
     return {
-      reply: staffPrefix(data.requestedStaff) + slotsListMessage(visit.name, dateLabel, slots, nextPage),
+      reply: message.interactiveId ? pickFromListMessage() : invalidSelectionMessage(slots.length),
       buttons: [],
-      nextState: { state: BOOKING_STATE_TIME_SELECTION, data: mergeBookingData(data, { slotPage: nextPage }) },
+      nextState: state,
     }
   }
 
-  const index = Number(rawReplyText(message)) - 1
-
-  if (!Number.isInteger(index) || index < 0 || index >= slots.length) {
-    return { reply: invalidSelectionMessage(slots.length), buttons: [], nextState: state }
-  }
-
-  const selectedSlot = slots[index]
-  const selectedService = data.selectedService
-
-  if (!selectedService) {
-    return { reply: startOverMessage(), buttons: [], nextState: null }
-  }
-
-  return {
-    reply:
-      staffPrefix(data.requestedStaff) +
-      (data.noService
-        ? noServiceConfirmationMessage(dateLabel, selectedSlot.label)
-        : confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, selectedSlot)),
-    buttons: CONFIRM_BUTTONS,
-    nextState: {
-      state: BOOKING_STATE_CONFIRM,
-      data: mergeBookingData(data, { selectedSlot }),
-    },
-  }
+  return confirmStep(data, data.selectedDate, dateLabel, slots[index])
 }
 
 // ============================================================================
@@ -1855,12 +1879,17 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     .trim()
   const data = getBookingData(state)
 
+  // "🕒 Other time": back to the earliest free times for the same service (and team member). Nothing is booked or lost.
+  if (/\bother time\b|\bchange time\b|\bdifferent time\b/.test(text)) {
+    return presentSoonest(tenantId, { ...data, selectedDate: undefined, selectedSlot: undefined, pendingSlots: undefined })
+  }
+
   if (NO_WORDS.has(text) || text.includes("cancel")) {
     return { reply: bookingCancelledMessage(), buttons: CANCEL_BUTTON, nextState: null }
   }
 
   if (!YES_WORDS.has(text) && !text.includes("confirm")) {
-    return { reply: confirmYesNoReminderMessage(), buttons: CONFIRM_BUTTONS, nextState: state }
+    return { reply: confirmYesNoReminderMessage(), buttons: BOOKING_CONFIRM_BUTTONS, nextState: state }
   }
 
   const { selectedService, selectedDate, selectedSlot } = data
@@ -1999,6 +2028,10 @@ async function handleState(tenantId: string, state: ConversationState, message: 
       return handleEntryChoice(tenantId, state, message)
     case BOOKING_STATE_SERVICE_SELECTION:
       return handleServiceSelection(tenantId, state, message)
+    case BOOKING_STATE_SOONEST_SELECTION:
+      return handleSoonestSelection(tenantId, state, message)
+    case BOOKING_STATE_STAFF_SELECTION:
+      return handleStaffSelection(tenantId, state, message)
     case BOOKING_STATE_DATE_SELECTION:
       return handleDateSelection(tenantId, state, message)
     case BOOKING_STATE_TIME_SELECTION:
@@ -2009,6 +2042,192 @@ async function handleState(tenantId: string, state: ConversationState, message: 
       return handleNameCollection(tenantId, message)
     default:
       return null
+  }
+}
+
+// ============================================================================
+// TAP-ONLY LISTS (services, earliest times, team member, days, times)
+// ============================================================================
+// Generic list helpers live in lib/services/shared/tap-lists.ts (shared with reschedule.ts). Every row here
+// carries an id that WhatsApp returns as message.interactiveId. The "bk_" prefix is what action-router.ts uses
+// to keep these taps out of its reset-word check, so a service called "Stop Smoking Massage" can't throw the
+// customer back to the main menu. Typed numbers still work (old chats, waitlist-reply.ts).
+
+const TAP_SERVICE = "bk_svc:"
+const TAP_SLOT = "bk_slot:"
+const TAP_DAY = "bk_day:"
+const TAP_TIME = "bk_time:"
+const TAP_STAFF = "bk_staff:"
+const TAP_MORE = "bk_more:"
+const TAP_OTHER_DAY = "bk_other_day"
+const TAP_PICK_STAFF = "bk_pick_staff"
+const TAP_STAFF_ANY = "bk_staff_any"
+
+const OTHER_DAY_SECTION: ChoiceSection = { title: "More", rows: [{ id: TAP_OTHER_DAY, title: "📅 Other day" }] }
+
+function serviceListReply(
+  services: BookingServiceOffer[],
+  maxServices: number,
+  requestedStaff: { id: string; name: string } | undefined,
+  page: number,
+): ActionResult {
+  const rows = pageRows(
+    services,
+    page,
+    0,
+    (s, i) => ({ id: `${TAP_SERVICE}${i}`, title: s.name, description: `R${s.price} · ${s.durationMinutes} min` }),
+    TAP_MORE,
+  )
+  return listReply(`${staffPrefix(requestedStaff)}Here's what we offer 💈`, "Choose service", [{ title: "Services", rows }], {
+    state: BOOKING_STATE_SERVICE_SELECTION,
+    data: { services, maxServices, ...(requestedStaff ? { requestedStaff } : {}) },
+  })
+}
+
+/**
+ * The team members a customer may choose between: empty unless the shop allows customer staff choice AND has at
+ * least two active people (with one there is nothing to choose). Never throws: any failure means "no picker".
+ */
+async function loadStaffOptions(tenantId: string): Promise<ActiveStaff[]> {
+  try {
+    const supabase = getClientOrThrow()
+    if (!(await readAllowCustomerStaffChoice(supabase, tenantId))) return []
+    const staff = await getActiveStaff(supabase, tenantId)
+    return staff.length >= 2 ? [...staff].sort((a, b) => a.name.localeCompare(b.name)) : []
+  } catch (error) {
+    console.error("[booking] Could not load staff for the picker", { tenantId, error })
+    return []
+  }
+}
+
+/** "Who would you like to see?": Anyone (earliest) first, then each active team member. */
+function staffListReply(data: BookingStateData, staff: ActiveStaff[], page: number, intro = ""): ActionResult {
+  const rows: ChoiceRow[] = [
+    { id: TAP_STAFF_ANY, title: "👥 Anyone (earliest)" },
+    ...pageRows(staff, page, 1, (s, i) => ({ id: `${TAP_STAFF}${i}`, title: s.name }), TAP_MORE),
+  ]
+  return listReply(`${intro ? `${intro}\n\n` : ""}Who would you like to see? 👤`, "Choose team member", [{ title: "Team", rows }], {
+    state: BOOKING_STATE_STAFF_SELECTION,
+    data: mergeBookingData(data, { staffOptions: staff.map((s) => ({ id: s.id, name: s.name })) }),
+  })
+}
+
+/**
+ * THE step after the service: one list with the earliest free times across all days, grouped by day. A "More"
+ * section adds "📅 Other day" (only when more times exist than fit) and "👤 Choose team member" (only when the
+ * shop allows it). Service -> time -> confirm = two taps. Looks at every offered day in parallel; days with
+ * nothing free never appear. `onNoTimes` replaces the default "nothing free" reply. Never throws.
+ */
+async function presentSoonest(
+  tenantId: string,
+  data: BookingStateData,
+  intro = "",
+  onNoTimes?: () => Promise<ActionResult>,
+): Promise<ActionResult> {
+  const selectedService = data.selectedService
+  if (!selectedService) return { reply: startOverMessage(), buttons: [], nextState: null }
+  const visit = combineServices([selectedService, ...(data.extraServices ?? [])])
+
+  let loaded: [DayAvailability[], ActiveStaff[]]
+  try {
+    const dateOptions = await buildDateOptions(tenantId)
+    loaded = await Promise.all([
+      loadDayAvailability(dateOptions, (date) =>
+        getAvailableSlots(tenantId, date, visit.durationMinutes, undefined, data.requestedStaff?.id),
+      ),
+      loadStaffOptions(tenantId),
+    ])
+  } catch (error) {
+    console.error("[booking] Error loading availability", { tenantId, error })
+    return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
+  }
+  const [days, staffOptions] = loaded
+
+  if (days.length === 0) {
+    if (onNoTimes) return onNoTimes()
+    return { reply: staffPrefix(data.requestedStaff) + noTimesAvailableMessage(), buttons: [], nextState: null }
+  }
+
+  const canPickStaff = staffOptions.length >= 2
+  const reserved = canPickStaff ? 1 : 0
+  const totalSlots = days.reduce((sum, d) => sum + d.slots.length, 0)
+  const showOtherDay = totalSlots > LIST_ROWS - reserved
+  const choices = soonestChoices(days, showOtherDay ? LIST_ROWS - reserved - 1 : LIST_ROWS - reserved)
+
+  const sections = soonestSections(choices, TAP_SLOT)
+  const moreRows: ChoiceRow[] = []
+  if (showOtherDay) moreRows.push({ id: TAP_OTHER_DAY, title: "📅 Other day" })
+  if (canPickStaff) {
+    moreRows.push({ id: TAP_PICK_STAFF, title: data.requestedStaff ? "👤 Change team member" : "👤 Choose team member" })
+  }
+  if (moreRows.length > 0) sections.push({ title: "More", rows: moreRows })
+
+  const serviceLine = data.noService ? "" : `✂️ *${visit.name}* · R${visit.price}\n\n`
+  const body = `${staffPrefix(data.requestedStaff)}${intro ? `${intro}\n\n` : ""}${serviceLine}Earliest free times 👇`
+
+  return listReply(body, "Choose time", sections, {
+    state: BOOKING_STATE_SOONEST_SELECTION,
+    data: mergeBookingData(data, {
+      // Only days with free times, with a hint, so "Other day" never leads to an empty day.
+      dateOptions: days.map((d) => ({ date: d.date, label: d.label, hint: dayHint(d) })),
+      pendingChoices: choices,
+      selectedDate: undefined,
+      selectedSlot: undefined,
+      pendingSlots: undefined,
+    }),
+  })
+}
+
+/** "Other day": the days in state (already only days with free times), each with how many times and the first one. */
+function dayListReply(data: BookingStateData, page: number, intro = ""): ActionResult {
+  const dateOptions = data.dateOptions ?? []
+  const rows = pageRows(
+    dateOptions,
+    page,
+    0,
+    (d, i) => ({ id: `${TAP_DAY}${i}`, title: d.label, ...(d.hint ? { description: d.hint } : {}) }),
+    TAP_MORE,
+  )
+  return listReply(
+    `${staffPrefix(data.requestedStaff)}${intro ? `${intro}\n\n` : ""}Which day works for you? 📅`,
+    "Choose day",
+    [{ title: "Days", rows }],
+    { state: BOOKING_STATE_DATE_SELECTION, data: mergeBookingData(data, {}) },
+  )
+}
+
+/** The times on one day. `data` must already carry selectedDate and pendingSlots (saved as the next state). */
+function timeListReply(
+  data: BookingStateData,
+  visitName: string,
+  dateLabel: string,
+  slots: BookingSlot[],
+  page: number,
+  intro = "",
+): ActionResult {
+  const rows = pageRows(slots, page, 1, (s, i) => ({ id: `${TAP_TIME}${i}`, title: s.label }), TAP_MORE)
+  const body = `${staffPrefix(data.requestedStaff)}${intro ? `${intro}\n\n` : ""}Available times for *${visitName}* on ${dateLabel}:`
+  return listReply(body, "Choose time", [{ title: dateLabel, rows }, OTHER_DAY_SECTION], {
+    state: BOOKING_STATE_TIME_SELECTION,
+    data: mergeBookingData(data, {}),
+  })
+}
+
+/** The "Just to confirm" screen. Yes / Other time / No. */
+function confirmStep(data: BookingStateData, dateISO: string, dateLabel: string, slot: BookingSlot): ActionResult {
+  const selectedService = data.selectedService
+  if (!selectedService) return { reply: startOverMessage(), buttons: [], nextState: null }
+  return {
+    reply:
+      staffPrefix(data.requestedStaff) +
+      (data.noService
+        ? noServiceConfirmationMessage(dateLabel, slot.label)
+        : confirmationMessage(combineServices([selectedService, ...(data.extraServices ?? [])]), dateLabel, slot)),
+    buttons: BOOKING_CONFIRM_BUTTONS,
+    nextState: {
+      state: BOOKING_STATE_CONFIRM,
+      data: mergeBookingData(data, { selectedDate: dateISO, selectedSlot: slot }),
+    },
   }
 }
 

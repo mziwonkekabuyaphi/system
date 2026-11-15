@@ -16,8 +16,10 @@
  *   1. Load the customer's upcoming CONFIRMED bookings.
  *        none -> say so + menu.   one -> straight to the date list.
  *        several -> ask which (reply with a number).
- *   2. Date list (buildDateOptions, the same list booking uses), then the free
- *      times for that day (getAvailableSlots). The slot search is for the
+ *   2. TAP-ONLY: one list of the EARLIEST free times across all days (the booking's current time is
+ *      left out), with "📅 Other day" for the rest; that leads to a day list (only days with free times)
+ *      and then that day's times. Same helpers as booking.ts: lib/services/shared/tap-lists.ts.
+ *      The slot search (getAvailableSlots) is for the
  *      booking's own length, so a multi-service booking keeps its full
  *      duration, and the booking being moved never blocks its own new time.
  *   3. Yes/no confirmation, then rescheduleBooking() in booking.ts does the
@@ -57,19 +59,30 @@ import {
   type BookingSlot,
 } from "@/lib/services/booking"
 import { parseYesNo } from "@/lib/services/cancel"
+import {
+  LIST_ROWS,
+  dayHint,
+  listReply,
+  loadDayAvailability,
+  pageRows,
+  soonestChoices,
+  soonestSections,
+  tappedNumber,
+  type DayAvailability,
+} from "@/lib/services/shared/tap-lists"
+import type { ChoiceSection } from "@/lib/whatsapp/utils/choice-list"
 
 import {
-  CONFIRM_BUTTONS,
   availabilityErrorMessage,
-  dateOptionsMessage,
   invalidSelectionMessage,
-  noSlotsMessage,
-  slotsListMessage,
+  noSlotsOnDayMessage,
+  pickFromListMessage,
 } from "@/lib/services/messages/booking"
 import {
   CANCEL_OR_RESCHEDULE_BUTTONS,
+  RESCHEDULE_CONFIRM_BUTTONS,
   rescheduleAlreadyGoneMessage,
-  rescheduleChooseMessage,
+  rescheduleChooseBody,
   rescheduleConfirmMessage,
   rescheduleConfirmReminderMessage,
   rescheduleDoneMessage,
@@ -78,6 +91,7 @@ import {
   rescheduleInvalidChoiceMessage,
   rescheduleKeptMessage,
   rescheduleMenuPromptMessage,
+  rescheduleNoTimesMessage,
   rescheduleNothingMessage,
   rescheduleSlotTakenMessage,
   rescheduleStartMessage,
@@ -92,6 +106,7 @@ import {
 // ============================================================================
 
 export const RESCHEDULE_STATE_CHOOSE = "reschedule_choose"
+export const RESCHEDULE_STATE_SOONEST = "reschedule_soonest"
 export const RESCHEDULE_STATE_DATE = "reschedule_date"
 export const RESCHEDULE_STATE_TIME = "reschedule_time"
 export const RESCHEDULE_STATE_CONFIRM = "reschedule_confirm"
@@ -114,12 +129,17 @@ interface MovableBooking {
   /** Ready-to-show current time, e.g. "Tue 14 Oct, 10:30". */
   currentLabel: string
   reference: string
+  /** The booking's current start (ISO), so the time it already holds is not offered as a "move". Absent in older saved states. */
+  startTime?: string
 }
 
 interface RescheduleStateData {
   options?: Array<RescheduleOption & { booking: MovableBooking }>
   booking?: MovableBooking
-  dateOptions?: Array<{ date: string; label: string }>
+  /** `hint` ("5 times · from 09:00") is shown under the day in the day list. */
+  dateOptions?: Array<{ date: string; label: string; hint?: string }>
+  /** The "earliest free times" list that was shown, so a tap on a row maps back to a date + slot. */
+  pendingChoices?: Array<{ date: string; dateLabel: string; slot: BookingSlot }>
   selectedDate?: string
   pendingSlots?: BookingSlot[]
   selectedSlot?: BookingSlot
@@ -251,6 +271,7 @@ async function loadMovableBookings(tenantId: string, customerId: string): Promis
       durationMinutes: Math.max(1, Math.round((new Date(row.end_time).getTime() - startMillis) / 60_000)),
       currentLabel: formatLocal(row.start_time, timezone),
       reference: row.booking_reference,
+      startTime: row.start_time,
     })
   }
 
@@ -300,26 +321,46 @@ async function startFlow(tenantId: string, phone: string, onlyBookingId?: string
       label: `📅 ${b.serviceName} — ${b.currentLabel} (Ref ${b.reference})`,
       booking: b,
     }))
-    return {
-      reply: rescheduleChooseMessage(options),
-      buttons: [],
-      nextState: { state: RESCHEDULE_STATE_CHOOSE, data: { options } as ConversationState["data"] },
-    }
+    return bookingListReply(options, 0)
   } catch (error) {
     console.error("[reschedule] Error starting reschedule flow", { tenantId, error })
     return { reply: rescheduleErrorMessage(), buttons: [], nextState: null }
   }
 }
 
+/**
+ * One list with the earliest free times across all days (the time the booking already holds is left out),
+ * grouped by day, with "📅 Other day" when more exist than fit. Reminder "Move it" -> this list in one tap.
+ */
 async function startDateStep(tenantId: string, booking: MovableBooking): Promise<ActionResult> {
-  const dateOptions = await buildDateOptions(tenantId)
-  if (dateOptions.length === 0) return done(rescheduleNothingMessage())
-
-  return {
-    reply: `${rescheduleStartMessage(booking.serviceName, booking.currentLabel)}\n\n${dateOptionsMessage(dateOptions)}`,
-    buttons: [],
-    nextState: { state: RESCHEDULE_STATE_DATE, data: { booking, dateOptions } as ConversationState["data"] },
+  let days: DayAvailability[]
+  try {
+    days = await loadDayAvailability(await buildDateOptions(tenantId), (date) => freeSlots(tenantId, booking, date))
+  } catch (error) {
+    console.error("[reschedule] Error loading availability", { tenantId, error })
+    return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
   }
+  if (days.length === 0) return done(rescheduleNoTimesMessage())
+
+  const totalSlots = days.reduce((sum, d) => sum + d.slots.length, 0)
+  const showOtherDay = totalSlots > LIST_ROWS
+  const choices = soonestChoices(days, showOtherDay ? LIST_ROWS - 1 : LIST_ROWS)
+  const sections = soonestSections(choices, TAP_SLOT)
+  if (showOtherDay) sections.push(OTHER_DAY_SECTION)
+
+  return listReply(
+    `${rescheduleStartMessage(booking.serviceName, booking.currentLabel)}\n\nEarliest free times 👇`,
+    "Choose time",
+    sections,
+    {
+      state: RESCHEDULE_STATE_SOONEST,
+      data: {
+        booking,
+        dateOptions: days.map((d) => ({ date: d.date, label: d.label, hint: dayHint(d) })),
+        pendingChoices: choices,
+      } as ConversationState["data"],
+    },
+  )
 }
 
 // ============================================================================
@@ -328,10 +369,18 @@ async function startDateStep(tenantId: string, booking: MovableBooking): Promise
 
 async function handleChoose(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const options = getData(state).options ?? []
-  const index = Number(rawReplyText(message)) - 1
 
+  // "More ▸" row when the customer has more bookings than fit one list.
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) return bookingListReply(options, page)
+
+  const index = tappedNumber(message, TAP_BOOKING) ?? Number(rawReplyText(message)) - 1
   if (!Number.isInteger(index) || index < 0 || index >= options.length) {
-    return { reply: rescheduleInvalidChoiceMessage(options.length), buttons: [], nextState: state }
+    return {
+      reply: message.interactiveId ? pickFromListMessage() : rescheduleInvalidChoiceMessage(options.length),
+      buttons: [],
+      nextState: state,
+    }
   }
 
   try {
@@ -343,7 +392,26 @@ async function handleChoose(tenantId: string, state: ConversationState, message:
 }
 
 // ============================================================================
-// STEP: date -> free times
+// STEP: earliest times -> confirmation
+// ============================================================================
+
+async function handleSoonest(_tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
+  const data = getData(state)
+  const booking = data.booking
+  if (!booking) return done(rescheduleAlreadyGoneMessage())
+
+  // "📅 Other day": the days that actually have free times.
+  if (message.interactiveId === TAP_OTHER_DAY) return dayListReply(data, 0)
+
+  const index = tappedNumber(message, TAP_SLOT) ?? Number(rawReplyText(message)) - 1
+  const choice = Number.isInteger(index) ? data.pendingChoices?.[index] : undefined
+  if (!choice) return { reply: pickFromListMessage(), buttons: [], nextState: state }
+
+  return confirmStep(data, booking, choice.date, choice.dateLabel, choice.slot)
+}
+
+// ============================================================================
+// STEP: "Other day" -> day -> free times
 // ============================================================================
 
 async function handleDate(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
@@ -352,35 +420,32 @@ async function handleDate(tenantId: string, state: ConversationState, message: I
   const dateOptions = data.dateOptions ?? []
   if (!booking) return done(rescheduleAlreadyGoneMessage())
 
-  const index = Number(rawReplyText(message)) - 1
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) return dayListReply(data, page)
+
+  const index = tappedNumber(message, TAP_DAY) ?? Number(rawReplyText(message)) - 1
   if (!Number.isInteger(index) || index < 0 || index >= dateOptions.length) {
-    return { reply: invalidSelectionMessage(dateOptions.length), buttons: [], nextState: state }
+    return {
+      reply: message.interactiveId ? pickFromListMessage() : invalidSelectionMessage(dateOptions.length),
+      buttons: [],
+      nextState: state,
+    }
   }
 
   const chosen = dateOptions[index]
 
   let slots: BookingSlot[]
   try {
-    // The booking's own length, and ignoring the booking itself, so moving a
-    // little later in the same day isn't blocked by the time it already holds.
-    slots = await getAvailableSlots(tenantId, chosen.date, booking.durationMinutes, booking.id)
+    slots = await freeSlots(tenantId, booking, chosen.date)
   } catch (error) {
     console.error("[reschedule] Error loading slots", { tenantId, date: chosen.date, error })
     return { reply: availabilityErrorMessage(), buttons: [], nextState: null }
   }
 
-  if (slots.length === 0) {
-    return { reply: `${noSlotsMessage()}\n\n${dateOptionsMessage(dateOptions)}`, buttons: [], nextState: state }
-  }
+  // Normally impossible (the day list only shows days with free times), but a slot can be taken in between.
+  if (slots.length === 0) return dayListReply(data, 0, noSlotsOnDayMessage(chosen.label))
 
-  return {
-    reply: slotsListMessage(booking.serviceName, chosen.label, slots),
-    buttons: [],
-    nextState: {
-      state: RESCHEDULE_STATE_TIME,
-      data: merge(data, { selectedDate: chosen.date, pendingSlots: slots }),
-    },
-  }
+  return timeListReply({ ...data, selectedDate: chosen.date, pendingSlots: slots }, booking, chosen.label, slots, 0)
 }
 
 // ============================================================================
@@ -391,26 +456,24 @@ async function handleTime(_tenantId: string, state: ConversationState, message: 
   const data = getData(state)
   const booking = data.booking
   const slots = data.pendingSlots ?? []
-  if (!booking) return done(rescheduleAlreadyGoneMessage())
+  if (!booking || !data.selectedDate) return done(rescheduleAlreadyGoneMessage())
 
-  const index = Number(rawReplyText(message)) - 1
+  if (message.interactiveId === TAP_OTHER_DAY) return dayListReply(data, 0)
+
+  const dateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate
+  const page = tappedNumber(message, TAP_MORE)
+  if (page !== null) return timeListReply(data, booking, dateLabel, slots, page)
+
+  const index = tappedNumber(message, TAP_TIME) ?? Number(rawReplyText(message)) - 1
   if (!Number.isInteger(index) || index < 0 || index >= slots.length) {
-    return { reply: invalidSelectionMessage(slots.length), buttons: [], nextState: state }
+    return {
+      reply: message.interactiveId ? pickFromListMessage() : invalidSelectionMessage(slots.length),
+      buttons: [],
+      nextState: state,
+    }
   }
 
-  const selectedSlot = slots[index]
-  const newDateLabel = data.dateOptions?.find((d) => d.date === data.selectedDate)?.label ?? data.selectedDate ?? ""
-
-  return {
-    reply: rescheduleConfirmMessage({
-      serviceName: booking.serviceName,
-      currentLabel: booking.currentLabel,
-      newDateLabel,
-      slotLabel: selectedSlot.label,
-    }),
-    buttons: CONFIRM_BUTTONS,
-    nextState: { state: RESCHEDULE_STATE_CONFIRM, data: merge(data, { selectedSlot }) },
-  }
+  return confirmStep(data, booking, data.selectedDate, dateLabel, slots[index])
 }
 
 // ============================================================================
@@ -430,10 +493,15 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
   const data = getData(state)
   const { booking, selectedDate, selectedSlot } = data
 
+  // "🕒 Other time": back to the earliest free times for this booking. Nothing has changed yet.
+  if (booking && /\bother time\b|\bchange time\b|\bdifferent time\b/.test(text)) {
+    return await startDateStep(tenantId, booking)
+  }
+
   if (!booking || !selectedDate || !selectedSlot) return done(rescheduleAlreadyGoneMessage())
 
   if (answer === null) {
-    return { reply: rescheduleConfirmReminderMessage(), buttons: CONFIRM_BUTTONS, nextState: state }
+    return { reply: rescheduleConfirmReminderMessage(), buttons: RESCHEDULE_CONFIRM_BUTTONS, nextState: state }
   }
   if (answer === "no") return done(rescheduleKeptMessage())
 
@@ -486,6 +554,8 @@ async function handleState(tenantId: string, state: ConversationState, message: 
   switch (state.state) {
     case RESCHEDULE_STATE_CHOOSE:
       return handleChoose(tenantId, state, message)
+    case RESCHEDULE_STATE_SOONEST:
+      return handleSoonest(tenantId, state, message)
     case RESCHEDULE_STATE_DATE:
       return handleDate(tenantId, state, message)
     case RESCHEDULE_STATE_TIME:
@@ -494,6 +564,100 @@ async function handleState(tenantId: string, state: ConversationState, message: 
       return handleConfirm(tenantId, state, message)
     default:
       return null
+  }
+}
+
+// ============================================================================
+// TAP-ONLY LISTS
+// ============================================================================
+// Row ids come back as message.interactiveId. The "rs_" prefix is what action-router.ts uses to keep these taps
+// out of its reset-word check. Typed numbers still work (old chats). Generic helpers: shared/tap-lists.ts.
+
+const TAP_BOOKING = "rs_book:"
+const TAP_SLOT = "rs_slot:"
+const TAP_DAY = "rs_day:"
+const TAP_TIME = "rs_time:"
+const TAP_MORE = "rs_more:"
+const TAP_OTHER_DAY = "rs_other_day"
+
+const OTHER_DAY_SECTION: ChoiceSection = { title: "More", rows: [{ id: TAP_OTHER_DAY, title: "📅 Other day" }] }
+
+/** Which booking? One row each: the service, then when it is and its reference. */
+function bookingListReply(options: Array<RescheduleOption & { booking: MovableBooking }>, page: number): ActionResult {
+  const rows = pageRows(
+    options,
+    page,
+    0,
+    (o, i) => ({
+      id: `${TAP_BOOKING}${i}`,
+      title: o.booking.serviceName,
+      description: `${o.booking.currentLabel} · Ref ${o.booking.reference}`,
+    }),
+    TAP_MORE,
+  )
+  return listReply(rescheduleChooseBody(), "Choose booking", [{ title: "Your bookings", rows }], {
+    state: RESCHEDULE_STATE_CHOOSE,
+    data: { options } as ConversationState["data"],
+  })
+}
+
+/**
+ * Free times on one day for THIS booking: its own length, ignoring the booking itself (so a small move on the same
+ * day isn't blocked by the time it already holds), and without the exact time it already has (that is not a move).
+ */
+async function freeSlots(tenantId: string, booking: MovableBooking, date: string): Promise<BookingSlot[]> {
+  const slots = await getAvailableSlots(tenantId, date, booking.durationMinutes, booking.id)
+  const current = booking.startTime ? Date.parse(booking.startTime) : null
+  return current === null ? slots : slots.filter((s) => Date.parse(s.start) !== current)
+}
+
+/** "Other day": the days in state (already only days with free times), each with how many times and the first one. */
+function dayListReply(data: RescheduleStateData, page: number, intro = ""): ActionResult {
+  const rows = pageRows(
+    data.dateOptions ?? [],
+    page,
+    0,
+    (d, i) => ({ id: `${TAP_DAY}${i}`, title: d.label, ...(d.hint ? { description: d.hint } : {}) }),
+    TAP_MORE,
+  )
+  return listReply(`${intro ? `${intro}\n\n` : ""}Which day works for you? 📅`, "Choose day", [{ title: "Days", rows }], {
+    state: RESCHEDULE_STATE_DATE,
+    data: merge(data, {}),
+  })
+}
+
+/** The times on one day. `data` must already carry selectedDate and pendingSlots (saved as the next state). */
+function timeListReply(
+  data: RescheduleStateData,
+  booking: MovableBooking,
+  dateLabel: string,
+  slots: BookingSlot[],
+  page: number,
+): ActionResult {
+  const rows = pageRows(slots, page, 1, (s, i) => ({ id: `${TAP_TIME}${i}`, title: s.label }), TAP_MORE)
+  return listReply(`Available times for *${booking.serviceName}* on ${dateLabel}:`, "Choose time", [{ title: dateLabel, rows }, OTHER_DAY_SECTION], {
+    state: RESCHEDULE_STATE_TIME,
+    data: merge(data, {}),
+  })
+}
+
+/** The "Move your booking?" screen. Yes / Other time / No. */
+function confirmStep(
+  data: RescheduleStateData,
+  booking: MovableBooking,
+  dateISO: string,
+  dateLabel: string,
+  slot: BookingSlot,
+): ActionResult {
+  return {
+    reply: rescheduleConfirmMessage({
+      serviceName: booking.serviceName,
+      currentLabel: booking.currentLabel,
+      newDateLabel: dateLabel,
+      slotLabel: slot.label,
+    }),
+    buttons: RESCHEDULE_CONFIRM_BUTTONS,
+    nextState: { state: RESCHEDULE_STATE_CONFIRM, data: merge(data, { selectedDate: dateISO, selectedSlot: slot }) },
   }
 }
 
