@@ -179,7 +179,7 @@ export async function extractSmartShishaEntry(tenantId: string, rawText: string)
   const timer = setTimeout(() => controller.abort(), 3000)
 
   try {
-    return await withTenantAi({ tenantId, purpose: "shisha_entry" }, async (model) => {
+    return await withTenantAi({ tenantId, purpose: "shisha_entry" }, async (model, ctx) => {
       const result = await generateObject({
         model,
         schema: smartShishaEntrySchema,
@@ -192,7 +192,7 @@ export async function extractSmartShishaEntry(tenantId: string, rawText: string)
           "Never guess or infer a name that wasn't stated — use null for anything not clearly and explicitly " +
           "stated. Ignore generic words like 'shisha', 'hookah', or 'session' themselves.",
         prompt: rawText,
-        temperature: 0,
+        ...ctx.tune({ temperature: 0 }),
         abortSignal: controller.signal,
       })
       return { value: result.object, usage: result.usage }

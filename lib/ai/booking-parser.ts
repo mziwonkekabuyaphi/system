@@ -156,13 +156,13 @@ export async function extractBookingRequest(
     const controller = new AbortController()
     timer = setTimeout(() => controller.abort(), PARSE_TIMEOUT_MS)
 
-    const object = await withTenantAi({ tenantId, purpose: "booking_parser" }, async (model) => {
+    const object = await withTenantAi({ tenantId, purpose: "booking_parser" }, async (model, ctx) => {
       const result = await generateObject({
         model,
         schema: rawSchema,
         system: buildPrompt(services, dateOptions),
         prompt: text.slice(0, 500),
-        temperature: 0,
+        ...ctx.tune({ temperature: 0 }),
         abortSignal: controller.signal,
       })
       return { value: result.object, usage: result.usage }

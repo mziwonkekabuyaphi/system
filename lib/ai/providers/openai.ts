@@ -48,6 +48,7 @@ export const openaiProvider: AiProvider = {
   id: "openai",
   label: "OpenAI",
   keyHelpUrl: "https://platform.openai.com/api-keys",
+  keyPlaceholder: "sk-…",
 
   looksLikeKey(apiKey) {
     return KEY_PATTERN.test(apiKey.trim())

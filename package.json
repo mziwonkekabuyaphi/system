@@ -7,7 +7,8 @@
     "start": "next start",
     "lint": "next lint"
   },
-    "dependencies": {
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.105",
     "@ai-sdk/openai": "^4.0.18",
     "@resvg/resvg-js": "^2.6.2",
     "@supabase/ssr": "^0.5.2",

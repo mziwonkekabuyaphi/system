@@ -1229,14 +1229,13 @@ export async function routeIntent(
     // Through the tenant AI gateway: uses the shop's own key (or QLess's, for managed shops),
     // enforces their monthly limit and records tokens + cost. Throws if AI isn't available for
     // them, which lands in the catch below like any other classification failure.
-    const object = await withTenantAi({ tenantId: aiTenantId, purpose: "intent_classification" }, async (model) => {
+    const object = await withTenantAi({ tenantId: aiTenantId, purpose: "intent_classification" }, async (model, ctx) => {
       const result = await generateObject({
         model,
         schema: intentSchema,
         system: SYSTEM_PROMPT,
         prompt: text,
-        temperature: 0,
-        maxOutputTokens: 40, // AI SDK v4: use `maxTokens`
+        ...ctx.tune({ temperature: 0, maxOutputTokens: 40 }),
         abortSignal: controller.signal,
       })
       return { value: result.object, usage: result.usage }

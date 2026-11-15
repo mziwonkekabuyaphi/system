@@ -61,6 +61,9 @@ export function AiSettingsPanel() {
 
   const [replacingKey, setReplacingKey] = useState(false)
   const [keyText, setKeyText] = useState("")
+  // Vendor + model chosen while adding or replacing a key (applied together with the key).
+  const [pickProvider, setPickProvider] = useState("")
+  const [pickModel, setPickModel] = useState("")
 
   const [busy, setBusy] = useState<null | "settings" | "key" | "remove">(null)
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null)
@@ -69,6 +72,8 @@ export function AiSettingsPanel() {
     setSettings(s)
     setEnabled(s.enabled)
     setModel(s.model)
+    setPickProvider(s.provider)
+    setPickModel(s.model)
     setLimitText(s.monthlyLimitZar === null ? "" : String(s.monthlyLimitZar))
     setWarnText(String(s.warnAtPercent))
   }, [])
@@ -107,6 +112,21 @@ export function AiSettingsPanel() {
   const byok = settings.mode === "byok"
   const hasKey = settings.keyStatus !== "none"
   const showKeyInput = !hasKey || replacingKey
+  const choosing = showKeyInput
+  const switching = choosing && pickProvider !== "" && pickProvider !== settings.provider
+  const activeProviderId = choosing && pickProvider ? pickProvider : settings.provider
+  const activeProvider = settings.providers.find((p) => p.id === activeProviderId)
+  const activeLabel = activeProvider?.label ?? settings.providerLabel
+  const activeHelpUrl = activeProvider?.keyHelpUrl ?? settings.keyHelpUrl
+  const activePlaceholder = activeProvider?.keyPlaceholder ?? "sk-…"
+  const modelOptions = switching ? (activeProvider?.models ?? []) : settings.models
+  const shownModel = switching ? pickModel : model
+
+  function onPickProvider(id: string) {
+    setPickProvider(id)
+    const next = settings?.providers.find((p) => p.id === id)
+    setPickModel(id === settings?.provider ? settings.model : (next?.models[0]?.id ?? ""))
+  }
   const totalTokens = settings.month.inputTokens + settings.month.outputTokens
   const pct = settings.month.percentUsed
   const warnLevel = settings.warnAtPercent
@@ -134,7 +154,7 @@ export function AiSettingsPanel() {
   async function onSaveKey() {
     setNotice(null)
     setBusy("key")
-    const result = await saveAiKey(keyText)
+    const result = await saveAiKey(keyText, switching ? pickProvider : undefined, switching ? pickModel : undefined)
     setBusy(null)
     if (!result.success) return setNotice({ kind: "error", text: result.error })
     setKeyText("")
@@ -259,21 +279,30 @@ export function AiSettingsPanel() {
         <SubSection title="Provider">
           <div className="grid gap-3 sm:grid-cols-2">
             <FieldRow label="AI provider">
-              <select className={inputClass} value={settings.provider} disabled>
-                <option value={settings.provider}>{settings.providerLabel}</option>
+              <select className={inputClass} value={activeProviderId} disabled={!choosing || busy !== null} onChange={(e) => onPickProvider(e.target.value)}>
+                {(settings.providers.length > 0 ? settings.providers : [{ id: settings.provider, label: settings.providerLabel }]).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
               </select>
             </FieldRow>
             <FieldRow
               label="Model"
               hint={byok ? "Smaller models cost less and are plenty for understanding messages." : "Chosen by QLess while you're on QLess-managed AI."}
             >
-              <select className={inputClass} value={model} disabled={!byok} onChange={(e) => setModel(e.target.value)}>
-                {settings.models.map((m) => (
+              <select
+                className={inputClass}
+                value={shownModel}
+                disabled={switching ? busy !== null : !byok}
+                onChange={(e) => (switching ? setPickModel(e.target.value) : setModel(e.target.value))}
+              >
+                {modelOptions.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
                   </option>
                 ))}
-                {!settings.models.some((m) => m.id === model) && <option value={model}>{model}</option>}
+                {!modelOptions.some((m) => m.id === shownModel) && <option value={shownModel}>{shownModel}</option>}
               </select>
             </FieldRow>
           </div>
@@ -302,23 +331,23 @@ export function AiSettingsPanel() {
             </div>
           ) : (
             <div className="space-y-2">
-              <FieldRow label={`${settings.providerLabel} API key`}>
+              <FieldRow label={`${activeLabel} API key`}>
                 <input
                   className={inputClass}
                   type="password"
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder="sk-…"
+                  placeholder={activePlaceholder}
                   value={keyText}
                   onChange={(e) => setKeyText(e.target.value)}
                 />
               </FieldRow>
               <p className="text-xs text-ink-muted">
                 Don't have one?{" "}
-                <a className="underline" href={settings.keyHelpUrl} target="_blank" rel="noreferrer noopener">
-                  Create a key in your {settings.providerLabel} account
+                <a className="underline" href={activeHelpUrl} target="_blank" rel="noreferrer noopener">
+                  Create a key in your {activeLabel} account
                 </a>
-                . We check it with {settings.providerLabel} before saving.
+                . We check it with {activeLabel} before saving.
               </p>
               <div className="flex gap-2">
                 <button type="button" className={primaryButtonClass} onClick={onSaveKey} disabled={busy !== null || keyText.trim() === ""}>
@@ -331,6 +360,8 @@ export function AiSettingsPanel() {
                     onClick={() => {
                       setReplacingKey(false)
                       setKeyText("")
+                      setPickProvider(settings.provider)
+                      setPickModel(settings.model)
                     }}
                     disabled={busy !== null}
                   >
