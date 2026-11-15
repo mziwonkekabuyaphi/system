@@ -43,7 +43,7 @@
  */
 
 import { logger } from '@/lib/whatsapp/utils/logger';
-import * as messages from '@/lib/messages/orders';
+import * as messages from '@/lib/services/messages/orders';
 import type { RoutedIntent } from '@/lib/whatsapp/intent-router';
 import type { IncomingMessage } from '@/lib/whatsapp/parse-webhook';
 import type { ActionResult } from '@/lib/types/action';
