@@ -554,7 +554,7 @@ export function InboxManager({
       </div>
 
       {/* Analytics: right-hand panel, so the inbox stays right behind it */}
-      <AdminDrawer open={showAnalytics} onClose={() => setShowAnalytics(false)} width="lg" title="Inbox analytics" subtitle="How the WhatsApp inbox has been doing.">
+      <AdminDrawer open={showAnalytics} onClose={() => setShowAnalytics(false)} width="wide" title="Inbox analytics" subtitle="How the WhatsApp inbox has been doing.">
         <AnalyticsDashboard stats={initialStats} />
       </AdminDrawer>
 
