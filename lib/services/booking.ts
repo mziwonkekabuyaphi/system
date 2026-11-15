@@ -151,6 +151,7 @@ import {
 } from "@/lib/services/ticket-format"
 import { assertProductEnabled, assertWithinVisitLimit, isProductEnabled, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
+import { buildGoogleCalendarUrl } from "@/lib/services/shared/calendar-link"
 import { extractBookingRequest, hasBookingDetail, pickSlotByTime } from "@/lib/ai/booking-parser"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 
@@ -221,6 +222,7 @@ import {
   nameCollectionThanksMessage,
   planLimitReachedMessage,
   bookingAlreadyHasUpcomingMessage,
+  addToCalendarNote,
 } from "@/lib/services/messages/booking"
 
 import { NO_SERVICE_ID, NO_SERVICE_LABEL, noServiceConfirmationMessage } from "@/lib/services/messages/no-service"
@@ -1922,16 +1924,26 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     // Loaded lazily so the PNG engine (native resvg) is only pulled in on this
     // WhatsApp path, not into every bundle that imports booking.ts (e.g. the kiosk).
     const { tryGenerateBookingTicketUrl } = await import("@/lib/whatsapp/booking-ticket-image")
-    const ticketUrl = await tryGenerateBookingTicketUrl(tenantId, {
-      bookingId: result.bookingId,
-      bookingReference: result.bookingReference,
-      customerName: result.customer.name,
-      customerPhone: message.from,
-      serviceNames: result.services.map((s) => s.name),
-      totalPrice: result.services.reduce((sum, s) => sum + Number(s.price), 0),
-      startTime: result.startTime,
-      endTime: result.endTime,
-    })
+    // The "add to calendar" link is built alongside it (best effort: null just leaves the link out).
+    const [ticketUrl, calendarUrl] = await Promise.all([
+      tryGenerateBookingTicketUrl(tenantId, {
+        bookingId: result.bookingId,
+        bookingReference: result.bookingReference,
+        customerName: result.customer.name,
+        customerPhone: message.from,
+        serviceNames: result.services.map((s) => s.name),
+        totalPrice: result.services.reduce((sum, s) => sum + Number(s.price), 0),
+        startTime: result.startTime,
+        endTime: result.endTime,
+      }),
+      buildBookingCalendarUrl(tenantId, {
+        serviceNames: result.services.map((s) => s.name),
+        startISO: result.startTime,
+        endISO: result.endTime,
+        reference: result.bookingReference,
+        ticketLabel: result.ticketLabel,
+      }),
+    ])
 
     return {
       reply:
@@ -1943,11 +1955,15 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
           ticketLabel: result.ticketLabel,
         }) +
         (data.requestedStaff ? `\n${staffRequestedLine(result.staffName ?? data.requestedStaff.name)}` : "") +
+        // With the name prompt coming, the link waits for the "thanks" message (the prompt must stay last).
+        (result.customer.name && calendarUrl ? addToCalendarNote(calendarUrl) : "") +
         webNote,
       // "Book again" would be a dead end right after booking (one upcoming
       // booking per customer), so offer the one useful next step instead.
       buttons: result.customer.name ? CANCEL_OR_RESCHEDULE_BUTTONS : [],
-      nextState: result.customer.name ? null : { state: BOOKING_STATE_AWAITING_NAME, data: {} },
+      nextState: result.customer.name
+        ? null
+        : { state: BOOKING_STATE_AWAITING_NAME, data: calendarUrl ? { calendarUrl } : {} },
       ...(ticketUrl ? { followUp: [{ reply: "", image: { url: ticketUrl } }] } : {}),
     }
   } catch (error) {
@@ -1992,14 +2008,47 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
 // POST-BOOKING: lightweight name collection
 // ============================================================================
 
-async function handleNameCollection(tenantId: string, message: IncomingMessage): Promise<ActionResult> {
+/**
+ * "Add to calendar" link for a confirmed (or moved) booking, or null if it can't be built. Exported so reschedule.ts
+ * uses the same title/details. The shop name is read lazily (like the ticket image: it sits behind the PNG engine,
+ * which must stay out of bundles that only import booking.ts, e.g. the kiosk) and is optional. Never throws.
+ */
+export async function buildBookingCalendarUrl(
+  tenantId: string,
+  args: { serviceNames: string[]; startISO: string; endISO: string; reference: string; ticketLabel?: string | null },
+): Promise<string | null> {
+  try {
+    let shopName = ""
+    try {
+      const { getTenantDisplayName } = await import("@/lib/whatsapp/ticket-image")
+      shopName = (await getTenantDisplayName(getClientOrThrow(), tenantId)) ?? ""
+    } catch (error) {
+      console.error("[booking] Could not read the shop name for the calendar link", { tenantId, error })
+    }
+
+    const service = args.serviceNames.join(" + ") || NO_SERVICE_LABEL
+    return buildGoogleCalendarUrl({
+      title: shopName ? `${service} at ${shopName}` : service,
+      startISO: args.startISO,
+      endISO: args.endISO,
+      details: [`Booking reference: ${args.reference}`, ...(args.ticketLabel ? [`Ticket: ${args.ticketLabel}`] : [])].join("\n"),
+    })
+  } catch (error) {
+    console.error("[booking] Could not build the calendar link", { tenantId, error })
+    return null
+  }
+}
+
+async function handleNameCollection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
   const name = rawReplyText(message)
+  // Carried from the confirmation: the link couldn't go there because the name prompt had to be last.
+  const calendarUrl = (state.data as { calendarUrl?: string } | null | undefined)?.calendarUrl
 
   if (!name || name.length < 2) {
     return {
       reply: nameCollectionRetryMessage(),
       buttons: [],
-      nextState: { state: BOOKING_STATE_AWAITING_NAME, data: {} },
+      nextState: { state: BOOKING_STATE_AWAITING_NAME, data: calendarUrl ? { calendarUrl } : {} },
     }
   }
 
@@ -2010,7 +2059,7 @@ async function handleNameCollection(tenantId: string, message: IncomingMessage):
   }
 
   return {
-    reply: nameCollectionThanksMessage(name) + (await getTenantWebLinkNote(tenantId)),
+    reply: nameCollectionThanksMessage(name) + (calendarUrl ? addToCalendarNote(calendarUrl) : "") + (await getTenantWebLinkNote(tenantId)),
     buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
     nextState: null,
   }
@@ -2039,7 +2088,7 @@ async function handleState(tenantId: string, state: ConversationState, message: 
     case BOOKING_STATE_CONFIRM:
       return handleConfirm(tenantId, state, message)
     case BOOKING_STATE_AWAITING_NAME:
-      return handleNameCollection(tenantId, message)
+      return handleNameCollection(tenantId, state, message)
     default:
       return null
   }

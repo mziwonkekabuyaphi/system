@@ -53,6 +53,7 @@ import { buildServicesListMessage } from "@/lib/whatsapp/utils/services-list"
 import {
   BOOKING_OUTSIDE_ALLOWED_WINDOW,
   BOOKING_SLOT_NO_LONGER_AVAILABLE,
+  buildBookingCalendarUrl,
   buildDateOptions,
   getAvailableSlots,
   rescheduleBooking,
@@ -73,6 +74,7 @@ import {
 import type { ChoiceSection } from "@/lib/whatsapp/utils/choice-list"
 
 import {
+  addToCalendarNote,
   availabilityErrorMessage,
   invalidSelectionMessage,
   noSlotsOnDayMessage,
@@ -514,13 +516,23 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     switch (result.outcome) {
       case "rescheduled": {
         const newDateLabel = data.dateOptions?.find((d) => d.date === selectedDate)?.label ?? selectedDate
+        const serviceName = result.serviceName ?? booking.serviceName
+        const bookingReference = result.bookingReference ?? booking.reference
+        // The booking keeps its length, so the new end is the new start plus that length.
+        const calendarUrl = await buildBookingCalendarUrl(tenantId, {
+          serviceNames: [serviceName],
+          startISO: selectedSlot.start,
+          endISO: new Date(Date.parse(selectedSlot.start) + booking.durationMinutes * 60_000).toISOString(),
+          reference: bookingReference,
+        })
         return {
-          reply: rescheduleDoneMessage({
-            serviceName: result.serviceName ?? booking.serviceName,
-            newDateLabel,
-            slotLabel: selectedSlot.label,
-            bookingReference: result.bookingReference ?? booking.reference,
-          }),
+          reply:
+            rescheduleDoneMessage({
+              serviceName,
+              newDateLabel,
+              slotLabel: selectedSlot.label,
+              bookingReference,
+            }) + (calendarUrl ? addToCalendarNote(calendarUrl, true) : ""),
           buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
           nextState: null,
         }
