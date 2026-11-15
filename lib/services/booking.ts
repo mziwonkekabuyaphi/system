@@ -149,6 +149,8 @@ import {
   formatBookingTicketNumber,
   generateBookingReference,
 } from "@/lib/services/ticket-format"
+import { getCardOption, startCardPayment } from "@/lib/payments/card"
+import { formatMoneyFor } from "@/lib/services/orders/orders.tenant"
 import { assertProductEnabled, assertWithinVisitLimit, isProductEnabled, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
 import { getTenantWebLinkNote } from "@/lib/whatsapp/utils/tenant-web-link"
 import { buildGoogleCalendarUrl } from "@/lib/services/shared/calendar-link"
@@ -212,6 +214,9 @@ import {
   servicesLoadErrorMessage,
   availabilityErrorMessage,
   slotStaleMessage,
+  bookingPaymentRequestMessage,
+  bookingPaymentUnavailableMessage,
+  bookingPaymentLinkFailedMessage,
   bookingWindowClosedMessage,
   bookingCancelledMessage,
   missingBookingDataMessage,
@@ -303,6 +308,19 @@ export const BOOKING_REQUESTED_STAFF_UNAVAILABLE = "BOOKING_REQUESTED_STAFF_UNAV
  *  booking_settings.allow_customer_staff_choice switched off (e.g. the admin turned
  *  it off while the customer was mid-conversation). */
 export const BOOKING_STAFF_CHOICE_DISABLED = "BOOKING_STAFF_CHOICE_DISABLED"
+
+/** Thrown by createBooking() when the shop requires payment for bookings but cannot take a card
+ *  payment right now (no provider connected, the provider can't charge in the shop's currency, or the
+ *  total is below the provider's minimum). Never answered by quietly booking for free. */
+export const BOOKING_PAYMENT_UNAVAILABLE = "BOOKING_PAYMENT_UNAVAILABLE"
+
+/** Thrown by createBooking() when the payment link could not be created. The held slot has already
+ *  been released, so the customer can simply try again. */
+export const BOOKING_PAYMENT_LINK_FAILED = "BOOKING_PAYMENT_LINK_FAILED"
+
+/** How long an unpaid booking holds its slot. Keep in sync with bookings_expire_unpaid (p_hold, 15 minutes)
+ *  in supabase/proposed/booking_payments.sql. */
+export const BOOKING_PAYMENT_HOLD_MINUTES = 15
 
 /** Hard ceiling, mirrors the DB CHECK on max_services_per_booking. */
 const ABSOLUTE_MAX_SERVICES_PER_BOOKING = 5
@@ -454,11 +472,21 @@ async function getBookingsInWindow(
   /** Rescheduling: the booking being moved must not block its own new time. */
   excludeBookingId?: string,
 ): Promise<Array<{ staffId: string; start: Date; end: Date }>> {
+  // Release unpaid holds that ran out, so their slots show as free again. The cron jobs only run once a
+  // day, so this is what keeps a held slot from staying blocked. Best effort: never stops a read.
+  await supabase.rpc("bookings_expire_unpaid", { p_tenant_id: tenantId }).then(
+    ({ error }) => {
+      if (error) console.error("[booking] bookings_expire_unpaid failed", { tenantId, error: error.message })
+    },
+    () => {},
+  )
+
   let query = supabase
     .from("bookings")
     .select("staff_id, start_time, end_time")
     .eq("tenant_id", tenantId)
-    .eq("status", "confirmed")
+    // An unpaid hold blocks its slot just like a confirmed booking.
+    .in("status", ["confirmed", "awaiting_payment"])
     .gte("start_time", windowStart.toISOString())
     .lte("start_time", windowEnd.toISOString())
   if (excludeBookingId) query = query.neq("id", excludeBookingId)
@@ -812,6 +840,22 @@ export interface CreateBookingParams {
    *  while the tenant's allow_customer_staff_choice is on (re-read here, never trusted from
    *  the caller); the slot is then booked with this person or not at all. */
   requestedStaffId?: string
+  /** "auto" = if the shop requires payment (booking_settings.require_payment) and the total is above 0, hold
+   *  the slot and return a card payment link instead of confirming. Used by the WhatsApp and kiosk channels.
+   *  "skip" (default) = always confirm, e.g. a booking staff create in the admin. */
+  payment?: "auto" | "skip"
+  /** Where the booking came from. Stored with a payment so the webhook knows how to reach the customer afterwards. */
+  channel?: "whatsapp" | "kiosk"
+}
+
+/** What the customer pays, when the booking is waiting for payment. */
+export interface BookingPaymentInfo {
+  url: string
+  paymentId: string
+  amount: number
+  currency: string
+  /** How long the slot is held for. */
+  holdMinutes: number
 }
 
 export interface CreateBookingResult {
@@ -832,6 +876,12 @@ export interface CreateBookingResult {
   endTime: string
   /** Who the booking was assigned to. */
   staffName?: string
+  /** "awaiting_payment" = the slot is held and `payment` has the link; the webhook confirms it once paid. */
+  status: "confirmed" | "awaiting_payment"
+  /** Sum of the services' prices. */
+  totalPrice: number
+  /** Set only while status is "awaiting_payment". */
+  payment: BookingPaymentInfo | null
 }
 
 /**
@@ -883,13 +933,37 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     throw new Error(BOOKING_STAFF_CHOICE_DISABLED)
   }
 
+  // Does this booking have to be paid for first? Only for the channels that ask for it, only when the
+  // shop switched it on, and only when there is something to pay (the payment table refuses 0).
+  const totalPrice = Math.round(services.reduce((sum, s) => sum + Number(s.price), 0) * 100) / 100
+  let cardOption: Awaited<ReturnType<typeof getCardOption>> = null
+  let payable = false
+  if (params.payment === "auto" && (await readRequirePayment(supabase, tenantId)) && totalPrice > 0) {
+    cardOption = await getCardOption(supabase, tenantId)
+    // The shop wants payment but can't take it right now: say so rather than booking for free.
+    if (!cardOption || !(totalPrice >= cardOption.minAmount)) throw new Error(BOOKING_PAYMENT_UNAVAILABLE)
+    payable = true
+  }
+
+  // A customer starting over (kiosk "back", a second WhatsApp attempt) must not be blocked by their own
+  // earlier unpaid hold, so release it BEFORE looking for a free staff member.
+  let customer: Customer | null = null
+  if (payable) {
+    customer = await ensureCustomer(tenantId, phone)
+    const { error: releaseError } = await supabase.rpc("bookings_release_unpaid_for_customer", {
+      p_tenant_id: tenantId,
+      p_customer_id: customer.id,
+    })
+    if (releaseError) throw new Error(`Failed to release the earlier unpaid booking: ${releaseError.message}`)
+  }
+
   let staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes, {
     requireStaffId: params.requestedStaffId,
   })
 
   // Minimal (phone-only) tenant_customers row if this is a brand-new
   // customer — no name/email required to book, on either channel.
-  const customer = await ensureCustomer(tenantId, phone)
+  const bookedCustomer = customer ?? (await ensureCustomer(tenantId, phone))
 
   const startTime = new Date(slot.start)
   const endTime = new Date(startTime.getTime() + totalDurationMinutes * 60_000)
@@ -912,12 +986,12 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
       .insert([
         {
           tenant_id: tenantId,
-          customer_id: customer.id,
+          customer_id: bookedCustomer.id,
           service_id: service?.id ?? null,
           staff_id: staff.id,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
-          status: "confirmed",
+          status: payable ? "awaiting_payment" : "confirmed",
           booking_reference: bookingReference,
         },
       ])
@@ -979,9 +1053,42 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     throw new Error(`Failed to save the booking's services: ${linkError.message}`)
   }
 
+  // Paid bookings: the slot is held, the customer gets a card link, and the signed webhook confirms the
+  // booking once the money has arrived (lib/payments/settle.ts). If no link can be made the hold is
+  // removed again, so nobody is left waiting for a payment they cannot make.
+  let payment: BookingPaymentInfo | null = null
+  if (payable && cardOption) {
+    const started = await startCardPayment({
+      supabase,
+      tenantId,
+      option: cardOption,
+      purpose: "booking_payment",
+      purposeId: inserted.id,
+      amount: totalPrice,
+      description: `Booking: ${services.map((s) => s.name).join(" + ") || "Appointment"}`,
+      recordMetadata: { booking_id: inserted.id, customer_id: bookedCustomer.id, channel: params.channel ?? "whatsapp" },
+      providerMetadata: { booking_id: inserted.id },
+      idempotencyPrefix: "booking",
+    })
+    if (!started.ok) {
+      await supabase.from("bookings").delete().eq("id", inserted.id).eq("tenant_id", tenantId).eq("status", "awaiting_payment")
+      throw new Error(BOOKING_PAYMENT_LINK_FAILED)
+    }
+    payment = {
+      url: started.url,
+      paymentId: started.paymentId,
+      amount: totalPrice,
+      currency: cardOption.currency,
+      holdMinutes: BOOKING_PAYMENT_HOLD_MINUTES,
+    }
+  }
+
   return {
     bookingId: inserted.id as string,
-    customer,
+    customer: bookedCustomer,
+    status: payable ? "awaiting_payment" : "confirmed",
+    totalPrice,
+    payment,
     services,
     totalDurationMinutes,
     bookingReference,
@@ -994,6 +1101,23 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     endTime: endTime.toISOString(),
     staffName: staff.name,
   }
+}
+
+/** booking_settings.require_payment (default false). Never throws on a missing row: no row = payment off. */
+async function readRequirePayment(supabase: SupabaseClient, tenantId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("booking_settings")
+    .select("require_payment")
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  // 42703 = the column doesn't exist yet (the paid-bookings migration hasn't been applied): payment is off.
+  if (error && (error as { code?: string }).code === "42703") return false
+  if (error) {
+    // Fail closed: if we can't tell whether the shop wants payment, don't hand out a free booking.
+    console.error("[booking] require_payment lookup failed", { tenantId, error: error.message })
+    throw new Error(`Failed to read booking payment setting: ${error.message}`)
+  }
+  return data?.require_payment === true
 }
 
 /** booking_settings.booking_number_prefix (default "B"). Never throws: a failed read just means "B". */
@@ -1910,7 +2034,26 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       phone: message.from,
       // Re-validated inside createBooking(): tenant, active, free, and the setting still on.
       requestedStaffId: data.requestedStaff?.id,
+      // A shop that requires payment gets a held slot + a card link instead of an instant confirmation.
+      payment: "auto",
+      channel: "whatsapp",
     })
+
+    // Waiting for payment: no ticket, no calendar link yet. The signed webhook confirms the booking and
+    // sends all of that once the money has arrived (lib/payments/settle.ts).
+    if (result.status === "awaiting_payment" && result.payment) {
+      return {
+        reply: bookingPaymentRequestMessage({
+          serviceName: result.services.map((s) => s.name).join(" + ") || NO_SERVICE_LABEL,
+          slotLabel: selectedSlot.label,
+          amountLabel: formatMoneyFor(result.payment.currency, result.payment.amount),
+          url: result.payment.url,
+          holdMinutes: result.payment.holdMinutes,
+        }),
+        buttons: [],
+        nextState: null,
+      }
+    }
 
     // The web link goes on the confirmation only when we are NOT about to ask
     // for the customer's name (that prompt must stay the last thing they see;
@@ -1985,6 +2128,12 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
     }
     if (error instanceof Error && error.message === BOOKING_TOO_MANY_SERVICES) {
       return { reply: tooManyServicesMessage(data.maxServices ?? 1), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_PAYMENT_UNAVAILABLE) {
+      return { reply: bookingPaymentUnavailableMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_PAYMENT_LINK_FAILED) {
+      return { reply: bookingPaymentLinkFailedMessage(), buttons: [], nextState: null }
     }
     if (error instanceof Error && error.message === PLAN_VISIT_LIMIT_REACHED) {
       return { reply: planLimitReachedMessage(), buttons: [], nextState: null }
