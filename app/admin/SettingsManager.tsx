@@ -234,8 +234,8 @@ const SETTINGS_NAV: Array<{
         // The assistant's AI account: bring-your-own key, spending limit and usage. Same visibility
         // as WhatsApp Settings (it only matters while the WhatsApp assistant is on).
         id: "ai",
-        label: "AI",
-        title: "AI",
+        label: "AI Settings",
+        title: "AI Settings",
         description: "Your AI account, spending limit and what the assistant has used.",
         anyOf: ["whatsapp"],
       },
