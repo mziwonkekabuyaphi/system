@@ -98,3 +98,11 @@ export async function generateAiText(request: AiTextRequest): Promise<AiTextResp
     clearTimeout(timer)
   }
 }
+
+/**
+ * Name of the model QLess-managed tenants use, for logs and display only.
+ * (Tenants with their own key choose their own model inside the gateway.)
+ */
+export function getAiModelName(_tenantId?: string): string {
+  return process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini"
+}
