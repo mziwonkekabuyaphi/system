@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic"
 type Group = "product" | "addon" | "feature"
 
 /** What "no tenant_modules row" means, mirroring lib/services/plans.ts:
- *   booking, queue, shisha, shifts, payroll, wallet, events, vvip, custom_domain
+ *   booking, queue, shisha, orders, shifts, payroll, wallet, events, vvip, custom_domain
  *                  isProductEnabled      not plan-gated, default OFF (opt-in)
  *   kiosk          isKioskEnabled        plan must include it, default ON
  *   display        isTenantSwitchedOn    not plan-gated, default ON
@@ -26,6 +26,7 @@ const SWITCHABLE: Array<{ key: string; label: string; hint?: string; defaultOn: 
   { key: "queue", label: "Queue", defaultOn: false, planGated: false, group: "product" },
   { key: "shisha", label: "Shisha", defaultOn: false, planGated: false, group: "product" },
   { key: "staff", label: "Staff Management", hint: "R30 per staff, only when sold alone", defaultOn: false, planGated: false, group: "product" },
+  { key: "orders", label: "Order management", hint: "Catalogue, vendors and WhatsApp ordering with a live order board", defaultOn: false, planGated: false, group: "product" },
   { key: "shifts", label: "Shifts", defaultOn: false, planGated: false, group: "addon" },
   { key: "payroll", label: "Payroll", defaultOn: false, planGated: false, group: "addon" },
   { key: "whatsapp", label: "WhatsApp staff notifications", defaultOn: false, planGated: false, group: "addon" },
