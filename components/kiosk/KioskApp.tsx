@@ -99,6 +99,9 @@ import {
   fetchKioskTimeSlots,
   submitKioskBooking,
   submitKioskQueueJoin,
+  checkKioskBookingPayment,
+  cancelKioskBookingPayment,
+  type KioskBookingPayment,
   type KioskBookingTicket,
   type KioskQueueTicket,
 } from "@/app/kiosk/[slug]/actions"
@@ -194,6 +197,7 @@ type Step =
   | "date"
   | "time"
   | "details"
+  | "pay"
   | "ticket"
 
 type Path = "booking" | "queue"
@@ -360,6 +364,8 @@ export function KioskApp({
   const [whatsappOptIn, setWhatsappOptIn] = useState(false)
 
   const [ticket, setTicket] = useState<Ticket | null>(null)
+  // Set while a booking is held and waiting for the customer's card payment (shops that require payment).
+  const [payment, setPayment] = useState<KioskBookingPayment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle")
@@ -379,6 +385,7 @@ export function KioskApp({
     setCustomAnswer("")
     setWhatsappOptIn(false)
     setTicket(null)
+    setPayment(null)
     setError(null)
     setBusy(false)
     setPrintStatus("idle")
@@ -401,7 +408,8 @@ export function KioskApp({
 
   // Both timers exist to protect the NEXT walk-in on a shared tablet, so
   // they only run on the kiosk, never on a customer's own phone.
-  useIdleReset(resetAll, step !== "welcome" && !isWeb, branding.idleRefreshSeconds * 1000)
+  // Not while paying: the customer is busy on their phone, and the held time already runs out by itself.
+  useIdleReset(resetAll, step !== "welcome" && step !== "pay" && !isWeb, branding.idleRefreshSeconds * 1000)
   useConfirmationAutoReset(step === "ticket" && !isWeb, branding.confirmationRefreshSeconds * 1000, resetAll)
 
   // Customers on /web/ got here by messaging the shop on WhatsApp, so their chat is already open: no checkbox.
@@ -611,6 +619,12 @@ export function KioskApp({
         setError(result.error)
         return
       }
+      // The shop takes payment first: show the pay screen. The ticket (and the print) comes once it is paid.
+      if (result.data.kind === "booking_payment") {
+        setPayment(result.data)
+        setStep("pay")
+        return
+      }
       setTicket(result.data)
       setStep("ticket")
       void attemptPrint(result.data)
@@ -736,6 +750,21 @@ export function KioskApp({
           canSubmit={canSubmit}
           busy={busy}
           error={error}
+        />
+      )}
+
+      {step === "pay" && payment && (
+        <PayScreen
+          slug={slug}
+          payment={payment}
+          isWeb={isWeb}
+          onPaid={() => {
+            setTicket(payment.ticket)
+            setPayment(null)
+            setStep("ticket")
+            void attemptPrint(payment.ticket)
+          }}
+          onCancel={resetAll}
         />
       )}
 
@@ -1742,6 +1771,155 @@ function DetailsScreen({
           cursor: default;
         }
       `}</style>
+    </Screen>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// Pay — the booking is held; the customer pays by card, then the ticket appears
+// ----------------------------------------------------------------------------
+
+function PayScreen({
+  slug,
+  payment,
+  isWeb,
+  onPaid,
+  onCancel,
+}: {
+  slug: string
+  payment: KioskBookingPayment
+  /** On a customer's own phone there is no second device to scan with: show a Pay button instead of the QR code. */
+  isWeb: boolean
+  onPaid: () => void
+  onCancel: () => void
+}) {
+  const [secondsLeft, setSecondsLeft] = useState(payment.holdMinutes * 60)
+  const [expired, setExpired] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const endsAt = useRef(Date.now() + payment.holdMinutes * 60_000)
+  const done = useRef(false)
+
+  // The confirmation only ever comes from the server (the payment provider's signed webhook): this just asks.
+  useEffect(() => {
+    let stopped = false
+    const poll = async () => {
+      const result = await checkKioskBookingPayment(slug, payment.bookingId)
+      if (stopped || done.current || !result.ok) return
+      if (result.data.state === "paid") {
+        done.current = true
+        onPaid()
+      } else if (result.data.state === "expired") {
+        done.current = true
+        setExpired(true)
+      }
+    }
+    const pollTimer = setInterval(poll, 3000)
+    const clockTimer = setInterval(() => {
+      setSecondsLeft(Math.max(0, Math.round((endsAt.current - Date.now()) / 1000)))
+    }, 1000)
+    return () => {
+      stopped = true
+      clearInterval(pollTimer)
+      clearInterval(clockTimer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one poller per payment screen
+  }, [slug, payment.bookingId])
+
+  const minutes = Math.floor(secondsLeft / 60)
+  const seconds = String(secondsLeft % 60).padStart(2, "0")
+
+  const cancel = async () => {
+    setLeaving(true)
+    done.current = true
+    await cancelKioskBookingPayment(slug, payment.bookingId)
+    onCancel()
+  }
+
+  return (
+    <Screen title={expired ? "Time ran out" : `Pay ${payment.amountLabel} to confirm`}>
+      {expired ? (
+        <>
+          <p className="payNote">Your time wasn't held because the payment wasn't completed. Please start again.</p>
+          <button className="payBtn" type="button" onClick={onCancel}>
+            Start again
+          </button>
+        </>
+      ) : (
+        <>
+          {isWeb ? (
+            <a className="payBtn" href={payment.paymentUrl} target="_blank" rel="noopener noreferrer">
+              Pay {payment.amountLabel}
+            </a>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- a data URL generated on the server
+            <img className="qr" src={payment.qrDataUrl} alt="Scan to pay" width={300} height={300} />
+          )}
+          <p className="payNote">
+            {isWeb ? "Pay on the secure page, then come back here." : "Scan with your phone's camera to pay. We also sent the link to your WhatsApp."}
+          </p>
+          <p className="timer">
+            Holding your time for {minutes}:{seconds}
+          </p>
+          <button className="payCancel" type="button" onClick={cancel} disabled={leaving}>
+            Cancel
+          </button>
+        </>
+      )}
+      <style jsx>{`
+  .qr {
+    background: #fff;
+    padding: 16px;
+    border-radius: 20px;
+    border: 2px solid var(--ink);
+  }
+  .payNote {
+    margin: 0;
+    max-width: 560px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .timer {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .payBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    min-width: 280px;
+    padding: 0 32px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 16px;
+    font-size: 26px;
+    font-weight: 700;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .payCancel {
+    min-height: 64px;
+    min-width: 200px;
+    background: transparent;
+    color: var(--muted);
+    border: 2px solid var(--muted);
+    border-radius: 14px;
+    font-size: 20px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .payCancel:disabled {
+    opacity: 0.5;
+  }
+`}</style>
     </Screen>
   )
 }
