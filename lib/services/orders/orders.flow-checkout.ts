@@ -300,7 +300,7 @@ export async function beginCardOrderCheckout(
  * that are still pending/pending, so a redelivered webhook is a no-op).
  */
 export async function fulfillOrderAfterPayment(paymentAttemptId: string): Promise<void> {
-  const db = getSupabaseServerClient();
+  const db = await getSupabaseServerClient();
   if (!db) {
     logger.error('[orders] fulfillOrderAfterPayment: no Supabase client', { paymentAttemptId });
     return;
@@ -427,7 +427,7 @@ async function beginWalletOrderPayment(
  * Nothing is ever charged on a failed attempt, so no refund branch is needed.
  */
 export async function fulfillOrderPurchaseAfterTopup(resume: OrdersStateData, topupId: string): Promise<void> {
-  const db = getSupabaseServerClient();
+  const db = await getSupabaseServerClient();
   const tenantId = resume.tenantId;
   const phone = resume.senderPhone;
   const paymentAttemptId = resume.paymentAttemptId;
