@@ -277,6 +277,11 @@ export function bookingConfirmedMessage(params: {
   )
 }
 
+/** The calendar link line appended to a confirmation. `moved` = after a reschedule (the old entry is not removed for them). */
+export function addToCalendarNote(url: string, moved = false): string {
+  return `\n\n📆 ${moved ? "Add the new time to your calendar" : "Add to your calendar"}:\n${url}`
+}
+
 export function nameCollectionRetryMessage(): string {
   return "Sorry, didn't catch that — what name should we save this booking under?"
 }
