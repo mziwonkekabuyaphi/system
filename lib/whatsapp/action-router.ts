@@ -190,6 +190,15 @@ const GLOBAL_INTERRUPT_KEYWORDS = [...RESET_KEYWORDS, "cancel"]
 
 const CANCEL_STATE_PREFIX = "cancel_"
 
+/**
+ * Row ids of the tap-only lists: events (evt_), shisha (sh_), booking (bk_), reschedule (rs_).
+ * A tap on one of these rows is ALWAYS an answer to the list the active flow just sent, so it must never be
+ * read as a reset word: the row's text is a shop-defined name ("Stop Smoking Massage", "Menu Launch Night")
+ * and a name containing "menu", "stop" or "cancel" would otherwise throw the customer back to the main menu.
+ * The words still work when TYPED, and on the flows' own buttons ("🏠 Main Menu", "❌ No", ...).
+ */
+const LIST_TAP_PATTERN = /^(evt_|sh_|bk_|rs_)/
+
 /** Short answers like "2" or "yes" are answering a prompt, never switching topic. */
 const PLAIN_ANSWER_PATTERN = /^(\d{1,2}|y|n|yes|no|yeah|yep|nope|ok|okay|sure|ewe|yebo|ja|hayi|cha|nee)[.!]*$/
 
@@ -623,7 +632,8 @@ export async function routeAction(
 
     // 2b. Reset words. Inside the cancel flow, "cancel" is NOT one of them.
     const resetWords = inCancelFlow ? RESET_KEYWORDS : GLOBAL_INTERRUPT_KEYWORDS
-    if (resetWords.some((keyword) => text.includes(keyword))) {
+    const isListTap = LIST_TAP_PATTERN.test(message.interactiveId ?? "")
+    if (!isListTap && resetWords.some((keyword) => text.includes(keyword))) {
       await stateService.clearState(tenantId, message.from)
       return buildEntryReply(tenantId, message, false)
     }
