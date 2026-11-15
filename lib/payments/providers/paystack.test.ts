@@ -127,7 +127,7 @@ describe("confirmSucceeded (always on)", () => {
       seen = { url, auth: (init.headers as Record<string, string>).Authorization }
       return new Response(JSON.stringify({ status: true, data: { status: "success", amount: 2500, currency: "ZAR", reference: REF, id: 4099260516, domain: "test" } }))
     }) as typeof fetch
-    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event }), true)
+    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event, rawBody: "", headers: new Headers() }), true)
     assert.ok(seen)
     const s = seen as unknown as { url: string; auth: string }
     assert.equal(s.url, `https://api.paystack.co/transaction/verify/${REF}`)
@@ -136,17 +136,17 @@ describe("confirmSucceeded (always on)", () => {
 
   it("says no when Paystack disagrees on status, amount or reference", async () => {
     globalThis.fetch = answer({ status: "failed", amount: 2500, currency: "ZAR", reference: REF, domain: "test" })
-    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event }), false)
+    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event, rawBody: "", headers: new Headers() }), false)
     globalThis.fetch = answer({ status: "success", amount: 1, currency: "ZAR", reference: REF, domain: "test" })
-    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event }), false)
+    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event, rawBody: "", headers: new Headers() }), false)
     globalThis.fetch = answer({ status: "success", amount: 2500, currency: "ZAR", reference: "pay-someone-else", domain: "test" })
-    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event }), false)
+    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event, rawBody: "", headers: new Headers() }), false)
   })
 
   it("throws on an outage (so Paystack retries the notice) and says no without a reference", async () => {
     globalThis.fetch = (async () => new Response("oops", { status: 500 })) as typeof fetch
-    await assert.rejects(paystackProvider.confirmSucceeded!({ connection: connection(), event }), ProviderError)
-    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event: { ...event, checkoutRef: null } }), false)
+    await assert.rejects(paystackProvider.confirmSucceeded!({ connection: connection(), event, rawBody: "", headers: new Headers() }), ProviderError)
+    assert.equal(await paystackProvider.confirmSucceeded?.({ connection: connection(), event: { ...event, checkoutRef: null }, rawBody: "", headers: new Headers() }), false)
   })
 })
 

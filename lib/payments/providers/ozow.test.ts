@@ -304,7 +304,7 @@ describe("status API confirmation (switched off by default)", () => {
   it("is off: confirmSucceeded says yes without calling Ozow", async () => {
     let called = false
     globalThis.fetch = (async () => { called = true; return new Response("[]") }) as typeof fetch
-    assert.equal(await ozowProvider.confirmSucceeded?.({ connection: connection("live"), event }), true)
+    assert.equal(await ozowProvider.confirmSucceeded?.({ connection: connection("live"), event, rawBody: "", headers: new Headers() }), true)
     assert.equal(called, false)
   })
 

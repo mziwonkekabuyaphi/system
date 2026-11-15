@@ -4,10 +4,11 @@
  * checkout, the webhook pipeline and the settings screen all work from this list.
  *
  * Only providers registered here can be connected or used. The database allows yoco, ozow and peach already;
- * Paystack needs supabase/proposed/payments_paystack.sql first.
+ * Paystack and PayFast need supabase/proposed/payments_paystack_payfast.sql first.
  */
 
 import { ozowProvider } from "./ozow"
+import { payfastProvider } from "./payfast"
 import { paystackProvider } from "./paystack"
 import { peachProvider } from "./peach"
 import { yocoProvider } from "./yoco"
@@ -18,6 +19,7 @@ const REGISTRY: Partial<Record<ProviderId, CardProvider>> = {
   ozow: ozowProvider,
   paystack: paystackProvider,
   peach: peachProvider,
+  payfast: payfastProvider,
 }
 
 /** null for an unknown or not-yet-implemented provider. */
