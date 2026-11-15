@@ -71,7 +71,7 @@ export async function handleProviderWebhook(req: Request, providerId: string, in
   let outcome = "ignored"
   try {
     if (event.type === "succeeded") {
-      if (provider.confirmSucceeded && !(await provider.confirmSucceeded({ connection, event }))) {
+      if (provider.confirmSucceeded && !(await provider.confirmSucceeded({ connection, event, rawBody, headers: req.headers }))) {
         outcome = "not_confirmed_by_provider" // verified notice, but the provider's own records don't agree: credit nothing
         console.error(`${tag} provider did not confirm a succeeded notice, NOT credited`, { integrationId, deliveryId })
       } else {
