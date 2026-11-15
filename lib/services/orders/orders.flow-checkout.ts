@@ -17,7 +17,7 @@ import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/whatsapp/utils/logger';
 import * as messages from '@/lib/messages/orders';
 import type { ActionResult } from '@/lib/types/action';
-import { WALLET_STATE_TOPUP_AMOUNT } from '@/lib/services/wallet';
+import { PASSPORT_STATE_TOPUP_AMOUNT as WALLET_STATE_TOPUP_AMOUNT } from '@/lib/services/passport';
 import type { CartItem, CustomerPaymentChoice, OrdersStateData } from './orders.types';
 import {
   CONFIRM_YES_NO_BUTTONS,
