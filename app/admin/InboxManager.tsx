@@ -79,6 +79,24 @@ function formatWhen(iso: string | null): string {
   return date.toLocaleDateString([], { month: "short", day: "numeric" })
 }
 
+// How "alive" a conversation is, from the time of its last message. WhatsApp has no real
+// online/offline signal for customers, so recency is the honest stand-in.
+//   live   : a message in the last 15 minutes (green dot + tinted row)
+//   recent : a message in the last 24 hours (WhatsApp's reply window), normal styling
+//   older  : anything older, muted so it falls back visually
+const LIVE_WITHIN_MS = 15 * 60 * 1000
+const RECENT_WITHIN_MS = 24 * 60 * 60 * 1000
+
+type Freshness = "live" | "recent" | "older"
+
+function freshnessOf(iso: string | null, now: number): Freshness {
+  if (!iso) return "older"
+  const age = now - new Date(iso).getTime()
+  if (age <= LIVE_WITHIN_MS) return "live"
+  if (age <= RECENT_WITHIN_MS) return "recent"
+  return "older"
+}
+
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
@@ -199,12 +217,25 @@ export function InboxManager({
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null
 
+  // Re-check every 30s so a chat drops from "active now" to "recent" without a page refresh.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
   const filtered = conversations
     .filter((c) => matchesFilter(c, filter))
     .filter((c) => {
       const term = search.trim().toLowerCase()
       if (!term) return true
       return (c.customerName ?? "").toLowerCase().includes(term) || c.phone.includes(term)
+    })
+    // Newest message first, always (also after sending a reply). No message = bottom.
+    .sort((a, b) => {
+      const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0
+      const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0
+      return tb - ta
     })
 
   // Keep the newest message in view when a thread loads or a message is added.
@@ -332,6 +363,9 @@ export function InboxManager({
             ) : (
               filtered.map((c) => {
                 const active = c.id === selectedId
+                const freshness = freshnessOf(c.lastMessageAt, now)
+                const live = freshness === "live"
+                const older = freshness === "older"
                 return (
                   <button
                     key={c.id}
@@ -339,7 +373,7 @@ export function InboxManager({
                     onClick={() => openConversation(c)}
                     aria-current={active ? "true" : undefined}
                     className={`relative flex w-full items-center gap-3 border-b border-line px-4 py-3 text-left transition-colors ${
-                      active ? "bg-accent/10" : "hover:bg-tint-2"
+                      active ? "bg-accent/10" : live ? "bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12]" : "hover:bg-tint-2"
                     }`}
                   >
                     {active && (
@@ -348,14 +382,38 @@ export function InboxManager({
                         className="absolute bottom-[20%] left-0 top-[20%] w-0.5 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)]"
                       />
                     )}
-                    <Avatar conversation={c} size="sm" />
+                    {live && !active && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute bottom-[20%] left-0 top-[20%] w-0.5 rounded-full bg-emerald-500"
+                      />
+                    )}
+                    <span className={`relative shrink-0 ${older ? "opacity-60" : ""}`}>
+                      <Avatar conversation={c} size="sm" />
+                      {live && (
+                        <span
+                          title="Active now"
+                          className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card bg-emerald-500"
+                        />
+                      )}
+                    </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
-                        <p className="truncate text-sm font-semibold text-ink">{c.customerName ?? c.phone}</p>
-                        <span className="shrink-0 text-[0.65rem] text-ink-muted">{formatWhen(c.lastMessageAt)}</span>
+                        <p className={`truncate text-sm ${older ? "font-medium text-ink-soft" : "font-semibold text-ink"}`}>
+                          {c.customerName ?? c.phone}
+                        </p>
+                        <span
+                          className={`shrink-0 text-[0.65rem] ${
+                            live ? "font-semibold text-emerald-600 [[data-admin-theme=dark]_&]:text-emerald-400" : "text-ink-muted"
+                          }`}
+                        >
+                          {live ? "Active now" : formatWhen(c.lastMessageAt)}
+                        </span>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between gap-2">
-                        <p className="truncate text-xs text-ink-muted">{c.lastMessagePreview ?? "No messages yet"}</p>
+                        <p className={`truncate text-xs ${live ? "font-medium text-ink" : older ? "text-ink-muted/70" : "text-ink-muted"}`}>
+                          {c.lastMessagePreview ?? "No messages yet"}
+                        </p>
                         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-bold ${AI_STATE_STYLES[c.aiState]}`}>
                           {AI_STATE_LABELS[c.aiState]}
                         </span>
