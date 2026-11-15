@@ -144,7 +144,7 @@ import { trySmartOrderEntry } from './orders.smart-entry';
 // Re-export the two functions payment-router.ts calls as webhook callbacks,
 // plus the state-payload type other services (wallet.ts's resume handoff)
 // need to reference — same public shape the monolithic orders.ts exposed.
-export { fulfillOrderAfterPayment, fulfillOrderPurchaseAfterTopup } from './orders.flow-checkout';
+export { confirmOrderPaymentByAttempt, fulfillOrderPurchaseAfterTopup } from './orders.flow-checkout';
 export type { OrdersStateData } from './orders.types';
 export { invalidateTenantCache, loadTenantContext, resolveTenantIdByPhoneNumberId } from './orders.tenant';
 export type { TenantContext } from './orders.tenant';

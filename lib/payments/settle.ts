@@ -23,6 +23,7 @@ import { getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 import * as shishaMessages from "@/lib/services/messages/shisha"
+import { confirmOrderPaymentByAttempt } from "@/lib/services/orders/orders.flow-checkout"
 
 import type { StoredConnection } from "./credentials"
 import type { CardProvider, NormalisedWebhook } from "./providers"
@@ -123,6 +124,10 @@ export async function settleSucceeded(args: {
     return await settleShishaRequest(db, provider, connection, payment, event.providerPaymentId)
   }
 
+  if (payment.purpose === "order_payment") {
+    return await settleOrderPayment(db, provider, connection, payment, event.providerPaymentId)
+  }
+
   return "ignored_unknown_purpose"
 }
 
@@ -205,6 +210,31 @@ async function settleShishaRequest(
   return "shisha_paid"
 }
 
+/**
+ * A verified payment for WhatsApp food/drink orders (amount and checkout already matched by the caller).
+ * purpose_id is the orders' payment attempt id. confirm_card_payment moves the still-pending orders to
+ * placed/scheduled (and applies stock) exactly once. If the orders can no longer be paid (cancelled meanwhile,
+ * the link expired and the pending orders were cancelled), the money is refunded, never kept.
+ * Throws on OUR failures so the provider retries; every step is safe to repeat.
+ */
+async function settleOrderPayment(
+  db: Db,
+  provider: CardProvider,
+  connection: StoredConnection,
+  payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown; purpose_id?: unknown },
+  providerPaymentId: string | null,
+): Promise<string> {
+  const paymentId = payment.id as string
+  const attemptId = payment.purpose_id as string
+
+  const outcome = await confirmOrderPaymentByAttempt(db, attemptId)
+  if (outcome === "not_payable") {
+    return await refundAfterFailedFulfilment(db, provider, connection, payment, "orders no longer payable", "order")
+  }
+  await markSucceeded(db, paymentId, providerPaymentId)
+  return outcome === "confirmed" ? "order_paid" : "order_already_paid"
+}
+
 async function markSucceeded(db: Db, paymentId: string, providerPaymentId: string | null) {
   await db
     .from("tenant_payments")
@@ -228,7 +258,7 @@ async function refundAfterFailedFulfilment(
   connection: StoredConnection,
   payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown; purpose_id?: unknown },
   reason: string,
-  kind: "tickets" | "shisha" = "tickets",
+  kind: "tickets" | "shisha" | "order" = "tickets",
 ): Promise<string> {
   const paymentId = payment.id as string
   const checkoutId = payment.provider_checkout_id as string
@@ -262,6 +292,8 @@ async function refundAfterFailedFulfilment(
       connection.integrationId,
       kind === "shisha"
         ? `A shisha payment came in but the request could no longer be served, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
+        : kind === "order"
+        ? `An order payment came in but the order had already been cancelled, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
         : `A ticket payment came in but the tickets could not be issued, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`,
     )
   }
@@ -269,6 +301,10 @@ async function refundAfterFailedFulfilment(
   if (kind === "shisha") {
     await notifyShishaRefund(db, provider, connection.tenantId, payment.purpose_id as string | undefined, refunded)
     return refunded ? "refunded_shisha_request_closed" : "refund_needed_shisha_request_closed"
+  }
+  if (kind === "order") {
+    await notifyOrderPaymentRefund(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
+    return refunded ? "refunded_order_cancelled" : "refund_needed_order_cancelled"
   }
   await notifyOrderFailed(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
   return refunded ? "refunded_tickets_unavailable" : "refund_needed_tickets_unavailable"
@@ -337,6 +373,23 @@ async function notifyOrder(db: Db, provider: CardProvider, tenantId: string, ord
       tenantId,
       error: error instanceof Error ? error.message : String(error),
     })
+  }
+}
+
+/** Best effort: tells the customer why their card payment for an order is being refunded. */
+async function notifyOrderPaymentRefund(db: Db, provider: CardProvider, tenantId: string, metadata: Record<string, unknown> | null, refunded: boolean) {
+  try {
+    const phone = await phoneForCustomer(db, tenantId, (metadata?.customer_id as string | undefined) ?? undefined)
+    if (!phone) return
+    await sendWhatsAppTextMessage(
+      tenantId,
+      phone,
+      refunded
+        ? "Your payment arrived after your order was cancelled, so it has been refunded in full. It can take a few days to show on your statement."
+        : "Your payment arrived after your order was cancelled. You will be refunded in full. The shop has been told and will sort it out with you.",
+    )
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] order refund message failed`, { tenantId, error: error instanceof Error ? error.message : String(error) })
   }
 }
 
