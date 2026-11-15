@@ -289,3 +289,53 @@ export function nameCollectionRetryMessage(): string {
 export function nameCollectionThanksMessage(name: string): string {
   return `Thanks, ${name}! See you then 👋`
 }
+
+// ---------------------------------------------------------------------------
+// Paid bookings (booking_settings.require_payment)
+// ---------------------------------------------------------------------------
+
+/** Sent instead of the confirmation while the slot is held for payment. */
+export function bookingPaymentRequestMessage(params: {
+  serviceName: string
+  slotLabel: string
+  amountLabel: string
+  url: string
+  holdMinutes: number
+}): string {
+  const { serviceName, slotLabel, amountLabel, url, holdMinutes } = params
+  return (
+    `Almost done! 💳\n\n` +
+    `*${serviceName}* on ${slotLabel}\n` +
+    `Total: *${amountLabel}*\n\n` +
+    `Pay here to confirm your booking:\n${url}\n\n` +
+    `We're holding this time for you for ${holdMinutes} minutes. Once your payment goes through we'll send your booking confirmation.`
+  )
+}
+
+/** The paid booking is confirmed (sent by the payment webhook). No "what name?" prompt: there is no open conversation to catch the reply. */
+export function bookingPaidConfirmedMessage(params: Parameters<typeof bookingConfirmedMessage>[0] & { amountLabel: string }): string {
+  const { customerName, serviceName, slotLabel, bookingReference, ticketLabel, amountLabel } = params
+  return (
+    `✅ *Payment received (${amountLabel}).*\n\n` +
+    `You're booked${customerName ? `, ${customerName}` : ""}! 🎉\n\n` +
+    `*${serviceName}* on ${slotLabel}\n` +
+    (ticketLabel ? `Ticket: *${ticketLabel}*\n` : "") +
+    `Reference: *${bookingReference}*\n\n` +
+    "See you then!"
+  )
+}
+
+/** The customer paid, but the held time was already released (or taken). They are refunded. */
+export function bookingPaymentRefundedMessage(refunded: boolean): string {
+  return refunded
+    ? "Your payment arrived after the held time had run out, so your booking wasn't confirmed and the payment has been refunded in full. It can take a few days to show on your statement. Reply *menu* to book again."
+    : "Your payment arrived after the held time had run out, so your booking wasn't confirmed. You will be refunded in full. The shop has been told and will sort it out with you."
+}
+
+export function bookingPaymentUnavailableMessage(): string {
+  return "Sorry, this shop can't take card payments right now, so we can't complete your booking here. Please ask a team member."
+}
+
+export function bookingPaymentLinkFailedMessage(): string {
+  return "Sorry, we couldn't create your payment link just now and your time wasn't held. Please reply *menu* and try again in a moment."
+}
