@@ -5,9 +5,13 @@
 //   Paystack:    ?reference=pay-...&trxref=...      (we additionally ask Paystack whether it was paid, see
 //                                                    lib/payments/paystack-reconcile.ts. The URL itself is never
 //                                                    trusted for anything that matters.)
+//   Peach:       ?reference=<16 hex>[&status=cancelled]  (from app/pay/peach-return; we only read OUR OWN records
+//                                                    to choose the words, see lib/payments/peach-return.ts)
 // The Passport / tickets are credited only by the verified payment, and the customer gets a WhatsApp message.
 
 import { reconcilePaystackReference } from "@/lib/payments/paystack-reconcile"
+import { peachReturnStatus } from "@/lib/payments/peach-return"
+import { isPeachReference } from "@/lib/payments/providers/peach"
 
 export const dynamic = "force-dynamic"
 
@@ -41,7 +45,13 @@ export default async function PayResultPage({ searchParams }: { searchParams: Pr
 
   let key = q.status ?? ""
   const reference = q.reference ?? q.trxref
-  if (reference) {
+  if (reference && isPeachReference(reference)) {
+    const result = await peachReturnStatus(reference)
+    if (result === "success") key = "success"
+    else if (result === "problem") key = "problem"
+    else if (result === "failed") key = "failed"
+    else if (result === "pending") key = q.status === "cancelled" ? "cancelled" : "pending"
+  } else if (reference) {
     // Only references in our own Paystack format that match a payment we created are looked at; anything else is "unknown".
     const result = await reconcilePaystackReference(reference)
     if (result === "confirmed") key = "success"
