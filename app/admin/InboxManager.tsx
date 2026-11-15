@@ -40,7 +40,7 @@ type Filter = "all" | "ai_active" | "needs_human" | "unread"
 
 const FILTERS: Array<{ id: Filter; label: string }> = [
   { id: "all", label: "All" },
-  { id: "ai_active", label: "AI active" },
+  { id: "ai_active", label: "WhatsApp Bot" },
   { id: "needs_human", label: "Needs human" },
   { id: "unread", label: "Unread" },
 ]
@@ -53,7 +53,7 @@ const AI_STATE_STYLES: Record<AdminAiState, string> = {
 }
 
 const AI_STATE_LABELS: Record<AdminAiState, string> = {
-  active: "AI",
+  active: "WhatsApp Bot",
   paused: "Paused",
   handoff: "Needs human",
   resolved: "Resolved",
@@ -459,15 +459,15 @@ export function InboxManager({
                   </span>
                   {selected.aiState === "active" ? (
                     <button type="button" onClick={() => handleAiAction("pause")} disabled={isPending} className={BTN}>
-                      Take over
+                      Take Over
                     </button>
                   ) : selected.aiState !== "resolved" ? (
                     <button type="button" onClick={() => handleAiAction("resume")} disabled={isPending} className={BTN_PRIMARY}>
-                      Resume AI
+                      Resume WhatsApp Bot
                     </button>
                   ) : (
                     <button type="button" onClick={() => handleAiAction("resume")} disabled={isPending} className={BTN}>
-                      Reopen with AI
+                      Reopen with WhatsApp Bot
                     </button>
                   )}
                   <button
@@ -575,13 +575,13 @@ export function InboxManager({
                   aria-hidden="true"
                   className={`h-2 w-2 rounded-full ${selected.aiState === "active" ? "bg-success shadow-[0_0_6px_var(--color-success)]" : "bg-ink-muted/50"}`}
                 />
-                <span className="text-ink-muted">{selected.aiState === "active" ? "AI is replying" : "AI is not replying"}</span>
+                <span className="text-ink-muted">{selected.aiState === "active" ? "WhatsApp Bot is replying" : "WhatsApp Bot is not replying"}</span>
                 <span className="ml-auto">
                   <SettingsSwitch
                     checked={selected.aiState === "active"}
                     disabled={isPending}
                     onChange={() => handleAiAction(selected.aiState === "active" ? "pause" : "resume")}
-                    label={selected.aiState === "active" ? "Pause AI and take over" : "Resume AI"}
+                    label={selected.aiState === "active" ? "Pause WhatsApp Bot and take over" : "Resume WhatsApp Bot"}
                   />
                 </span>
               </div>
@@ -611,12 +611,12 @@ export function InboxManager({
               <div className="flex flex-col gap-2">
                 {selected.aiState !== "active" && (
                   <button type="button" onClick={() => handleAiAction("resume")} disabled={isPending} className={BTN_PRIMARY}>
-                    Resume AI
+                    Resume WhatsApp Bot
                   </button>
                 )}
                 {selected.aiState === "active" && (
                   <button type="button" onClick={() => handleAiAction("pause")} disabled={isPending} className={BTN}>
-                    Take over (pause AI)
+                    Take Over (pause WhatsApp Bot)
                   </button>
                 )}
                 {selected.aiState !== "resolved" && (
