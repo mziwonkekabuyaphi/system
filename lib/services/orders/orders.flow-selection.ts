@@ -1,6 +1,6 @@
 // File: lib/services/orders/orders.flow-selection.ts
 import type { ActionResult } from '@/lib/types/action';
-import * as messages from '@/lib/messages/orders';
+import * as messages from '@/lib/services/messages/orders';
 import type { CartItem, OrdersStateData, PendingCategory, PendingSelectionItem, ProductCategory, ProductRow } from './orders.types';
 import { paymentButtons, type TenantContext } from './orders.tenant';
 import {
