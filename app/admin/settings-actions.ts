@@ -103,6 +103,7 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
+import { getCardOption } from "@/lib/payments/card"
 import {
   tenantHasModule,
   isProductEnabled,
@@ -943,6 +944,8 @@ export async function updateBookingSettings(input: {
   bookingNumberPrefix?: string
   /** false = no printed slip at the kiosk for bookings; omitted = unchanged. */
   kioskPrintTicket?: boolean
+  /** true = WhatsApp and kiosk bookings are held until the customer pays by card; omitted = unchanged. */
+  requirePayment?: boolean
 }): Promise<ActionResult> {
   try {
     const bookingNumberPrefix = input.bookingNumberPrefix?.trim().toUpperCase()
@@ -1023,6 +1026,15 @@ export async function updateBookingSettings(input: {
     const { supabase, tenantId } = await tenantContext()
     await requireAnyProduct(supabase, tenantId, ["booking"])
 
+    // Switching payment ON needs a card provider that can take payments right now; otherwise customers
+    // would be told to pay with no way to do so. (Switching it off is always allowed.)
+    if (input.requirePayment === true && !(await getCardOption(supabase, tenantId))) {
+      return {
+        success: false,
+        error: "Connect a card payment provider in Settings > Payments before asking customers to pay when they book.",
+      }
+    }
+
     const { error } = await supabase
       .from("booking_settings")
       .update({
@@ -1049,6 +1061,7 @@ export async function updateBookingSettings(input: {
           : {}),
         ...(bookingNumberPrefix !== undefined ? { booking_number_prefix: bookingNumberPrefix } : {}),
         ...(input.kioskPrintTicket !== undefined ? { kiosk_print_ticket: input.kioskPrintTicket === true } : {}),
+        ...(input.requirePayment !== undefined ? { require_payment: input.requirePayment === true } : {}),
         ...(input.allowCustomerStaffChoice !== undefined
           ? { allow_customer_staff_choice: input.allowCustomerStaffChoice === true }
           : {}),
