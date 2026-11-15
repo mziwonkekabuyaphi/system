@@ -291,6 +291,8 @@ export interface AdminKioskSettings {
    *  to welcome. 3–120. */
   confirmationRefreshSeconds: number
   registrationType: AdminKioskRegistrationType
+  /** Look of the first screen when both paths are on. Optional; missing = cards. */
+  choiceLayout?: "cards" | "rows" | "split"
 
   // -- Screen wording (multi-tenant copy customization) --------------------
   // Every field below is null/empty-safe: an unset value falls back to the

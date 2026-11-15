@@ -968,7 +968,7 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
 function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoose: (path: Path) => void }) {
   return (
     <Screen title={branding.choiceTitle}>
-      <div className="tiles">
+      <div className={`tiles layout-${branding.choiceLayout ?? "cards"}`}>
         <button className="tile tileBooking" onClick={() => onChoose("booking")} type="button">
           <span className="tileIcon" aria-hidden="true">
             <CalendarIcon />
@@ -1080,9 +1080,60 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
           align-self: flex-end;
           color: inherit;
         }
+        .layout-rows {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+        .layout-rows .tile {
+          min-height: 150px;
+          flex-direction: row;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 28px;
+          padding: 28px 36px;
+        }
+        .layout-rows .tileText {
+          flex: 1;
+        }
+        .layout-rows .tileArrow {
+          margin-top: 0;
+          align-self: center;
+        }
+        .layout-split {
+          gap: 0;
+          max-width: 1100px;
+          border-radius: 28px;
+          overflow: hidden;
+          box-shadow: 0 14px 30px rgba(23, 20, 18, 0.18);
+        }
+        .layout-split .tile {
+          min-height: 420px;
+          border-radius: 0;
+          box-shadow: none;
+          align-items: center;
+          text-align: center;
+          gap: 28px;
+        }
+        .layout-split .tileText {
+          align-items: center;
+        }
+        .layout-split .tileIcon {
+          width: 96px;
+          height: 96px;
+          border-radius: 28px;
+        }
+        .layout-split .tileTitle {
+          font-size: 38px;
+        }
+        .layout-split .tileArrow {
+          align-self: center;
+        }
         @media (max-width: 720px) {
           .tiles {
             grid-template-columns: 1fr;
+          }
+          .layout-split .tile {
+            min-height: 240px;
           }
         }
       `}</style>

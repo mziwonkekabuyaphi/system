@@ -666,6 +666,8 @@ export async function updateKioskSettings(input: {
   idleRefreshSeconds: number
   confirmationRefreshSeconds: number
   registrationType: AdminKioskRegistrationType
+  /** First-screen look. OMITTING leaves the stored value untouched. */
+  choiceLayout?: "cards" | "rows" | "split"
   // Screen wording — every field optional/nullable. Omitting a key (or
   // sending null/"") clears the override and the kiosk falls back to its
   // hardcoded default, same posture as tagline above.
@@ -741,6 +743,10 @@ export async function updateKioskSettings(input: {
       return { success: false, error: "Choose a valid registration type." }
     }
 
+    if (input.choiceLayout !== undefined && !["cards", "rows", "split"].includes(input.choiceLayout)) {
+      return { success: false, error: "Choose a valid first-screen layout." }
+    }
+
     const wordingFields: Array<{ label: string; value: string | null | undefined; max: number }> = [
       { label: "Choice screen title", value: input.choiceTitle, max: MAX_CHOICE_TITLE_LENGTH },
       { label: "Booking card title", value: input.bookingCardTitle, max: MAX_CARD_TITLE_LENGTH },
@@ -771,6 +777,7 @@ export async function updateKioskSettings(input: {
         idle_refresh_seconds: input.idleRefreshSeconds,
         confirmation_refresh_seconds: input.confirmationRefreshSeconds,
         registration_type: input.registrationType,
+        ...(input.choiceLayout !== undefined ? { choice_layout: input.choiceLayout } : {}),
         choice_title: input.choiceTitle?.trim() || null,
         booking_card_title: input.bookingCardTitle?.trim() || null,
         booking_card_subtitle: input.bookingCardSubtitle?.trim() || null,

@@ -116,6 +116,8 @@ export interface KioskBranding extends Partial<KioskDetailsFields> {
   idleRefreshSeconds: number
   confirmationRefreshSeconds: number
   registrationType: KioskRegistrationType
+  /** Look of the Booking/Queue first screen: side-by-side cards, stacked rows, or full-height split. */
+  choiceLayout?: "cards" | "rows" | "split"
   // Screen wording — admin-configurable from Settings > Kiosk (see
   // updateKioskSettings in app/admin/settings-actions.ts). Every field is
   // already resolved to a non-null display string here, same fallback
@@ -186,6 +188,7 @@ interface TenantBrandingRow {
   idle_refresh_seconds: number | null
   confirmation_refresh_seconds: number | null
   registration_type: string | null
+  choice_layout: string | null
   choice_title: string | null
   booking_card_title: string | null
   booking_card_subtitle: string | null
@@ -290,7 +293,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, kiosk_show_whatsapp_optin, kiosk_whatsapp_optin_label",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_layout, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, kiosk_show_whatsapp_optin, kiosk_whatsapp_optin_label",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -325,6 +328,8 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
         : products.booking && !products.queue
           ? "booking"
           : resolveRegistrationType(branding?.registration_type),
+    choiceLayout:
+      branding?.choice_layout === "rows" || branding?.choice_layout === "split" ? branding.choice_layout : "cards",
     choiceTitle: branding?.choice_title?.trim() || DEFAULT_CHOICE_TITLE,
     bookingCardTitle: branding?.booking_card_title?.trim() || DEFAULT_BOOKING_CARD_TITLE,
     bookingCardSubtitle: branding?.booking_card_subtitle?.trim() || DEFAULT_BOOKING_CARD_SUBTITLE,

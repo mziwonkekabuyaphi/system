@@ -237,6 +237,12 @@ const REGISTRATION_TYPE_OPTIONS: Array<{
   { value: "queue", title: "Queue Only", description: "Customers go straight into joining the walk-in queue — no booking option." },
 ]
 
+const CHOICE_LAYOUT_OPTIONS: Array<{ value: "cards" | "rows" | "split"; title: string; description: string }> = [
+  { value: "cards", title: "Cards", description: "Two big cards side by side. Best for landscape screens." },
+  { value: "rows", title: "Rows", description: "Two wide buttons stacked one above the other. Best for tall or portrait screens." },
+  { value: "split", title: "Split screen", description: "The screen is cut in two full-height halves, one tap target each. Easy to hit from a distance." },
+]
+
 // Placeholder text only — shown greyed-out in an empty field so the admin
 // can see exactly what their kiosk renders before they've customized
 // anything. Must stay in sync with app/kiosk/[slug]/page.tsx's own
@@ -261,6 +267,7 @@ type KioskDraft = {
   idleRefreshSeconds: number
   confirmationRefreshSeconds: number
   registrationType: AdminKioskSettings["registrationType"]
+  choiceLayout: "cards" | "rows" | "split"
   choiceTitle: string
   bookingCardTitle: string
   bookingCardSubtitle: string
@@ -294,6 +301,7 @@ function toKioskDraft(s: AdminKioskSettings): KioskDraft {
     idleRefreshSeconds: s.idleRefreshSeconds,
     confirmationRefreshSeconds: s.confirmationRefreshSeconds,
     registrationType: s.registrationType,
+    choiceLayout: s.choiceLayout ?? "cards",
     choiceTitle: s.choiceTitle ?? "",
     bookingCardTitle: s.bookingCardTitle ?? "",
     bookingCardSubtitle: s.bookingCardSubtitle ?? "",
@@ -319,6 +327,7 @@ function toKioskPayload(d: KioskDraft) {
     idleRefreshSeconds: d.idleRefreshSeconds,
     confirmationRefreshSeconds: d.confirmationRefreshSeconds,
     registrationType: d.registrationType,
+    choiceLayout: d.choiceLayout,
     choiceTitle: d.choiceTitle.trim() || null,
     bookingCardTitle: d.bookingCardTitle.trim() || null,
     bookingCardSubtitle: d.bookingCardSubtitle.trim() || null,
@@ -343,7 +352,7 @@ function toKioskPayload(d: KioskDraft) {
   }
 }
 
-const KIOSK_OPTIONS_KEYS: Array<keyof KioskDraft> = ["registrationType"]
+const KIOSK_OPTIONS_KEYS: Array<keyof KioskDraft> = ["registrationType", "choiceLayout"]
 const KIOSK_TIMING_KEYS: Array<keyof KioskDraft> = ["idleRefreshSeconds", "confirmationRefreshSeconds"]
 const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
   "tagline",
@@ -484,6 +493,36 @@ function KioskBehaviorPanel({ form }: { form: ReturnType<typeof useKioskForm> })
             )
           })}
         </div>
+
+        {draft.registrationType === "both" && (
+          <div className="mt-4 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">First screen layout</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {CHOICE_LAYOUT_OPTIONS.map((option) => {
+                const selected = draft.choiceLayout === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => set("choiceLayout", option.value)}
+                    aria-pressed={selected}
+                    className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-shadow ${
+                      selected
+                        ? "border-[color:var(--sb-bg,var(--color-accent-alt))] bg-[color-mix(in_srgb,var(--sb-bg,var(--color-accent-alt))_6%,transparent)] ring-1 ring-[color:var(--sb-bg,var(--color-accent-alt))]"
+                        : "border-line-strong bg-canvas hover:bg-tint"
+                    }`}
+                  >
+                    <span className={`text-sm font-semibold ${selected ? "text-[color:var(--sb-bg,var(--color-accent-alt))]" : "text-ink"}`}>
+                      {option.title}
+                    </span>
+                    <span className="text-xs text-ink-muted">{option.description}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </SettingsCard>
 
       <SettingsCard
