@@ -17,6 +17,7 @@ import { SettingsSwitch } from "./SettingsSwitch"
 const WIDTHS = {
   md: "max-w-[460px]", // simple settings forms
   lg: "max-w-[620px]", // settings with a preview or option grids
+  wide: "max-w-[760px]", // Inbox panels (Analytics), same width as CustomersDrawer
   xl: "max-w-[1040px]", // tables (payroll)
 } as const
 
