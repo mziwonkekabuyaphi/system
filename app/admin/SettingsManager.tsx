@@ -31,10 +31,11 @@ import { OrderSettingsPanel } from "./orders/OrderSettingsPanel"
 import type { AdminOrderSettings, AdminOrderVendor } from "./orders/types"
 import { WhatsAppSettingsPanels } from "./settings/WhatsAppSettingsPanels"
 import { AiSettingsPanel } from "./settings/AiSettingsPanel"
+import { EventSettingsPanel } from "./settings/EventSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "whatsapp" | "ai"
+type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "ai"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -128,6 +129,12 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
     <RailIcon {...p}>
       <path d="M5 7h14l-1.2 11.5a1 1 0 0 1-1 .9H7.2a1 1 0 0 1-1-.9z" />
       <path d="M9 7a3 3 0 0 1 6 0" />
+    </RailIcon>
+  ),
+  events: (p) => (
+    <RailIcon {...p}>
+      <path d="M4 8.5V6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v2a2.5 2.5 0 0 0 0 5v2a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 15.5v-2a2.5 2.5 0 0 0 0-5Z" />
+      <path d="M14 5v2M14 11v2M14 17v2" />
     </RailIcon>
   ),
   passport: (p) => (
@@ -260,6 +267,15 @@ const SETTINGS_NAV: Array<{
         description: "Payment methods, scheduling, minimum age and how customers order on WhatsApp.",
         anyOf: ["orders"],
       },
+      {
+        // Moved from the Events page's drawer. Appears only while the `events` module is effective
+        // (its own switch on AND Passport on, per module_requires), like Shisha/Passport/Orders.
+        id: "events",
+        label: "Event settings",
+        title: "Event settings",
+        description: "How many tickets customers can buy on WhatsApp, when selling stops, and what the ticket image looks like.",
+        anyOf: ["events"],
+      },
     ],
   },
 ]
@@ -311,6 +327,7 @@ export function SettingsManager({
   ordersVendors = [],
   onOrdersSettingsSaved,
   ordersError = null,
+  eventsManage = true,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -371,6 +388,9 @@ export function SettingsManager({
   onOrdersSettingsSaved?: (next: AdminOrderSettings) => void
   /** Set when the orders data failed to load in page.tsx. */
   ordersError?: string | null
+  /** Caller has events.manage (needed to read and save Event settings). Defaults to true so an un-updated
+   *  parent keeps working; the server actions re-check the permission on every call either way. */
+  eventsManage?: boolean
 }) {
   const [subTab, setSubTab] = useState<SubTab>("general")
   // Kept here (not only inside the panels) so the summary tiles on Shop details follow a save.
@@ -402,6 +422,7 @@ export function SettingsManager({
       .filter((i) => i.id !== "shisha" || shishaEnabled)
       .filter((i) => i.id !== "passport" || passportEnabled)
       .filter((i) => i.id !== "orders" || ordersEnabled)
+      .filter((i) => i.id !== "events" || eventsManage)
       .filter((i) => i.id !== "whatsapp" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "ai" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "services" || servicesManage),
@@ -555,6 +576,7 @@ export function SettingsManager({
         <WhatsAppSettingsPanels messageSettings={initialMessageSettings} modules={flags.on} />
       )}
       {activePage.id === "ai" && <AiSettingsPanel />}
+      {activePage.id === "events" && <EventSettingsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
       {activePage.id === "orders" &&
