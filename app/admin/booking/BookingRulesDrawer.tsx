@@ -75,6 +75,8 @@ function withDefaults(s: BookingForm): BookingForm {
     allowCustomerStaffChoice: s.allowCustomerStaffChoice ?? false,
     bookingNumberPrefix: s.bookingNumberPrefix ?? "B",
     kioskPrintTicket: s.kioskPrintTicket ?? true,
+    requirePayment: s.requirePayment ?? false,
+    cardPaymentsConnected: s.cardPaymentsConnected ?? false,
   }
 }
 
@@ -313,6 +315,31 @@ export function BookingRulesDrawer({
                   <input type="number" min={1} max={5} className={DRAWER_FIELD} value={num(draft.maxServicesPerBooking)} onChange={(e) => set("maxServicesPerBooking", onNum(e.target.value))} />
                 </DrawerField>
               )}
+            </DrawerGroup>
+
+            <DrawerGroup
+              title="Payment"
+              hint="Applies to bookings customers make themselves on WhatsApp and at the kiosk. Bookings you add in the admin are never charged."
+            >
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Customers pay when they book"
+                  description="The customer gets a card payment link (a QR code on the kiosk) for the total of the services they picked. Their time is held for 15 minutes and the booking is confirmed once they have paid. If they don't pay, the time is released. Services with a price of 0 are booked without payment. When off, bookings are free and confirm straight away."
+                  checked={draft.requirePayment ?? false}
+                  disabled={saving || (!draft.cardPaymentsConnected && !(draft.requirePayment ?? false))}
+                  onChange={(v) => set("requirePayment", v)}
+                />
+              </div>
+              {!draft.cardPaymentsConnected && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {draft.requirePayment
+                    ? "No card payment provider is connected right now, so customers can't book on WhatsApp or the kiosk until you reconnect one in Settings > Payments."
+                    : "Connect a card payment provider in Settings > Payments to turn this on."}
+                </p>
+              )}
+              <p className="text-xs text-ink-muted">
+                Switching this changes new bookings only. Bookings already made, and ones waiting for payment, keep the rules they were made under.
+              </p>
             </DrawerGroup>
 
             <DrawerGroup title="Staff">

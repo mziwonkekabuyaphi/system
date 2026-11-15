@@ -36,12 +36,14 @@ type Action = "cancel" | "complete"
 
 const STATUS_LABEL: Record<Status, string> = {
   confirmed: "Confirmed",
+  awaiting_payment: "Awaiting payment",
   completed: "Completed",
   cancelled: "Cancelled",
 }
 
 const STATUS_BADGE: Record<Status, string> = {
   confirmed: "bg-ink/[0.07] text-ink",
+  awaiting_payment: "bg-amber-100 text-amber-800",
   completed: "bg-success/10 text-success",
   cancelled: "bg-accent/10 text-accent",
 }
@@ -378,6 +380,7 @@ export function TodayBookings({
         >
           <option value="all">All statuses</option>
           <option value="confirmed">Confirmed</option>
+          <option value="awaiting_payment">Awaiting payment</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
