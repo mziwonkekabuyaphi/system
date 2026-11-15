@@ -14,7 +14,6 @@ import { cancelTicket, deleteEvent, loadEventOrders, loadEvents, setEventStatus 
 import { AnalyticsPanel } from "./AnalyticsPanel"
 import { BoxOffice } from "./BoxOffice"
 import { EventFormDialog } from "./EventFormDialog"
-import { EventSettingsDrawer } from "./EventSettingsDrawer"
 import { GatePanel } from "./GatePanel"
 import { formatEventDate, formatMoney, safeTimezone } from "./format"
 import type { EventOrder, EventSummary, EventsPermissions, EventsSection } from "./types"
@@ -79,7 +78,6 @@ export function EventsManager({ section, onSectionChange, permissions, timezone,
   const [form, setForm] = useState<{ event: EventSummary | null } | null>(null)
   const [confirm, setConfirm] = useState<{ title: string; body: string; label: string; run: () => Promise<void> } | null>(null)
   const [showAnalytics, setShowAnalytics] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [notice, setNotice] = useState<Flash>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -168,7 +166,6 @@ export function EventsManager({ section, onSectionChange, permissions, timezone,
 
   return (
     <div className="space-y-6">
-      {permissions.eventsManage && <EventSettingsDrawer open={showSettings} onClose={() => setShowSettings(false)} />}
       {showAnalytics && events && (
         <AnalyticsPanel events={events} timezone={tz} currency={currency} canSeeSales={permissions.ticketsView} onClose={() => setShowAnalytics(false)} />
       )}
@@ -190,17 +187,6 @@ export function EventsManager({ section, onSectionChange, permissions, timezone,
               >
                 <Icon name="chart-pie" />
               </button>
-              {permissions.eventsManage && (
-                <button
-                  type="button"
-                  onClick={() => setShowSettings(true)}
-                  title="Event settings"
-                  aria-label="Event settings"
-                  className={`flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-500/10 ${FOCUS}`}
-                >
-                  <Icon name="gear" />
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => void refresh()}
