@@ -825,7 +825,8 @@ export function AdminView({
 
       {/* ================= CONTENT ================= */}
       <div style={{ paddingLeft: SIDEBAR_COLLAPSED }}>
-        <header className="flex items-center gap-3 px-6 pb-3 pt-6">
+        {/* Inbox is full-screen and has its own header, so the page header is hidden there. */}
+        <header className={`flex items-center gap-3 px-6 pb-3 pt-6 ${tab === "inbox" ? "hidden" : ""}`}>
           {branding.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element -- external Storage URL, not a static/local asset
             <img
@@ -853,7 +854,7 @@ export function AdminView({
           </div>
         </header>
 
-        <main className="px-6 pb-24 pt-2">
+        <main className={tab === "inbox" ? "" : "px-6 pb-24 pt-2"}>
           {tab === "today" && bookingEnabled && (
             <TodayBookings
               initialBookings={initialBookings}
