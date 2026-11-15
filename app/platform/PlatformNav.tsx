@@ -33,6 +33,7 @@ const GROUPS: Group[] = [
   {
     title: "Products",
     items: [
+      { href: "/platform/pricing", label: "Pricing", icon: ico("M12 3v18M16 7.5H10a2.5 2.5 0 000 5h4a2.5 2.5 0 010 5H8") },
       { href: "/platform/modules", label: "Modules & add-ons", icon: ico("M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM17 13v7M13.5 16.5h7") },
       { href: "/platform/shisha", label: "Shisha", icon: ico("M12 3c2 3-2 4-2 7a2 2 0 004 0M8 21h8M10 21v-4h4v4") },
       { href: "/platform/ads", label: "Kiosk ads", icon: ico("M3 5h18v11H3zM8 20h8M12 16v4") },

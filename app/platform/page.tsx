@@ -1,118 +1,70 @@
-// app/platform/page.tsx — platform overview: what needs attention, then how the platform is doing.
-import Link from "next/link"
+// app/platform/pricing/page.tsx — one place to set what shops are charged:
+// Booking & Queue tiers, Staff Management per-staff fees, and Shisha session/refill fees.
 import { redirect } from "next/navigation"
 
-import { PageHeader, PLATFORM_CARD } from "@/components/platform/PageHeader"
-import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { PageHeader } from "@/components/platform/PageHeader"
 import { requirePlatformAdmin } from "@/lib/sales/auth"
+import { getSupabaseServerClient } from "@/lib/supabase/admin"
+
+import { PricingEditor, type PlanRow, type StaffRates, type ShishaRates } from "./PricingEditor"
 
 export const dynamic = "force-dynamic"
 
-const STATUS_STYLE: Record<string, string> = {
-  active: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  pending: "bg-amber-50 text-amber-800 ring-amber-200",
-}
+const str = (v: unknown) => (v === null || v === undefined ? "" : String(v))
+const rands = (cents: number | null) => (cents === null ? "" : String(cents / 100))
 
-export default async function PlatformHome() {
-  await requirePlatformAdmin()
+export default async function PricingPage() {
+  await requirePlatformAdmin() // the real gate: everything below uses the service-role client
   const supabase = getSupabaseServerClient()
   if (!supabase) redirect("/login")
 
-  const [all, active, people, pending, recent, upgrades, enquiries, awaiting] = await Promise.all([
-    supabase.from("tenants").select("id", { count: "exact", head: true }),
-    supabase.from("tenants").select("id", { count: "exact", head: true }).eq("status", "active"),
-    supabase.from("salespeople").select("id", { count: "exact", head: true }).neq("status", "terminated"),
-    supabase.from("referral_signups").select("id", { count: "exact", head: true }).eq("status", "pending"),
-    supabase.from("tenants").select("*").limit(200),
-    supabase.from("plan_upgrade_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
-    supabase.from("contact_requests").select("id", { count: "exact", head: true }).eq("status", "new"),
-    supabase.from("tenants").select("id", { count: "exact", head: true }).eq("status", "pending"),
+  const [plansRes, staffRes, shishaRes] = await Promise.all([
+    supabase
+      .from("plans")
+      .select("key, name, price_cents, visit_limit, staff_limit, included_staff, extra_staff_price_cents, visits_per_staff, price_per_visit_cents, updated_at")
+      .in("key", ["free", "growth", "business"])
+      .order("sort_order", { ascending: true }),
+    supabase.from("staff_billing_rates").select("module_key, fee_per_staff, updated_at").is("tenant_id", null).eq("is_active", true),
+    supabase.from("shisha_billing_rates").select("session_fee, refill_fee, updated_at").is("tenant_id", null).eq("is_active", true).limit(1).maybeSingle(),
   ])
 
-  const newest = ((recent.data ?? []) as Array<{ id: string; name: string; slug: string; status: string; plan?: string; created_at?: string }>)
-    .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
-    .slice(0, 8)
+  const loadError = plansRes.error ?? staffRes.error ?? shishaRes.error
 
-  const attention: Array<{ label: string; hint: string; value: number; href: string }> = [
-    { label: "Shops waiting for approval", hint: "Approve or reject new shops", value: awaiting.count ?? 0, href: "/platform/tenants" },
-    { label: "Upgrade requests", hint: "Plan changes to review", value: upgrades.count ?? 0, href: "/platform/upgrades" },
-    { label: "Sign-up requests", hint: "Referred by your salespeople", value: pending.count ?? 0, href: "/platform/sales" },
-    { label: "New enquiries", hint: "From the website", value: enquiries.count ?? 0, href: "/platform/leads" },
-  ]
-  const totalWaiting = attention.reduce((n, a) => n + a.value, 0)
+  const plans: PlanRow[] = (plansRes.data ?? []).map((p: any) => ({
+    key: p.key,
+    name: p.name,
+    priceRands: rands(p.price_cents),
+    includedStaff: str(p.included_staff),
+    extraStaffRands: rands(p.extra_staff_price_cents),
+    staffLimit: str(p.staff_limit),
+    visitsPerStaff: str(p.visits_per_staff),
+    perVisitRands: rands(p.price_per_visit_cents),
+    visitLimit: str(p.visit_limit),
+    updatedAt: p.updated_at ?? null,
+  }))
 
-  const stats: Array<{ label: string; value: number; href: string }> = [
-    { label: "Shops", value: all.count ?? 0, href: "/platform/tenants" },
-    { label: "Active shops", value: active.count ?? 0, href: "/platform/tenants" },
-    { label: "Salespeople", value: people.count ?? 0, href: "/platform/sales" },
-  ]
+  const staffByKey = new Map((staffRes.data ?? []).map((r: any) => [r.module_key as string, str(r.fee_per_staff)]))
+  const staff: StaffRates = {
+    staff: staffByKey.get("staff") ?? "",
+    payroll: staffByKey.get("payroll") ?? "",
+    shifts: staffByKey.get("shifts") ?? "",
+  }
+
+  const shisha: ShishaRates = {
+    sessionFee: str((shishaRes.data as any)?.session_fee),
+    refillFee: str((shishaRes.data as any)?.refill_fee),
+  }
 
   return (
     <main className="space-y-6">
       <PageHeader
-        title="Overview"
-        description={totalWaiting > 0 ? `${totalWaiting} item${totalWaiting === 1 ? "" : "s"} waiting for you.` : "Nothing is waiting for you right now."}
-        actions={
-          <Link href="/platform/modules" className="rounded-lg bg-stone-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-stone-700">
-            Manage modules
-          </Link>
-        }
+        title="Pricing"
+        description="Set what shops are charged for Booking & Queue, Staff Management and Shisha. Changes apply to future bills only; invoices already issued keep their amount."
       />
-
-      <section aria-label="Needs attention" className="space-y-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Needs attention</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {attention.map((a) => (
-            <Link
-              key={a.label}
-              href={a.href}
-              className={`${PLATFORM_CARD} group p-4 transition hover:border-stone-300 hover:shadow ${a.value > 0 ? "border-l-4 border-l-amber-400" : ""}`}
-            >
-              <p className="text-sm text-stone-600">{a.label}</p>
-              <p className={`mt-2 text-3xl font-semibold tabular-nums ${a.value > 0 ? "text-stone-900" : "text-stone-300"}`}>{a.value}</p>
-              <p className="mt-1 text-xs text-stone-400 group-hover:text-stone-600">{a.hint} →</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section aria-label="Platform" className="space-y-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Platform</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {stats.map((s) => (
-            <Link key={s.label} href={s.href} className={`${PLATFORM_CARD} p-4 transition hover:border-stone-300 hover:shadow`}>
-              <p className="text-sm text-stone-600">{s.label}</p>
-              <p className="mt-2 text-3xl font-semibold tabular-nums text-stone-900">{s.value}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section className={`${PLATFORM_CARD} overflow-hidden`}>
-        <div className="flex items-center justify-between border-b border-stone-100 px-5 py-3.5">
-          <h2 className="text-sm font-semibold text-stone-800">Newest shops</h2>
-          <Link href="/platform/tenants" className="text-sm text-stone-600 hover:text-stone-900 hover:underline">
-            All shops / create one
-          </Link>
-        </div>
-        {newest.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-stone-500">No shops yet.</p>
-        ) : (
-          <ul className="divide-y divide-stone-100 text-sm">
-            {newest.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-stone-900">{t.name}</p>
-                  <p className="text-xs text-stone-500">/{t.slug}</p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${STATUS_STYLE[t.status] ?? "bg-stone-100 text-stone-600 ring-stone-200"}`}>
-                  {t.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {loadError && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">Couldn&apos;t load everything: {loadError.message}</p>
+      )}
+      <PricingEditor plans={plans} staff={staff} shisha={shisha} />
     </main>
   )
 }
