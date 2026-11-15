@@ -1,7 +1,7 @@
 // File: lib/services/orders/orders.helpers.ts
 import type { ActionResult } from '@/lib/types/action';
 import type { ConversationState } from '@/lib/services/state';
-import * as messages from '@/lib/messages/orders';
+import * as messages from '@/lib/services/messages/orders';
 import { logger } from '@/lib/whatsapp/utils/logger';
 import type {
   CartItem,
