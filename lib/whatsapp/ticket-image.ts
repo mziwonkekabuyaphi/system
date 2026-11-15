@@ -18,16 +18,18 @@
  * BRANDING: resolved exactly like the booking ticket (booking-ticket-image.ts), first value wins:
  *   shop name   tenant_branding.display_name -> tenant_settings.brand_name -> tenants.name
  *   logo        tenant_branding.logo_url
- *   colours     tenant_booking_ticket_settings.header_color / accent_color
- *               -> tenant_branding.primary_color / secondary_color -> neutral defaults
- *   footer      tenant_booking_ticket_settings.footer_text (else "Show this QR code at the gate")
- *   toggles     tenant_booking_ticket_settings: header_style, show_logo, show_price, show_reference,
- *               show_phone, show_address
+ *   look        tenant_event_ticket_settings (Events > Event settings > Ticket). A shop that has not
+ *               saved event settings yet keeps the look it had before: the booking ticket row is used
+ *               as the fallback for every field below except `enabled`.
+ *   colours     header_color / accent_color -> tenant_branding.primary_color / secondary_color -> defaults
+ *   label       eyebrow (else "Ticket Confirmed")
+ *   footer      footer_text (else "Show this QR code at the gate")
+ *   toggles     header_style, show_logo, show_price, show_reference, show_phone, show_address
+ *   on/off      tenant_event_ticket_settings.enabled (default on). Off = no image is drawn or sent.
  *   dates/money tenant_settings.timezone / currency
  *   powered-by  hidden when tenant_branding.remove_powered_by is true
- * A shop therefore styles its event tickets in the same place as its booking tickets.
- * NOT applied to events: the booking ticket's on/off switch, the `booking_ticket` plan module and
- * show_qr (the QR is the entry pass, so it is always drawn).
+ * NOT applied to events: the `booking_ticket` plan module (event tickets are not plan-gated) and a
+ * QR toggle (the QR is the entry pass, so it is always drawn).
  *
  * Best-effort by design: tickets are already issued, so nothing here may ever throw into the order flow.
  * A branding / logo problem never blocks the ticket: it just falls back to the defaults.
@@ -42,6 +44,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { cleanHex, type HeaderStyle, type ResolvedTicketStyle } from "@/lib/whatsapp/booking-ticket-render"
 import { renderEventTicketPng, type RenderableEventTicket } from "@/lib/whatsapp/event-ticket-render"
+import { ticketSettingsToRow, type EventTicketSettings } from "@/lib/services/event-settings"
 
 const IMAGE_BUCKET = "ticket-images"
 const MAX_IMAGES_PER_ORDER = 10
@@ -54,6 +57,8 @@ const DEFAULT_ACCENT = "#f59e0b"
 
 /** Caption under each ticket image on WhatsApp (the ticket number is already on the image). */
 const TICKET_CAPTION = "See you there! 🎉"
+
+const DEFAULT_EYEBROW = "Ticket Confirmed"
 
 // ----------------------------------------------------------------------------
 // Shop name for the "X is generating your ticket" text
@@ -179,12 +184,15 @@ async function loadLogoDataUri(url: string | null | undefined): Promise<string |
 // ----------------------------------------------------------------------------
 
 interface TenantTicketLook {
+  /** Whether the shop sends ticket images at all. */
+  enabled: boolean
   style: ResolvedTicketStyle
   timeZone: string
   currency: string
 }
 
 interface TicketSettingsRow {
+  eyebrow?: string | null
   header_style?: string | null
   header_color?: string | null
   accent_color?: string | null
@@ -197,14 +205,20 @@ interface TicketSettingsRow {
 }
 
 /** Never throws: any problem falls back to the neutral defaults. */
-async function resolveTenantLook(supabase: SupabaseClient, tenantId: string): Promise<TenantTicketLook> {
+async function resolveTenantLook(
+  supabase: SupabaseClient,
+  tenantId: string,
+  /** Unsaved form values from the admin preview. Replaces the stored look. */
+  overrides?: EventTicketSettings,
+): Promise<TenantTicketLook> {
   let tenantRow = null as { name?: string | null } | null
   let branding = null as Record<string, string | boolean | null> | null
   let settings = null as { timezone?: string | null; currency?: string | null; brand_name?: string | null } | null
   let cfg: TicketSettingsRow = {}
+  let enabled = true
 
   try {
-    const [tenantRes, brandingRes, settingsRes, ticketRes] = await Promise.all([
+    const [tenantRes, brandingRes, settingsRes, eventRes, bookingRes] = await Promise.all([
       supabase.from("tenants").select("name").eq("id", tenantId).maybeSingle(),
       supabase
         .from("tenant_branding")
@@ -212,14 +226,23 @@ async function resolveTenantLook(supabase: SupabaseClient, tenantId: string): Pr
         .eq("tenant_id", tenantId)
         .maybeSingle(),
       supabase.from("tenant_settings").select("timezone, currency, brand_name").eq("tenant_id", tenantId).maybeSingle(),
+      supabase.from("tenant_event_ticket_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
       supabase.from("tenant_booking_ticket_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
     ])
     tenantRow = tenantRes.data as typeof tenantRow
     branding = brandingRes.data as typeof branding
     settings = settingsRes.data as typeof settings
-    cfg = (ticketRes.data ?? {}) as TicketSettingsRow
+    const eventRow = eventRes.data as (TicketSettingsRow & { enabled?: boolean }) | null
+    // Event row wins; with none saved yet, borrow the booking ticket's look (never its on/off switch).
+    cfg = (eventRow ?? (bookingRes.data as TicketSettingsRow | null) ?? {}) as TicketSettingsRow
+    enabled = eventRow?.enabled ?? true
   } catch (error) {
     console.warn("[ticket-image] Could not load branding; using defaults", { tenantId, error })
+  }
+
+  if (overrides) {
+    cfg = ticketSettingsToRow(overrides)
+    enabled = overrides.enabled
   }
 
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
@@ -227,7 +250,7 @@ async function resolveTenantLook(supabase: SupabaseClient, tenantId: string): Pr
 
   const style: ResolvedTicketStyle = {
     shopName: str(branding?.display_name) || str(settings?.brand_name) || str(tenantRow?.name) || "Your event",
-    eyebrow: "Ticket Confirmed",
+    eyebrow: str(cfg.eyebrow) || DEFAULT_EYEBROW,
     footerText: str(cfg.footer_text) || null,
     headerStyle: asHeaderStyle(cfg.header_style),
     headerColor: cleanHex(cfg.header_color, cleanHex(str(branding?.primary_color), DEFAULT_HEADER)),
@@ -244,6 +267,7 @@ async function resolveTenantLook(supabase: SupabaseClient, tenantId: string): Pr
   }
 
   return {
+    enabled,
     style,
     timeZone: str(settings?.timezone) || DEFAULT_TZ,
     currency: str(settings?.currency) || DEFAULT_CURRENCY,
@@ -371,6 +395,9 @@ export function scheduleOrderTicketImages(tenantId: string, orderId: string, pho
           loadOrderContext(supabase, tenantId, orderId, tickets.length),
         ])
 
+        // The shop switched ticket images off: the text confirmation and plain QR codes are enough.
+        if (!look.enabled) return
+
         let sent = 0
         // One at a time: keeps memory low and one bad ticket can't stop the rest.
         for (const [index, ticket] of tickets.entries()) {
@@ -395,5 +422,42 @@ export function scheduleOrderTicketImages(tenantId: string, orderId: string, pho
     })
   } catch (err) {
     console.error("[ticket-image] could not schedule ticket images", { tenantId, orderId, error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Admin preview
+// ----------------------------------------------------------------------------
+
+/**
+ * Renders a SAMPLE ticket with the given (possibly unsaved) settings plus the shop's real name, logo
+ * and brand colours. Used by the Event settings preview. Returns null if drawing fails.
+ */
+export async function renderEventTicketPreview(tenantId: string, overrides: EventTicketSettings): Promise<Buffer | null> {
+  try {
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return null
+    const look = await resolveTenantLook(supabase, tenantId, overrides)
+
+    const start = new Date()
+    start.setDate(start.getDate() + 14)
+    start.setHours(19, 0, 0, 0)
+    const end = new Date(start.getTime() + 4 * 60 * 60_000)
+
+    const ctx: OrderTicketContext = {
+      eventName: "Summer Sessions Live",
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+      location: "12 Main Road, Cape Town",
+      tierName: "General Admission",
+      price: 150,
+      quantity: 1,
+      customerName: "Thandi Mokoena",
+    }
+    const ticket: TicketRow = { id: "preview", ticket_number: "E0042", qr_token: "preview-ticket-sample", entries_allowed: 1 }
+    return await renderEventTicketPng(look.style, toRenderable(look, ctx, ticket, 0, "0731234567"))
+  } catch (error) {
+    console.error("[ticket-image] preview failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
+    return null
   }
 }

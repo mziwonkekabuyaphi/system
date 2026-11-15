@@ -44,6 +44,7 @@ import { formatPassportMoney } from "@/lib/services/passport"
 import { getCardOption } from "@/lib/payments/card"
 import { generateTicketQrCode, getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { getTenantDisplayName, scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
+import { loadEventSalesRules, loadEventTicketImageEnabled } from "@/lib/services/event-settings"
 import { buildChoiceList, clip } from "@/lib/whatsapp/utils/choice-list"
 import {
   buyWithPassport,
@@ -173,7 +174,24 @@ async function readOnSaleEvents(supabase: SupabaseClient, tenantId: string): Pro
     .limit(20)
   if (error) throw new Error(`Failed to read events: ${error.message}`)
   const now = Date.now()
-  return ((data ?? []) as EventRow[]).filter((e) => isStillOn(e, now))
+  // The shop's "stop selling N minutes before the start" rule: closed events leave the list (the
+  // database refuses the sale too, this just stops us offering what can't be bought).
+  const { stopSalesMinutesBefore } = await loadEventSalesRules(supabase, tenantId)
+  const cutoffMs = stopSalesMinutesBefore * 60_000
+  return ((data ?? []) as EventRow[]).filter((e) => isStillOn(e, now) && (cutoffMs === 0 || now < Date.parse(e.start_time) - cutoffMs))
+}
+
+/** How many more tickets this customer may buy for the event under the shop's per-customer limit (null = no limit). */
+async function remainingForCustomer(supabase: SupabaseClient, tenantId: string, eventId: string, customerId: string, limit: number | null): Promise<number | null> {
+  if (limit == null) return null
+  const { count } = await supabase
+    .from("event_tickets")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("event_id", eventId)
+    .eq("customer_id", customerId)
+    .in("status", ["issued", "used"])
+  return Math.max(limit - (count ?? 0), 0)
 }
 
 // ============================================================================
@@ -499,12 +517,13 @@ export async function buildOrderConfirmation(
     .maybeSingle()
   if (error || !order) throw new Error("order not found for confirmation")
 
-  const [eventRes, typeRes, ticketRes, timeZone, shopName] = await Promise.all([
+  const [eventRes, typeRes, ticketRes, timeZone, shopName, imageEnabled] = await Promise.all([
     supabase.from("events").select("name, start_time, location").eq("tenant_id", tenantId).eq("id", order.event_id).maybeSingle(),
     supabase.from("event_ticket_types").select("name").eq("tenant_id", tenantId).eq("id", order.ticket_type_id).maybeSingle(),
     supabase.from("event_tickets").select("ticket_number").eq("tenant_id", tenantId).eq("order_id", orderId).order("created_at", { ascending: true }),
     getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ),
     getTenantDisplayName(supabase, tenantId),
+    loadEventTicketImageEnabled(supabase, tenantId),
   ])
   const event = eventRes.data as { name: string; start_time: string; location: string | null } | null
   const tier = (typeRes.data as { name: string } | null)?.name ?? "Ticket"
@@ -527,7 +546,10 @@ export async function buildOrderConfirmation(
   }
   lines.push(`${order.quantity} × ${tier}`, paid, "", "*Your ticket numbers*", ...numbers.map((n, i) => `${i + 1}. ${n}`), "", "Show the QR code (or a ticket number) at the gate.")
   // The branded ticket image takes about 30 seconds, so tell the customer it is coming (see ticket-image.ts).
-  lines.push("", `⏳ *${shopName}* is generating your ticket image. It will arrive here in about 30 seconds, so no need to worry. Your QR code already works.`)
+  // Skipped when the shop has switched ticket images off (Event settings > Ticket).
+  if (imageEnabled) {
+    lines.push("", `⏳ *${shopName}* is generating your ticket image. It will arrive here in about 30 seconds, so no need to worry. Your QR code already works.`)
+  }
   return lines.join("\n")
 }
 
@@ -681,7 +703,12 @@ async function handleState(tenantId: string, state: ConversationState, message: 
         const tier = await readTier(supabase, tenantId, tierId)
         const left = tier ? Math.max(tier.capacity - tier.sold, 0) : 0
         if (!tier || left === 0) return finish("Sorry, that ticket just sold out.", ["Events", "Main Menu"])
-        const max = Math.min(MAX_PER_PURCHASE, left)
+        const rules = await loadEventSalesRules(supabase, tenantId)
+        const remaining = await remainingForCustomer(supabase, tenantId, tier.event_id, customer.id, rules.maxPerCustomer)
+        if (remaining !== null && remaining <= 0) {
+          return finish(`Sorry, there's a limit of ${rules.maxPerCustomer} ticket${rules.maxPerCustomer === 1 ? "" : "s"} per person for this event, and you already have ${rules.maxPerCustomer === 1 ? "it" : "them"}.`, ["My Tickets", "Events", "Main Menu"])
+        }
+        const max = Math.min(rules.maxPerPurchase, left, remaining ?? Number.POSITIVE_INFINITY)
         // Only one left: nothing to ask, go straight to payment.
         if (max === 1) return await proceedToPayment(supabase, tenantId, message.from, customer.id, tier.id, 1)
         return quantityStep(tier, max)

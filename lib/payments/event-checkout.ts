@@ -17,7 +17,7 @@ import { readPassportSummary } from "@/lib/services/passport"
 import { cardFailureMessage, getCardOption, startCardPayment } from "./card"
 
 /** Database messages that are written for customers; anything else becomes a generic apology. */
-const FRIENDLY_DB_MESSAGE = /Only \d+ left|not on sale|has ended|between 1 and|Passport|balance|Invalid ticket|Customer not found|not enabled/i
+const FRIENDLY_DB_MESSAGE = /Only \d+ left|not on sale|has ended|between 1 and|1 ticket at a time|Limit of \d+ tickets|sales for this event have closed|Passport|balance|Invalid ticket|Customer not found|not enabled/i
 const GENERIC = "I couldn't complete that. Please try again in a moment."
 
 function friendly(message: string | undefined): string {
