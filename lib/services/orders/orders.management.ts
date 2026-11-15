@@ -1,6 +1,6 @@
 // File: lib/services/orders/orders.management.ts
 import type { ActionResult } from '@/lib/types/action';
-import * as messages from '@/lib/messages/orders';
+import * as messages from '@/lib/services/messages/orders';
 import type { CartItem, OrderItemRow, OrderRow, OrdersStateData } from './orders.types';
 import { CART_ACTION_BUTTONS, ORDER_STATE_AWAITING_CART_ACTION, TRACKING_BUTTONS } from './orders.types';
 import type { TenantContext } from './orders.tenant';
