@@ -13,7 +13,7 @@
  * Server-only. Secrets are never logged and never put in an error message.
  */
 
-export type ProviderId = "yoco" | "ozow" | "peach" | "paystack"
+export type ProviderId = "yoco" | "ozow" | "peach" | "paystack" | "payfast"
 export type PaymentMode = "test" | "live"
 
 /** An error from a provider's API. `status` is the HTTP status, or 0 when the provider couldn't be reached. */
@@ -142,7 +142,7 @@ export interface CardProvider {
    * Set only for providers that must be told, BEFORE connecting, which website will call them (e.g. Peach's
    * "Allowlisted domains"). Settings > Payments shows these instructions with this app's domain to copy.
    */
-  readonly prerequisite?: { instructions: string }
+  readonly prerequisite?: { instructions: string; /** true = also show this app's domain to copy (e.g. for an allowlist) */ showDomain?: boolean }
 
   connect(req: ConnectRequest): Promise<ConnectResult>
   createCheckout(req: CheckoutRequest): Promise<CheckoutResult>
@@ -154,7 +154,7 @@ export interface CardProvider {
    * true = go ahead, false = the provider doesn't confirm it (nothing is credited, the notice is logged).
    * May throw on a provider outage: the notice is then retried by the provider.
    */
-  confirmSucceeded?(args: { connection: ProviderConnection; event: NormalisedWebhook }): Promise<boolean>
+  confirmSucceeded?(args: { connection: ProviderConnection; event: NormalisedWebhook; rawBody: string; headers: Headers }): Promise<boolean>
 
   /** Remove our webhook from the shop's account at the provider (called on disconnect, best effort). Optional. */
   removeWebhook?(args: { connection: ProviderConnection; providerWebhookId: string }): Promise<void>
