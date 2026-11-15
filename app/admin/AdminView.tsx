@@ -13,6 +13,8 @@ import { ShishaManager, type ShishaSection } from "./shisha/ShishaManager"
 import { EventsManager } from "./events/EventsManager"
 import type { EventsPermissions, EventsSection } from "./events/types"
 import { VvipManager } from "./vvip/VvipManager"
+import { OrdersManager } from "./orders/OrdersManager"
+import type { OrdersData, OrdersPermissions, OrdersSection } from "./orders/types"
 import type { VvipPermissions, VvipSection } from "./vvip/types"
 import { SettingsManager } from "./SettingsManager"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
@@ -56,6 +58,10 @@ type Tab =
   | "eventsGate"
   | "vvipTables"
   | "vvipTabs"
+  | "ordersBoard"
+  | "ordersProducts"
+  | "ordersCatalogue"
+  | "ordersSettings"
   | "inbox"
   | "staff"
   | "analytics"
@@ -110,6 +116,14 @@ const VVIP_TAB_SECTION: Partial<Record<Tab, VvipSection>> = {
 const SECTION_VVIP_TAB: Record<VvipSection, Tab> = {
   tables: "vvipTables",
   tabs: "vvipTabs",
+}
+
+/** Sidebar entry -> the Order management page it opens. */
+const ORDERS_TAB_SECTION: Partial<Record<Tab, OrdersSection>> = {
+  ordersBoard: "board",
+  ordersProducts: "products",
+  ordersCatalogue: "catalogue",
+  ordersSettings: "settings",
 }
 
 const SIDEBAR_COLLAPSED = 65 // px
@@ -307,6 +321,41 @@ function VvipTablesIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function OrdersBoardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M5 7h14l-1.2 11.5a1 1 0 0 1-1 .9H7.2a1 1 0 0 1-1-.9z" />
+      <path d="M9 7a3 3 0 0 1 6 0" />
+    </svg>
+  )
+}
+
+function OrdersProductsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3.5 20 7.8v8.4L12 20.5 4 16.2V7.8z" />
+      <path d="M4 7.8 12 12l8-4.2M12 12v8.5" />
+    </svg>
+  )
+}
+
+function OrdersCatalogueIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 6h16M4 12h16M4 18h10" />
+    </svg>
+  )
+}
+
+function OrdersSettingsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+    </svg>
+  )
+}
+
 function VvipTabsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -340,6 +389,10 @@ const TABS: Array<{ id: Tab; label: string; icon: (props: SVGProps<SVGSVGElement
   { id: "eventsGate", label: "Gate scanner", icon: GateIcon },
   { id: "vvipTables", label: "Tables", icon: VvipTablesIcon },
   { id: "vvipTabs", label: "Table tabs", icon: VvipTabsIcon },
+  { id: "ordersBoard", label: "Orders", icon: OrdersBoardIcon },
+  { id: "ordersProducts", label: "Products", icon: OrdersProductsIcon },
+  { id: "ordersCatalogue", label: "Categories & vendors", icon: OrdersCatalogueIcon },
+  { id: "ordersSettings", label: "Order settings", icon: OrdersSettingsIcon },
   { id: "inbox", label: "Inbox", icon: WhatsAppIcon },
   { id: "staff", label: "Workforce", icon: UsersIcon },
   { id: "analytics", label: "Analytics", icon: ChartIcon },
@@ -370,6 +423,8 @@ const NAV_GROUPS: Array<{ label: string; ids: Tab[] }> = [
       "passportRefunds",
     ],
   },
+  // Shown only while Order management is switched on (and the caller has orders.view).
+  { label: "Order management", ids: ["ordersBoard", "ordersProducts", "ordersCatalogue", "ordersSettings"] },
   { label: "Analytics", ids: ["analytics"] },
   { label: "System", ids: ["staff", "billing", "settings"] },
 ]
@@ -390,6 +445,10 @@ export function AdminView({
   eventsPermissions,
   vvipEnabled,
   vvipPermissions,
+  ordersEnabled,
+  ordersPermissions,
+  initialOrdersData,
+  initialOrdersError,
   whatsappEnabled,
   staffEnabled,
   settingsModules,
@@ -432,6 +491,12 @@ export function AdminView({
    *  resolved in page.tsx). page.tsx also zeroes vvipPermissions when it is off. */
   vvipEnabled: boolean
   vvipPermissions: VvipPermissions
+  /** The Orders module is switched on for the shop AND tenant_modules says so (page.tsx zeroes ordersPermissions when off). */
+  ordersEnabled: boolean
+  ordersPermissions: OrdersPermissions
+  /** Null when the module is off, the caller lacks orders.view, or the load failed (then initialOrdersError says why). */
+  initialOrdersData: OrdersData | null
+  initialOrdersError: string | null
   whatsappEnabled: boolean
   /** Staff Management is its own product. Shown when it is switched on, or when the shop runs
    *  Booking, Queue, Shisha, Shifts or Payroll (those include staff). Computed in page.tsx. */
@@ -465,7 +530,7 @@ export function AdminView({
   // covers Shifts and Payroll, see staffEnabled in page.tsx), Passport/wallet, or Events (which
   // needs Passport). All of these are the effective, parent-checked states from page.tsx.
   const hasAnyModule =
-    hasBookingOrQueue || shishaEnabled || eventsEnabled || staffEnabled || settingsModules?.on.wallet === true
+    hasBookingOrQueue || shishaEnabled || eventsEnabled || ordersEnabled || staffEnabled || settingsModules?.on.wallet === true
   const isTabVisible = (id: Tab): boolean => {
     switch (id) {
       case "today":
@@ -495,6 +560,13 @@ export function AdminView({
       case "vvipTables":
       case "vvipTabs":
         return vvipEnabled && vvipPermissions.view && eventsPermissions.eventsView
+      // Order management: module on + orders.view. The actions re-check both server-side, and
+      // add orders.operate / orders.manage for anything that changes data.
+      case "ordersBoard":
+      case "ordersProducts":
+      case "ordersCatalogue":
+      case "ordersSettings":
+        return ordersEnabled && ordersPermissions.view
       // Passport: module switched on + wallet.view (page.tsx zeroes the permissions when it is off).
       // The actions re-check both server-side.
       case "passportOverview":
@@ -543,6 +615,7 @@ export function AdminView({
   const passportSection = PASSPORT_TAB_SECTION[tab] ?? null
   const eventsSection = EVENTS_TAB_SECTION[tab] ?? null
   const vvipSection = VVIP_TAB_SECTION[tab] ?? null
+  const ordersSection = ORDERS_TAB_SECTION[tab] ?? null
   // The shared Events group is headed "Customer accounts" when the shop has the wallet but not Events.
   const navGroupLabel = (label: string) => (label === "Events" && !eventsEnabled ? "Customer accounts" : label)
   // Control Centre is always first; the other groups follow in NAV_GROUPS order.
@@ -781,7 +854,9 @@ export function AdminView({
                   ? `${navGroupLabel("Events")} · `
                   : eventsSection || vvipSection
                     ? "Events · "
-                    : ""}
+                    : ordersSection
+                      ? "Order management · "
+                      : ""}
               {TABS.find((t) => t.id === tab)?.label ?? ""}
             </p>
           </div>
@@ -856,6 +931,23 @@ export function AdminView({
                 staffPermissions.walletView && (staffPermissions.walletOperate || staffPermissions.walletManage)
               }
             />
+          )}
+          {/* One Order management page for the four sidebar entries, so orders, products and the catalogue
+              stay loaded while moving between them (same idea as Shisha/Events above). */}
+          {ordersSection && isTabVisible(tab) && initialOrdersData && (
+            <OrdersManager
+              section={ordersSection}
+              initialData={initialOrdersData}
+              permissions={ordersPermissions}
+              timezone={timezone}
+              currency={initialTenantSettings?.currency ?? "ZAR"}
+            />
+          )}
+          {ordersSection && isTabVisible(tab) && !initialOrdersData && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              Order management couldn&rsquo;t load{initialOrdersError ? `: ${initialOrdersError}` : "."} Check that the orders
+              tables exist in the database, then refresh.
+            </div>
           )}
           {tab === "inbox" && isTabVisible("inbox") && (
             <InboxManager

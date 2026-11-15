@@ -57,6 +57,8 @@ import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS
 import { AdminView } from "./AdminView"
 import type { EventsPermissions } from "./events/types"
 import type { VvipPermissions } from "./vvip/types"
+import { NO_ORDERS_PERMISSIONS, type OrdersData, type OrdersPermissions } from "./orders/types"
+import { loadOrdersData } from "./orders/orders-data"
 import { joinServiceLabels, loadDisplayContext, loadQueueEntries } from "./admin-data"
 import { BOOKING_WINDOW_DAYS_AHEAD, BOOKING_WINDOW_DAYS_BACK, addDaysKey, dateKeyInTz, startOfDayUtc } from "./tz"
 import type {
@@ -798,6 +800,10 @@ export default async function AdminPage() {
     "vvip.view",
     "vvip.operate",
     "vvip.manage",
+    // Order management (its own module). Same batched lookup.
+    "orders.view",
+    "orders.operate",
+    "orders.manage",
   ]
 
   const NO_EVENTS_PERMISSIONS: EventsPermissions = {
@@ -812,6 +818,8 @@ export default async function AdminPage() {
 
   const NO_VVIP_PERMISSIONS: VvipPermissions = { view: false, operate: false, manage: false }
   let vvipPermissions: VvipPermissions = NO_VVIP_PERMISSIONS
+
+  let ordersPermissions: OrdersPermissions = NO_ORDERS_PERMISSIONS
 
   let permissions: AdminStaffPermissions
   try {
@@ -844,6 +852,11 @@ export default async function AdminPage() {
       view: granted.has("vvip.view"),
       operate: granted.has("vvip.operate"),
       manage: granted.has("vvip.manage"),
+    }
+    ordersPermissions = {
+      view: granted.has("orders.view"),
+      operate: granted.has("orders.operate"),
+      manage: granted.has("orders.manage"),
     }
   } catch (err) {
     console.error("[admin] getTenantPermissions failed — falling back to no staff/payroll/settings/services access", err)
@@ -887,6 +900,21 @@ export default async function AdminPage() {
   // controls it through Events. Off = same fail-closed zeroing, even for an owner.
   const vvipEnabled = mods.on("vvip")
   if (!vvipEnabled) vvipPermissions = NO_VVIP_PERMISSIONS
+  // Order management is its own module switch. Off = same fail-closed zeroing, even for an owner.
+  const ordersEnabled = mods.on("orders")
+  if (!ordersEnabled) ordersPermissions = NO_ORDERS_PERMISSIONS
+  // Fetched only when the module is on AND the caller can see it. A failed load is logged and
+  // surfaced in the page (initialOrdersError) instead of silently hiding the whole area.
+  let initialOrdersData: OrdersData | null = null
+  let initialOrdersError: string | null = null
+  if (ordersEnabled && ordersPermissions.view) {
+    try {
+      initialOrdersData = await loadOrdersData(supabase, tenantId)
+    } catch (err) {
+      console.error("[admin] loadOrdersData failed", err)
+      initialOrdersError = err instanceof Error ? err.message : "Couldn't load order management."
+    }
+  }
 
   // Services and full Settings data are owner-only. A tenant_staff caller
   // never triggers getAllServices()/getSettingsData() at all for this
@@ -965,6 +993,10 @@ export default async function AdminPage() {
       eventsPermissions={eventsPermissions}
       vvipEnabled={vvipEnabled}
       vvipPermissions={vvipPermissions}
+      ordersEnabled={ordersEnabled}
+      ordersPermissions={ordersPermissions}
+      initialOrdersData={initialOrdersData}
+      initialOrdersError={initialOrdersError}
       whatsappEnabled={whatsappEnabled}
       staffEnabled={["staff", "booking", "queue", "shisha", "shifts", "payroll"].some((k) => mods.on(k))}
       settingsModules={mods.flags()}
