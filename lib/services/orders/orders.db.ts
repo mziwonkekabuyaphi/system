@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/whatsapp/utils/logger';
-import * as messages from '@/lib/messages/orders';
+import * as messages from '@/lib/services/messages/orders';
 import type {
   CartItem,
   CustomerPaymentChoice,
