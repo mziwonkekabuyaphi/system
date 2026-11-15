@@ -52,6 +52,7 @@ import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-t
 import { formatBookingTicketNumber } from "@/lib/services/ticket-format"
 import { last4 } from "@/lib/payroll/staff-details"
 import { getEffectiveModules } from "@/lib/tenant/effective-modules"
+import { getCardOption } from "@/lib/payments/card"
 import { tenantHasModule, isTenantModuleEnabled, getEnabledProducts, MODULE_KEYS } from "@/lib/services/plans"
 
 import { AdminView } from "./AdminView"
@@ -534,6 +535,8 @@ async function getSettingsData(
       allowCustomerStaffChoice: bookingSettingsResult.data.allow_customer_staff_choice === true,
       bookingNumberPrefix: bookingSettingsResult.data.booking_number_prefix ?? "B",
       kioskPrintTicket: bookingSettingsResult.data.kiosk_print_ticket !== false,
+      requirePayment: await readRequirePayment(supabase, tenantId),
+      cardPaymentsConnected: await hasCardPayments(supabase, tenantId),
       queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)
         ? (bookingSettingsResult.data.queue_priority_mode as AdminBookingSettings["queuePriorityMode"])
         : "fifo",
@@ -745,6 +748,25 @@ async function getInboxData(
 const EMPTY_INBOX: { conversations: AdminConversationSummary[]; stats: AdminInboxStats } = {
   conversations: [],
   stats: { totalConversations: 0, aiActiveCount: 0, needsHumanCount: 0, volumeByDay: [], topCustomers: [] },
+}
+
+/**
+ * booking_settings.require_payment, read on its own so the admin page still loads if the paid-bookings migration
+ * (supabase/proposed/booking_payments.sql) has not been applied yet: a missing column simply means "off".
+ */
+async function readRequirePayment(supabase: ServerClient, tenantId: string): Promise<boolean> {
+  const { data, error } = await supabase.from("booking_settings").select("require_payment").eq("tenant_id", tenantId).maybeSingle()
+  if (error) return false
+  return data?.require_payment === true
+}
+
+/** Whether the shop can take a card payment right now (a provider is connected and can charge the shop's currency). */
+async function hasCardPayments(supabase: ServerClient, tenantId: string): Promise<boolean> {
+  try {
+    return (await getCardOption(supabase, tenantId)) !== null
+  } catch {
+    return false
+  }
 }
 
 export default async function AdminPage() {

@@ -167,7 +167,7 @@ export interface AdminBooking {
   startTime: string
   /** ISO timestamp */
   endTime: string
-  status: "confirmed" | "cancelled" | "completed"
+  status: "confirmed" | "awaiting_payment" | "cancelled" | "completed"
   bookingReference: string
   /** Running per-shop ticket, e.g. "B0012". Null for bookings made before ticket numbers existed. */
   ticketLabel: string | null
@@ -529,6 +529,10 @@ export interface AdminBookingSettings {
   bookingNumberPrefix?: string
   /** false = the kiosk doesn't print a slip for bookings. booking_settings.kiosk_print_ticket (default true). */
   kioskPrintTicket?: boolean
+  /** true = WhatsApp and kiosk bookings are held until the customer pays by card. booking_settings.require_payment (default false). */
+  requirePayment?: boolean
+  /** Read-only: the shop has a card provider connected (Settings > Payments), so payment can be switched on. Never saved. */
+  cardPaymentsConnected?: boolean
   /** false = bookings skip the service step. Optional so a loader that
    *  doesn't send it yet still compiles; the panel treats missing as true. */
   requireServiceSelection?: boolean
