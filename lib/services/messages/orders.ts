@@ -1,5 +1,5 @@
 /**
- * lib/messages/orders.ts
+ * lib/services/messages/orders.ts
  *
  * WhatsApp Concierge — Orders Messages (multi-tenant)
  * ------------------------------------------------------------------------
@@ -109,6 +109,17 @@ export interface DisplayProduct {
   category?: string | null;
 }
 
+export function welcomeMessage(brandName: string): string {
+  return `👋 Welcome to *${brandName}*!\n\nWhat would you like to do?`;
+}
+
+export function categoryMenuMessage(categories: Array<{ label: string; count: number }>): string {
+  const lines = categories.map(
+    (category, index) => `${keycapNumber(index + 1)} ${category.label} (${category.count})`,
+  );
+  return ['📋 *Menu*', ...lines, '', 'Reply with a number to see what is in that category.'].join('\n');
+}
+
 export function noProductsInCategory(title: string): string {
   return `Sorry, we don't have anything in "${title}" available right now. 🙁\n\nReply *menu* to see everything we have.`;
 }
@@ -122,7 +133,7 @@ export function productListMessage(title: string, products: DisplayProduct[], st
     `🛒 *${title}*`,
     ...lines,
     '',
-    'Reply with a product number to select it, or *menu* to go back to the categories.',
+    'Reply with a number to add it to your cart, or *menu* to see other categories.',
   ].join('\n');
 }
 
@@ -215,91 +226,39 @@ export const EMPTY_CART = 'Your cart is empty. Reply *menu* to start adding item
 
 export function addedToCartMessage(justAdded: CartLineItem, cart: CartLineItem[]): string {
   return [
-    '✅ *Added to cart*',
-    `${justAdded.quantity} × ${justAdded.productName} = ${formatCurrency(justAdded.unitPrice * justAdded.quantity)}`,
+    `✅ Added ${pluralize(justAdded.quantity, 'x')} ${justAdded.productName} to your cart.`,
     '',
-    `Your cart now has ${pluralize(cart.length, 'product type')} · Total *${formatCurrency(cartTotal(cart))}*`,
+    '*Your Cart*',
+    ...cart.map(cartLineText),
     '',
-    'What next? Tap a button below.',
+    `Cart Total: *${formatCurrency(cartTotal(cart))}*`,
+    '',
+    "Reply with another number to keep shopping, *checkout* when you're ready to pay, or *view cart* to see this again.",
   ].join('\n');
 }
 
 export function cartSummaryMessage(cart: CartLineItem[], notice?: string): string {
   if (cart.length === 0) {
-    return [notice, EMPTY_CART].filter(Boolean).join('\n\n');
+    return notice ? `${notice}\n\n${EMPTY_CART}` : EMPTY_CART;
   }
   return [
-    notice ? `${notice}\n` : undefined,
-    '🛒 *YOUR CART*',
-    pluralize(cart.length, 'item type'),
+    ...(notice ? [notice, ''] : []),
+    '🛒 *Your Cart*',
+    ...cart.map(cartLineText),
     '',
-    ...cart.map((item) => `*${item.productName}*\n${formatCurrency(item.unitPrice)} × ${item.quantity} = ${formatCurrency(item.unitPrice * item.quantity)}`),
+    `Total: *${formatCurrency(cartTotal(cart))}*`,
     '',
-    `*TOTAL: ${formatCurrency(cartTotal(cart))}*`,
-    '',
-    'What next?',
-  ]
-    .filter((line) => line !== undefined)
-    .join('\n');
+    'Reply *checkout* to pay, a number to add more, or *menu* to keep browsing.',
+  ].join('\n');
 }
 
-/** "Remove Items": numbered lines, reply with the number to remove. */
+/** Numbered list of cart lines so the customer can pick one to remove. */
 export function removeItemPrompt(cart: CartLineItem[]): string {
   return [
     '🗑️ *Remove an item*',
+    ...cart.map((item, index) => `${keycapNumber(index + 1)} ${pluralize(item.quantity, 'x')} ${item.productName}`),
     '',
-    ...cart.map((item, index) => `${keycapNumber(index + 1)} ${item.quantity} × ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`),
-    '',
-    'Reply with the number to remove, *all* to empty your cart, or *back* to keep it as it is.',
-  ].join('\n');
-}
-
-// ============================================================================
-// WELCOME & CATEGORIES
-// ============================================================================
-
-export function welcomeMessage(brandName: string): string {
-  return [
-    `*${brandName.toUpperCase()}*`,
-    '',
-    'Hi there! 👋 Welcome to our ordering service.',
-    '',
-    'What would you like to do today?',
-    '',
-    '🛒 *Order Now* — browse our menu and add your favourites to your cart.',
-    '📦 *Track My Order* — check the status of your order.',
-  ].join('\n');
-}
-
-/** A friendly emoji for a category label; a neutral one when nothing matches. */
-export function categoryEmoji(label: string): string {
-  const l = label.toLowerCase();
-  if (/beer|cider|lager|brew/.test(l)) return '🍺';
-  if (/wine|champagne|bubbly|mcc/.test(l)) return '🍷';
-  if (/spirit|whisk|vodka|brandy|gin|rum|tequila|liquor|shot/.test(l)) return '🥃';
-  if (/cocktail/.test(l)) return '🍹';
-  if (/soft|juice|water|cooldrink|cold drink|energy|soda/.test(l)) return '🥤';
-  if (/coffee|tea|hot drink/.test(l)) return '☕';
-  if (/shisha|hookah/.test(l)) return '💨';
-  if (/burger|food|meal|grill|braai|kota|chicken|meat|pizza/.test(l)) return '🍔';
-  if (/snack|chips|sweet|dessert|cake/.test(l)) return '🍿';
-  return '🛒';
-}
-
-export interface CategoryChoice {
-  label: string;
-  count: number;
-}
-
-export function categoryMenuMessage(categories: CategoryChoice[]): string {
-  return [
-    '📋 *What would you like?*',
-    '',
-    ...categories.map(
-      (c, index) => `${keycapNumber(index + 1)} ${categoryEmoji(c.label)} *${c.label}*\n      ${pluralize(c.count, 'product')}`,
-    ),
-    '',
-    'Reply with a number to open a category, or *all* to see the full menu.',
+    'Reply with the number of the item you want to remove.',
   ].join('\n');
 }
 
@@ -309,9 +268,7 @@ export function categoryMenuMessage(categories: CategoryChoice[]): string {
  */
 export function cartPaymentMethodPrompt(cart: CartLineItem[], scheduledLabel?: string | null): string {
   return [
-    '🧾 *CHECKOUT*',
-    '',
-    'Your order:',
+    '*Checkout*',
     ...cart.map(cartLineText),
     '',
     `Total: *${formatCurrency(cartTotal(cart))}*`,
@@ -349,22 +306,19 @@ export function cartOrderCreatedMessage(
       : ['📍 Collect at:', ...unique.map((point) => `   • *${point}*`)];
 
   return [
-    '🎉 *ORDER CONFIRMED!*',
-    `*#${orderNumber}*`,
-    '',
-    'Your order has been received.',
+    `🎉 Order confirmed! *#${orderNumber}*`,
     '',
     ...itemLines,
     `Total: *${formatCurrency(totalAmount)}*`,
     paidLine(paymentChoice),
-    scheduledLabel ? scheduleConfirmedLabel(scheduledLabel) : '👨‍🍳 Being prepared',
+    scheduledLabel ? scheduleConfirmedLabel(scheduledLabel) : undefined,
     '',
     ...collectionLines,
     "We don't offer delivery — all orders are collected in person.",
     '',
     scheduledLabel
       ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
-      : "We'll message you when it's ready. Thank you for ordering with us! 🙏",
+      : "We'll message you when it's ready. Reply *track my order* anytime for updates.",
   ]
     .filter((line) => line !== undefined)
     .join('\n');
@@ -397,7 +351,7 @@ export function multiOrderCreatedMessage(
   });
 
   return [
-    `🎉 *ORDER CONFIRMED!* You have *${pluralize(groups.length, 'order')}* to collect:`,
+    `🎉 Order confirmed! You have *${pluralize(groups.length, 'order')}* to collect:`,
     '',
     orderBlocks.join('\n\n'),
     '',
@@ -407,7 +361,7 @@ export function multiOrderCreatedMessage(
     '',
     scheduledLabel
       ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
-      : "We'll message you when each is ready. Thank you for ordering with us! 🙏",
+      : "We'll message you when each is ready. Reply *track my order* anytime for updates.",
   ]
     .filter((line) => line !== undefined)
     .join('\n');
@@ -418,7 +372,7 @@ export function multiOrderCreatedMessage(
 // ============================================================================
 
 export function quantityPrompt(productName: string, unitPrice: number): string {
-  return [`*${productName}*`, `Price: ${formatCurrency(unitPrice)} each.`, '', 'How many would you like?'].join('\n');
+  return `How many *${productName}* would you like? (${formatCurrency(unitPrice)} each)`;
 }
 
 export const CONFIRM_YES_NO = 'Please reply *yes* to confirm your order, or *no* to cancel it.';
@@ -463,8 +417,7 @@ export const PAYMENT_METHOD_REQUEST = 'Please choose how you would like to pay u
 // SCHEDULING
 // ============================================================================
 
-export const SCHEDULE_CHOICE_PROMPT =
-  '🧾 *CHECKOUT*\n\nHow would you like to collect your order?\n\n⚡ *Collect Now* — we start preparing it right away\n🕒 *Schedule Later* — pick a time later today';
+export const SCHEDULE_CHOICE_PROMPT = 'Would you like to collect this now, or schedule it for a later time today?';
 
 export const SCHEDULE_TIME_REQUEST =
   'What time would you like to collect it? Reply with a time, e.g. "6pm" or "18:30".';
