@@ -266,6 +266,16 @@ export function QueueRulesDrawer({
         )}
 
         {tab === "tickets" && (
+          <>
+          <DrawerGroup title="Kiosk printing">
+            <DrawerSwitch
+              title="Print a ticket at the kiosk"
+              description="When a walk-in joins on the kiosk, print a slip for them. Switch off if you don't use a ticket printer: they still see their ticket on screen."
+              checked={draft.kioskPrintTicket ?? true}
+              disabled={saving}
+              onChange={(v) => set("kioskPrintTicket", v)}
+            />
+          </DrawerGroup>
           <DrawerGroup title="Ticket numbers">
             <DrawerField
               label="Queue ticket number format"
@@ -287,6 +297,7 @@ export function QueueRulesDrawer({
               </p>
             </div>
           </DrawerGroup>
+          </>
         )}
       </div>
     </AdminDrawer>

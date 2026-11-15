@@ -941,6 +941,8 @@ export async function updateBookingSettings(input: {
   allowCustomerStaffChoice?: boolean
   /** Prefix for booking ticket numbers (B -> B0001). 1-4 characters; omitted = unchanged. */
   bookingNumberPrefix?: string
+  /** false = no printed slip at the kiosk for bookings; omitted = unchanged. */
+  kioskPrintTicket?: boolean
 }): Promise<ActionResult> {
   try {
     const bookingNumberPrefix = input.bookingNumberPrefix?.trim().toUpperCase()
@@ -1046,6 +1048,7 @@ export async function updateBookingSettings(input: {
           ? { booking_reminder_lead_minutes: input.bookingReminderLeadMinutes }
           : {}),
         ...(bookingNumberPrefix !== undefined ? { booking_number_prefix: bookingNumberPrefix } : {}),
+        ...(input.kioskPrintTicket !== undefined ? { kiosk_print_ticket: input.kioskPrintTicket === true } : {}),
         ...(input.allowCustomerStaffChoice !== undefined
           ? { allow_customer_staff_choice: input.allowCustomerStaffChoice === true }
           : {}),
@@ -1075,6 +1078,8 @@ export async function updateQueueSettings(input: {
   defaultServiceDurationMinutes: number
   ticketNumberPrefix: string
   maxServicesPerQueueEntry: number
+  /** false = no printed slip at the kiosk for walk-ins; omitted = unchanged. */
+  kioskPrintTicket?: boolean
 }): Promise<ActionResult> {
   try {
     if (!isValidServicesPerVisit(input.maxServicesPerQueueEntry)) {
@@ -1107,6 +1112,7 @@ export async function updateQueueSettings(input: {
         default_service_duration_minutes: input.defaultServiceDurationMinutes,
         ticket_number_prefix: ticketNumberPrefix,
         max_services_per_queue_entry: input.maxServicesPerQueueEntry,
+        ...(input.kioskPrintTicket !== undefined ? { kiosk_print_ticket: input.kioskPrintTicket === true } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

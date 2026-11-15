@@ -350,14 +350,14 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice, booking_number_prefix",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice, booking_number_prefix, kiosk_print_ticket",
       )
       .eq("tenant_id", tenantId)
       .single(),
     supabase
       .from("queue_settings")
       .select(
-        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix, max_services_per_queue_entry",
+        "auto_call_next, max_queue_size, notify_before_turn_position, allow_walkin_whatsapp, allow_walkin_kiosk, require_service_selection, default_service_duration_minutes, ticket_number_prefix, max_services_per_queue_entry, kiosk_print_ticket",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -533,6 +533,7 @@ async function getSettingsData(
       maxDatesOffered: bookingSettingsResult.data.max_dates_offered ?? 7,
       allowCustomerStaffChoice: bookingSettingsResult.data.allow_customer_staff_choice === true,
       bookingNumberPrefix: bookingSettingsResult.data.booking_number_prefix ?? "B",
+      kioskPrintTicket: bookingSettingsResult.data.kiosk_print_ticket !== false,
       queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)
         ? (bookingSettingsResult.data.queue_priority_mode as AdminBookingSettings["queuePriorityMode"])
         : "fifo",
@@ -552,6 +553,7 @@ async function getSettingsData(
       requireServiceSelection: queueSettingsResult.data.require_service_selection,
       defaultServiceDurationMinutes: queueSettingsResult.data.default_service_duration_minutes,
       ticketNumberPrefix: queueSettingsResult.data.ticket_number_prefix,
+      kioskPrintTicket: queueSettingsResult.data.kiosk_print_ticket !== false,
       maxServicesPerQueueEntry: queueSettingsResult.data.max_services_per_queue_entry ?? 1,
     },
     messageSettings: {

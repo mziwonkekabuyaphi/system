@@ -74,6 +74,7 @@ function withDefaults(s: BookingForm): BookingForm {
     bookingReminderLeadMinutes: s.bookingReminderLeadMinutes ?? 120,
     allowCustomerStaffChoice: s.allowCustomerStaffChoice ?? false,
     bookingNumberPrefix: s.bookingNumberPrefix ?? "B",
+    kioskPrintTicket: s.kioskPrintTicket ?? true,
   }
 }
 
@@ -262,6 +263,16 @@ export function BookingRulesDrawer({
                   onChange={(e) => set("bookingNumberPrefix", e.target.value.toUpperCase())}
                 />
               </DrawerField>
+            </DrawerGroup>
+
+            <DrawerGroup title="Kiosk printing">
+              <DrawerSwitch
+                title="Print a ticket at the kiosk"
+                description="When a customer books on the kiosk, print a slip for them. Switch off if you don't use a ticket printer: they still see their ticket on screen."
+                checked={draft.kioskPrintTicket ?? true}
+                disabled={saving}
+                onChange={(v) => set("kioskPrintTicket", v)}
+              />
             </DrawerGroup>
 
             <DrawerGroup title="Cancellations">

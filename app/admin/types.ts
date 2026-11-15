@@ -527,6 +527,8 @@ export interface AdminBookingSettings {
   allowCustomerStaffChoice?: boolean
   /** Prefix for booking ticket numbers, 1-4 characters ("B" gives B0001). booking_settings.booking_number_prefix. */
   bookingNumberPrefix?: string
+  /** false = the kiosk doesn't print a slip for bookings. booking_settings.kiosk_print_ticket (default true). */
+  kioskPrintTicket?: boolean
   /** false = bookings skip the service step. Optional so a loader that
    *  doesn't send it yet still compiles; the panel treats missing as true. */
   requireServiceSelection?: boolean
@@ -565,6 +567,8 @@ export interface AdminQueueSettings {
    *  single service. Backed by queue_settings.max_services_per_queue_entry.
    *  Only used while requireServiceSelection is on. */
   maxServicesPerQueueEntry: number
+  /** false = the kiosk doesn't print a slip for walk-ins. queue_settings.kiosk_print_ticket (default true). */
+  kioskPrintTicket?: boolean
 }
 
 /** One business_hours row: a weekday's opening hours. dayOfWeek is

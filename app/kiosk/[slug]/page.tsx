@@ -228,6 +228,9 @@ interface KioskQueueBehavior {
    *  screen (appointments use booking_settings.default_duration_minutes). Separate from the
    *  queue flag above. Anything but an explicit false means true. */
   requireServiceBooking: boolean
+  /** kiosk_print_ticket on booking_settings / queue_settings. Anything but an explicit false means print. */
+  printBooking: boolean
+  printQueue: boolean
 }
 
 const DEFAULT_REQUIRE_SERVICE_SELECTION = true
@@ -377,12 +380,12 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   ] = await Promise.all([
     supabase
       .from("queue_settings")
-      .select("require_service_selection, max_services_per_queue_entry")
+      .select("require_service_selection, max_services_per_queue_entry, kiosk_print_ticket")
       .eq("tenant_id", tenant.id)
       .maybeSingle(),
     supabase
       .from("booking_settings")
-      .select("max_services_per_booking, require_service_selection")
+      .select("max_services_per_booking, require_service_selection, kiosk_print_ticket")
       .eq("tenant_id", tenant.id)
       .maybeSingle(),
   ])
@@ -399,6 +402,8 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     maxServicesQueue: resolveMaxServices(queueSettingsRow?.max_services_per_queue_entry),
     maxServicesBooking: resolveMaxServices(bookingSettingsRow?.max_services_per_booking),
     requireServiceBooking: bookingSettingsRow?.require_service_selection !== false,
+    printBooking: bookingSettingsRow?.kiosk_print_ticket !== false,
+    printQueue: queueSettingsRow?.kiosk_print_ticket !== false,
   }
 
   // Don't even touch the services catalog when the module's off — the
@@ -454,6 +459,8 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
         requireServiceBooking={queueBehavior.requireServiceBooking}
         maxServicesBooking={queueBehavior.maxServicesBooking}
         maxServicesQueue={queueBehavior.maxServicesQueue}
+        printBooking={queueBehavior.printBooking}
+        printQueue={queueBehavior.printQueue}
       />
     </div>
   )

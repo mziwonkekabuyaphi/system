@@ -227,6 +227,9 @@ interface KioskAppProps {
   // appointment length). Separate from requireServiceSelection above, which is the
   // queue's own flag. Omitted = true, the old behaviour.
   requireServiceBooking?: boolean
+  // Per-path "print a slip" switches (Booking rules / Queue rules). Omitted = print, the old behaviour.
+  printBooking?: boolean
+  printQueue?: boolean
 }
 
 function clampMaxServices(value: number | undefined): number {
@@ -319,6 +322,8 @@ export function KioskApp({
   maxServicesBooking,
   maxServicesQueue,
   requireServiceBooking = true,
+  printBooking = true,
+  printQueue = true,
 }: KioskAppProps) {
   // Web mode = opened from the WhatsApp link (/web/[slug]) on the customer's
   // own phone, as opposed to the shop's walk-in tablet (/kiosk/[slug]).
@@ -385,11 +390,13 @@ export function KioskApp({
     async (t: Ticket) => {
       // A customer's own phone has no ticket printer.
       if (isWeb) return
+      // The shop switched printing off for this path (Booking rules / Queue rules).
+      if (!(t.kind === "booking" ? printBooking : printQueue)) return
       setPrintStatus("printing")
       const ok = await printKioskTicket(t, branding.displayName)
       setPrintStatus(ok ? "success" : "failed")
     },
-    [branding.displayName, isWeb],
+    [branding.displayName, isWeb, printBooking, printQueue],
   )
 
   // Both timers exist to protect the NEXT walk-in on a shared tablet, so
