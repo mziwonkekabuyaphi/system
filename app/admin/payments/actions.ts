@@ -117,7 +117,7 @@ export async function loadPaymentSettings(): Promise<ActionResult<PaymentSetting
         label: p.label,
         description: p.description,
         disconnectNote: p.disconnectNote,
-        prerequisite: p.prerequisite ? { instructions: p.prerequisite.instructions, domain: appDomain() } : null,
+        prerequisite: p.prerequisite ? { instructions: p.prerequisite.instructions, domain: p.prerequisite.showDomain ? appDomain() : "" } : null,
         fields: p.fields.map((f) => ({ ...f })),
       })),
       active: active
