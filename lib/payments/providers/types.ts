@@ -138,6 +138,11 @@ export interface CardProvider {
    * paste it into the provider's own dashboard. Settings > Payments then shows these instructions with the address.
    */
   readonly webhookSetup?: { instructions: string }
+  /**
+   * Set only for providers that must be told, BEFORE connecting, which website will call them (e.g. Peach's
+   * "Allowlisted domains"). Settings > Payments shows these instructions with this app's domain to copy.
+   */
+  readonly prerequisite?: { instructions: string }
 
   connect(req: ConnectRequest): Promise<ConnectResult>
   createCheckout(req: CheckoutRequest): Promise<CheckoutResult>

@@ -3,12 +3,13 @@
  * The registry. Adding a provider = write its adapter, register it here. Nothing else changes:
  * checkout, the webhook pipeline and the settings screen all work from this list.
  *
- * Only providers registered here can be connected or used, even though the database already allows
- * 'ozow' and 'peach' (so the schema never has to wait for the code). Paystack needs supabase/proposed/payments_paystack.sql first.
+ * Only providers registered here can be connected or used. The database allows yoco, ozow and peach already;
+ * Paystack needs supabase/proposed/payments_paystack.sql first.
  */
 
 import { ozowProvider } from "./ozow"
 import { paystackProvider } from "./paystack"
+import { peachProvider } from "./peach"
 import { yocoProvider } from "./yoco"
 import type { CardProvider, ProviderId } from "./types"
 
@@ -16,6 +17,7 @@ const REGISTRY: Partial<Record<ProviderId, CardProvider>> = {
   yoco: yocoProvider,
   ozow: ozowProvider,
   paystack: paystackProvider,
+  peach: peachProvider,
 }
 
 /** null for an unknown or not-yet-implemented provider. */
