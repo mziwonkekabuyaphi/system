@@ -233,7 +233,7 @@ export function addedToCartMessage(justAdded: CartLineItem, cart: CartLineItem[]
     '',
     `Cart Total: *${formatCurrency(cartTotal(cart))}*`,
     '',
-    "Reply with another number to keep shopping, *checkout* when you're ready to pay, or *view cart* to see this again.",
+    "Tap *Continue Shopping* to add more, or *Checkout* when you're ready to pay.",
   ].join('\n');
 }
 
@@ -248,7 +248,7 @@ export function cartSummaryMessage(cart: CartLineItem[], notice?: string): strin
     '',
     `Total: *${formatCurrency(cartTotal(cart))}*`,
     '',
-    'Reply *checkout* to pay, a number to add more, or *menu* to keep browsing.',
+    'Tap *Checkout* to pay, or *Continue Shopping* to add more.',
   ].join('\n');
 }
 
@@ -375,7 +375,7 @@ export function quantityPrompt(productName: string, unitPrice: number): string {
   return `How many *${productName}* would you like? (${formatCurrency(unitPrice)} each)`;
 }
 
-export const CONFIRM_YES_NO = 'Please reply *yes* to confirm your order, or *no* to cancel it.';
+export const CONFIRM_YES_NO = 'Please tap *Yes* to confirm your order, or *No* to cancel it.';
 
 export const ORDER_CONFIRMATION_DECLINED =
   "No problem, your order was not placed. Reply *menu* if you'd like to start again.";
@@ -410,6 +410,24 @@ export function selectionOutOfRange(max: number): string {
 }
 
 export const QUANTITY_REQUEST = 'Please reply with a quantity, e.g. "2".';
+
+// ---- Tap-only screens (WhatsApp lists). The list IS the message: these are its body text. ----
+
+/** Shown when the "3 or more" quantity button is tapped: the only time a customer types a number. */
+export const QUANTITY_MORE_PROMPT = 'How many would you like? Type a number (3 to 50).';
+
+/** Menu list body when the customer already has something in their cart. */
+export function cartMenuBody(itemCount: number): string {
+  return `🛒 You have ${itemCount} item${itemCount === 1 ? '' : 's'} in your cart.\n\nPick a category to add more, or open your cart 👇`;
+}
+
+export function productListBody(title: string): string {
+  return `🛒 *${title}*\n\nTap an item to add it to your cart 👇`;
+}
+
+export const REMOVE_ITEM_LIST_BODY = '🗑️ *Remove an item*\n\nTap the item you want to remove 👇';
+
+export const SCHEDULE_TIME_LIST_BODY = 'What time would you like to collect it? Pick a time below 👇';
 
 export const PAYMENT_METHOD_REQUEST = 'Please choose how you would like to pay using one of the options below.';
 
