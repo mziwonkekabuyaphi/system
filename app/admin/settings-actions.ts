@@ -135,6 +135,7 @@ const MAX_CHOICE_TITLE_LENGTH = 80
 const MAX_CARD_TITLE_LENGTH = 40
 const MAX_CARD_SUBTITLE_LENGTH = 100
 const MAX_SERVICE_SCREEN_TITLE_LENGTH = 80
+const MAX_SERVICE_HINT_LENGTH = 100
 // Later screens in the kiosk flow (must match the maxLength on the inputs in
 // app/admin/panels/KioskPanels.tsx).
 const MAX_DATE_SCREEN_TITLE_LENGTH = 80
@@ -680,6 +681,7 @@ export async function updateKioskSettings(input: {
   /** Heading on the service-picker screen. Optional/nullable, same
    *  clear-to-default posture as the choice-screen wording above. */
   serviceScreenTitle?: string | null
+  serviceHint?: string | null
   /** Later kiosk screens. Unlike the fields above, OMITTING one of these
    *  leaves the stored value untouched (so an older caller can't wipe it);
    *  sending null/"" clears it back to the default. */
@@ -755,6 +757,7 @@ export async function updateKioskSettings(input: {
       { label: "Queue card title", value: input.queueCardTitle, max: MAX_CARD_TITLE_LENGTH },
       { label: "Queue card subtitle", value: input.queueCardSubtitle, max: MAX_CARD_SUBTITLE_LENGTH },
       { label: "Service screen title", value: input.serviceScreenTitle, max: MAX_SERVICE_SCREEN_TITLE_LENGTH },
+      { label: "Service screen hint", value: input.serviceHint, max: MAX_SERVICE_HINT_LENGTH },
       { label: "Date screen title", value: input.dateScreenTitle, max: MAX_DATE_SCREEN_TITLE_LENGTH },
       { label: "Time screen title", value: input.timeScreenTitle, max: MAX_TIME_SCREEN_TITLE_LENGTH },
       { label: "Details screen title", value: input.detailsScreenTitle, max: MAX_DETAILS_SCREEN_TITLE_LENGTH },
@@ -785,6 +788,7 @@ export async function updateKioskSettings(input: {
         queue_card_title: input.queueCardTitle?.trim() || null,
         queue_card_subtitle: input.queueCardSubtitle?.trim() || null,
         service_screen_title: input.serviceScreenTitle?.trim() || null,
+        ...(input.serviceHint !== undefined ? { service_hint: input.serviceHint?.trim() || null } : {}),
         ...(input.dateScreenTitle !== undefined ? { date_screen_title: input.dateScreenTitle?.trim() || null } : {}),
         ...(input.timeScreenTitle !== undefined ? { time_screen_title: input.timeScreenTitle?.trim() || null } : {}),
         ...(input.detailsScreenTitle !== undefined

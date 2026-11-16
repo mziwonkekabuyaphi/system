@@ -319,6 +319,8 @@ export interface AdminKioskSettings {
    *  choice screen, or right after welcome on a booking-only/queue-only
    *  kiosk). Defaults to "What are you here for?". */
   serviceScreenTitle: string | null
+  /** Line under the service heading when customers may pick several services. "{max}" becomes the limit. Optional: blank means the default wording. */
+  serviceHint?: string | null
   // Optional so a loader that doesn't send them yet still compiles; KioskPanels
   // treats a missing value as "use the default".
   dateScreenTitle?: string | null

@@ -329,7 +329,7 @@ async function getSettingsData(
       .from("tenant_branding")
       .select(
         "display_name, logo_url, primary_color, secondary_color, remove_powered_by, admin_sidebar_color, admin_sidebar_text_color, admin_accent_color, admin_theme, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_layout, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, " +
-          "date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, " +
+          "service_hint, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, " +
           "kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, kiosk_show_whatsapp_optin, kiosk_whatsapp_optin_label, " +
           "display_show_services, display_show_bookings, display_show_queue, display_welcome_seconds, display_menu_bookings_seconds, display_queue_seconds, display_show_split, display_split_seconds, display_call_alert_enabled, display_call_alert_seconds, display_menu_title, display_bookings_title, display_queue_title, display_now_serving_label, " +
           "display_queue_show_ticket_number, display_queue_show_service, display_queue_show_phone, display_queue_show_wait_estimate, display_queue_show_duration, display_queue_show_reference, display_queue_show_surname, display_queue_show_email, display_queue_show_custom, display_queue_wait_range_minutes, " +
@@ -437,6 +437,7 @@ async function getSettingsData(
       queueCardTitle: brandingResult.data.queue_card_title,
       queueCardSubtitle: brandingResult.data.queue_card_subtitle,
       serviceScreenTitle: brandingResult.data.service_screen_title,
+      serviceHint: brandingResult.data.service_hint,
       // The screens after "service" and the ticket labels. These were saved by
       // updateKioskSettings() but never read back here, so the form came up empty.
       dateScreenTitle: brandingResult.data.date_screen_title ?? null,
