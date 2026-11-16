@@ -81,6 +81,7 @@
  * module is not an on module.
  */
 
+import type { Viewport } from "next"
 import { notFound } from "next/navigation"
 import { Manrope } from "next/font/google"
 
@@ -521,6 +522,15 @@ function KioskUnavailable({ branding }: { branding: KioskBranding }) {
       </p>
     </div>
   )
+}
+
+// A kiosk must never be pinch-zoomed or shown on a "desktop-width" canvas: without this an iPad can render the
+// page tiny and zoomed out.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
