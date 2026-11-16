@@ -13,6 +13,8 @@ import * as messages from '@/lib/services/messages/orders';
 import type {
   CartItem,
   CustomerPaymentChoice,
+  FulfilmentSelection,
+  OrderFulfilment,
   OrderItemRow,
   OrderRow,
   OrderStatus,
@@ -294,6 +296,8 @@ export interface PlaceOrderParams {
   paymentAttemptId: string;
   tableLabel: string | null;
   scheduledFor?: string | null;
+  /** How the order reaches the customer. Omitted = collection. place_order re-checks everything. */
+  fulfilment?: FulfilmentSelection | null;
 }
 
 export interface PlacedOrderItem {
@@ -308,14 +312,21 @@ export interface PlacedOrder {
   vendorId: string;
   vendorName: string;
   collectionPoint: string;
+  /** Includes the delivery fee when this order carries it (the first order of a checkout). */
   total: number;
   items: PlacedOrderItem[];
+  fulfilment: OrderFulfilment;
+  deliveryFee: number;
+  deliveryArea: string | null;
+  deliveryAddress: string | null;
+  tableLabel: string | null;
 }
 
 export type PlaceOrderFailure =
   | { outcome: 'insufficient_funds'; balance: number; total: number }
   | { outcome: 'product_unavailable' | 'out_of_stock'; productName: string }
   | { outcome: 'low_stock'; productName: string; stock: number }
+  | { outcome: 'below_minimum_order'; minOrder: number; subtotal: number }
   | {
       outcome:
         | 'wallet_not_found'
@@ -326,6 +337,11 @@ export type PlaceOrderFailure =
         | 'no_vendor_configured'
         | 'payment_method_not_allowed'
         | 'scheduling_not_allowed'
+        | 'invalid_fulfilment'
+        | 'fulfilment_not_allowed'
+        | 'delivery_area_unavailable'
+        | 'delivery_address_required'
+        | 'table_required'
         | 'customer_not_found'
         | 'ordering_not_configured'
         | 'error';
@@ -343,6 +359,11 @@ interface RpcOrderJson {
   vendor_name: string;
   collection_point: string;
   total: number;
+  fulfilment?: OrderFulfilment;
+  delivery_fee?: number;
+  delivery_area?: string | null;
+  delivery_address?: string | null;
+  table_label?: string | null;
   items: Array<{ product_name: string; quantity: number; unit_price: number }>;
 }
 
@@ -354,6 +375,11 @@ export function parseOrdersJson(raw: unknown): PlacedOrder[] {
     vendorName: o.vendor_name,
     collectionPoint: o.collection_point,
     total: Number(o.total),
+    fulfilment: o.fulfilment ?? 'collection',
+    deliveryFee: Number(o.delivery_fee ?? 0),
+    deliveryArea: o.delivery_area ?? null,
+    deliveryAddress: o.delivery_address ?? null,
+    tableLabel: o.table_label ?? null,
     items: (o.items ?? []).map((i) => ({
       productName: i.product_name,
       quantity: Number(i.quantity),
@@ -371,7 +397,10 @@ export async function placeOrder(ctx: TenantContext, params: PlaceOrderParams): 
     p_payment_method: params.paymentChoice,
     p_attempt: params.paymentAttemptId,
     p_scheduled_for: params.scheduledFor ?? null,
-    p_table_label: params.tableLabel,
+    p_table_label: params.fulfilment?.method === 'dine_in' ? (params.fulfilment.table ?? params.tableLabel) : params.tableLabel,
+    p_fulfilment: params.fulfilment?.method ?? 'collection',
+    p_delivery_area: params.fulfilment?.method === 'delivery' ? (params.fulfilment.areaId ?? null) : null,
+    p_delivery_address: params.fulfilment?.method === 'delivery' ? (params.fulfilment.address ?? null) : null,
     // Only ids and quantities cross the boundary — prices are always read from the DB.
     p_lines: params.items.map((i) => ({ product_id: i.productId, quantity: i.quantity })),
   });
@@ -402,6 +431,8 @@ export async function placeOrder(ctx: TenantContext, params: PlaceOrderParams): 
       return { outcome: result.outcome, productName: String(result.product_name ?? '') };
     case 'low_stock':
       return { outcome: 'low_stock', productName: String(result.product_name ?? ''), stock: Number(result.stock ?? 0) };
+    case 'below_minimum_order':
+      return { outcome: 'below_minimum_order', minOrder: Number(result.min_order ?? 0), subtotal: Number(result.subtotal ?? 0) };
     default:
       return { outcome: result.outcome } as PlaceOrderFailure;
   }
@@ -474,7 +505,7 @@ export async function activateDueScheduledOrders(ctx: TenantContext, phone: stri
 // ============================================================================
 
 const ORDER_COLUMNS =
-  'id, customer_id, customer_phone, customer_name, order_number, status, payment_method, payment_status, total_amount, scheduled_for, table_label, vendor_id, created_at';
+  'id, customer_id, customer_phone, customer_name, order_number, status, payment_method, payment_status, total_amount, scheduled_for, table_label, fulfilment, delivery_area_name, delivery_address, delivery_fee, vendor_id, created_at';
 
 interface OrderDbRow {
   id: string;
@@ -488,6 +519,10 @@ interface OrderDbRow {
   total_amount: number;
   scheduled_for: string | null;
   table_label: string | null;
+  fulfilment: OrderFulfilment | null;
+  delivery_area_name: string | null;
+  delivery_address: string | null;
+  delivery_fee: number | null;
   vendor_id: string;
   created_at: string;
 }
@@ -506,6 +541,10 @@ function mapOrder(ctx: TenantContext, row: OrderDbRow): OrderRow {
     total_amount: Number(row.total_amount),
     scheduled_for: row.scheduled_for,
     table_label: row.table_label,
+    fulfilment: row.fulfilment ?? 'collection',
+    delivery_area: row.delivery_area_name,
+    delivery_address: row.delivery_address,
+    delivery_fee: Number(row.delivery_fee ?? 0),
     vendor_id: row.vendor_id,
     collection_point: vendorById(ctx, row.vendor_id)?.collectionPoint ?? ctx.config.brandName,
   };
@@ -515,7 +554,7 @@ function ordersForPhone(ctx: TenantContext, phone: string) {
   return ctx.db.from('orders').select(ORDER_COLUMNS).eq('tenant_id', ctx.tenantId).eq('customer_phone', phone);
 }
 
-const ACTIVE_STATUSES: OrderStatus[] = ['pending', 'placed', 'preparing', 'ready'];
+const ACTIVE_STATUSES: OrderStatus[] = ['pending', 'placed', 'preparing', 'ready', 'out_for_delivery'];
 
 export async function getLatestOrderForPhone(ctx: TenantContext, phone: string): Promise<OrderRow | null> {
   const { data, error } = await ordersForPhone(ctx, phone)

@@ -29,6 +29,13 @@ function buildTrackingReply(order: OrderRow, items: OrderItemRow[]): string {
     // The collection point now comes from the order's own vendor (order_vendors),
     // not from guessing off the first item's product type.
     order.collection_point,
+    {
+      fulfilment: order.fulfilment,
+      deliveryAddress: order.delivery_address,
+      deliveryArea: order.delivery_area,
+      deliveryFee: order.delivery_fee,
+      tableLabel: order.table_label,
+    },
   );
 }
 

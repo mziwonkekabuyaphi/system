@@ -8,10 +8,26 @@ export type OrderStatus =
   | 'placed'
   | 'preparing'
   | 'ready'
+  | 'out_for_delivery'
   | 'collected'
   | 'completed'
   | 'cancelled'
   | 'scheduled';
+
+/** orders.fulfilment: how the order reaches the customer. */
+export type OrderFulfilment = 'collection' | 'delivery' | 'dine_in';
+
+/** What the customer chose at checkout. Carried in conversation state until place_order. */
+export interface FulfilmentSelection {
+  method: OrderFulfilment;
+  /** Delivery only: order_delivery_areas.id and its name (the name is for display). */
+  areaId?: string | null;
+  areaName?: string | null;
+  /** Delivery only: free-text address the customer typed. */
+  address?: string | null;
+  /** Dine-in only: table number or name. */
+  table?: string | null;
+}
 
 export type OrderPaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'refund_pending';
 
@@ -63,6 +79,10 @@ export interface OrderRow {
   collection_point: string;
   scheduled_for: string | null;
   table_label: string | null;
+  fulfilment: OrderFulfilment;
+  delivery_area: string | null;
+  delivery_address: string | null;
+  delivery_fee: number;
 }
 
 export interface OrderItemRow {
@@ -120,7 +140,17 @@ export const ORDER_STATE_AWAITING_CATEGORY = 'order_awaiting_category';
 // "Remove Items" was tapped in the cart: waiting for the number of the line to remove.
 export const ORDER_STATE_AWAITING_REMOVE_ITEM = 'order_awaiting_remove_item';
 
+// Fulfilment steps (shown right after "checkout", before scheduling): collection / delivery / dine-in.
+export const ORDER_STATE_AWAITING_FULFILMENT = 'order_awaiting_fulfilment';
+export const ORDER_STATE_AWAITING_DELIVERY_AREA = 'order_awaiting_delivery_area';
+export const ORDER_STATE_AWAITING_DELIVERY_ADDRESS = 'order_awaiting_delivery_address';
+export const ORDER_STATE_AWAITING_TABLE = 'order_awaiting_table';
+
 export type OrdersStateName =
+  | typeof ORDER_STATE_AWAITING_FULFILMENT
+  | typeof ORDER_STATE_AWAITING_DELIVERY_AREA
+  | typeof ORDER_STATE_AWAITING_DELIVERY_ADDRESS
+  | typeof ORDER_STATE_AWAITING_TABLE
   | typeof ORDER_STATE_AWAITING_WELCOME
   | typeof ORDER_STATE_AWAITING_CATEGORY
   | typeof ORDER_STATE_AWAITING_REMOVE_ITEM
@@ -198,6 +228,10 @@ export interface OrdersStateData {
   quantity?: number;
   paymentChoice?: CustomerPaymentChoice;
   tableLabel?: string | null;
+  /** How the customer wants to receive the order (see FulfilmentSelection). Set during checkout. */
+  fulfilment?: FulfilmentSelection | null;
+  /** Delivery areas shown as a numbered list (ORDER_STATE_AWAITING_DELIVERY_AREA): ids in display order. */
+  pendingAreaIds?: string[];
   /**
    * Stable per-attempt reference used to make the wallet debit idempotent
    * (see debitWalletForOrder). Generated once, the first time we attempt a

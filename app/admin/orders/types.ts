@@ -30,9 +30,13 @@ export type OrderStatus =
   | "placed"
   | "preparing"
   | "ready"
+  | "out_for_delivery" // delivery orders only: with the driver
   | "collected"
   | "completed"
   | "cancelled"
+
+/** How the order reaches the customer (orders.fulfilment). */
+export type OrderFulfilment = "collection" | "delivery" | "dine_in"
 
 export type PaymentMethod = "wallet" | "card" | "cash"
 export type PaymentStatus = "pending" | "paid" | "failed" | "refunded" | "refund_pending"
@@ -40,18 +44,24 @@ export type PaymentStatus = "pending" | "paid" | "failed" | "refunded" | "refund
 /** The one-click forward step for an order. Cancel is separate (cancel_order RPC).
  *  "pending" has no entry on purpose: a card order moves on when the payment
  *  webhook confirms it, never by hand. */
-export const NEXT_ORDER_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
-  scheduled: "placed",
-  placed: "preparing",
-  preparing: "ready",
-  ready: "collected",
+const BASE_STEPS: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
+  scheduled: { to: "placed", label: "Release now" },
+  placed: { to: "preparing", label: "Start preparing" },
+  preparing: { to: "ready", label: "Mark ready" },
 }
 
-export const NEXT_ORDER_LABEL: Partial<Record<OrderStatus, string>> = {
-  scheduled: "Release now",
-  placed: "Start preparing",
-  preparing: "Mark ready",
-  ready: "Mark collected",
+/** The next hand-moved step, which depends on how the order is fulfilled:
+ *  collection  ready -> collected      dine-in  ready -> collected ("Mark served")
+ *  delivery    ready -> out_for_delivery -> completed ("Mark delivered") */
+export function nextOrderStep(status: OrderStatus, fulfilment: OrderFulfilment): { to: OrderStatus; label: string } | null {
+  const base = BASE_STEPS[status]
+  if (base) return base
+  if (status === "ready") {
+    if (fulfilment === "delivery") return { to: "out_for_delivery", label: "Out for delivery" }
+    return { to: "collected", label: fulfilment === "dine_in" ? "Mark served" : "Mark collected" }
+  }
+  if (status === "out_for_delivery") return { to: "completed", label: "Mark delivered" }
+  return null
 }
 
 export interface AdminOrderItem {
@@ -70,6 +80,12 @@ export interface AdminOrder {
   /** ISO timestamp, only for scheduled orders. */
   scheduledFor: string | null
   tableLabel: string | null
+  fulfilment: OrderFulfilment
+  /** Delivery orders only. */
+  deliveryArea: string | null
+  deliveryAddress: string | null
+  /** The fee is charged once per checkout and sits on the first order of it; 0 elsewhere. */
+  deliveryFee: number
   customerName: string | null
   customerPhone: string
   /** ISO timestamp */
@@ -135,6 +151,20 @@ export interface AdminOrderVendor {
 
 export type VendorInput = Omit<AdminOrderVendor, "id">
 
+export interface AdminDeliveryArea {
+  id: string
+  name: string
+  fee: number
+  /** 0 = no minimum. */
+  minOrder: number
+  /** null = never free. Delivery is free once the items total reaches this. */
+  freeOver: number | null
+  isActive: boolean
+}
+
+/** Editable area: `id` is absent for rows not saved yet. */
+export type DeliveryAreaInput = Omit<AdminDeliveryArea, "id"> & { id?: string }
+
 export interface AdminOrderSettings {
   /** false = no order_settings row yet; the bot answers "ordering not configured" until the first save. */
   configured: boolean
@@ -148,9 +178,17 @@ export interface AdminOrderSettings {
   defaultVendorId: string | null
   /** {"henny": "hennessy"} */
   searchAliases: Record<string, string>
+  collectionEnabled: boolean
+  deliveryEnabled: boolean
+  dineInEnabled: boolean
+  /** Shown after a collection order, e.g. "Show your order number at the bar." */
+  collectionInstructions: string | null
+  prepTimeMinutes: number
+  deliveryTimeMinutes: number
+  deliveryAreas: AdminDeliveryArea[]
 }
 
-export type OrderSettingsInput = Omit<AdminOrderSettings, "configured">
+export type OrderSettingsInput = Omit<AdminOrderSettings, "configured" | "deliveryAreas"> & { deliveryAreas: DeliveryAreaInput[] }
 
 export interface OrdersData {
   orders: AdminOrder[]

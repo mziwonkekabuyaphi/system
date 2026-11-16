@@ -1,8 +1,16 @@
 // File: lib/services/orders/orders.flow-selection.ts
 import type { ActionResult } from '@/lib/types/action';
 import * as messages from '@/lib/services/messages/orders';
-import type { CartItem, OrdersStateData, PendingCategory, PendingSelectionItem, ProductCategory, ProductRow } from './orders.types';
-import { paymentButtons, type TenantContext } from './orders.tenant';
+import type {
+  CartItem,
+  FulfilmentSelection,
+  OrdersStateData,
+  PendingCategory,
+  PendingSelectionItem,
+  ProductCategory,
+  ProductRow,
+} from './orders.types';
+import { deliveryFeeFor, paymentButtons, type TenantContext } from './orders.tenant';
 import {
   CART_ACTION_BUTTONS,
   CART_VIEW_BUTTONS,
@@ -19,7 +27,7 @@ import {
   ORDER_STATE_AWAITING_SCHEDULE_TIME,
   ORDER_STATE_AWAITING_SELECTION,
 } from './orders.types';
-import { actionResult, addItemToCart, cartToLineItems, categoryByKey, getCart } from './orders.helpers';
+import { actionResult, addItemToCart, cartToLineItems, cartTotal, categoryByKey, getCart } from './orders.helpers';
 
 // ============================================================================
 // PRODUCT SELECTION & CART BUILDING — STEP HANDLERS
@@ -151,17 +159,61 @@ export function addToCartAndReview(
  * ordinary "collect now" path — so it survives whichever payment path the
  * customer takes next (finalizeOrderFromState reads it back out).
  */
-export function beginCartPaymentStep(ctx: TenantContext, cart: CartItem[], scheduledFor?: string | null): ActionResult {
+export function beginCartPaymentStep(
+  ctx: TenantContext,
+  cart: CartItem[],
+  scheduledFor?: string | null,
+  fulfilment?: FulfilmentSelection | null,
+): ActionResult {
   const scheduledLabel = scheduledFor ? ctx.formatTime(new Date(scheduledFor)) : null;
 
   return actionResult(
-    messages.cartPaymentMethodPrompt(cartToLineItems(cart), scheduledLabel),
+    messages.cartPaymentMethodPrompt(cartToLineItems(cart), scheduledLabel, fulfilmentSummary(ctx, cart, fulfilment)),
     {
       state: ORDER_STATE_AWAITING_PAYMENT_METHOD,
-      data: { cart, scheduledFor: scheduledFor ?? null },
+      data: { cart, scheduledFor: scheduledFor ?? null, fulfilment: fulfilment ?? null },
     },
     paymentButtons(ctx.config),
   );
+}
+
+/**
+ * The delivery / dine-in lines and the all-in total shown at checkout. null for plain collection, so
+ * the prompt looks exactly as it always has. The fee shown here uses the same rule as place_order,
+ * which stays the authority for what is actually charged.
+ */
+/** The delivery fee for this selection and items total (0 unless it is a delivery to a known area). */
+export function deliveryFeeForSelection(ctx: TenantContext, fulfilment: FulfilmentSelection | null | undefined, itemsTotal: number): number {
+  if (fulfilment?.method !== 'delivery') return 0;
+  const area = ctx.catalog.deliveryAreas.find((a) => a.id === fulfilment.areaId);
+  return area ? deliveryFeeFor(area, itemsTotal) : 0;
+}
+
+export function fulfilmentSummary(
+  ctx: TenantContext,
+  cart: CartItem[],
+  fulfilment?: FulfilmentSelection | null,
+): { lines: string[]; total: number } | null {
+  const subtotal = cartTotal(cart);
+  if (fulfilment?.method === 'delivery') {
+    const fee = deliveryFeeForSelection(ctx, fulfilment, subtotal);
+    return {
+      lines: [
+        `🚚 Delivery to: ${fulfilment.address ?? ''} (${fulfilment.areaName ?? ''})`,
+        fee > 0 ? `Delivery fee: ${ctx.formatMoney(fee)}` : 'Delivery: free',
+      ],
+      total: Number((subtotal + fee).toFixed(2)),
+    };
+  }
+  if (fulfilment?.method === 'dine_in') {
+    return { lines: [`🍽️ Dine-in: table ${fulfilment.table ?? ''}`], total: subtotal };
+  }
+  return null;
+}
+
+/** Total the customer will pay for this cart with the chosen fulfilment (items plus any delivery fee). */
+export function cartGrandTotal(ctx: TenantContext, cart: CartItem[], fulfilment?: FulfilmentSelection | null): number {
+  return fulfilmentSummary(ctx, cart, fulfilment)?.total ?? cartTotal(cart);
 }
 
 // ============================================================================
@@ -175,20 +227,26 @@ export function beginCartPaymentStep(ctx: TenantContext, cart: CartItem[], sched
  * have scheduling switched off (order_settings.allow_scheduling) skip straight
  * to payment.
  */
-export function beginScheduleChoiceStep(ctx: TenantContext, cart: CartItem[]): ActionResult {
-  if (!ctx.config.allowScheduling) {
-    return beginCartPaymentStep(ctx, cart, null);
+export function beginScheduleChoiceStep(ctx: TenantContext, cart: CartItem[], fulfilment?: FulfilmentSelection | null): ActionResult {
+  const method = fulfilment?.method ?? 'collection';
+  // Dine-in is served now; scheduling only applies to collection and delivery.
+  if (!ctx.config.allowScheduling || method === 'dine_in') {
+    return beginCartPaymentStep(ctx, cart, null, fulfilment);
   }
+  const delivery = method === 'delivery';
   return actionResult(
-    messages.SCHEDULE_CHOICE_PROMPT,
-    { state: ORDER_STATE_AWAITING_SCHEDULE_CHOICE, data: { cart } },
-    SCHEDULE_CHOICE_BUTTONS,
+    delivery ? messages.SCHEDULE_CHOICE_PROMPT_DELIVERY : messages.SCHEDULE_CHOICE_PROMPT,
+    { state: ORDER_STATE_AWAITING_SCHEDULE_CHOICE, data: { cart, fulfilment: fulfilment ?? null } },
+    delivery ? ['Deliver Now', 'Schedule Later'] : SCHEDULE_CHOICE_BUTTONS,
   );
 }
 
 /** "Schedule Later" was picked — ask for a concrete time before moving on to payment. */
-export function beginScheduleTimeStep(cart: CartItem[]): ActionResult {
-  return actionResult(messages.SCHEDULE_TIME_REQUEST, { state: ORDER_STATE_AWAITING_SCHEDULE_TIME, data: { cart } });
+export function beginScheduleTimeStep(cart: CartItem[], fulfilment?: FulfilmentSelection | null): ActionResult {
+  return actionResult(messages.SCHEDULE_TIME_REQUEST, {
+    state: ORDER_STATE_AWAITING_SCHEDULE_TIME,
+    data: { cart, fulfilment: fulfilment ?? null },
+  });
 }
 
 // ============================================================================

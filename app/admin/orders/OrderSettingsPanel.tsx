@@ -9,7 +9,7 @@ import { useState } from "react"
 
 import { saveOrderSettings } from "./actions"
 import { Field, ToggleRow, btn, cardCls, cx, inputCls, useNotice } from "./ui"
-import type { AdminOrderSettings, AdminOrderVendor, OrderSettingsInput, PaymentMethod } from "./types"
+import type { AdminOrderSettings, AdminOrderVendor, DeliveryAreaInput, OrderSettingsInput, PaymentMethod } from "./types"
 
 const METHODS: Array<{ id: PaymentMethod; hint: string }> = [
   { id: "wallet", hint: "Paid from the customer's balance, instantly." },
@@ -38,6 +38,12 @@ export function OrderSettingsPanel({
   const { show, node } = useNotice()
   const set = <K extends keyof OrderSettingsInput>(k: K, v: OrderSettingsInput[K]) => setD((p) => ({ ...p, [k]: v }))
 
+  const noFulfilment = !d.collectionEnabled && !d.deliveryEnabled && !d.dineInEnabled
+  const setArea = (i: number, patch: Partial<DeliveryAreaInput>) =>
+    set("deliveryAreas", d.deliveryAreas.map((a, j) => (j === i ? { ...a, ...patch } : a)))
+  const num = (v: string) => (v === "" ? 0 : Math.max(0, Number(v) || 0))
+  const deliveryNeedsArea = d.deliveryEnabled && !d.deliveryAreas.some((a) => a.isActive && a.name.trim())
+
   const toggleMethod = (m: PaymentMethod, on: boolean) => set("allowedPaymentMethods", on ? [...d.allowedPaymentMethods, m] : d.allowedPaymentMethods.filter((x) => x !== m))
 
   async function save() {
@@ -47,6 +53,7 @@ export function OrderSettingsPanel({
     const res = await saveOrderSettings({ ...d, minAge: ageOn ? (d.minAge ?? 18) : null, searchAliases })
     setSaving(false)
     if (!res.ok) return show(res.error, true)
+    setD((p) => ({ ...p, deliveryAreas: res.data.deliveryAreas })) // pick up ids of areas just created
     onSaved(res.data)
     show("Order settings saved.")
   }
@@ -60,6 +67,66 @@ export function OrderSettingsPanel({
       )}
 
       <fieldset disabled={!canManage} className="space-y-6">
+        <section className={cx(cardCls, "space-y-4 p-5")}>
+          <div>
+            <h2 className="text-base font-medium text-admin-text">How customers get their order</h2>
+            <p className="text-xs text-admin-text/60">When more than one is on, customers are asked to choose at checkout.</p>
+          </div>
+          <ToggleRow label="Collection" hint="Customer collects from the vendor's collection point." checked={d.collectionEnabled} onChange={(v) => set("collectionEnabled", v)} />
+          {d.collectionEnabled && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Ready in about (minutes)" hint="Shown in the confirmation, e.g. ready in about 15 minutes.">
+                <input type="number" min={0} max={240} step={5} className={cx(inputCls, "max-w-32 tabular-nums")} value={d.prepTimeMinutes} onChange={(e) => set("prepTimeMinutes", Math.min(240, Math.trunc(num(e.target.value))))} />
+              </Field>
+              <Field label="Collection instructions (optional)" hint="e.g. Show your order number at the bar.">
+                <input className={inputCls} maxLength={200} value={d.collectionInstructions ?? ""} onChange={(e) => set("collectionInstructions", e.target.value || null)} />
+              </Field>
+            </div>
+          )}
+
+          <ToggleRow label="Dine-in" hint="Customer orders to a table. They're asked for the table number." checked={d.dineInEnabled} onChange={(v) => set("dineInEnabled", v)} />
+
+          <ToggleRow label="Delivery" hint="Customer shares their address. Fee and minimum order come from the area they pick." checked={d.deliveryEnabled} onChange={(v) => set("deliveryEnabled", v)} />
+          {d.deliveryEnabled && (
+            <div className="space-y-3">
+              <Field label="Delivery takes about (minutes)" hint="Shown in the confirmation.">
+                <input type="number" min={5} max={240} step={5} className={cx(inputCls, "max-w-32 tabular-nums")} value={d.deliveryTimeMinutes} onChange={(e) => set("deliveryTimeMinutes", Math.min(240, Math.trunc(num(e.target.value))))} />
+              </Field>
+              <div>
+                <p className="text-xs font-medium text-admin-text/70">Delivery areas</p>
+                <p className="text-xs text-admin-text/50">Where you deliver. The fee is charged once per checkout. Leave Free over empty to always charge the fee.</p>
+              </div>
+              {d.deliveryAreas.map((a, i) => (
+                <div key={a.id ?? `new-${i}`} className="space-y-2 rounded-lg border border-admin-text/10 p-3">
+                  <div className="flex items-center gap-2">
+                    <input className={inputCls} aria-label="Area name" placeholder="Area or suburb name" maxLength={60} value={a.name} onChange={(e) => setArea(i, { name: e.target.value })} />
+                    <button type="button" className={btn.ghost} aria-label="Remove area" onClick={() => set("deliveryAreas", d.deliveryAreas.filter((_, j) => j !== i))}>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Field label="Fee">
+                      <input type="number" min={0} step={1} className={cx(inputCls, "tabular-nums")} value={a.fee} onChange={(e) => setArea(i, { fee: num(e.target.value) })} />
+                    </Field>
+                    <Field label="Minimum order">
+                      <input type="number" min={0} step={1} className={cx(inputCls, "tabular-nums")} value={a.minOrder} onChange={(e) => setArea(i, { minOrder: num(e.target.value) })} />
+                    </Field>
+                    <Field label="Free over">
+                      <input type="number" min={0} step={1} placeholder="Never" className={cx(inputCls, "tabular-nums")} value={a.freeOver ?? ""} onChange={(e) => setArea(i, { freeOver: e.target.value === "" || Number(e.target.value) <= 0 ? null : Number(e.target.value) })} />
+                    </Field>
+                  </div>
+                  <ToggleRow label="Delivering here" checked={a.isActive} onChange={(v) => setArea(i, { isActive: v })} />
+                </div>
+              ))}
+              <button type="button" className={btn.ghost} onClick={() => set("deliveryAreas", [...d.deliveryAreas, { name: "", fee: 0, minOrder: 0, freeOver: null, isActive: true }])}>
+                Add delivery area
+              </button>
+              {deliveryNeedsArea && <p className="text-sm text-red-600 dark:text-red-400">Add at least one active area, or turn delivery off.</p>}
+            </div>
+          )}
+          {noFulfilment && <p className="text-sm text-red-600 dark:text-red-400">Turn on at least one: collection, dine-in or delivery.</p>}
+        </section>
+
         <section className={cx(cardCls, "space-y-4 p-5")}>
           <h2 className="text-base font-medium text-admin-text">Payment</h2>
           <div className="space-y-3">
@@ -129,7 +196,7 @@ export function OrderSettingsPanel({
 
       {canManage && (
         <div className="flex justify-end">
-          <button type="button" className={btn.primary} disabled={saving || d.allowedPaymentMethods.length === 0} onClick={() => void save()}>
+          <button type="button" className={btn.primary} disabled={saving || d.allowedPaymentMethods.length === 0 || noFulfilment || deliveryNeedsArea} onClick={() => void save()}>
             {saving ? "Saving…" : "Save settings"}
           </button>
         </div>

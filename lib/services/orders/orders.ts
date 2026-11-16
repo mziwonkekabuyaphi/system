@@ -55,6 +55,10 @@ import {
   ORDER_STATE_AWAITING_CART_ACTION,
   ORDER_STATE_AWAITING_CATEGORY,
   ORDER_STATE_AWAITING_CONFIRMATION,
+  ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
+  ORDER_STATE_AWAITING_DELIVERY_AREA,
+  ORDER_STATE_AWAITING_FULFILMENT,
+  ORDER_STATE_AWAITING_TABLE,
   ORDER_STATE_AWAITING_PAYMENT_METHOD,
   ORDER_STATE_AWAITING_QUANTITY,
   ORDER_STATE_AWAITING_REMOVE_ITEM,
@@ -96,7 +100,6 @@ import {
   beginCartPaymentStep,
   beginProductSelectionReply,
   beginQuantityStep,
-  beginScheduleChoiceStep,
   beginScheduleTimeStep,
   beginCategoryReply,
   beginRemoveItemStep,
@@ -118,6 +121,14 @@ import {
   handleRepeatOrder,
   handleTrackOrder,
 } from './orders.management';
+
+import {
+  beginCheckoutStep,
+  handleDeliveryAddress,
+  handleDeliveryAreaChoice,
+  handleFulfilmentChoice,
+  handleTableEntry,
+} from './orders.fulfilment';
 
 import { trySmartOrderEntry } from './orders.smart-entry';
 
@@ -339,7 +350,7 @@ async function continueOrdersFlow(
         return showFullMenu(ctx, cart);
       }
       if (cart.length > 0 && /\b(checkout|pay now)\b/.test(typed)) {
-        return beginScheduleChoiceStep(ctx, cart);
+        return beginCheckoutStep(ctx, cart, stateData);
       }
       if (/\bcart\b/.test(typed)) {
         return viewCartReply(cart, stateData);
@@ -445,7 +456,7 @@ async function continueOrdersFlow(
         if (cart.length === 0) {
           return actionResult(messages.EMPTY_CART);
         }
-        return beginScheduleChoiceStep(ctx, cart);
+        return beginCheckoutStep(ctx, cart, stateData);
       }
 
       if (/\bremove\b/i.test(normalized) && !/\d/.test(normalized)) {
@@ -486,21 +497,35 @@ async function continueOrdersFlow(
       return handleFreshOrderRequest(ctx, phone, parsed, cart);
     }
 
+    case ORDER_STATE_AWAITING_FULFILMENT:
+      return handleFulfilmentChoice(ctx, rawMessage, stateData);
+
+    case ORDER_STATE_AWAITING_DELIVERY_AREA:
+      return handleDeliveryAreaChoice(ctx, rawMessage, stateData);
+
+    case ORDER_STATE_AWAITING_DELIVERY_ADDRESS:
+      return handleDeliveryAddress(ctx, rawMessage, stateData);
+
+    case ORDER_STATE_AWAITING_TABLE:
+      return handleTableEntry(ctx, rawMessage, stateData);
+
     case ORDER_STATE_AWAITING_SCHEDULE_CHOICE: {
       const cart = getCart(stateData);
       const normalized = rawMessage.trim().toLowerCase();
+      const fulfilment = stateData.fulfilment ?? null;
 
-      if (/\b(collect now|now|asap)\b/i.test(normalized)) {
-        return beginCartPaymentStep(ctx, cart, null);
+      if (/\b(collect now|deliver now|now|asap)\b/i.test(normalized)) {
+        return beginCartPaymentStep(ctx, cart, null, fulfilment);
       }
       if (/\b(schedule|later|book)\b/i.test(normalized)) {
-        return beginScheduleTimeStep(cart);
+        return beginScheduleTimeStep(cart, fulfilment);
       }
 
+      const delivery = fulfilment?.method === 'delivery';
       return actionResult(
-        messages.SCHEDULE_CHOICE_PROMPT,
+        delivery ? messages.SCHEDULE_CHOICE_PROMPT_DELIVERY : messages.SCHEDULE_CHOICE_PROMPT,
         { state: ORDER_STATE_AWAITING_SCHEDULE_CHOICE, data: stateData },
-        SCHEDULE_CHOICE_BUTTONS,
+        delivery ? ['Deliver Now', 'Schedule Later'] : SCHEDULE_CHOICE_BUTTONS,
       );
     }
 
@@ -515,7 +540,7 @@ async function continueOrdersFlow(
         );
       }
 
-      return beginCartPaymentStep(ctx, cart, parsedTime.iso);
+      return beginCartPaymentStep(ctx, cart, parsedTime.iso, stateData.fulfilment ?? null);
     }
 
     case ORDER_STATE_AWAITING_PAYMENT_METHOD: {
@@ -634,6 +659,10 @@ const ORDER_STATE_NAMES: ReadonlySet<string> = new Set([
   ORDER_STATE_AWAITING_CART_ACTION,
   ORDER_STATE_AWAITING_SCHEDULE_CHOICE,
   ORDER_STATE_AWAITING_SCHEDULE_TIME,
+  ORDER_STATE_AWAITING_FULFILMENT,
+  ORDER_STATE_AWAITING_DELIVERY_AREA,
+  ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
+  ORDER_STATE_AWAITING_TABLE,
 ]);
 
 /**

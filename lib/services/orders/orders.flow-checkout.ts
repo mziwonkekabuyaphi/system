@@ -18,7 +18,9 @@ import { logger } from '@/lib/whatsapp/utils/logger';
 import * as messages from '@/lib/services/messages/orders';
 import type { ActionResult } from '@/lib/types/action';
 import { PASSPORT_STATE_TOPUP_AMOUNT as WALLET_STATE_TOPUP_AMOUNT } from '@/lib/services/passport';
-import type { CartItem, CustomerPaymentChoice, OrdersStateData } from './orders.types';
+import type { CartItem, CustomerPaymentChoice, FulfilmentSelection, OrdersStateData } from './orders.types';
+import { beginCheckoutStep, needsFulfilmentStep } from './orders.fulfilment';
+import { deliveryFeeForSelection, fulfilmentSummary } from './orders.flow-selection';
 import {
   CONFIRM_YES_NO_BUTTONS,
   ORDER_CONFIRMED_BUTTONS,
@@ -27,6 +29,7 @@ import {
   ORDER_STATE_AWAITING_TOPUP_OR_CARD,
 } from './orders.types';
 import {
+  enabledFulfilments,
   loadTenantContext,
   paymentButtons,
   paymentChoiceLabel,
@@ -70,6 +73,16 @@ function placeFailureReply(failure: PlaceOrderFailure): string {
       return messages.walletFailureMessage('insufficient_funds');
     case 'empty_cart':
       return messages.EMPTY_CART;
+    case 'below_minimum_order':
+      return messages.belowMinimumOrder(failure.minOrder, failure.subtotal, 'your area');
+    case 'invalid_fulfilment':
+    case 'fulfilment_not_allowed':
+    case 'delivery_area_unavailable':
+      return messages.FULFILMENT_NOT_AVAILABLE;
+    case 'delivery_address_required':
+      return messages.DELIVERY_ADDRESS_INVALID;
+    case 'table_required':
+      return messages.TABLE_REQUEST;
     default:
       return messages.ORDER_CREATION_FAILED;
   }
@@ -83,6 +96,38 @@ function buildPlacedReply(
   scheduledFor: string | null,
 ): string {
   const scheduledLabel = scheduledFor ? ctx.formatTime(new Date(scheduledFor)) : null;
+  const first = orders[0];
+
+  // Delivery and dine-in are read from the orders themselves (so the card webhook, which has no
+  // conversation state, produces the same message).
+  if (first.fulfilment === 'delivery') {
+    return messages.deliveryOrderCreatedMessage({
+      orders: orders.map((o) => ({ orderNumber: o.orderNumber, items: o.items, subtotal: o.total })),
+      address: first.deliveryAddress ?? '',
+      areaName: first.deliveryArea ?? '',
+      deliveryFee: orders.reduce((sum, o) => sum + o.deliveryFee, 0),
+      total,
+      paymentChoice: choice,
+      etaMinutes: ctx.config.deliveryTimeMinutes,
+      scheduledLabel,
+    });
+  }
+  if (first.fulfilment === 'dine_in') {
+    return messages.dineInOrderCreatedMessage({
+      orders: orders.map((o) => ({ orderNumber: o.orderNumber, items: o.items })),
+      table: first.tableLabel ?? '',
+      total,
+      paymentChoice: choice,
+      prepMinutes: ctx.config.prepTimeMinutes,
+    });
+  }
+
+  const extraLines = [
+    !scheduledLabel && ctx.config.prepTimeMinutes > 0 ? `⏱️ Ready in about ${ctx.config.prepTimeMinutes} minutes.` : undefined,
+    ctx.config.collectionInstructions ? `ℹ️ ${ctx.config.collectionInstructions}` : undefined,
+  ].filter((line): line is string => line !== undefined);
+  const offersDelivery = enabledFulfilments(ctx.config, ctx.catalog).includes('delivery');
+
   if (orders.length > 1) {
     return messages.multiOrderCreatedMessage(
       orders.map((o) => ({
@@ -94,10 +139,14 @@ function buildPlacedReply(
       total,
       choice,
       scheduledLabel,
+      { extraLines },
     );
   }
   const order = orders[0];
-  return messages.cartOrderCreatedMessage(order.orderNumber, order.items, total, choice, [order.collectionPoint], scheduledLabel);
+  return messages.cartOrderCreatedMessage(order.orderNumber, order.items, total, choice, [order.collectionPoint], scheduledLabel, {
+    offersDelivery,
+    extraLines,
+  });
 }
 
 function summaryLines(ctx: TenantContext, cart: CartItem[]): string[] {
@@ -117,22 +166,30 @@ export function beginOrderConfirmation(
   paymentChoice: CustomerPaymentChoice,
   tableLabel: string | null,
   scheduledFor?: string | null,
+  fulfilment?: FulfilmentSelection | null,
 ): ActionResult {
+  // Shops that offer delivery or dine-in need that answered before anything is charged.
+  if (!fulfilment && needsFulfilmentStep(ctx)) {
+    return beginCheckoutStep(ctx, cart, { tableLabel });
+  }
+
   // A payment method this tenant doesn't offer falls back to the normal picker.
   if (!ctx.config.paymentMethods.includes(paymentChoice)) {
     return actionResult(
       messages.PAYMENT_METHOD_REQUEST,
-      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor: scheduledFor ?? null } },
+      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor: scheduledFor ?? null, fulfilment: fulfilment ?? null } },
       paymentButtons(ctx.config),
     );
   }
 
   const scheduledLabel = scheduledFor ? ctx.formatTime(new Date(scheduledFor)) : null;
+  const summary = fulfilmentSummary(ctx, cart, fulfilment);
   const reply = [
     ...summaryLines(ctx, cart),
-    `Total: ${ctx.formatMoney(cartTotal(cart))}`,
+    ...(summary?.lines ?? []),
+    `Total: ${ctx.formatMoney(summary ? summary.total : cartTotal(cart))}`,
     `Payment: ${paymentChoiceLabel(ctx.config, paymentChoice)}`,
-    tableLabel ? `Table: ${tableLabel}` : undefined,
+    tableLabel && !fulfilment ? `Table: ${tableLabel}` : undefined,
     scheduledLabel ? messages.scheduleConfirmedLabel(scheduledLabel) : undefined,
     '',
     'Reply *yes* to confirm or *no* to cancel.',
@@ -142,7 +199,7 @@ export function beginOrderConfirmation(
 
   return actionResult(
     reply,
-    { state: ORDER_STATE_AWAITING_CONFIRMATION, data: { cart, paymentChoice, tableLabel, scheduledFor: scheduledFor ?? null } },
+    { state: ORDER_STATE_AWAITING_CONFIRMATION, data: { cart, paymentChoice, tableLabel, scheduledFor: scheduledFor ?? null, fulfilment: fulfilment ?? null } },
     CONFIRM_YES_NO_BUTTONS,
   );
 }
@@ -167,7 +224,7 @@ export async function finalizeOrderFromState(
   }
 
   if (state.paymentChoice === 'card') {
-    return beginCardOrderCheckout(ctx, phone, customer, cart, state.tableLabel ?? null, state.scheduledFor ?? null);
+    return beginCardOrderCheckout(ctx, phone, customer, cart, state.tableLabel ?? null, state.scheduledFor ?? null, state.fulfilment ?? null);
   }
   if (state.paymentChoice === 'wallet') {
     return beginWalletOrderPayment(ctx, customer, cart, state);
@@ -191,6 +248,7 @@ async function placeAndReply(
     paymentAttemptId,
     tableLabel: state.tableLabel ?? null,
     scheduledFor: state.scheduledFor ?? null,
+    fulfilment: state.fulfilment ?? null,
   });
 
   if (result.outcome === 'ok' || result.outcome === 'already_placed') {
@@ -214,11 +272,12 @@ export async function beginCardOrderCheckout(
   cart: CartItem[],
   tableLabel: string | null,
   scheduledFor: string | null = null,
+  fulfilment: FulfilmentSelection | null = null,
 ): Promise<ActionResult> {
   const backToPaymentMethod = (reply: string): ActionResult =>
     actionResult(
       reply,
-      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor } },
+      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor, fulfilment } },
       paymentButtons(ctx.config),
     );
 
@@ -234,7 +293,6 @@ export async function beginCardOrderCheckout(
   if ('errorReply' in resolved) {
     return actionResult(resolved.errorReply);
   }
-  const total = resolvedCartTotal(resolved);
   const paymentAttemptId = randomUUID();
 
   // Orders are created up front as 'pending' (card stock is applied on confirmation).
@@ -245,6 +303,7 @@ export async function beginCardOrderCheckout(
     paymentAttemptId,
     tableLabel,
     scheduledFor,
+    fulfilment,
   });
   if (placed.outcome !== 'ok' && placed.outcome !== 'already_placed') {
     return actionResult(placeFailureReply(placed));
@@ -256,7 +315,8 @@ export async function beginCardOrderCheckout(
       tenantId: ctx.tenantId,
       customerId: customer.id,
       phone,
-      amount: total,
+      // The database's total (items plus any delivery fee), never one recomputed here.
+      amount: placed.total,
       currency: ctx.config.currency,
       paymentAttemptId,
       orderIds: placed.orders.map((o) => o.id),
@@ -275,8 +335,9 @@ export async function beginCardOrderCheckout(
     return actionResult(
       messages.cartCheckoutLink(
         resolved.map((item) => ({ productName: item.product.name, quantity: item.quantity, unitPrice: item.unitPrice })),
-        total,
+        placed.total,
         checkout.checkoutUrl,
+        placed.orders.reduce((sum, o) => sum + o.deliveryFee, 0),
       ),
     );
   } catch (error) {
@@ -375,7 +436,9 @@ async function beginWalletOrderPayment(
     return actionResult(resolved.errorReply);
   }
 
-  const total = resolvedCartTotal(resolved);
+  const itemsTotal = resolvedCartTotal(resolved);
+  // Items plus any delivery fee: what place_order will debit.
+  const total = Number((itemsTotal + deliveryFeeForSelection(ctx, state.fulfilment, itemsTotal)).toFixed(2));
   const paymentAttemptId = state.paymentAttemptId ?? randomUUID();
   const stateWithAttempt: OrdersStateData = { ...state, cart, paymentAttemptId };
 
@@ -399,6 +462,7 @@ async function beginWalletOrderPayment(
     paymentAttemptId,
     tableLabel: state.tableLabel ?? null,
     scheduledFor: state.scheduledFor ?? null,
+    fulfilment: state.fulfilment ?? null,
   });
 
   switch (result.outcome) {
@@ -463,6 +527,7 @@ export async function fulfillOrderPurchaseAfterTopup(resume: OrdersStateData, to
       paymentAttemptId,
       tableLabel: resume.tableLabel ?? null,
       scheduledFor: resume.scheduledFor ?? null,
+      fulfilment: resume.fulfilment ?? null,
     });
 
     switch (result.outcome) {
@@ -535,7 +600,15 @@ export async function handleTopupOrCardSelection(
   }
 
   if (normalized.includes('card') && ctx.config.paymentMethods.includes('card')) {
-    return beginCardOrderCheckout(ctx, phone, customer, getCart(stateData), stateData.tableLabel ?? null, stateData.scheduledFor ?? null);
+    return beginCardOrderCheckout(
+      ctx,
+      phone,
+      customer,
+      getCart(stateData),
+      stateData.tableLabel ?? null,
+      stateData.scheduledFor ?? null,
+      stateData.fulfilment ?? null,
+    );
   }
 
   return actionResult(
