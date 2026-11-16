@@ -1261,8 +1261,10 @@ function Screen({
           cursor: pointer;
         }
         .card {
-          width: calc(var(--u) * 260);
-          flex-shrink: 0;
+          /* Details side = 25% of the screen (never narrower than 300u), the pick/write side gets the other ~75%. */
+          flex: 0 0 25%;
+          width: 25%;
+          min-width: calc(var(--u) * 300);
           align-self: flex-start;
           box-sizing: border-box;
           background: #fff;
@@ -1283,7 +1285,7 @@ function Screen({
         }
         .cardTitle {
           margin: 0;
-          font-size: calc(var(--u) * 20);
+          font-size: calc(var(--u) * 24);
           font-weight: 700;
           color: var(--ink);
           overflow-wrap: anywhere;
@@ -1297,7 +1299,7 @@ function Screen({
           display: flex;
           flex-direction: column;
           gap: calc(var(--u) * 2);
-          font-size: calc(var(--u) * 15);
+          font-size: calc(var(--u) * 17);
           line-height: 1.5;
           color: var(--ink);
         }
@@ -1306,18 +1308,18 @@ function Screen({
           justify-content: space-between;
           padding-top: calc(var(--u) * 12);
           border-top: 1px solid var(--line);
-          font-size: calc(var(--u) * 16);
+          font-size: calc(var(--u) * 19);
           color: var(--ink);
         }
         .cta {
-          min-height: 56px;
+          min-height: 64px;
           margin-top: calc(var(--u) * 8);
           border: none;
           border-radius: calc(var(--u) * 12);
           background: var(--theme);
           color: var(--theme-on);
           font-family: inherit;
-          font-size: calc(var(--u) * 17);
+          font-size: calc(var(--u) * 19);
           font-weight: 700;
           cursor: pointer;
         }
@@ -1350,7 +1352,9 @@ function Screen({
             padding: calc(var(--u) * 20);
           }
           .card {
+            flex: none;
             width: 100%;
+            min-width: 0;
             align-self: stretch;
           }
         }
