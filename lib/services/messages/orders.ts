@@ -26,6 +26,11 @@ export function formatCurrency(amount: number): string {
   return `R${Number(amount).toFixed(2).replace(/\.00$/, '')}`;
 }
 
+/** "1 x", "2 x", "12 x": a multiplier, never pluralised (pluralize(2, 'x') printed "2 xs"). */
+export function qtyLabel(count: number): string {
+  return `${count} x`;
+}
+
 export function pluralize(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
@@ -224,7 +229,7 @@ export interface CartLineItem {
 }
 
 function cartLineText(item: CartLineItem): string {
-  return `• ${pluralize(item.quantity, 'x')} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`;
+  return `• ${qtyLabel(item.quantity)} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`;
 }
 
 export function cartTotal(items: CartLineItem[]): number {
@@ -235,7 +240,7 @@ export const EMPTY_CART = 'Your cart is empty. Reply *menu* to start adding item
 
 export function addedToCartMessage(justAdded: CartLineItem, cart: CartLineItem[]): string {
   return [
-    `✅ Added ${pluralize(justAdded.quantity, 'x')} ${justAdded.productName} to your cart.`,
+    `✅ Added ${qtyLabel(justAdded.quantity)} ${justAdded.productName} to your cart.`,
     '',
     '*Your Cart*',
     ...cart.map(cartLineText),
@@ -265,7 +270,7 @@ export function cartSummaryMessage(cart: CartLineItem[], notice?: string): strin
 export function removeItemPrompt(cart: CartLineItem[]): string {
   return [
     '🗑️ *Remove an item*',
-    ...cart.map((item, index) => `${keycapNumber(index + 1)} ${pluralize(item.quantity, 'x')} ${item.productName}`),
+    ...cart.map((item, index) => `${keycapNumber(index + 1)} ${qtyLabel(item.quantity)} ${item.productName}`),
     '',
     'Reply with the number of the item you want to remove.',
   ].join('\n');
@@ -312,7 +317,7 @@ export function cartOrderCreatedMessage(
   opts?: { offersDelivery?: boolean; extraLines?: string[] },
 ): string {
   const itemLines = items.map(
-    (item) => `• ${pluralize(item.quantity, 'x')} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`,
+    (item) => `• ${qtyLabel(item.quantity)} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`,
   );
 
   const unique = Array.from(new Set(collectionPoints.filter(Boolean)));
@@ -358,7 +363,7 @@ export function multiOrderCreatedMessage(
 ): string {
   const orderBlocks = groups.map((group) => {
     const itemLines = group.items.map(
-      (item) => `• ${pluralize(item.quantity, 'x')} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`,
+      (item) => `• ${qtyLabel(item.quantity)} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`,
     );
     return [
       `*#${group.orderNumber}*`,
@@ -540,7 +545,7 @@ export function trackingMessage(
   collectionPoint: string,
   where?: { fulfilment: string; deliveryAddress?: string | null; deliveryArea?: string | null; deliveryFee?: number; tableLabel?: string | null },
 ): string {
-  const itemLines = items.map((item) => `• ${pluralize(item.quantity, 'x')} ${item.productName ?? 'item'}`);
+  const itemLines = items.map((item) => `• ${qtyLabel(item.quantity)} ${item.productName ?? 'item'}`);
   const paymentText =
     paymentStatus === 'paid'
       ? '✅ Paid'
@@ -646,7 +651,7 @@ export function deliveryOrderCreatedMessage(args: {
   const blocks = args.orders.map((order) =>
     [
       `*#${order.orderNumber}*`,
-      ...order.items.map((i) => `• ${pluralize(i.quantity, 'x')} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
+      ...order.items.map((i) => `• ${qtyLabel(i.quantity)} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
     ].join('\n'),
   );
   return [
@@ -674,7 +679,7 @@ export function dineInOrderCreatedMessage(args: {
 }): string {
   const lines = args.orders.flatMap((o) => [
     `*#${o.orderNumber}*`,
-    ...o.items.map((i) => `• ${pluralize(i.quantity, 'x')} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
+    ...o.items.map((i) => `• ${qtyLabel(i.quantity)} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
   ]);
   return [
     '🎉 Order confirmed!',
@@ -688,3 +693,28 @@ export function dineInOrderCreatedMessage(args: {
     'Reply *track my order* anytime for updates.',
   ].join('\n');
 }
+
+// ============================================================================
+// TAP-ONLY SCREENS (WhatsApp lists). The list IS the message: these are its body text.
+// ============================================================================
+
+/** Shown when the "3 or more" quantity button is tapped: the only time a customer types a number. */
+export const QUANTITY_MORE_PROMPT = 'How many would you like? Type a number (3 to 50).';
+
+/** Menu list body when the customer already has something in their cart. */
+export function cartMenuBody(itemCount: number): string {
+  return `🛒 You have ${itemCount} item${itemCount === 1 ? '' : 's'} in your cart.\n\nPick a category to add more, or open your cart 👇`;
+}
+
+export function productListBody(title: string): string {
+  return `🛒 *${title}*\n\nTap an item to add it to your cart 👇`;
+}
+
+export const REMOVE_ITEM_LIST_BODY = '🗑️ *Remove an item*\n\nTap the item you want to remove 👇';
+
+export const SCHEDULE_TIME_LIST_BODY = 'What time would you like to collect it? Pick a time below 👇';
+export const SCHEDULE_TIME_LIST_BODY_DELIVERY = 'What time should we deliver it? Pick a time below 👇';
+
+/** Fulfilment + delivery-area lists (collection / delivery / dine-in). */
+export const FULFILMENT_LIST_BODY = '🧾 *How would you like your order?*\n\nPick an option below 👇';
+export const DELIVERY_AREA_LIST_BODY = '🚚 *Where should we deliver?*\n\nPick your area below 👇';
