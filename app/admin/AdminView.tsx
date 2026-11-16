@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import type { SVGProps } from "react"
+import type { ReactNode, SVGProps } from "react"
 
 import { LogoutButton } from "@/components/admin/LogoutButton"
 import { BillingPanel } from "@/components/admin/BillingPanel"
@@ -454,6 +454,7 @@ export function AdminView({
   initialBookingSettings,
   initialQueueSettings,
   initialMessageSettings,
+  voiceNotesSlot,
   initialBusinessHours,
 }: {
   initialBookings: AdminBooking[]
@@ -506,6 +507,8 @@ export function AdminView({
   initialBookingSettings: AdminBookingSettings | null
   initialQueueSettings: AdminQueueSettings | null
   initialMessageSettings: AdminMessageSettings | null
+  /** Server-rendered voice notes switch (page.tsx), shown in Settings > AI. */
+  voiceNotesSlot?: ReactNode
   initialBusinessHours: AdminBusinessHours | null
 }) {
   // Which tabs this shop + caller can see. Booking and Queue are optional
@@ -1017,6 +1020,7 @@ export function AdminView({
               ordersError={initialOrdersError}
               eventsManage={eventsEnabled && eventsPermissions.eventsManage}
               initialSubTab={settingsStart ?? undefined}
+              voiceNotesSlot={voiceNotesSlot}
             />
           )}
         </main>

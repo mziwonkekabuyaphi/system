@@ -47,6 +47,7 @@
 // it's the exact same slug app/kiosk/[slug]/page.tsx resolves tenants by.
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { VoiceNotesSetting } from "./voice-notes/VoiceNotesSetting"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { formatBookingTicketNumber } from "@/lib/services/ticket-format"
@@ -1042,6 +1043,7 @@ export default async function AdminPage() {
       initialBookingSettings={settingsData.bookingSettings}
       initialQueueSettings={settingsData.queueSettings}
       initialMessageSettings={settingsData.messageSettings}
+      voiceNotesSlot={settingsData.messageSettings ? <VoiceNotesSetting /> : null}
       initialBusinessHours={settingsData.businessHours}
     />
   )

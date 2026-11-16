@@ -329,6 +329,7 @@ export function SettingsManager({
   ordersError = null,
   eventsManage = true,
   initialSubTab,
+  voiceNotesSlot,
 }: {
   initialPlan: AdminPlan
   tenantSlug: string
@@ -395,6 +396,8 @@ export function SettingsManager({
   /** Open on this page instead of Shop details (e.g. the Events page's gear opens "events"). Falls back to the
    *  first page when it isn't listed for this shop. */
   initialSubTab?: SubTab
+  /** Server-rendered <VoiceNotesSetting />, passed down from page.tsx (it loads its own data, so it cannot be imported here). Shown under the AI settings. */
+  voiceNotesSlot?: ReactNode
 }) {
   const [subTab, setSubTab] = useState<SubTab>(initialSubTab ?? "general")
   // Kept here (not only inside the panels) so the summary tiles on Shop details follow a save.
@@ -579,7 +582,12 @@ export function SettingsManager({
       {activePage.id === "whatsapp" && initialMessageSettings && (
         <WhatsAppSettingsPanels messageSettings={initialMessageSettings} modules={flags.on} />
       )}
-      {activePage.id === "ai" && <AiSettingsPanel />}
+      {activePage.id === "ai" && (
+        <div className="space-y-5">
+          <AiSettingsPanel />
+          {voiceNotesSlot}
+        </div>
+      )}
       {activePage.id === "events" && <EventSettingsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
