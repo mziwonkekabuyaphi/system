@@ -368,6 +368,27 @@ export function KioskApp({
   const [payment, setPayment] = useState<KioskBookingPayment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // Screen scale. 1 unit = 1px of a 900 x 600 design on a PC monitor. A touch screen (iPad, tablet) is held
+  // closer and is smaller, so it gets a bigger unit and a lower floor. Worked out here, not in CSS, so it
+  // works in every browser and follows a rotation.
+  const [unit, setUnit] = useState(1.2)
+  useEffect(() => {
+    const update = () => {
+      const touch = window.matchMedia("(pointer: coarse)").matches
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const raw = Math.min(w / (touch ? 680 : 900), h / (touch ? 460 : 600))
+      setUnit(Math.round(Math.min(2.4, Math.max(touch ? 1.2 : 1, raw)) * 100) / 100)
+    }
+    update()
+    window.addEventListener("resize", update)
+    window.addEventListener("orientationchange", update)
+    return () => {
+      window.removeEventListener("resize", update)
+      window.removeEventListener("orientationchange", update)
+    }
+  }, [])
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle")
 
   const resetAll = useCallback(() => {
@@ -728,6 +749,7 @@ export function KioskApp({
     const amberTokens = tileContrastTokens(branding.secondaryColor)
     const queueTheme = path === "queue"
     return {
+      "--u": `${unit}px`,
       "--theme": queueTheme ? branding.secondaryColor : branding.primaryColor,
       "--theme-deep": darkenHex(queueTheme ? branding.secondaryColor : branding.primaryColor, 0.22),
       "--theme-on": queueTheme ? amberTokens.on : accentTokens.on,
@@ -746,7 +768,7 @@ export function KioskApp({
       "--line": "#E4DED4",
       "--muted": "#6B655C",
     } as React.CSSProperties
-  }, [branding.primaryColor, branding.secondaryColor, path])
+  }, [branding.primaryColor, branding.secondaryColor, path, unit])
 
   return (
     <KioskChromeContext.Provider value={chrome}>
@@ -873,14 +895,17 @@ export function KioskApp({
         .kiosk {
           position: relative;
           min-height: 100vh;
+          min-height: 100dvh;
+          -webkit-text-size-adjust: 100%;
+          touch-action: manipulation;
           width: 100%;
           background: var(--paper);
           color: var(--ink);
           display: flex;
           flex-direction: column;
           overflow-x: hidden;
-          /* 1u = 1px on a 900 x 600 screen. Grows on a big PC monitor, never below 1px on a tablet. */
-          --u: clamp(1px, min(calc(100vw / 900), calc(100vh / 600)), 2.4px);
+          /* 1u = 1px of the 900 x 600 design. The real value is set from the screen size in the component (cssVars). */
+          --u: 1.2px;
         }
       `}</style>
     </div>
