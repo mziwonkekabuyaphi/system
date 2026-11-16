@@ -63,6 +63,7 @@ const ORDER_STATUS_DISPLAY: Record<string, string> = {
   placed: 'Your order has been confirmed and sent to our team.',
   preparing: 'Your order is being prepared. 👨‍🍳',
   ready: 'Your order is ready for collection. 🎉',
+  out_for_delivery: 'Your order is on its way to you. 🚚',
   collected: 'Your order has been collected. Enjoy! 🥂',
   completed: 'Thank you for your order. We hope to see you again soon.',
   cancelled: 'This order has been cancelled.',
@@ -74,12 +75,20 @@ const ORDER_STATUS_PROGRESS: Record<string, string> = {
   placed: '🟩⬜⬜⬜ Placed',
   preparing: '🟩🟩⬜⬜ Preparing',
   ready: '🟩🟩🟩⬜ Ready',
+  out_for_delivery: '🟩🟩🟩🟩 On the way',
   collected: '🟩🟩🟩🟩 Collected',
   completed: '🟩🟩🟩🟩 Completed',
   cancelled: '⬛⬛⬛⬛ Cancelled',
 };
 
-export function orderStatusLabel(status: string): string {
+export function orderStatusLabel(status: string, fulfilment?: string | null): string {
+  if (fulfilment === 'delivery') {
+    if (status === 'ready') return 'Your order is packed and about to go out for delivery. 🎉';
+    if (status === 'completed') return 'Your order has been delivered. Enjoy! 🥂';
+  } else if (fulfilment === 'dine_in') {
+    if (status === 'ready') return 'Your order is ready and on its way to your table. 🎉';
+    if (status === 'collected') return 'Your order has been served. Enjoy! 🥂';
+  }
   return ORDER_STATUS_DISPLAY[status] ?? status;
 }
 
@@ -233,7 +242,7 @@ export function addedToCartMessage(justAdded: CartLineItem, cart: CartLineItem[]
     '',
     `Cart Total: *${formatCurrency(cartTotal(cart))}*`,
     '',
-    "Tap *Continue Shopping* to add more, or *Checkout* when you're ready to pay.",
+    "Reply with another number to keep shopping, *checkout* when you're ready to pay, or *view cart* to see this again.",
   ].join('\n');
 }
 
@@ -248,7 +257,7 @@ export function cartSummaryMessage(cart: CartLineItem[], notice?: string): strin
     '',
     `Total: *${formatCurrency(cartTotal(cart))}*`,
     '',
-    'Tap *Checkout* to pay, or *Continue Shopping* to add more.',
+    'Reply *checkout* to pay, a number to add more, or *menu* to keep browsing.',
   ].join('\n');
 }
 
@@ -266,12 +275,18 @@ export function removeItemPrompt(cart: CartLineItem[]): string {
  * Payment-method step. The options themselves are shown as buttons built from
  * the tenant's allowed payment methods, so the text does not name them.
  */
-export function cartPaymentMethodPrompt(cart: CartLineItem[], scheduledLabel?: string | null): string {
+/** `fulfil` (delivery or dine-in): extra lines shown above the total, and the total including any delivery fee. */
+export function cartPaymentMethodPrompt(
+  cart: CartLineItem[],
+  scheduledLabel?: string | null,
+  fulfil?: { lines: string[]; total: number } | null,
+): string {
   return [
     '*Checkout*',
     ...cart.map(cartLineText),
     '',
-    `Total: *${formatCurrency(cartTotal(cart))}*`,
+    ...(fulfil?.lines ?? []),
+    `Total: *${formatCurrency(fulfil ? fulfil.total : cartTotal(cart))}*`,
     scheduledLabel ? scheduleConfirmedLabel(scheduledLabel) : undefined,
     '',
     'How would you like to pay? Pick an option below.',
@@ -294,6 +309,7 @@ export function cartOrderCreatedMessage(
   paymentChoice: OrderPaymentChoice,
   collectionPoints: string[],
   scheduledLabel?: string | null,
+  opts?: { offersDelivery?: boolean; extraLines?: string[] },
 ): string {
   const itemLines = items.map(
     (item) => `• ${pluralize(item.quantity, 'x')} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`,
@@ -314,7 +330,8 @@ export function cartOrderCreatedMessage(
     scheduledLabel ? scheduleConfirmedLabel(scheduledLabel) : undefined,
     '',
     ...collectionLines,
-    "We don't offer delivery — all orders are collected in person.",
+    ...(opts?.extraLines ?? []),
+    opts?.offersDelivery ? undefined : "We don't offer delivery — all orders are collected in person.",
     '',
     scheduledLabel
       ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
@@ -337,6 +354,7 @@ export function multiOrderCreatedMessage(
   totalAmount: number,
   paymentChoice: OrderPaymentChoice,
   scheduledLabel?: string | null,
+  opts?: { extraLines?: string[] },
 ): string {
   const orderBlocks = groups.map((group) => {
     const itemLines = group.items.map(
@@ -358,6 +376,7 @@ export function multiOrderCreatedMessage(
     `Grand Total: *${formatCurrency(totalAmount)}*`,
     paidLine(paymentChoice),
     scheduledLabel ? scheduleConfirmedLabel(scheduledLabel) : undefined,
+    ...(opts?.extraLines ?? []),
     '',
     scheduledLabel
       ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
@@ -375,7 +394,7 @@ export function quantityPrompt(productName: string, unitPrice: number): string {
   return `How many *${productName}* would you like? (${formatCurrency(unitPrice)} each)`;
 }
 
-export const CONFIRM_YES_NO = 'Please tap *Yes* to confirm your order, or *No* to cancel it.';
+export const CONFIRM_YES_NO = 'Please reply *yes* to confirm your order, or *no* to cancel it.';
 
 export const ORDER_CONFIRMATION_DECLINED =
   "No problem, your order was not placed. Reply *menu* if you'd like to start again.";
@@ -411,24 +430,6 @@ export function selectionOutOfRange(max: number): string {
 
 export const QUANTITY_REQUEST = 'Please reply with a quantity, e.g. "2".';
 
-// ---- Tap-only screens (WhatsApp lists). The list IS the message: these are its body text. ----
-
-/** Shown when the "3 or more" quantity button is tapped: the only time a customer types a number. */
-export const QUANTITY_MORE_PROMPT = 'How many would you like? Type a number (3 to 50).';
-
-/** Menu list body when the customer already has something in their cart. */
-export function cartMenuBody(itemCount: number): string {
-  return `🛒 You have ${itemCount} item${itemCount === 1 ? '' : 's'} in your cart.\n\nPick a category to add more, or open your cart 👇`;
-}
-
-export function productListBody(title: string): string {
-  return `🛒 *${title}*\n\nTap an item to add it to your cart 👇`;
-}
-
-export const REMOVE_ITEM_LIST_BODY = '🗑️ *Remove an item*\n\nTap the item you want to remove 👇';
-
-export const SCHEDULE_TIME_LIST_BODY = 'What time would you like to collect it? Pick a time below 👇';
-
 export const PAYMENT_METHOD_REQUEST = 'Please choose how you would like to pay using one of the options below.';
 
 // ============================================================================
@@ -436,6 +437,8 @@ export const PAYMENT_METHOD_REQUEST = 'Please choose how you would like to pay u
 // ============================================================================
 
 export const SCHEDULE_CHOICE_PROMPT = 'Would you like to collect this now, or schedule it for a later time today?';
+
+export const SCHEDULE_CHOICE_PROMPT_DELIVERY = 'Would you like this delivered as soon as possible, or scheduled for a later time today?';
 
 export const SCHEDULE_TIME_REQUEST =
   'What time would you like to collect it? Reply with a time, e.g. "6pm" or "18:30".';
@@ -468,17 +471,20 @@ export const MISSING_ORDER_DETAILS =
 
 export const ORDER_CREATION_FAILED = 'Sorry, something went wrong creating your order. Please try again in a moment.';
 
-export function cartCheckoutLink(cart: CartLineItem[], total: number, checkoutUrl: string): string {
+export function cartCheckoutLink(cart: CartLineItem[], total: number, checkoutUrl: string, deliveryFee = 0): string {
   return [
     ...cart.map(cartLineText),
     '',
+    deliveryFee > 0 ? `Delivery fee: ${formatCurrency(deliveryFee)}` : undefined,
     `Total: ${formatCurrency(total)}`,
     '',
     'Tap below to pay securely by card:',
     checkoutUrl,
     '',
     "We'll confirm your order the moment payment goes through.",
-  ].join('\n');
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
 }
 
 export const CARD_CHECKOUT_FAILED =
@@ -532,6 +538,7 @@ export function trackingMessage(
   totalAmount: number,
   paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' | 'refund_pending',
   collectionPoint: string,
+  where?: { fulfilment: string; deliveryAddress?: string | null; deliveryArea?: string | null; deliveryFee?: number; tableLabel?: string | null },
 ): string {
   const itemLines = items.map((item) => `• ${pluralize(item.quantity, 'x')} ${item.productName ?? 'item'}`);
   const paymentText =
@@ -548,14 +555,21 @@ export function trackingMessage(
     `📦 Order *#${orderNumber}*`,
     orderStatusProgress(status),
     '',
-    orderStatusLabel(status),
+    orderStatusLabel(status, where?.fulfilment),
     '',
     ...itemLines,
     '',
+    where?.fulfilment === 'delivery' && (where.deliveryFee ?? 0) > 0 ? `Delivery fee: ${formatCurrency(where.deliveryFee ?? 0)}` : undefined,
     `Total: ${formatCurrency(totalAmount)}`,
     `Payment: ${paymentText}`,
-    `📍 Collect at: *${collectionPoint}*`,
-  ].join('\n');
+    where?.fulfilment === 'delivery'
+      ? `🚚 Delivering to: *${where.deliveryAddress ?? ''}*${where.deliveryArea ? ` (${where.deliveryArea})` : ''}`
+      : where?.fulfilment === 'dine_in'
+        ? `🍽️ Dine-in${where.tableLabel ? `: table *${where.tableLabel}*` : ''}`
+        : `📍 Collect at: *${collectionPoint}*`,
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
 }
 
 export function cancelNotAllowed(orderNumber: string, status: string): string {
@@ -592,4 +606,85 @@ export function orderHistoryMessage(orders: OrderHistoryEntry[]): string {
       `• *#${order.orderNumber}* — ${new Date(order.orderDate).toLocaleDateString('en-ZA')} — ${formatCurrency(order.totalAmount)} (${order.status})`,
   );
   return ['🧾 *Your Recent Orders*', '', ...lines, '', 'Reply *repeat my last order* to reorder.'].join('\n');
+}
+
+// ============================================================================
+// FULFILMENT — collection / delivery / dine-in
+// ============================================================================
+
+export const FULFILMENT_PROMPT = 'How would you like to get your order?';
+
+export const DELIVERY_AREA_INVALID = "Sorry, I didn't catch that. Reply with the number of your area from the list.";
+
+export const DELIVERY_ADDRESS_REQUEST =
+  'Please type your full delivery address (street, number, and any building or gate instructions).';
+
+export const DELIVERY_ADDRESS_INVALID = 'That address looks too short or too long. Please type your full delivery address (up to 300 characters).';
+
+export const TABLE_REQUEST = 'Which table are you at? Reply with the table number or name.';
+
+export const TABLE_INVALID = 'Please reply with your table number or name (up to 20 characters).';
+
+export const FULFILMENT_NOT_AVAILABLE =
+  "Sorry, that way of getting your order isn't available right now. Please pick another option.";
+
+export function belowMinimumOrder(minOrder: number, subtotal: number, areaName: string): string {
+  return `Delivery to ${areaName} needs an order of at least ${formatCurrency(minOrder)} (yours is ${formatCurrency(subtotal)}). Add something more, or choose collection instead.`;
+}
+
+/** Delivery confirmation (one block per vendor order, the fee is on the order that carries it). */
+export function deliveryOrderCreatedMessage(args: {
+  orders: Array<{ orderNumber: string; items: CartOrderItemSummary[]; subtotal: number }>;
+  address: string;
+  areaName: string;
+  deliveryFee: number;
+  total: number;
+  paymentChoice: OrderPaymentChoice;
+  etaMinutes: number;
+  scheduledLabel?: string | null;
+}): string {
+  const blocks = args.orders.map((order) =>
+    [
+      `*#${order.orderNumber}*`,
+      ...order.items.map((i) => `• ${pluralize(i.quantity, 'x')} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
+    ].join('\n'),
+  );
+  return [
+    `🎉 Order confirmed! ${args.orders.length > 1 ? `You have *${pluralize(args.orders.length, 'order')}* on the way:` : `*#${args.orders[0].orderNumber}*`}`,
+    '',
+    ...(args.orders.length > 1 ? [blocks.join('\n\n')] : [blocks[0].split('\n').slice(1).join('\n')]),
+    '',
+    args.deliveryFee > 0 ? `Delivery fee: ${formatCurrency(args.deliveryFee)}` : 'Delivery: *free*',
+    `Total: *${formatCurrency(args.total)}*`,
+    args.paymentChoice === 'cash' ? '💵 Pay cash on delivery' : paidLine(args.paymentChoice),
+    '',
+    `🚚 Delivering to: *${args.address}* (${args.areaName})`,
+    args.scheduledLabel ? scheduleConfirmedLabel(args.scheduledLabel) : `Estimated delivery: about ${args.etaMinutes} minutes.`,
+    '',
+    "We'll message you when it's on its way. Reply *track my order* anytime for updates.",
+  ].join('\n');
+}
+
+export function dineInOrderCreatedMessage(args: {
+  orders: Array<{ orderNumber: string; items: CartOrderItemSummary[] }>;
+  table: string;
+  total: number;
+  paymentChoice: OrderPaymentChoice;
+  prepMinutes: number;
+}): string {
+  const lines = args.orders.flatMap((o) => [
+    `*#${o.orderNumber}*`,
+    ...o.items.map((i) => `• ${pluralize(i.quantity, 'x')} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
+  ]);
+  return [
+    '🎉 Order confirmed!',
+    '',
+    ...lines,
+    '',
+    `Total: *${formatCurrency(args.total)}*`,
+    args.paymentChoice === 'cash' ? '💵 Pay at the table when you are served' : paidLine(args.paymentChoice),
+    '',
+    `🍽️ We'll bring it to table *${args.table}*${args.prepMinutes > 0 ? ` in about ${args.prepMinutes} minutes` : ''}.`,
+    'Reply *track my order* anytime for updates.',
+  ].join('\n');
 }
