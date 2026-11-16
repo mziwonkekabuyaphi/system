@@ -775,7 +775,6 @@ export function KioskApp({
     <div className="kiosk" style={cssVars}>
       {step === "welcome" && (
         <WelcomeScreen
-          unit={unit}
           branding={branding}
           tagline={
             isWeb && branding.tagline.trim().toLowerCase().startsWith("tap anywhere")
@@ -1016,23 +1015,38 @@ function BrandLogo({ url, size, ringWidth, dotSize }: { url: string; size: LogoL
   )
 }
 
-// Sizes are worked out here from the screen scale (`unit`, the same number that feeds --u) and
-// applied inline as plain px, so the logo and the text always move together and nothing depends on
-// a chain of CSS variables. The logo is also capped at 24% of the short side of the screen, so a
-// big logo can never take over the page, and the text is sized to lead (shop name > logo weight).
-function WelcomeScreen({ unit, branding, tagline, onTap }: { unit: number; branding: KioskBranding; tagline: string; onTap: () => void }) {
-  const px = (n: number) => Math.round(n * unit)
+// Sized from the SHORT side of the screen (not the width x height ratio the other screens use), so
+// turning the tablet between portrait and landscape never changes the sizes: the short side is the
+// same either way. Applied inline as plain px so the logo and the text always move together. The logo
+// is also capped at 16% of the short side so it can never take over the page.
+function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; tagline: string; onTap: () => void }) {
+  const [short, setShort] = useState(768)
+  useEffect(() => {
+    const update = () => setShort(Math.min(window.innerWidth, window.innerHeight))
+    update()
+    window.addEventListener("resize", update)
+    window.addEventListener("orientationchange", update)
+    return () => {
+      window.removeEventListener("resize", update)
+      window.removeEventListener("orientationchange", update)
+    }
+  }, [])
+
+  // 768px short side (iPad) = 1.2, the size that looks right in portrait; grows on bigger screens.
+  const scale = Math.round(Math.min(2.2, Math.max(1.2, short / 640)) * 100) / 100
+  const px = (n: number) => Math.round(n * scale)
+
   return (
     <button
       className="welcome"
       onClick={onTap}
       type="button"
       aria-label="Tap to begin"
-      style={{ gap: px(22), padding: px(32) }}
+      style={{ gap: px(22), padding: `${px(32)}px ${px(32)}px ${px(56)}px` }}
     >
       {branding.logoUrl && (
         <span className="logoSlot" style={{ marginBottom: px(22) }}>
-          <BrandLogo url={branding.logoUrl} size={`min(${px(110)}px, 24vmin)`} ringWidth={Math.max(2, px(2))} dotSize={px(8)} />
+          <BrandLogo url={branding.logoUrl} size={`min(${px(80)}px, 16vmin)`} ringWidth={Math.max(2, px(2))} dotSize={px(7)} />
         </span>
       )}
       <h1 style={{ fontSize: px(60) }}>{branding.displayName}</h1>
@@ -1042,7 +1056,13 @@ function WelcomeScreen({ unit, branding, tagline, onTap }: { unit: number; brand
 
       <style jsx>{`
         .welcome {
-          flex: 1;
+          /* The whole screen is the tap target: pinned to the viewport instead of relying on flex growth. */
+          position: fixed;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 0;
+          box-sizing: border-box;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1055,18 +1075,23 @@ function WelcomeScreen({ unit, branding, tagline, onTap }: { unit: number; brand
         .logoSlot {
           display: block; /* the ring and its dot sit outside the tile; the margin keeps them clear of the shop name */
         }
+        h1,
+        .tap {
+          width: 100%;
+          max-width: 18em;
+          margin: 0;
+          text-wrap: balance; /* even lines instead of one long line and a lone word */
+          overflow-wrap: break-word;
+        }
         h1 {
           font-weight: 800;
-          margin: 0;
           color: var(--ink);
           line-height: 1.1;
-          max-width: 100%;
-          overflow-wrap: anywhere;
         }
         .tap {
           font-weight: 700;
           color: var(--accent);
-          margin: 0;
+          line-height: 1.25;
         }
       `}</style>
     </button>
