@@ -129,6 +129,8 @@ export interface KioskBranding extends Partial<KioskDetailsFields> {
   queueCardTitle: string
   queueCardSubtitle: string
   serviceScreenTitle: string
+  /** Line under the service heading when several services can be picked ("{max}" = the limit). null = default wording. */
+  serviceHint?: string | null
   dateScreenTitle: string
   timeScreenTitle: string
   detailsScreenTitle: string
@@ -195,6 +197,7 @@ interface TenantBrandingRow {
   queue_card_title: string | null
   queue_card_subtitle: string | null
   service_screen_title: string | null
+  service_hint: string | null
   date_screen_title: string | null
   time_screen_title: string | null
   details_screen_title: string | null
@@ -296,7 +299,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
   const { data: branding } = await supabase
     .from("tenant_branding")
     .select(
-      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_layout, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, kiosk_show_whatsapp_optin, kiosk_whatsapp_optin_label",
+      "display_name, logo_url, primary_color, secondary_color, remove_powered_by, tagline, idle_refresh_seconds, confirmation_refresh_seconds, registration_type, choice_layout, choice_title, booking_card_title, booking_card_subtitle, queue_card_title, queue_card_subtitle, service_screen_title, service_hint, date_screen_title, time_screen_title, details_screen_title, ticket_booking_eyebrow, ticket_queue_eyebrow, kiosk_show_name, kiosk_show_surname, kiosk_show_phone, kiosk_show_email, kiosk_email_required, kiosk_show_custom, kiosk_custom_label, kiosk_custom_required, kiosk_show_whatsapp_optin, kiosk_whatsapp_optin_label",
     )
     .eq("tenant_id", tenant.id)
     .maybeSingle<TenantBrandingRow>()
@@ -339,6 +342,7 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     queueCardTitle: branding?.queue_card_title?.trim() || DEFAULT_QUEUE_CARD_TITLE,
     queueCardSubtitle: branding?.queue_card_subtitle?.trim() || DEFAULT_QUEUE_CARD_SUBTITLE,
     serviceScreenTitle: branding?.service_screen_title?.trim() || DEFAULT_SERVICE_SCREEN_TITLE,
+    serviceHint: branding?.service_hint?.trim() || null,
     dateScreenTitle: branding?.date_screen_title?.trim() || DEFAULT_DATE_SCREEN_TITLE,
     timeScreenTitle: branding?.time_screen_title?.trim() || DEFAULT_TIME_SCREEN_TITLE,
     detailsScreenTitle: branding?.details_screen_title?.trim() || DEFAULT_DETAILS_SCREEN_TITLE,
