@@ -8,11 +8,13 @@
 //
 //   wallet : balance pre-check -> place_order (debit inside) | top-up/card screen
 //   cash   : place_order (pay at counter; payment_status stays 'pending')
-//   card   : place_order (orders 'pending') -> tenant gateway checkout ->
-//            webhook -> fulfillOrderAfterPayment(attemptId) -> confirm_card_payment
+//   card   : place_order (orders 'pending') -> payment link from the shop's own card
+//            provider (lib/payments/order-checkout.ts, same pipeline as tickets and
+//            shisha) -> signed webhook -> settle.ts -> confirmOrderPaymentByAttempt
 // ============================================================================
 
 import { randomUUID } from 'crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/whatsapp/utils/logger';
 import * as messages from '@/lib/services/messages/orders';
@@ -49,7 +51,8 @@ import {
   type PlaceOrderFailure,
   type PlacedOrder,
 } from './orders.db';
-import { getAppBaseUrl, getCardPaymentGateway, notifyButtons, notifyText } from './orders.integrations';
+import { notifyButtons, notifyText } from './orders.integrations';
+import { getOrderCardOption, startOrderCardCheckout } from '@/lib/payments/order-checkout';
 
 // ============================================================================
 // SHARED REPLY BUILDERS
@@ -288,14 +291,27 @@ export async function beginCardOrderCheckout(
     return actionResult(messages.EMPTY_CART);
   }
 
+  // Can this shop take a card at all? Asked BEFORE any order exists, so a shop without a card provider never
+  // ends up with pending orders that nobody can pay.
+  const cardOption = await getOrderCardOption(ctx.db, ctx.tenantId);
+  if (!cardOption.ok) {
+    return backToPaymentMethod(`${cardOption.message}\n\n${messages.PAYMENT_METHOD_REQUEST}`);
+  }
+
   // Never trust stock/availability/prices captured earlier in the conversation.
   const resolved = await resolveCartItems(ctx, cart);
   if ('errorReply' in resolved) {
     return actionResult(resolved.errorReply);
   }
+  const total = resolvedCartTotal(resolved);
+  if (total < cardOption.option.minAmount) {
+    return backToPaymentMethod(
+      `Card payments start at ${ctx.formatMoney(cardOption.option.minAmount)}. Please choose another payment option.`,
+    );
+  }
   const paymentAttemptId = randomUUID();
 
-  // Orders are created up front as 'pending' (card stock is applied on confirmation).
+  // Orders are created up front as 'pending' (card stock is applied on confirmation, by the webhook).
   const placed = await placeOrder(ctx, {
     customer,
     items: cart,
@@ -309,106 +325,95 @@ export async function beginCardOrderCheckout(
     return actionResult(placeFailureReply(placed));
   }
 
-  try {
-    const baseUrl = getAppBaseUrl();
-    const checkout = await getCardPaymentGateway().createCheckout({
-      tenantId: ctx.tenantId,
-      customerId: customer.id,
-      phone,
-      // The database's total (items plus any delivery fee), never one recomputed here.
-      amount: placed.total,
-      currency: ctx.config.currency,
-      paymentAttemptId,
-      orderIds: placed.orders.map((o) => o.id),
-      description: `${ctx.config.brandName} order ${placed.orders.map((o) => o.orderNumber).join(', ')}`,
-      successUrl: `${baseUrl}/orders/purchase/success`,
-      cancelUrl: `${baseUrl}/orders/purchase/cancelled`,
-      failureUrl: `${baseUrl}/orders/purchase/failed`,
-    });
+  // The link comes from the shop's own card provider, through the same pipeline as tickets and shisha.
+  // The amount is what place_order actually created (placed.total), which is what the webhook checks.
+  const checkout = await startOrderCardCheckout({
+    supabase: ctx.db,
+    tenantId: ctx.tenantId,
+    option: cardOption.option,
+    paymentAttemptId,
+    customerId: customer.id,
+    amount: placed.total,
+    orderIds: placed.orders.map((o) => o.id),
+    orderNumbers: placed.orders.map((o) => o.orderNumber),
+    brandName: ctx.config.brandName,
+  });
 
-    logger.info('[orders] card checkout created', {
-      tenantId: ctx.tenantId,
-      paymentAttemptId,
-      paymentSessionId: checkout.paymentSessionId,
-    });
-
-    return actionResult(
-      messages.cartCheckoutLink(
-        resolved.map((item) => ({ productName: item.product.name, quantity: item.quantity, unitPrice: item.unitPrice })),
-        placed.total,
-        checkout.checkoutUrl,
-        placed.orders.reduce((sum, o) => sum + o.deliveryFee, 0),
-      ),
-    );
-  } catch (error) {
-    logger.error('[orders] beginCardOrderCheckout failed', {
-      tenantId: ctx.tenantId,
-      paymentAttemptId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    // No checkout exists for these pending orders — cancel them so they never linger.
+  if (!checkout.ok) {
+    logger.error('[orders] beginCardOrderCheckout failed', { tenantId: ctx.tenantId, paymentAttemptId, message: checkout.message });
+    // No link exists for these pending orders: cancel them so they never linger.
     await failCardPaymentByAttempt(ctx.db, paymentAttemptId);
-    return backToPaymentMethod(messages.CARD_CHECKOUT_FAILED);
+    return backToPaymentMethod(checkout.message || messages.CARD_CHECKOUT_FAILED);
   }
+
+  logger.info('[orders] card checkout created', { tenantId: ctx.tenantId, paymentAttemptId, mode: checkout.mode });
+
+  return actionResult(
+    messages.cartCheckoutLink(
+      resolved.map((item) => ({ productName: item.product.name, quantity: item.quantity, unitPrice: item.unitPrice })),
+      placed.total,
+      checkout.url,
+      placed.orders.reduce((sum, o) => sum + o.deliveryFee, 0),
+    ),
+  );
 }
 
 /**
- * CARD WEBHOOK CALLBACK — called by the (tenant-verified) payment webhook once
- * the gateway confirms payment. Keyed on paymentAttemptId; the tenant is derived
- * from the order rows, never from the webhook caller.
+ * CARD WEBHOOK CALLBACK, called by lib/payments/settle.ts once the shop's card provider has confirmed payment
+ * (signature, amount and currency already verified there). Keyed on the orders' payment attempt id; the tenant is
+ * derived from the order rows. Moves the pending orders to placed/scheduled and tells the customer.
  *
- * CONTRACT: never throws; idempotent (confirm_card_payment only flips orders
- * that are still pending/pending, so a redelivered webhook is a no-op).
+ * Returns what happened so the caller can refund when the orders are no longer payable (cancelled meanwhile).
+ * CONTRACT: idempotent (confirm_card_payment only flips orders that are still pending/pending, so a
+ * redelivered webhook is a no-op). Throws nothing for "not payable"; throws only on OUR failures so the provider retries.
  */
-export async function fulfillOrderAfterPayment(paymentAttemptId: string): Promise<void> {
-  const db = await getSupabaseServerClient();
-  if (!db) {
-    logger.error('[orders] fulfillOrderAfterPayment: no Supabase client', { paymentAttemptId });
-    return;
+export type OrderPaymentOutcome = 'confirmed' | 'already_confirmed' | 'not_payable';
+
+export async function confirmOrderPaymentByAttempt(db: SupabaseClient, paymentAttemptId: string): Promise<OrderPaymentOutcome> {
+  const result = await confirmCardPaymentByAttempt(db, paymentAttemptId);
+  if (result.outcome === 'error') throw new Error('confirm_card_payment failed');
+  if (result.outcome === 'not_found') {
+    logger.error('[orders] card payment confirmed but no orders found for attempt', { paymentAttemptId });
+    return 'not_payable';
   }
 
+  // 'already_confirmed' also covers orders that were CANCELLED (expiry, customer cancel) before the money arrived:
+  // only a 'paid' order counts as fulfilled, anything else must be refunded by the caller.
+  if (result.outcome === 'already_confirmed') {
+    const { data, error } = await db.from('orders').select('payment_status').eq('payment_attempt_id', paymentAttemptId);
+    if (error) throw new Error(`order lookup failed: ${error.message}`);
+    const allPaid = (data ?? []).length > 0 && (data ?? []).every((o: { payment_status: string }) => o.payment_status === 'paid');
+    return allPaid ? 'already_confirmed' : 'not_payable';
+  }
+
+  // Best effort from here: the orders are already paid whether or not the message goes.
   try {
-    const result = await confirmCardPaymentByAttempt(db, paymentAttemptId);
-
-    if (result.outcome === 'error') return; // already logged
-    if (result.outcome === 'not_found') {
-      logger.error('[orders] CRITICAL: card payment confirmed but no orders found for attempt — needs manual follow-up', {
-        paymentAttemptId,
-      });
-      return;
-    }
-    if (result.outcome === 'already_confirmed') {
-      logger.info('[orders] fulfillOrderAfterPayment: already fulfilled — skipping', { paymentAttemptId });
-      return;
-    }
-
     const ctx = await loadTenantContext(db, result.tenantId);
     if (!ctx) {
-      // Money is captured and orders are placed; the tenant has since been disabled. Still tell the customer.
       await notifyText(
         result.tenantId,
         result.phone,
         `Your payment was received. Order${result.orders.length > 1 ? 's' : ''} ${result.orders.map((o) => `#${o.orderNumber}`).join(', ')} confirmed.`,
       );
-      return;
+    } else {
+      await notifyButtons(
+        result.tenantId,
+        result.phone,
+        buildPlacedReply(ctx, result.orders, result.total, 'card', result.scheduledFor),
+        ORDER_CONFIRMED_BUTTONS,
+      );
     }
-
-    await notifyButtons(
-      result.tenantId,
-      result.phone,
-      buildPlacedReply(ctx, result.orders, result.total, 'card', result.scheduledFor),
-      ORDER_CONFIRMED_BUTTONS,
-    );
-    logger.info('[orders] fulfillOrderAfterPayment: orders confirmed', {
+    logger.info('[orders] orders confirmed after card payment', {
       tenantId: result.tenantId,
       orderIds: result.orders.map((o) => o.id),
     });
-  } catch (unexpectedError) {
-    logger.error('[orders] fulfillOrderAfterPayment: unexpected error', {
+  } catch (error) {
+    logger.error('[orders] confirmation message failed (orders are already paid)', {
       paymentAttemptId,
-      error: unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError),
+      error: error instanceof Error ? error.message : String(error),
     });
   }
+  return 'confirmed';
 }
 
 // ============================================================================
