@@ -170,6 +170,8 @@ export interface PendingCategory {
   categoryIds: string[];
   /** First category key in the group (used as the list's category). */
   key: string;
+  /** Available products in the group, shown under its name in the menu list. */
+  count?: number;
 }
 
 export interface PendingSelectionItem {
@@ -213,6 +215,12 @@ export interface OrdersStateData {
   /** Numbered category list currently shown (ORDER_STATE_AWAITING_CATEGORY). */
   pendingCategories?: PendingCategory[];
   category?: ProductCategory;
+  /** What "Same as last time" would add, kept so the menu list can be re-shown. */
+  sameAgain?: string | null;
+  /** Title of the product list last shown, so "Continue Shopping" and "More" can re-show it. */
+  listTitle?: string;
+  /** Valid pick-up/delivery times offered by the "later" list, so a tap maps back to one. */
+  pendingTimes?: Array<{ iso: string; label: string }>;
   /**
    * The shopping cart for this session — every item the customer has
    * committed to buying so far, added to over as many "add another item"
@@ -272,6 +280,33 @@ export interface OrdersStateData {
    */
   scheduledFor?: string | null;
 }
+
+// ============================================================================
+// TAP / LIST ROW IDS (WhatsApp interactive ids)
+// ============================================================================
+export const LIST_TAP_PREFIX = 'or_';
+export const TAP_CATEGORY = 'or_cat:'; // + index into pendingCategories
+export const TAP_FULL_MENU = 'or_cat_all';
+export const TAP_PRODUCT = 'or_prod:'; // + product id (re-read fresh, so a stale list never adds the wrong item)
+export const TAP_MORE = 'or_more:'; // + page (which list depends on the state)
+export const TAP_MENU = 'or_menu';
+export const TAP_CART = 'or_cart';
+export const TAP_TRACK = 'or_track';
+export const TAP_SAME_AGAIN = 'or_again';
+export const TAP_REMOVE = 'or_rm:'; // + product id
+export const TAP_REMOVE_ALL = 'or_rm_all';
+export const TAP_REMOVE_BACK = 'or_rm_back';
+export const TAP_PAY = 'or_pay:'; // + wallet | card | cash
+export const TAP_LATER = 'or_later';
+export const TAP_TIME = 'or_time:'; // + index into pendingTimes
+export const TAP_TIME_TYPE = 'or_time_type';
+// NEW with collection / delivery / dine-in:
+export const TAP_FULFIL = 'or_ful:'; // + collection | delivery | dine_in
+export const TAP_AREA = 'or_area:'; // + index into pendingAreaIds
+
+// Quantity: "1" and "2" are read as the number they say; "3 or more" asks for a typed number.
+export const QUANTITY_MORE_BUTTON = '3 or more';
+export const QUANTITY_BUTTONS = ['1', '2', QUANTITY_MORE_BUTTON];
 
 // ============================================================================
 // BUTTON CONSTANTS

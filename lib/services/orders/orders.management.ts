@@ -161,3 +161,16 @@ export async function handleRepeatOrder(
     CART_VIEW_BUTTONS,
   );
 }
+
+/**
+ * One-line summary of the customer's last completed order ("2 x Burger, 1 x Chips"),
+ * shown on the "Same as last time" menu row. Returns null if there is nothing to repeat.
+ */
+export async function getSameAgainSummary(ctx: TenantContext, phone: string): Promise<string | null> {
+  const lastCompleted = await getLastCompletedOrderForPhone(ctx, phone);
+  if (!lastCompleted) return null;
+  const items = await getOrderItems(ctx, lastCompleted.id);
+  if (items.length === 0) return null;
+  const summary = items.map((i) => `${i.quantity} x ${i.product_name}`).join(', ');
+  return summary.length > 72 ? `${summary.slice(0, 69)}...` : summary;
+}
