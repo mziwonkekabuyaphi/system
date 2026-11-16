@@ -8,10 +8,12 @@
 import type { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type {
   AdminOrder,
+  AdminDeliveryArea,
   AdminOrderSettings,
   AdminOrderVendor,
   AdminProduct,
   AdminProductCategory,
+  OrderFulfilment,
   OrdersData,
   OrderStatus,
   PaymentMethod,
@@ -21,7 +23,7 @@ import type {
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
-const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "scheduled", "placed", "preparing", "ready"]
+const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "scheduled", "placed", "preparing", "ready", "out_for_delivery"]
 /** Finished orders stay on the board for this long. */
 const FINISHED_WINDOW_HOURS = 24
 const ORDER_LIMIT = 500
@@ -36,10 +38,18 @@ export const DEFAULT_ORDER_SETTINGS: AdminOrderSettings = {
   minAge: null,
   defaultVendorId: null,
   searchAliases: {},
+  collectionEnabled: true,
+  deliveryEnabled: false,
+  dineInEnabled: false,
+  collectionInstructions: null,
+  prepTimeMinutes: 15,
+  deliveryTimeMinutes: 45,
+  deliveryAreas: [],
 }
 
 const ORDER_SELECT = `id, order_number, status, payment_method, payment_status, total_amount,
-  scheduled_for, table_label, customer_name, customer_phone, created_at, vendor_id,
+  scheduled_for, table_label, fulfilment, delivery_area_name, delivery_address, delivery_fee,
+  customer_name, customer_phone, created_at, vendor_id,
   order_items ( product_name, quantity, unit_price, created_at )`
 
 const PRODUCT_SELECT =
@@ -82,7 +92,29 @@ export function mapVendor(v: any): AdminOrderVendor {
   return { id: v.id, name: v.name, collectionPoint: v.collection_point, isActive: !!v.is_active }
 }
 
-export function mapSettings(s: any): AdminOrderSettings {
+export function mapDeliveryArea(a: any): AdminDeliveryArea {
+  return {
+    id: a.id,
+    name: a.name,
+    fee: Number(a.fee),
+    minOrder: Number(a.min_order ?? 0),
+    freeOver: a.free_over == null ? null : Number(a.free_over),
+    isActive: !!a.is_active,
+  }
+}
+
+export async function loadDeliveryAreas(supabase: ServerClient, tenantId: string): Promise<AdminDeliveryArea[]> {
+  const { data, error } = await supabase
+    .from("order_delivery_areas")
+    .select("id, name, fee, min_order, free_over, is_active")
+    .eq("tenant_id", tenantId)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true })
+  if (error) throw new Error(`Failed to load delivery areas: ${error.message}`)
+  return (data ?? []).map(mapDeliveryArea)
+}
+
+export function mapSettings(s: any, deliveryAreas: AdminDeliveryArea[] = []): AdminOrderSettings {
   return {
     configured: true,
     orderNumberPrefix: s.order_number_prefix,
@@ -93,6 +125,13 @@ export function mapSettings(s: any): AdminOrderSettings {
     minAge: s.min_age == null ? null : Number(s.min_age),
     defaultVendorId: s.default_vendor_id ?? null,
     searchAliases: s.search_aliases && typeof s.search_aliases === "object" ? s.search_aliases : {},
+    collectionEnabled: s.collection_enabled ?? true,
+    deliveryEnabled: !!s.delivery_enabled,
+    dineInEnabled: !!s.dine_in_enabled,
+    collectionInstructions: s.collection_instructions ?? null,
+    prepTimeMinutes: Number(s.prep_time_minutes ?? 15),
+    deliveryTimeMinutes: Number(s.delivery_time_minutes ?? 45),
+    deliveryAreas,
   }
 }
 
@@ -110,6 +149,10 @@ function mapOrder(o: any, vendors: Map<string, AdminOrderVendor>): AdminOrder {
     total: Number(o.total_amount),
     scheduledFor: o.scheduled_for ?? null,
     tableLabel: o.table_label ?? null,
+    fulfilment: (o.fulfilment ?? "collection") as OrderFulfilment,
+    deliveryArea: o.delivery_area_name ?? null,
+    deliveryAddress: o.delivery_address ?? null,
+    deliveryFee: Number(o.delivery_fee ?? 0),
     customerName: o.customer_name ?? null,
     customerPhone: o.customer_phone,
     createdAt: o.created_at,
@@ -153,7 +196,7 @@ export async function loadOrders(
 }
 
 export async function loadOrdersData(supabase: ServerClient, tenantId: string): Promise<OrdersData> {
-  const [productsRes, categoriesRes, settingsRes, vendors] = await Promise.all([
+  const [productsRes, categoriesRes, settingsRes, vendors, deliveryAreas] = await Promise.all([
     supabase.from("products").select(PRODUCT_SELECT).eq("tenant_id", tenantId).order("name", { ascending: true }),
     supabase
       .from("product_categories")
@@ -163,6 +206,7 @@ export async function loadOrdersData(supabase: ServerClient, tenantId: string): 
       .order("label", { ascending: true }),
     supabase.from("order_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
     loadVendors(supabase, tenantId),
+    loadDeliveryAreas(supabase, tenantId),
   ])
   if (productsRes.error) throw new Error(`Failed to load products: ${productsRes.error.message}`)
   if (categoriesRes.error) throw new Error(`Failed to load categories: ${categoriesRes.error.message}`)
@@ -175,6 +219,6 @@ export async function loadOrdersData(supabase: ServerClient, tenantId: string): 
     products: (productsRes.data ?? []).map(mapProduct),
     categories: (categoriesRes.data ?? []).map(mapCategory),
     vendors,
-    settings: settingsRes.data ? mapSettings(settingsRes.data) : DEFAULT_ORDER_SETTINGS,
+    settings: settingsRes.data ? mapSettings(settingsRes.data, deliveryAreas) : { ...DEFAULT_ORDER_SETTINGS, deliveryAreas },
   }
 }

@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 
 import { advanceOrder, cancelOrder, listOrders } from "./actions"
 import { Pill, Stat, btn, cardCls, cx, inputCls, money, useNotice, useNow } from "./ui"
-import { NEXT_ORDER_LABEL, NEXT_ORDER_STATUS, type AdminOrder, type AdminOrderVendor, type OrderStatus } from "./types"
+import { nextOrderStep, type AdminOrder, type AdminOrderVendor, type OrderStatus } from "./types"
 
 const POLL_MS = 15_000
 
@@ -71,16 +71,19 @@ export function OrdersBoard({
   }, [orders, vendorFilter, query])
 
   const by = (...s: OrderStatus[]) => visible.filter((o) => s.includes(o.status))
-  const columns: Array<{ title: string; list: AdminOrder[] }> = [
+  const allColumns: Array<{ title: string; list: AdminOrder[] }> = [
     { title: "New", list: by("placed").reverse() }, // oldest first: that's the one to make next
     { title: "Preparing", list: by("preparing").reverse() },
-    { title: "Ready for collection", list: by("ready").reverse() },
+    { title: "Ready", list: by("ready").reverse() },
+    { title: "Out for delivery", list: by("out_for_delivery").reverse() },
   ]
+  // The delivery column only appears once the shop has delivery orders on the board.
+  const columns = allColumns.filter((c) => c.title !== "Out for delivery" || visible.some((o) => o.fulfilment === "delivery"))
   const scheduled = by("scheduled").sort((a, b) => String(a.scheduledFor).localeCompare(String(b.scheduledFor)))
   const awaitingPayment = by("pending")
   const finished = by("collected", "completed", "cancelled")
 
-  const openCount = orders.filter((o) => ["placed", "preparing", "ready"].includes(o.status)).length
+  const openCount = orders.filter((o) => ["placed", "preparing", "ready", "out_for_delivery"].includes(o.status)).length
 
   async function advance(o: AdminOrder) {
     setBusy(o.id)
@@ -144,7 +147,7 @@ export function OrdersBoard({
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className={cx("grid gap-4", columns.length > 3 ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
         {columns.map((c) => (
           <section key={c.title} className="space-y-3">
             <h2 className="flex items-center gap-2 text-sm font-medium text-admin-text">
@@ -237,7 +240,7 @@ function OrderCard({
   onAdvance: (o: AdminOrder) => void
   onCancel: (o: AdminOrder) => void
 }) {
-  const next = NEXT_ORDER_STATUS[o.status]
+  const next = nextOrderStep(o.status, o.fulfilment)
   const cancellable = !["collected", "completed", "cancelled"].includes(o.status)
   const closed = o.status === "cancelled"
   return (
@@ -265,13 +268,31 @@ function OrderCard({
         <p>
           {o.customerName || "Customer"} · <a className="underline-offset-2 hover:underline" href={`tel:+${o.customerPhone.replace(/\D/g, "")}`}>{o.customerPhone}</a>
         </p>
-        <p>Collect from {o.collectionPoint || o.vendorName}</p>
-        {o.tableLabel && <p>Table {o.tableLabel}</p>}
+        {o.fulfilment === "delivery" ? (
+          <>
+            <p className="font-medium text-admin-text">Deliver to {o.deliveryAddress}</p>
+            <p>
+              {o.deliveryArea}
+              {o.deliveryFee > 0 ? ` · delivery fee ${money(o.deliveryFee, currency)}` : ""}
+            </p>
+            <p>Pick up from {o.collectionPoint || o.vendorName}</p>
+          </>
+        ) : o.fulfilment === "dine_in" ? (
+          <>
+            <p className="font-medium text-admin-text">Dine-in{o.tableLabel ? ` · table ${o.tableLabel}` : ""}</p>
+            <p>Prepare at {o.collectionPoint || o.vendorName}</p>
+          </>
+        ) : (
+          <>
+            <p>Collect from {o.collectionPoint || o.vendorName}</p>
+            {o.tableLabel && <p>Table {o.tableLabel}</p>}
+          </>
+        )}
         {o.scheduledFor && o.status === "scheduled" && <p className="font-medium text-admin-text">For {timeLabel(o.scheduledFor, timezone, true)}</p>}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {closed ? <Pill tone="bad">Cancelled</Pill> : ["collected", "completed"].includes(o.status) ? <Pill tone="good">Collected</Pill> : null}
+        {closed ? <Pill tone="bad">Cancelled</Pill> : ["collected", "completed"].includes(o.status) ? <Pill tone="good">{o.fulfilment === "delivery" ? "Delivered" : o.fulfilment === "dine_in" ? "Served" : "Collected"}</Pill> : null}
         <PaymentBadge o={o} />
       </div>
 
@@ -279,7 +300,7 @@ function OrderCard({
         <div className="flex gap-2 pt-1">
           {next && (
             <button type="button" className={cx(btn.primary, "flex-1")} disabled={busy} onClick={() => onAdvance(o)}>
-              {busy ? "Saving…" : NEXT_ORDER_LABEL[o.status]}
+              {busy ? "Saving…" : next.label}
             </button>
           )}
           {cancellable && (

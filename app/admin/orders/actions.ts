@@ -15,9 +15,9 @@ import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { getEffectiveModules } from "@/lib/tenant/effective-modules"
 
-import { loadOrders, mapCategory, mapProduct, mapSettings, mapVendor } from "./orders-data"
+import { loadDeliveryAreas, loadOrders, mapCategory, mapProduct, mapSettings, mapVendor } from "./orders-data"
 import {
-  NEXT_ORDER_STATUS,
+  nextOrderStep,
   PRODUCT_STATUSES,
   type ActionResult,
   type AdminOrder,
@@ -26,6 +26,8 @@ import {
   type AdminProduct,
   type AdminProductCategory,
   type CategoryInput,
+  type DeliveryAreaInput,
+  type OrderFulfilment,
   type OrderSettingsInput,
   type OrderStatus,
   type PaymentMethod,
@@ -97,21 +99,22 @@ export async function advanceOrder(
   from: OrderStatus,
 ): Promise<ActionResult<{ status: OrderStatus; paymentStatus: PaymentStatus }>> {
   return run(OPERATE, async ({ supabase, tenantId }) => {
-    const to = NEXT_ORDER_STATUS[from]
-    if (!to) throw new UserError("That order can't be moved forward by hand.")
-
     const { data: current, error: readErr } = await supabase
       .from("orders")
-      .select("payment_method, payment_status")
+      .select("payment_method, payment_status, fulfilment")
       .eq("tenant_id", tenantId)
       .eq("id", orderId)
       .maybeSingle()
     if (readErr) fail(readErr, "Update order")
     if (!current) throw new UserError("Order not found.")
 
+    const step = nextOrderStep(from, (current.fulfilment ?? "collection") as OrderFulfilment)
+    if (!step) throw new UserError("That order can't be moved forward by hand.")
+    const to = step.to
+
     const patch: Record<string, unknown> = { status: to, updated_at: new Date().toISOString() }
-    // Cash is taken at the counter: collecting it is the moment it's paid.
-    if (to === "collected" && current.payment_method === "cash" && current.payment_status === "pending") {
+    // Cash is taken at the counter (or at the door): handing the order over is the moment it's paid.
+    if ((to === "collected" || to === "completed") && current.payment_method === "cash" && current.payment_status === "pending") {
       patch.payment_status = "paid"
     }
 
@@ -402,6 +405,24 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
       const val = String(v).trim().toLowerCase()
       if (key && val) aliases[key] = val
     }
+
+    // Fulfilment
+    if (!input.collectionEnabled && !input.deliveryEnabled && !input.dineInEnabled) {
+      throw new UserError("Turn on at least one way for customers to get their order: collection, delivery or dine-in.")
+    }
+    const instructions = text(input.collectionInstructions)
+    if (instructions && instructions.length > 200) throw new UserError("Collection instructions must be 200 characters or fewer.")
+    if (!Number.isInteger(input.prepTimeMinutes) || input.prepTimeMinutes < 0 || input.prepTimeMinutes > 240) {
+      throw new UserError("Preparation time must be 0 to 240 minutes.")
+    }
+    if (!Number.isInteger(input.deliveryTimeMinutes) || input.deliveryTimeMinutes < 5 || input.deliveryTimeMinutes > 240) {
+      throw new UserError("Delivery time must be 5 to 240 minutes.")
+    }
+    const areas = cleanAreas(input.deliveryAreas)
+    if (input.deliveryEnabled && !areas.some((a) => a.isActive)) {
+      throw new UserError("Add at least one active delivery area before turning delivery on.")
+    }
+
     const { data, error } = await supabase
       .from("order_settings")
       .upsert(
@@ -415,6 +436,12 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
           min_age: input.minAge,
           default_vendor_id: input.defaultVendorId || null,
           search_aliases: aliases,
+          collection_enabled: !!input.collectionEnabled,
+          delivery_enabled: !!input.deliveryEnabled,
+          dine_in_enabled: !!input.dineInEnabled,
+          collection_instructions: instructions,
+          prep_time_minutes: input.prepTimeMinutes,
+          delivery_time_minutes: input.deliveryTimeMinutes,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "tenant_id" },
@@ -422,6 +449,59 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
       .select("*")
       .single()
     if (error) fail(error, "Save settings")
-    return mapSettings(data)
+
+    await syncDeliveryAreas(supabase, tenantId, areas)
+    return mapSettings(data, await loadDeliveryAreas(supabase, tenantId))
   })
+}
+
+type CleanArea = Required<Omit<DeliveryAreaInput, "id">> & { id?: string; sortOrder: number }
+
+/** Validates the area list the owner submitted (names unique, money sane). */
+function cleanAreas(input: DeliveryAreaInput[]): CleanArea[] {
+  const seen = new Set<string>()
+  return (input ?? []).map((a, i) => {
+    const name = (a.name ?? "").trim()
+    if (!name) throw new UserError("Every delivery area needs a name.")
+    if (name.length > 60) throw new UserError(`"${name.slice(0, 20)}…" is too long: area names are 60 characters or fewer.`)
+    const key = name.toLowerCase()
+    if (seen.has(key)) throw new UserError(`"${name}" is listed twice. Area names must be different.`)
+    seen.add(key)
+    const money = (v: unknown, what: string) => {
+      const n = Number(v)
+      if (!Number.isFinite(n) || n < 0 || n > 100000) throw new UserError(`${name}: ${what} must be 0 or more.`)
+      return Math.round(n * 100) / 100
+    }
+    const freeOver = a.freeOver == null || (a.freeOver as unknown) === "" ? null : money(a.freeOver, "the free delivery amount")
+    if (freeOver !== null && freeOver <= 0) throw new UserError(`${name}: the free delivery amount must be more than 0, or left empty.`)
+    return { id: a.id, name, fee: money(a.fee, "the delivery fee"), minOrder: money(a.minOrder, "the minimum order"), freeOver, isActive: !!a.isActive, sortOrder: i }
+  })
+}
+
+/** Makes order_delivery_areas match the submitted list: update by id, insert new rows, delete removed ones.
+ *  Past orders keep their own copy of the area name and address, so deleting an area is safe. */
+async function syncDeliveryAreas(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+  areas: CleanArea[],
+) {
+  const { data: existing, error: readErr } = await supabase.from("order_delivery_areas").select("id").eq("tenant_id", tenantId)
+  if (readErr) fail(readErr, "Save delivery areas")
+  const existingIds = new Set((existing ?? []).map((r) => r.id as string))
+  const keepIds = new Set(areas.filter((a) => a.id && existingIds.has(a.id)).map((a) => a.id as string))
+
+  const removeIds = [...existingIds].filter((id) => !keepIds.has(id))
+  if (removeIds.length > 0) {
+    const { error } = await supabase.from("order_delivery_areas").delete().eq("tenant_id", tenantId).in("id", removeIds)
+    if (error) fail(error, "Save delivery areas")
+  }
+  for (const a of areas) {
+    const row = { name: a.name, fee: a.fee, min_order: a.minOrder, free_over: a.freeOver, is_active: a.isActive, sort_order: a.sortOrder }
+    const query =
+      a.id && existingIds.has(a.id)
+        ? supabase.from("order_delivery_areas").update(row).eq("tenant_id", tenantId).eq("id", a.id)
+        : supabase.from("order_delivery_areas").insert({ tenant_id: tenantId, ...row })
+    const { error } = await query
+    if (error) fail(error, "Save delivery areas")
+  }
 }
