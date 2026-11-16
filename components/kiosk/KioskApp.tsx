@@ -296,14 +296,14 @@ function PoweredByFooter() {
           position: fixed;
           left: 0;
           right: 0;
-          bottom: 10px;
+          bottom: calc(var(--u) * 8);
           display: flex;
           justify-content: center;
           pointer-events: none;
           z-index: 1;
         }
         .poweredBy span {
-          font-size: 13px;
+          font-size: calc(var(--u) * 11);
           font-weight: 600;
           color: var(--muted);
           opacity: 0.7;
@@ -1125,7 +1125,7 @@ function Screen({
     <div className="screen">
       <header className="bar">
         <div className="brand">
-          {chrome?.logoUrl && <BrandLogo url={chrome.logoUrl} size={36} ringWidth={2} dotSize={6} />}
+          {chrome?.logoUrl && <BrandLogo url={chrome.logoUrl} size="calc(var(--u) * 30)" ringWidth="calc(var(--u) * 1.7)" dotSize="calc(var(--u) * 5)" />}
           <span className="shopName">{chrome?.displayName}</span>
         </div>
         <div className="barRight">
@@ -1528,7 +1528,7 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
 
 function CalendarIcon() {
   return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg style={{ width: "calc(var(--u) * 27)", height: "calc(var(--u) * 27)" }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="1.8" />
       <path d="M3 9.5H21" stroke="currentColor" strokeWidth="1.8" />
       <path d="M8 3V6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -1542,7 +1542,7 @@ function CalendarIcon() {
 
 function QueueIcon() {
   return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg style={{ width: "calc(var(--u) * 27)", height: "calc(var(--u) * 27)" }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.8" />
       <circle cx="17" cy="9" r="2.4" stroke="currentColor" strokeWidth="1.8" />
       <path d="M2.5 20c0-3.6 2.9-6 5.5-6s5.5 2.4 5.5 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -1553,7 +1553,7 @@ function QueueIcon() {
 
 function ArrowIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg style={{ width: "calc(var(--u) * 15)", height: "calc(var(--u) * 15)" }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path d="M13 6L19 12L13 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
