@@ -154,7 +154,7 @@ function buildPlacedReply(
 
 function summaryLines(ctx: TenantContext, cart: CartItem[]): string[] {
   return cart.map(
-    (item) => `${messages.pluralize(item.quantity, 'x')} ${item.name} — ${ctx.formatMoney(item.unitPrice * item.quantity)}`,
+    (item) => `${messages.qtyLabel(item.quantity)} ${item.name} — ${ctx.formatMoney(item.unitPrice * item.quantity)}`,
   );
 }
 
@@ -170,10 +170,11 @@ export function beginOrderConfirmation(
   tableLabel: string | null,
   scheduledFor?: string | null,
   fulfilment?: FulfilmentSelection | null,
-): ActionResult {
+): ActionResult | Promise<ActionResult> {
   // Shops that offer delivery or dine-in need that answered before anything is charged.
+  // (null customer: this path has none to hand, so the pay list just omits the wallet balance line.)
   if (!fulfilment && needsFulfilmentStep(ctx)) {
-    return beginCheckoutStep(ctx, cart, { tableLabel });
+    return beginCheckoutStep(ctx, null, cart, { tableLabel });
   }
 
   // A payment method this tenant doesn't offer falls back to the normal picker.
