@@ -34,8 +34,12 @@ import { storeIncomingMessage, storeOutboundMessage } from "@/lib/whatsapp/store
 import { isAIEnabled, shouldEscalate, escalateToHumanAndNotify } from "@/lib/handover"
 import { getSignatureMode, verifyMetaSignature } from "@/lib/whatsapp/verify-signature"
 import { handleTemplateStatusUpdates } from "@/lib/whatsapp/template-status-webhook"
+import { prepareVoiceNote } from "@/lib/whatsapp/voice-note"
 
 export const runtime = "nodejs"
+// Ticket images are drawn and sent AFTER this webhook has answered Meta (see lib/whatsapp/ticket-image.ts);
+// this is how long that background work may run.
+export const maxDuration = 60
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -173,9 +177,41 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     try {
-      const result = await processIncomingMessage(tenantId, message)
+      // ─── VOICE NOTES ───
+      // Turn the voice note into text FIRST (download -> transcribe, behind the shop's voice switch), then
+      // everything below works exactly as if the customer had typed it. This runs after the duplicate check and
+      // the handover gate, so a retried or human-owned message never costs a transcription. It never throws and
+      // never escalates: any problem becomes a friendly "please type" reply (see lib/whatsapp/voice-note.ts).
+      let incoming: IncomingMessage = message
+      if (message.type === "audio") {
+        const voice = await prepareVoiceNote({
+          supabase,
+          tenantId,
+          message,
+          conversationId: stored.ok ? (stored.conversationId ?? null) : null,
+        })
 
-      const messageText = message.type === "text" ? message.text : message.contentSummary
+        const sendAndStore = async (text: string) => {
+          await sendWhatsAppTextMessage(tenantId, message.from, text)
+          if (stored.ok && stored.conversationId) {
+            const outboundStore = await storeOutboundMessage(tenantId, stored.conversationId, text, null)
+            if (!outboundStore.ok) {
+              console.error("[webhook] Failed to store voice reply", { tenantId, waMessageId: message.waMessageId, error: outboundStore.error })
+            }
+          }
+        }
+
+        if (voice.kind === "reply") {
+          await sendAndStore(voice.text)
+          continue
+        }
+        incoming = voice.message
+        await sendAndStore(voice.echo) // "🎙️ I heard: ..." so the customer can catch a mis-hearing
+      }
+
+      const result = await processIncomingMessage(tenantId, incoming)
+
+      const messageText = incoming.type === "text" ? incoming.text : incoming.contentSummary
       const escalate = shouldEscalate({
         userMessage: messageText ?? undefined,
         aiResponse: result.reply,
