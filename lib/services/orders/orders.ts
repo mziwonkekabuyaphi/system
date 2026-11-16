@@ -49,12 +49,16 @@ import type { IncomingMessage } from '@/lib/whatsapp/parse-webhook';
 import type { ActionResult } from '@/lib/types/action';
 import type { ConversationState } from '@/lib/services/state';
 
-import type { CartItem, CustomerPaymentChoice, OrdersStateData, OrdersStateName, ProductRow } from './orders.types';
+import type { CartItem, OrdersStateData, OrdersStateName, ProductRow } from './orders.types';
 import { ORDERING_NOT_AVAILABLE, paymentButtons, type TenantContext } from './orders.tenant';
 import {
   ORDER_STATE_AWAITING_CART_ACTION,
   ORDER_STATE_AWAITING_CATEGORY,
   ORDER_STATE_AWAITING_CONFIRMATION,
+  ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
+  ORDER_STATE_AWAITING_DELIVERY_AREA,
+  ORDER_STATE_AWAITING_FULFILMENT,
+  ORDER_STATE_AWAITING_TABLE,
   ORDER_STATE_AWAITING_PAYMENT_METHOD,
   ORDER_STATE_AWAITING_QUANTITY,
   ORDER_STATE_AWAITING_REMOVE_ITEM,
@@ -65,23 +69,6 @@ import {
   ORDER_STATE_AWAITING_WELCOME,
   CONFIRM_YES_NO_BUTTONS,
   SCHEDULE_CHOICE_BUTTONS,
-  LIST_TAP_PREFIX,
-  QUANTITY_MORE_BUTTON,
-  TAP_CART,
-  TAP_CATEGORY,
-  TAP_FULL_MENU,
-  TAP_LATER,
-  TAP_MENU,
-  TAP_MORE,
-  TAP_PAY,
-  TAP_PRODUCT,
-  TAP_REMOVE,
-  TAP_REMOVE_ALL,
-  TAP_REMOVE_BACK,
-  TAP_SAME_AGAIN,
-  TAP_TIME,
-  TAP_TIME_TYPE,
-  TAP_TRACK,
 } from './orders.types';
 
 import {
@@ -111,16 +98,13 @@ import {
 import {
   addToCartAndReview,
   beginCartPaymentStep,
-  beginCategoryReply,
-  beginCheckoutStep,
   beginProductSelectionReply,
   beginQuantityStep,
-  beginRemoveItemStep,
-  beginScheduleTimeList,
   beginScheduleTimeStep,
+  beginCategoryReply,
+  beginRemoveItemStep,
+  beginWelcomeReply,
   buildFullMenuView,
-  categoryListReply,
-  productListReply,
   viewCartReply,
 } from './orders.flow-selection';
 
@@ -131,7 +115,6 @@ import {
 } from './orders.flow-checkout';
 
 import {
-  getSameAgainSummary,
   handleActiveOrders,
   handleCancelOrder,
   handleOrderHistory,
@@ -139,12 +122,20 @@ import {
   handleTrackOrder,
 } from './orders.management';
 
+import {
+  beginCheckoutStep,
+  handleDeliveryAddress,
+  handleDeliveryAreaChoice,
+  handleFulfilmentChoice,
+  handleTableEntry,
+} from './orders.fulfilment';
+
 import { trySmartOrderEntry } from './orders.smart-entry';
 
 // Re-export the two functions payment-router.ts calls as webhook callbacks,
 // plus the state-payload type other services (wallet.ts's resume handoff)
 // need to reference — same public shape the monolithic orders.ts exposed.
-export { confirmOrderPaymentByAttempt, fulfillOrderPurchaseAfterTopup } from './orders.flow-checkout';
+export { fulfillOrderAfterPayment, fulfillOrderPurchaseAfterTopup } from './orders.flow-checkout';
 export type { OrdersStateData } from './orders.types';
 export { invalidateTenantCache, loadTenantContext, resolveTenantIdByPhoneNumberId } from './orders.tenant';
 export type { TenantContext } from './orders.tenant';
@@ -154,17 +145,13 @@ export type { TenantContext } from './orders.tenant';
 // handleState's "browse something else mid-selection" escape hatch below)
 // ============================================================================
 
-/**
- * The menu as one tap list: categories, plus "Same as last time" for a returning customer starting a fresh cart,
- * "Full menu", and "View cart" / "Track my order". Opening here (instead of a welcome screen first) saves a tap.
- */
-async function showCategories(ctx: TenantContext, phone: string, cart: CartItem[]): Promise<ActionResult> {
+/** Category list first — the customer opens one category (or asks for "all") instead of facing every product. */
+async function showCategories(ctx: TenantContext, cart: CartItem[]): Promise<ActionResult> {
   const products = await getFullMenu(ctx);
   if (products.length === 0) {
     return actionResult(messages.EMPTY_MENU);
   }
-  const sameAgain = cart.length === 0 ? await getSameAgainSummary(ctx, phone) : null;
-  return beginCategoryReply(ctx, products, cart, { sameAgain });
+  return beginCategoryReply(ctx, products, cart);
 }
 
 /** Every product on one numbered list (reply "all" on the category screen). */
@@ -200,7 +187,7 @@ async function handleFreshOrderRequest(
 
   // --- fresh conversation entry points -------------------------------------------------------
   if (parsed.intent === 'show_menu') {
-    return showCategories(ctx, phone, existingCart);
+    return showCategories(ctx, existingCart);
   }
 
   if (parsed.intent === 'show_category' && parsed.category) {
@@ -311,109 +298,6 @@ const GLOBAL_ORDER_INTENTS: ReadonlySet<ParsedOrderMessage['intent']> = new Set(
   'repeat_order',
 ]);
 
-/** The number in a tapped row id ("or_cat:2" -> 2), or null. */
-function tapIndex(tapId: string, prefix: string): number | null {
-  if (!tapId.startsWith(prefix)) return null;
-  const n = Number(tapId.slice(prefix.length));
-  return Number.isInteger(n) && n >= 0 ? n : null;
-}
-
-/**
- * A tap on one of this service's list rows (ids start with "or_"). Read BEFORE the typed-text parser, so a row's
- * text (a product called "Track Star Lager") can never be mistaken for a command. Returns null for an id it
- * doesn't know or that doesn't fit the current step (a tap on an old list): the caller then carries on as before.
- */
-async function handleListTap(
-  ctx: TenantContext,
-  phone: string,
-  customer: OrderingCustomer,
-  stateName: OrdersStateName,
-  stateData: OrdersStateData,
-  tapId: string,
-): Promise<ActionResult | null> {
-  const cart = getCart(stateData);
-
-  // ---- one-tap actions
-  if (tapId === TAP_MENU) return showCategories(ctx, phone, cart);
-  if (tapId === TAP_FULL_MENU) return showFullMenu(ctx, cart);
-  if (tapId === TAP_CART) return viewCartReply(cart, stateData);
-  if (tapId === TAP_TRACK) return handleTrackOrder(ctx, phone);
-  if (tapId === TAP_SAME_AGAIN) return handleRepeatOrder(ctx, phone, cart);
-  if (tapId === TAP_REMOVE_ALL) return viewCartReply([], stateData, '🗑️ Your cart has been emptied.');
-  if (tapId === TAP_REMOVE_BACK) return viewCartReply(cart, stateData);
-  if (tapId === TAP_TIME_TYPE) return beginScheduleTimeStep(cart);
-  if (tapId === TAP_LATER) return cart.length > 0 ? beginScheduleTimeList(ctx, cart) : actionResult(messages.EMPTY_CART);
-
-  // ---- "More ▸": which list depends on the step the customer is on
-  const page = tapIndex(tapId, TAP_MORE);
-  if (page !== null) {
-    switch (stateName) {
-      case ORDER_STATE_AWAITING_CATEGORY:
-        return categoryListReply(ctx.config.brandName, stateData.pendingCategories ?? [], cart, stateData.sameAgain ?? null, page);
-      case ORDER_STATE_AWAITING_SELECTION:
-        return productListReply(stateData.listTitle ?? 'Menu', stateData.category, stateData.pendingSelection ?? [], cart, page);
-      case ORDER_STATE_AWAITING_REMOVE_ITEM:
-        return beginRemoveItemStep(cart, stateData, page);
-      default:
-        return null;
-    }
-  }
-
-  // ---- a category
-  const categoryIndex = tapIndex(tapId, TAP_CATEGORY);
-  if (categoryIndex !== null) {
-    const category = stateData.pendingCategories?.[categoryIndex];
-    if (!category) return null;
-    const products = await getProductsByCategoryIds(ctx, category.categoryIds);
-    return beginProductSelectionReply(category.label, category.key, products, cart);
-  }
-
-  // ---- a product: re-read fresh (current price and stock), so an old list can never add a stale or wrong item
-  if (tapId.startsWith(TAP_PRODUCT)) {
-    const product = await getProductById(ctx, tapId.slice(TAP_PRODUCT.length));
-    const availability = validateProductAvailability(product, 1);
-    if (!product || !availability.valid) {
-      return actionResult(availability.errorReply ?? messages.PRODUCT_NOT_FOUND, { state: stateName, data: stateData });
-    }
-    return beginQuantityStep(
-      product.id,
-      product.name,
-      Number(product.price),
-      product.category,
-      stateData.tableLabel ?? null,
-      cart,
-      stateData.pendingSelection,
-      stateData.listTitle,
-    );
-  }
-
-  // ---- remove one line (by product id, so a stale remove list can't remove the wrong line)
-  if (tapId.startsWith(TAP_REMOVE)) {
-    const productId = tapId.slice(TAP_REMOVE.length);
-    const removed = cart.find((item) => item.productId === productId);
-    if (!removed) return beginRemoveItemStep(cart, stateData);
-    return viewCartReply(cart.filter((item) => item.productId !== productId), stateData, `🗑️ Removed ${removed.name}.`);
-  }
-
-  // ---- a pick-up time
-  const timeIndex = tapIndex(tapId, TAP_TIME);
-  if (timeIndex !== null) {
-    const slot = stateData.pendingTimes?.[timeIndex];
-    const stillValid = slot && Date.parse(slot.iso) - Date.now() >= ctx.config.scheduleMinLeadMinutes * 60_000;
-    if (!slot || !stillValid) return beginScheduleTimeList(ctx, cart); // the list went stale: show fresh times
-    return beginCheckoutStep(ctx, customer, cart, slot.iso);
-  }
-
-  // ---- a payment method (only on the checkout step, and only one this shop offers)
-  if (tapId.startsWith(TAP_PAY)) {
-    const choice = tapId.slice(TAP_PAY.length) as CustomerPaymentChoice;
-    if (stateName !== ORDER_STATE_AWAITING_PAYMENT_METHOD || !ctx.config.paymentMethods.includes(choice)) return null;
-    return finalizeOrderFromState(ctx, phone, customer, { ...stateData, paymentChoice: choice });
-  }
-
-  return null;
-}
-
 async function continueOrdersFlow(
   ctx: TenantContext,
   phone: string,
@@ -422,13 +306,7 @@ async function continueOrdersFlow(
   stateData: OrdersStateData,
   parsed: ParsedOrderMessage,
   rawMessage: string,
-  tapId: string | null = null,
 ): Promise<ActionResult> {
-  if (tapId?.startsWith(LIST_TAP_PREFIX)) {
-    const tapped = await handleListTap(ctx, phone, customer, stateName, stateData, tapId);
-    if (tapped) return tapped;
-  }
-
   if (GLOBAL_ORDER_INTENTS.has(parsed.intent)) {
     return handleFreshOrderRequest(ctx, phone, parsed, getCart(stateData));
   }
@@ -437,7 +315,7 @@ async function continueOrdersFlow(
     case ORDER_STATE_AWAITING_WELCOME: {
       const typed = rawMessage.trim().toLowerCase();
       if (/\b(order now|order|start|menu|browse|shop)\b/.test(typed) && !/\b(track|cancel|history)\b/.test(typed)) {
-        return showCategories(ctx, phone, getCart(stateData));
+        return showCategories(ctx, getCart(stateData));
       }
       if (/\bcart\b/.test(typed)) {
         return viewCartReply(getCart(stateData), stateData);
@@ -472,7 +350,7 @@ async function continueOrdersFlow(
         return showFullMenu(ctx, cart);
       }
       if (cart.length > 0 && /\b(checkout|pay now)\b/.test(typed)) {
-        return beginCheckoutStep(ctx, customer, cart);
+        return beginCheckoutStep(ctx, cart, stateData);
       }
       if (/\bcart\b/.test(typed)) {
         return viewCartReply(cart, stateData);
@@ -535,11 +413,6 @@ async function continueOrdersFlow(
     }
 
     case ORDER_STATE_AWAITING_QUANTITY: {
-      // The "3 or more" button: ask for the number (checked first, or extractQuantity would read the 3 as the answer).
-      if (rawMessage.toLowerCase().includes(QUANTITY_MORE_BUTTON)) {
-        return actionResult(messages.QUANTITY_MORE_PROMPT, { state: ORDER_STATE_AWAITING_QUANTITY, data: stateData });
-      }
-
       const quantity = parsed.intent === 'quantity' ? parsed.quantity! : extractQuantity(rawMessage);
       if (quantity === null) {
         return actionResult(messages.QUANTITY_REQUEST, { state: ORDER_STATE_AWAITING_QUANTITY, data: stateData });
@@ -583,7 +456,7 @@ async function continueOrdersFlow(
         if (cart.length === 0) {
           return actionResult(messages.EMPTY_CART);
         }
-        return beginCheckoutStep(ctx, customer, cart);
+        return beginCheckoutStep(ctx, cart, stateData);
       }
 
       if (/\bremove\b/i.test(normalized) && !/\d/.test(normalized)) {
@@ -595,11 +468,7 @@ async function continueOrdersFlow(
       }
 
       if (/\b(continue shopping|add (more|another)|keep shopping)\b/i.test(normalized)) {
-        // Back to the list they were just shopping from (the menu has "◂ Other categories"); the menu if there isn't one.
-        if (stateData.pendingSelection?.length && stateData.listTitle) {
-          return productListReply(stateData.listTitle, stateData.category, stateData.pendingSelection, cart, 0);
-        }
-        return showCategories(ctx, phone, cart);
+        return showCategories(ctx, cart);
       }
 
       // A bare number against the list last shown to this customer — add
@@ -628,21 +497,35 @@ async function continueOrdersFlow(
       return handleFreshOrderRequest(ctx, phone, parsed, cart);
     }
 
+    case ORDER_STATE_AWAITING_FULFILMENT:
+      return handleFulfilmentChoice(ctx, rawMessage, stateData);
+
+    case ORDER_STATE_AWAITING_DELIVERY_AREA:
+      return handleDeliveryAreaChoice(ctx, rawMessage, stateData);
+
+    case ORDER_STATE_AWAITING_DELIVERY_ADDRESS:
+      return handleDeliveryAddress(ctx, rawMessage, stateData);
+
+    case ORDER_STATE_AWAITING_TABLE:
+      return handleTableEntry(ctx, rawMessage, stateData);
+
     case ORDER_STATE_AWAITING_SCHEDULE_CHOICE: {
       const cart = getCart(stateData);
       const normalized = rawMessage.trim().toLowerCase();
+      const fulfilment = stateData.fulfilment ?? null;
 
-      if (/\b(collect now|now|asap)\b/i.test(normalized)) {
-        return beginCartPaymentStep(ctx, cart, null);
+      if (/\b(collect now|deliver now|now|asap)\b/i.test(normalized)) {
+        return beginCartPaymentStep(ctx, cart, null, fulfilment);
       }
       if (/\b(schedule|later|book)\b/i.test(normalized)) {
-        return beginScheduleTimeStep(cart);
+        return beginScheduleTimeStep(cart, fulfilment);
       }
 
+      const delivery = fulfilment?.method === 'delivery';
       return actionResult(
-        messages.SCHEDULE_CHOICE_PROMPT,
+        delivery ? messages.SCHEDULE_CHOICE_PROMPT_DELIVERY : messages.SCHEDULE_CHOICE_PROMPT,
         { state: ORDER_STATE_AWAITING_SCHEDULE_CHOICE, data: stateData },
-        SCHEDULE_CHOICE_BUTTONS,
+        delivery ? ['Deliver Now', 'Schedule Later'] : SCHEDULE_CHOICE_BUTTONS,
       );
     }
 
@@ -657,7 +540,7 @@ async function continueOrdersFlow(
         );
       }
 
-      return beginCheckoutStep(ctx, customer, cart, parsedTime.iso);
+      return beginCartPaymentStep(ctx, cart, parsedTime.iso, stateData.fulfilment ?? null);
     }
 
     case ORDER_STATE_AWAITING_PAYMENT_METHOD: {
@@ -750,10 +633,9 @@ async function handleOrder(
       parsedIntent: parsed.intent,
       viaInteractive: Boolean(message.interactiveId),
     });
-    // A plain "menu" / "order" / menu-row tap with nothing in progress opens the menu list directly
-    // (the branded greeting is its text), instead of a welcome screen with one more tap first.
+    // A plain "menu" / "order" / menu-row tap with nothing in progress opens the branded welcome screen.
     if (parsed.intent === 'show_menu' && !parsed.tableLabel) {
-      return showCategories(ctx, phone, []);
+      return beginWelcomeReply(ctx);
     }
     return await handleFreshOrderRequest(ctx, phone, parsed);
   } catch (unexpectedError) {
@@ -777,6 +659,10 @@ const ORDER_STATE_NAMES: ReadonlySet<string> = new Set([
   ORDER_STATE_AWAITING_CART_ACTION,
   ORDER_STATE_AWAITING_SCHEDULE_CHOICE,
   ORDER_STATE_AWAITING_SCHEDULE_TIME,
+  ORDER_STATE_AWAITING_FULFILMENT,
+  ORDER_STATE_AWAITING_DELIVERY_AREA,
+  ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
+  ORDER_STATE_AWAITING_TABLE,
 ]);
 
 /**
@@ -823,16 +709,7 @@ async function handleState(
 
     logger.info('[orders] continuing state', { tenantId: ctx.tenantId, state: state.state, parsedIntent: parsed.intent });
 
-    return await continueOrdersFlow(
-      ctx,
-      phone,
-      customer,
-      state.state as OrdersStateName,
-      stateData,
-      parsed,
-      rawMessage,
-      message.interactiveId ?? null,
-    );
+    return await continueOrdersFlow(ctx, phone, customer, state.state as OrdersStateName, stateData, parsed, rawMessage);
   } catch (unexpectedError) {
     logger.error('[orders] unexpected error in handleState', {
       tenantId: ctx.tenantId,

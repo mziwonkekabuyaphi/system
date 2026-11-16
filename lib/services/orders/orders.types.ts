@@ -8,10 +8,26 @@ export type OrderStatus =
   | 'placed'
   | 'preparing'
   | 'ready'
+  | 'out_for_delivery'
   | 'collected'
   | 'completed'
   | 'cancelled'
   | 'scheduled';
+
+/** orders.fulfilment: how the order reaches the customer. */
+export type OrderFulfilment = 'collection' | 'delivery' | 'dine_in';
+
+/** What the customer chose at checkout. Carried in conversation state until place_order. */
+export interface FulfilmentSelection {
+  method: OrderFulfilment;
+  /** Delivery only: order_delivery_areas.id and its name (the name is for display). */
+  areaId?: string | null;
+  areaName?: string | null;
+  /** Delivery only: free-text address the customer typed. */
+  address?: string | null;
+  /** Dine-in only: table number or name. */
+  table?: string | null;
+}
 
 export type OrderPaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'refund_pending';
 
@@ -63,6 +79,10 @@ export interface OrderRow {
   collection_point: string;
   scheduled_for: string | null;
   table_label: string | null;
+  fulfilment: OrderFulfilment;
+  delivery_area: string | null;
+  delivery_address: string | null;
+  delivery_fee: number;
 }
 
 export interface OrderItemRow {
@@ -120,7 +140,17 @@ export const ORDER_STATE_AWAITING_CATEGORY = 'order_awaiting_category';
 // "Remove Items" was tapped in the cart: waiting for the number of the line to remove.
 export const ORDER_STATE_AWAITING_REMOVE_ITEM = 'order_awaiting_remove_item';
 
+// Fulfilment steps (shown right after "checkout", before scheduling): collection / delivery / dine-in.
+export const ORDER_STATE_AWAITING_FULFILMENT = 'order_awaiting_fulfilment';
+export const ORDER_STATE_AWAITING_DELIVERY_AREA = 'order_awaiting_delivery_area';
+export const ORDER_STATE_AWAITING_DELIVERY_ADDRESS = 'order_awaiting_delivery_address';
+export const ORDER_STATE_AWAITING_TABLE = 'order_awaiting_table';
+
 export type OrdersStateName =
+  | typeof ORDER_STATE_AWAITING_FULFILMENT
+  | typeof ORDER_STATE_AWAITING_DELIVERY_AREA
+  | typeof ORDER_STATE_AWAITING_DELIVERY_ADDRESS
+  | typeof ORDER_STATE_AWAITING_TABLE
   | typeof ORDER_STATE_AWAITING_WELCOME
   | typeof ORDER_STATE_AWAITING_CATEGORY
   | typeof ORDER_STATE_AWAITING_REMOVE_ITEM
@@ -140,8 +170,6 @@ export interface PendingCategory {
   categoryIds: string[];
   /** First category key in the group (used as the list's category). */
   key: string;
-  /** Available products in the group, shown under its name in the menu list. Absent in older saved states. */
-  count?: number;
 }
 
 export interface PendingSelectionItem {
@@ -184,12 +212,6 @@ export interface OrdersStateData {
   pendingSelection?: PendingSelectionItem[];
   /** Numbered category list currently shown (ORDER_STATE_AWAITING_CATEGORY). */
   pendingCategories?: PendingCategory[];
-  /** What "Same as last time" would add (e.g. "2× Castle Lager, 1× Chips"), kept so the menu list can be re-shown. */
-  sameAgain?: string | null;
-  /** Title of the product list last shown, so "Continue Shopping" and the "More ▸" row can re-show it. */
-  listTitle?: string;
-  /** The valid pick-up times offered by the "Collect later" list (ISO + label), so a tap maps back to one. */
-  pendingTimes?: Array<{ iso: string; label: string }>;
   category?: ProductCategory;
   /**
    * The shopping cart for this session — every item the customer has
@@ -206,6 +228,10 @@ export interface OrdersStateData {
   quantity?: number;
   paymentChoice?: CustomerPaymentChoice;
   tableLabel?: string | null;
+  /** How the customer wants to receive the order (see FulfilmentSelection). Set during checkout. */
+  fulfilment?: FulfilmentSelection | null;
+  /** Delivery areas shown as a numbered list (ORDER_STATE_AWAITING_DELIVERY_AREA): ids in display order. */
+  pendingAreaIds?: string[];
   /**
    * Stable per-attempt reference used to make the wallet debit idempotent
    * (see debitWalletForOrder). Generated once, the first time we attempt a
@@ -270,34 +296,8 @@ export const CART_VIEW_BUTTONS = ['Continue Shopping', 'Remove Items', 'Checkout
 // Shown with an empty cart.
 export const EMPTY_CART_BUTTONS = ['Continue Shopping'];
 
-// Welcome screen (older chats only: a fresh entry now opens the menu list directly).
+// Welcome screen.
 export const WELCOME_BUTTONS = ['Order Now', 'Track My Order'];
-
-// ----------------------------------------------------------------------------
-// Tap-only lists: row ids (WhatsApp returns them as message.interactiveId).
-// The shared "or_" prefix is what action-router.ts uses to keep these taps out of its
-// reset-word check (a product called "Stop & Go" must not reset the chat).
-// ----------------------------------------------------------------------------
-export const LIST_TAP_PREFIX = 'or_';
-export const TAP_CATEGORY = 'or_cat:'; // + index into pendingCategories
-export const TAP_FULL_MENU = 'or_cat_all';
-export const TAP_PRODUCT = 'or_prod:'; // + product id (re-read fresh, so a stale list never adds the wrong item)
-export const TAP_MORE = 'or_more:'; // + page (which list depends on the state)
-export const TAP_MENU = 'or_menu';
-export const TAP_CART = 'or_cart';
-export const TAP_TRACK = 'or_track';
-export const TAP_SAME_AGAIN = 'or_again';
-export const TAP_REMOVE = 'or_rm:'; // + product id
-export const TAP_REMOVE_ALL = 'or_rm_all';
-export const TAP_REMOVE_BACK = 'or_rm_back';
-export const TAP_PAY = 'or_pay:'; // + wallet | card | cash
-export const TAP_LATER = 'or_later';
-export const TAP_TIME = 'or_time:'; // + index into pendingTimes
-export const TAP_TIME_TYPE = 'or_time_type';
-
-// Quantity: "1" and "2" are read as the number they say; "3 or more" asks for a typed number.
-export const QUANTITY_MORE_BUTTON = '3 or more';
-export const QUANTITY_BUTTONS = ['1', '2', QUANTITY_MORE_BUTTON];
 
 // Shown right after "checkout" — mirrors order-now.js's collect modal choice.
 export const SCHEDULE_CHOICE_BUTTONS = ['Collect Now', 'Schedule Later'];

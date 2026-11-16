@@ -29,6 +29,13 @@ function buildTrackingReply(order: OrderRow, items: OrderItemRow[]): string {
     // The collection point now comes from the order's own vendor (order_vendors),
     // not from guessing off the first item's product type.
     order.collection_point,
+    {
+      fulfilment: order.fulfilment,
+      deliveryAddress: order.delivery_address,
+      deliveryArea: order.delivery_area,
+      deliveryFee: order.delivery_fee,
+      tableLabel: order.table_label,
+    },
   );
 }
 
@@ -153,22 +160,4 @@ export async function handleRepeatOrder(
     { state: ORDER_STATE_AWAITING_CART_ACTION, data: nextData },
     CART_VIEW_BUTTONS,
   );
-}
-
-/**
- * One line for the menu list's "Same as last time" row, e.g. "2× Castle Lager, 1× Chips", or null when the customer
- * has no completed order yet. Display only: handleRepeatOrder re-reads every line (current price, availability).
- * Never throws: any failure just means the row isn't shown.
- */
-export async function getSameAgainSummary(ctx: TenantContext, phone: string): Promise<string | null> {
-  try {
-    const last = await getLastCompletedOrderForPhone(ctx, phone);
-    if (!last) return null;
-    const items = await getOrderItems(ctx, last.id);
-    const parts = items.filter((item) => item.product_name).map((item) => `${item.quantity}× ${item.product_name}`);
-    return parts.length > 0 ? parts.join(', ') : null;
-  } catch (error) {
-    console.error('[orders] same-again summary failed', { tenantId: ctx.tenantId, error });
-    return null;
-  }
 }

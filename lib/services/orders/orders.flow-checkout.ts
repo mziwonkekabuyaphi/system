@@ -8,19 +8,19 @@
 //
 //   wallet : balance pre-check -> place_order (debit inside) | top-up/card screen
 //   cash   : place_order (pay at counter; payment_status stays 'pending')
-//   card   : place_order (orders 'pending') -> payment link from the shop's own card
-//            provider (lib/payments/order-checkout.ts, same pipeline as tickets and
-//            shisha) -> signed webhook -> settle.ts -> confirmOrderPaymentByAttempt
+//   card   : place_order (orders 'pending') -> tenant gateway checkout ->
+//            webhook -> fulfillOrderAfterPayment(attemptId) -> confirm_card_payment
 // ============================================================================
 
 import { randomUUID } from 'crypto';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 import { logger } from '@/lib/whatsapp/utils/logger';
 import * as messages from '@/lib/services/messages/orders';
 import type { ActionResult } from '@/lib/types/action';
 import { PASSPORT_STATE_TOPUP_AMOUNT as WALLET_STATE_TOPUP_AMOUNT } from '@/lib/services/passport';
-import type { CartItem, CustomerPaymentChoice, OrdersStateData } from './orders.types';
+import type { CartItem, CustomerPaymentChoice, FulfilmentSelection, OrdersStateData } from './orders.types';
+import { beginCheckoutStep, needsFulfilmentStep } from './orders.fulfilment';
+import { deliveryFeeForSelection, fulfilmentSummary } from './orders.flow-selection';
 import {
   CONFIRM_YES_NO_BUTTONS,
   ORDER_CONFIRMED_BUTTONS,
@@ -29,6 +29,7 @@ import {
   ORDER_STATE_AWAITING_TOPUP_OR_CARD,
 } from './orders.types';
 import {
+  enabledFulfilments,
   loadTenantContext,
   paymentButtons,
   paymentChoiceLabel,
@@ -48,8 +49,7 @@ import {
   type PlaceOrderFailure,
   type PlacedOrder,
 } from './orders.db';
-import { notifyButtons, notifyText } from './orders.integrations';
-import { getOrderCardOption, startOrderCardCheckout } from '@/lib/payments/order-checkout';
+import { getAppBaseUrl, getCardPaymentGateway, notifyButtons, notifyText } from './orders.integrations';
 
 // ============================================================================
 // SHARED REPLY BUILDERS
@@ -73,6 +73,16 @@ function placeFailureReply(failure: PlaceOrderFailure): string {
       return messages.walletFailureMessage('insufficient_funds');
     case 'empty_cart':
       return messages.EMPTY_CART;
+    case 'below_minimum_order':
+      return messages.belowMinimumOrder(failure.minOrder, failure.subtotal, 'your area');
+    case 'invalid_fulfilment':
+    case 'fulfilment_not_allowed':
+    case 'delivery_area_unavailable':
+      return messages.FULFILMENT_NOT_AVAILABLE;
+    case 'delivery_address_required':
+      return messages.DELIVERY_ADDRESS_INVALID;
+    case 'table_required':
+      return messages.TABLE_REQUEST;
     default:
       return messages.ORDER_CREATION_FAILED;
   }
@@ -86,6 +96,38 @@ function buildPlacedReply(
   scheduledFor: string | null,
 ): string {
   const scheduledLabel = scheduledFor ? ctx.formatTime(new Date(scheduledFor)) : null;
+  const first = orders[0];
+
+  // Delivery and dine-in are read from the orders themselves (so the card webhook, which has no
+  // conversation state, produces the same message).
+  if (first.fulfilment === 'delivery') {
+    return messages.deliveryOrderCreatedMessage({
+      orders: orders.map((o) => ({ orderNumber: o.orderNumber, items: o.items, subtotal: o.total })),
+      address: first.deliveryAddress ?? '',
+      areaName: first.deliveryArea ?? '',
+      deliveryFee: orders.reduce((sum, o) => sum + o.deliveryFee, 0),
+      total,
+      paymentChoice: choice,
+      etaMinutes: ctx.config.deliveryTimeMinutes,
+      scheduledLabel,
+    });
+  }
+  if (first.fulfilment === 'dine_in') {
+    return messages.dineInOrderCreatedMessage({
+      orders: orders.map((o) => ({ orderNumber: o.orderNumber, items: o.items })),
+      table: first.tableLabel ?? '',
+      total,
+      paymentChoice: choice,
+      prepMinutes: ctx.config.prepTimeMinutes,
+    });
+  }
+
+  const extraLines = [
+    !scheduledLabel && ctx.config.prepTimeMinutes > 0 ? `⏱️ Ready in about ${ctx.config.prepTimeMinutes} minutes.` : undefined,
+    ctx.config.collectionInstructions ? `ℹ️ ${ctx.config.collectionInstructions}` : undefined,
+  ].filter((line): line is string => line !== undefined);
+  const offersDelivery = enabledFulfilments(ctx.config, ctx.catalog).includes('delivery');
+
   if (orders.length > 1) {
     return messages.multiOrderCreatedMessage(
       orders.map((o) => ({
@@ -97,10 +139,14 @@ function buildPlacedReply(
       total,
       choice,
       scheduledLabel,
+      { extraLines },
     );
   }
   const order = orders[0];
-  return messages.cartOrderCreatedMessage(order.orderNumber, order.items, total, choice, [order.collectionPoint], scheduledLabel);
+  return messages.cartOrderCreatedMessage(order.orderNumber, order.items, total, choice, [order.collectionPoint], scheduledLabel, {
+    offersDelivery,
+    extraLines,
+  });
 }
 
 function summaryLines(ctx: TenantContext, cart: CartItem[]): string[] {
@@ -120,32 +166,40 @@ export function beginOrderConfirmation(
   paymentChoice: CustomerPaymentChoice,
   tableLabel: string | null,
   scheduledFor?: string | null,
+  fulfilment?: FulfilmentSelection | null,
 ): ActionResult {
+  // Shops that offer delivery or dine-in need that answered before anything is charged.
+  if (!fulfilment && needsFulfilmentStep(ctx)) {
+    return beginCheckoutStep(ctx, cart, { tableLabel });
+  }
+
   // A payment method this tenant doesn't offer falls back to the normal picker.
   if (!ctx.config.paymentMethods.includes(paymentChoice)) {
     return actionResult(
       messages.PAYMENT_METHOD_REQUEST,
-      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor: scheduledFor ?? null } },
+      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor: scheduledFor ?? null, fulfilment: fulfilment ?? null } },
       paymentButtons(ctx.config),
     );
   }
 
   const scheduledLabel = scheduledFor ? ctx.formatTime(new Date(scheduledFor)) : null;
+  const summary = fulfilmentSummary(ctx, cart, fulfilment);
   const reply = [
     ...summaryLines(ctx, cart),
-    `Total: ${ctx.formatMoney(cartTotal(cart))}`,
+    ...(summary?.lines ?? []),
+    `Total: ${ctx.formatMoney(summary ? summary.total : cartTotal(cart))}`,
     `Payment: ${paymentChoiceLabel(ctx.config, paymentChoice)}`,
-    tableLabel ? `Table: ${tableLabel}` : undefined,
+    tableLabel && !fulfilment ? `Table: ${tableLabel}` : undefined,
     scheduledLabel ? messages.scheduleConfirmedLabel(scheduledLabel) : undefined,
     '',
-    'Tap *Yes* to confirm, or *No* to cancel.',
+    'Reply *yes* to confirm or *no* to cancel.',
   ]
     .filter(Boolean)
     .join('\n');
 
   return actionResult(
     reply,
-    { state: ORDER_STATE_AWAITING_CONFIRMATION, data: { cart, paymentChoice, tableLabel, scheduledFor: scheduledFor ?? null } },
+    { state: ORDER_STATE_AWAITING_CONFIRMATION, data: { cart, paymentChoice, tableLabel, scheduledFor: scheduledFor ?? null, fulfilment: fulfilment ?? null } },
     CONFIRM_YES_NO_BUTTONS,
   );
 }
@@ -170,7 +224,7 @@ export async function finalizeOrderFromState(
   }
 
   if (state.paymentChoice === 'card') {
-    return beginCardOrderCheckout(ctx, phone, customer, cart, state.tableLabel ?? null, state.scheduledFor ?? null);
+    return beginCardOrderCheckout(ctx, phone, customer, cart, state.tableLabel ?? null, state.scheduledFor ?? null, state.fulfilment ?? null);
   }
   if (state.paymentChoice === 'wallet') {
     return beginWalletOrderPayment(ctx, customer, cart, state);
@@ -194,6 +248,7 @@ async function placeAndReply(
     paymentAttemptId,
     tableLabel: state.tableLabel ?? null,
     scheduledFor: state.scheduledFor ?? null,
+    fulfilment: state.fulfilment ?? null,
   });
 
   if (result.outcome === 'ok' || result.outcome === 'already_placed') {
@@ -217,11 +272,12 @@ export async function beginCardOrderCheckout(
   cart: CartItem[],
   tableLabel: string | null,
   scheduledFor: string | null = null,
+  fulfilment: FulfilmentSelection | null = null,
 ): Promise<ActionResult> {
   const backToPaymentMethod = (reply: string): ActionResult =>
     actionResult(
       reply,
-      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor } },
+      { state: ORDER_STATE_AWAITING_PAYMENT_METHOD, data: { cart, tableLabel, scheduledFor, fulfilment } },
       paymentButtons(ctx.config),
     );
 
@@ -232,27 +288,14 @@ export async function beginCardOrderCheckout(
     return actionResult(messages.EMPTY_CART);
   }
 
-  // Can this shop take a card at all? Asked BEFORE any order exists, so a shop without a card provider never
-  // ends up with pending orders that nobody can pay.
-  const cardOption = await getOrderCardOption(ctx.db, ctx.tenantId);
-  if (!cardOption.ok) {
-    return backToPaymentMethod(`${cardOption.message}\n\n${messages.PAYMENT_METHOD_REQUEST}`);
-  }
-
   // Never trust stock/availability/prices captured earlier in the conversation.
   const resolved = await resolveCartItems(ctx, cart);
   if ('errorReply' in resolved) {
     return actionResult(resolved.errorReply);
   }
-  const total = resolvedCartTotal(resolved);
-  if (total < cardOption.option.minAmount) {
-    return backToPaymentMethod(
-      `Card payments start at ${ctx.formatMoney(cardOption.option.minAmount)}. Please choose another payment option.`,
-    );
-  }
   const paymentAttemptId = randomUUID();
 
-  // Orders are created up front as 'pending' (card stock is applied on confirmation, by the webhook).
+  // Orders are created up front as 'pending' (card stock is applied on confirmation).
   const placed = await placeOrder(ctx, {
     customer,
     items: cart,
@@ -260,99 +303,112 @@ export async function beginCardOrderCheckout(
     paymentAttemptId,
     tableLabel,
     scheduledFor,
+    fulfilment,
   });
   if (placed.outcome !== 'ok' && placed.outcome !== 'already_placed') {
     return actionResult(placeFailureReply(placed));
   }
 
-  // The link comes from the shop's own card provider, through the same pipeline as tickets and shisha.
-  // The amount is what place_order actually created (placed.total), which is what the webhook checks.
-  const checkout = await startOrderCardCheckout({
-    supabase: ctx.db,
-    tenantId: ctx.tenantId,
-    option: cardOption.option,
-    paymentAttemptId,
-    customerId: customer.id,
-    amount: placed.total,
-    orderIds: placed.orders.map((o) => o.id),
-    orderNumbers: placed.orders.map((o) => o.orderNumber),
-    brandName: ctx.config.brandName,
-  });
+  try {
+    const baseUrl = getAppBaseUrl();
+    const checkout = await getCardPaymentGateway().createCheckout({
+      tenantId: ctx.tenantId,
+      customerId: customer.id,
+      phone,
+      // The database's total (items plus any delivery fee), never one recomputed here.
+      amount: placed.total,
+      currency: ctx.config.currency,
+      paymentAttemptId,
+      orderIds: placed.orders.map((o) => o.id),
+      description: `${ctx.config.brandName} order ${placed.orders.map((o) => o.orderNumber).join(', ')}`,
+      successUrl: `${baseUrl}/orders/purchase/success`,
+      cancelUrl: `${baseUrl}/orders/purchase/cancelled`,
+      failureUrl: `${baseUrl}/orders/purchase/failed`,
+    });
 
-  if (!checkout.ok) {
-    logger.error('[orders] beginCardOrderCheckout failed', { tenantId: ctx.tenantId, paymentAttemptId, message: checkout.message });
-    // No link exists for these pending orders: cancel them so they never linger.
+    logger.info('[orders] card checkout created', {
+      tenantId: ctx.tenantId,
+      paymentAttemptId,
+      paymentSessionId: checkout.paymentSessionId,
+    });
+
+    return actionResult(
+      messages.cartCheckoutLink(
+        resolved.map((item) => ({ productName: item.product.name, quantity: item.quantity, unitPrice: item.unitPrice })),
+        placed.total,
+        checkout.checkoutUrl,
+        placed.orders.reduce((sum, o) => sum + o.deliveryFee, 0),
+      ),
+    );
+  } catch (error) {
+    logger.error('[orders] beginCardOrderCheckout failed', {
+      tenantId: ctx.tenantId,
+      paymentAttemptId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // No checkout exists for these pending orders — cancel them so they never linger.
     await failCardPaymentByAttempt(ctx.db, paymentAttemptId);
-    return backToPaymentMethod(checkout.message || messages.CARD_CHECKOUT_FAILED);
+    return backToPaymentMethod(messages.CARD_CHECKOUT_FAILED);
   }
-
-  logger.info('[orders] card checkout created', { tenantId: ctx.tenantId, paymentAttemptId, mode: checkout.mode });
-
-  return actionResult(
-    messages.cartCheckoutLink(
-      resolved.map((item) => ({ productName: item.product.name, quantity: item.quantity, unitPrice: item.unitPrice })),
-      placed.total,
-      checkout.url,
-    ),
-  );
 }
 
 /**
- * CARD WEBHOOK CALLBACK, called by lib/payments/settle.ts once the shop's card provider has confirmed payment
- * (signature, amount and currency already verified there). Keyed on the orders' payment attempt id; the tenant is
- * derived from the order rows. Moves the pending orders to placed/scheduled and tells the customer.
+ * CARD WEBHOOK CALLBACK — called by the (tenant-verified) payment webhook once
+ * the gateway confirms payment. Keyed on paymentAttemptId; the tenant is derived
+ * from the order rows, never from the webhook caller.
  *
- * Returns what happened so the caller can refund when the orders are no longer payable (cancelled meanwhile).
- * CONTRACT: idempotent (confirm_card_payment only flips orders that are still pending/pending, so a
- * redelivered webhook is a no-op). Throws nothing for "not payable"; throws only on OUR failures so the provider retries.
+ * CONTRACT: never throws; idempotent (confirm_card_payment only flips orders
+ * that are still pending/pending, so a redelivered webhook is a no-op).
  */
-export type OrderPaymentOutcome = 'confirmed' | 'already_confirmed' | 'not_payable';
-
-export async function confirmOrderPaymentByAttempt(db: SupabaseClient, paymentAttemptId: string): Promise<OrderPaymentOutcome> {
-  const result = await confirmCardPaymentByAttempt(db, paymentAttemptId);
-  if (result.outcome === 'error') throw new Error('confirm_card_payment failed');
-  if (result.outcome === 'not_found') {
-    logger.error('[orders] card payment confirmed but no orders found for attempt', { paymentAttemptId });
-    return 'not_payable';
+export async function fulfillOrderAfterPayment(paymentAttemptId: string): Promise<void> {
+  const db = await getSupabaseServerClient();
+  if (!db) {
+    logger.error('[orders] fulfillOrderAfterPayment: no Supabase client', { paymentAttemptId });
+    return;
   }
 
-  // 'already_confirmed' also covers orders that were CANCELLED (expiry, customer cancel) before the money arrived:
-  // only a 'paid' order counts as fulfilled, anything else must be refunded by the caller.
-  if (result.outcome === 'already_confirmed') {
-    const { data, error } = await db.from('orders').select('payment_status').eq('payment_attempt_id', paymentAttemptId);
-    if (error) throw new Error(`order lookup failed: ${error.message}`);
-    const allPaid = (data ?? []).length > 0 && (data ?? []).every((o: { payment_status: string }) => o.payment_status === 'paid');
-    return allPaid ? 'already_confirmed' : 'not_payable';
-  }
-
-  // Best effort from here: the orders are already paid whether or not the message goes.
   try {
+    const result = await confirmCardPaymentByAttempt(db, paymentAttemptId);
+
+    if (result.outcome === 'error') return; // already logged
+    if (result.outcome === 'not_found') {
+      logger.error('[orders] CRITICAL: card payment confirmed but no orders found for attempt — needs manual follow-up', {
+        paymentAttemptId,
+      });
+      return;
+    }
+    if (result.outcome === 'already_confirmed') {
+      logger.info('[orders] fulfillOrderAfterPayment: already fulfilled — skipping', { paymentAttemptId });
+      return;
+    }
+
     const ctx = await loadTenantContext(db, result.tenantId);
     if (!ctx) {
+      // Money is captured and orders are placed; the tenant has since been disabled. Still tell the customer.
       await notifyText(
         result.tenantId,
         result.phone,
         `Your payment was received. Order${result.orders.length > 1 ? 's' : ''} ${result.orders.map((o) => `#${o.orderNumber}`).join(', ')} confirmed.`,
       );
-    } else {
-      await notifyButtons(
-        result.tenantId,
-        result.phone,
-        buildPlacedReply(ctx, result.orders, result.total, 'card', result.scheduledFor),
-        ORDER_CONFIRMED_BUTTONS,
-      );
+      return;
     }
-    logger.info('[orders] orders confirmed after card payment', {
+
+    await notifyButtons(
+      result.tenantId,
+      result.phone,
+      buildPlacedReply(ctx, result.orders, result.total, 'card', result.scheduledFor),
+      ORDER_CONFIRMED_BUTTONS,
+    );
+    logger.info('[orders] fulfillOrderAfterPayment: orders confirmed', {
       tenantId: result.tenantId,
       orderIds: result.orders.map((o) => o.id),
     });
-  } catch (error) {
-    logger.error('[orders] confirmation message failed (orders are already paid)', {
+  } catch (unexpectedError) {
+    logger.error('[orders] fulfillOrderAfterPayment: unexpected error', {
       paymentAttemptId,
-      error: error instanceof Error ? error.message : String(error),
+      error: unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError),
     });
   }
-  return 'confirmed';
 }
 
 // ============================================================================
@@ -380,7 +436,9 @@ async function beginWalletOrderPayment(
     return actionResult(resolved.errorReply);
   }
 
-  const total = resolvedCartTotal(resolved);
+  const itemsTotal = resolvedCartTotal(resolved);
+  // Items plus any delivery fee: what place_order will debit.
+  const total = Number((itemsTotal + deliveryFeeForSelection(ctx, state.fulfilment, itemsTotal)).toFixed(2));
   const paymentAttemptId = state.paymentAttemptId ?? randomUUID();
   const stateWithAttempt: OrdersStateData = { ...state, cart, paymentAttemptId };
 
@@ -404,6 +462,7 @@ async function beginWalletOrderPayment(
     paymentAttemptId,
     tableLabel: state.tableLabel ?? null,
     scheduledFor: state.scheduledFor ?? null,
+    fulfilment: state.fulfilment ?? null,
   });
 
   switch (result.outcome) {
@@ -468,6 +527,7 @@ export async function fulfillOrderPurchaseAfterTopup(resume: OrdersStateData, to
       paymentAttemptId,
       tableLabel: resume.tableLabel ?? null,
       scheduledFor: resume.scheduledFor ?? null,
+      fulfilment: resume.fulfilment ?? null,
     });
 
     switch (result.outcome) {
@@ -540,7 +600,15 @@ export async function handleTopupOrCardSelection(
   }
 
   if (normalized.includes('card') && ctx.config.paymentMethods.includes('card')) {
-    return beginCardOrderCheckout(ctx, phone, customer, getCart(stateData), stateData.tableLabel ?? null, stateData.scheduledFor ?? null);
+    return beginCardOrderCheckout(
+      ctx,
+      phone,
+      customer,
+      getCart(stateData),
+      stateData.tableLabel ?? null,
+      stateData.scheduledFor ?? null,
+      stateData.fulfilment ?? null,
+    );
   }
 
   return actionResult(

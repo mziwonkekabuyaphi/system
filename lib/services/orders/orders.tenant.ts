@@ -8,7 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/whatsapp/utils/logger';
-import type { CustomerPaymentChoice } from './orders.types';
+import type { CustomerPaymentChoice, OrderFulfilment } from './orders.types';
 
 export interface CategoryRow {
   id: string;
@@ -25,6 +25,16 @@ export interface VendorRow {
   id: string;
   name: string;
   collectionPoint: string;
+}
+
+export interface DeliveryAreaRow {
+  id: string;
+  name: string;
+  fee: number;
+  /** 0 = no minimum. */
+  minOrder: number;
+  /** null = the fee is always charged. */
+  freeOver: number | null;
 }
 
 export interface DayHours {
@@ -46,6 +56,12 @@ export interface TenantConfig {
   scheduleMinLeadMinutes: number;
   minAge: number | null;
   searchAliases: Record<string, string>;
+  collectionEnabled: boolean;
+  deliveryEnabled: boolean;
+  dineInEnabled: boolean;
+  collectionInstructions: string | null;
+  prepTimeMinutes: number;
+  deliveryTimeMinutes: number;
   /** Keyed by day_of_week (0–6, same convention as business_hours). */
   businessHours: Record<number, DayHours>;
 }
@@ -53,6 +69,8 @@ export interface TenantConfig {
 export interface TenantCatalog {
   categories: CategoryRow[];
   vendors: VendorRow[];
+  /** Active delivery areas in display order (empty unless delivery is on). */
+  deliveryAreas: DeliveryAreaRow[];
 }
 
 export interface TenantContext {
@@ -78,6 +96,28 @@ export function formatMoneyFor(currency: string, amount: number): string {
   const symbol = CURRENCY_SYMBOLS[currency];
   const value = Number(amount).toFixed(2);
   return symbol ? `${symbol}${value}` : `${currency} ${value}`;
+}
+
+// ----------------------------------------------------------------------------
+// Fulfilment (collection / delivery / dine-in)
+// ----------------------------------------------------------------------------
+
+/** Ways the shop currently offers, in the order shown to customers. Delivery only counts with an area to deliver to. */
+export function enabledFulfilments(config: TenantConfig, catalog: TenantCatalog): OrderFulfilment[] {
+  const out: OrderFulfilment[] = [];
+  if (config.collectionEnabled) out.push('collection');
+  if (config.deliveryEnabled && catalog.deliveryAreas.length > 0) out.push('delivery');
+  if (config.dineInEnabled) out.push('dine_in');
+  return out;
+}
+
+export function fulfilmentLabel(method: OrderFulfilment): string {
+  return method === 'delivery' ? 'Delivery' : method === 'dine_in' ? 'Dine-in' : 'Collection';
+}
+
+/** Same rule place_order applies (it stays the authority): free once the items total reaches free_over. */
+export function deliveryFeeFor(area: DeliveryAreaRow, itemsTotal: number): number {
+  return area.freeOver !== null && itemsTotal >= area.freeOver ? 0 : area.fee;
 }
 
 export function paymentChoiceLabel(config: Pick<TenantConfig, 'walletLabel'>, choice: CustomerPaymentChoice): string {
@@ -213,7 +253,7 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
     return buildContext(db, hit.config, hit.catalog);
   }
 
-  const [tenantRes, settingsRes, brandingRes, orderSettingsRes, hoursRes, catsRes, vendorsRes, moduleRes] =
+  const [tenantRes, settingsRes, brandingRes, orderSettingsRes, hoursRes, catsRes, vendorsRes, areasRes, moduleRes] =
     await Promise.all([
       db.from('tenants').select('id, name, status').eq('id', tenantId).maybeSingle<{ id: string; name: string; status: string }>(),
       db.from('tenant_settings').select('timezone, currency, brand_name').eq('tenant_id', tenantId)
@@ -221,7 +261,7 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
       db.from('tenant_branding').select('display_name').eq('tenant_id', tenantId)
         .maybeSingle<{ display_name: string | null }>(),
       db.from('order_settings')
-        .select('wallet_label, allowed_payment_methods, allow_scheduling, schedule_min_lead_minutes, min_age, search_aliases')
+        .select('wallet_label, allowed_payment_methods, allow_scheduling, schedule_min_lead_minutes, min_age, search_aliases, collection_enabled, delivery_enabled, dine_in_enabled, collection_instructions, prep_time_minutes, delivery_time_minutes')
         .eq('tenant_id', tenantId)
         .maybeSingle<{
           wallet_label: string;
@@ -230,6 +270,12 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
           schedule_min_lead_minutes: number;
           min_age: number | null;
           search_aliases: Record<string, string> | null;
+          collection_enabled: boolean;
+          delivery_enabled: boolean;
+          dine_in_enabled: boolean;
+          collection_instructions: string | null;
+          prep_time_minutes: number;
+          delivery_time_minutes: number;
         }>(),
       db.from('business_hours').select('day_of_week, is_closed, open_time, close_time').eq('tenant_id', tenantId)
         .returns<Array<{ day_of_week: number; is_closed: boolean; open_time: string | null; close_time: string | null }>>(),
@@ -242,6 +288,10 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
         }>>(),
       db.from('order_vendors').select('id, name, collection_point').eq('tenant_id', tenantId).eq('is_active', true)
         .returns<Array<{ id: string; name: string; collection_point: string }>>(),
+      db.from('order_delivery_areas').select('id, name, fee, min_order, free_over')
+        .eq('tenant_id', tenantId).eq('is_active', true)
+        .order('sort_order', { ascending: true }).order('name', { ascending: true })
+        .returns<Array<{ id: string; name: string; fee: number; min_order: number; free_over: number | null }>>(),
       db.from('tenant_modules').select('enabled, modules!inner(key)')
         .eq('tenant_id', tenantId).eq('modules.key', 'orders').maybeSingle<{ enabled: boolean }>(),
     ]);
@@ -280,6 +330,12 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
     searchAliases: Object.fromEntries(
       Object.entries(orderSettings.search_aliases ?? {}).map(([k, v]) => [k.toLowerCase(), String(v).toLowerCase()]),
     ),
+    collectionEnabled: orderSettings.collection_enabled ?? true,
+    deliveryEnabled: !!orderSettings.delivery_enabled,
+    dineInEnabled: !!orderSettings.dine_in_enabled,
+    collectionInstructions: orderSettings.collection_instructions ?? null,
+    prepTimeMinutes: Number(orderSettings.prep_time_minutes ?? 15),
+    deliveryTimeMinutes: Number(orderSettings.delivery_time_minutes ?? 45),
     businessHours,
   };
 
@@ -295,6 +351,13 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
       sortOrder: c.sort_order,
     })),
     vendors: (vendorsRes.data ?? []).map((v) => ({ id: v.id, name: v.name, collectionPoint: v.collection_point })),
+    deliveryAreas: (areasRes.data ?? []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      fee: Number(a.fee),
+      minOrder: Number(a.min_order ?? 0),
+      freeOver: a.free_over == null ? null : Number(a.free_over),
+    })),
   };
 
   cache.set(tenantId, { at: Date.now(), config, catalog });
