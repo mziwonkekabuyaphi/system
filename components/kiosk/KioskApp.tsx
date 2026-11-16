@@ -1261,9 +1261,9 @@ function Screen({
           cursor: pointer;
         }
         .card {
-          /* Details side = 25% of the screen (never narrower than 300u), the pick/write side gets the other ~75%. */
-          flex: 0 0 25%;
-          width: 25%;
+          /* Details side = 40% of the screen (never narrower than 300u), the pick/write side gets the other ~60%. */
+          flex: 0 0 40%;
+          width: 40%;
           min-width: calc(var(--u) * 300);
           align-self: flex-start;
           box-sizing: border-box;
@@ -2039,7 +2039,7 @@ function DetailsScreen({
       <style jsx>{`
         .form {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(calc(var(--u) * 240), 1fr));
+          grid-template-columns: 1fr;
           gap: calc(var(--u) * 16);
         }
         label {
