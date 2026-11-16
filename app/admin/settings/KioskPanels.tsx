@@ -254,6 +254,7 @@ const DEFAULT_BOOKING_CARD_SUBTITLE = "Pick a date and time that works for you"
 const DEFAULT_QUEUE_CARD_TITLE = "Join the queue"
 const DEFAULT_QUEUE_CARD_SUBTITLE = "Walk in now and we'll call you"
 const DEFAULT_SERVICE_SCREEN_TITLE = "What are you here for?"
+const DEFAULT_SERVICE_HINT = "Pick one, or up to {max} to combine."
 const DEFAULT_DATE_SCREEN_TITLE = "Which day works for you?"
 const DEFAULT_TIME_SCREEN_TITLE = "Pick a time"
 const DEFAULT_DETAILS_SCREEN_TITLE = "Almost done — who are we booking for?"
@@ -274,6 +275,7 @@ type KioskDraft = {
   queueCardTitle: string
   queueCardSubtitle: string
   serviceScreenTitle: string
+  serviceHint: string
   dateScreenTitle: string
   timeScreenTitle: string
   detailsScreenTitle: string
@@ -308,6 +310,7 @@ function toKioskDraft(s: AdminKioskSettings): KioskDraft {
     queueCardTitle: s.queueCardTitle ?? "",
     queueCardSubtitle: s.queueCardSubtitle ?? "",
     serviceScreenTitle: s.serviceScreenTitle ?? "",
+    serviceHint: s.serviceHint ?? "",
     dateScreenTitle: s.dateScreenTitle ?? "",
     timeScreenTitle: s.timeScreenTitle ?? "",
     detailsScreenTitle: s.detailsScreenTitle ?? "",
@@ -334,6 +337,7 @@ function toKioskPayload(d: KioskDraft) {
     queueCardTitle: d.queueCardTitle.trim() || null,
     queueCardSubtitle: d.queueCardSubtitle.trim() || null,
     serviceScreenTitle: d.serviceScreenTitle.trim() || null,
+    serviceHint: d.serviceHint.trim() || null,
     dateScreenTitle: d.dateScreenTitle.trim() || null,
     timeScreenTitle: d.timeScreenTitle.trim() || null,
     detailsScreenTitle: d.detailsScreenTitle.trim() || null,
@@ -362,6 +366,7 @@ const KIOSK_WORDING_KEYS: Array<keyof KioskDraft> = [
   "queueCardTitle",
   "queueCardSubtitle",
   "serviceScreenTitle",
+  "serviceHint",
   "dateScreenTitle",
   "timeScreenTitle",
   "detailsScreenTitle",
@@ -563,6 +568,13 @@ function KioskBehaviorPanel({ form }: { form: ReturnType<typeof useKioskForm> })
 
         <SubSection title="Service screen" hint="Shown on every path when the customer picks a service.">
           {textField("serviceScreenTitle", "Screen heading", DEFAULT_SERVICE_SCREEN_TITLE, 80)}
+          {textField(
+            "serviceHint",
+            "Line under the heading",
+            DEFAULT_SERVICE_HINT,
+            100,
+            'Only shown when customers can pick more than one service (set in Booking rules / Queue rules). Write {max} where the number goes, e.g. "Choose up to {max} services". Leave empty for the default.',
+          )}
         </SubSection>
 
         {showsBooking && (
