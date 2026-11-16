@@ -49,12 +49,13 @@ interface CachedCredentials {
 const CREDENTIAL_CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutes
 const credentialCache = new Map<string, CachedCredentials>()
 
-interface TenantWhatsAppCredentials {
+export interface TenantWhatsAppCredentials {
   phoneNumberId: string
   accessToken: string
 }
 
-async function getTenantCredentials(tenantId: string): Promise<TenantWhatsAppCredentials> {
+/** Exported so lib/whatsapp/media.ts can download a customer's voice note with the SAME per-tenant credentials. */
+export async function getTenantCredentials(tenantId: string): Promise<TenantWhatsAppCredentials> {
   const cached = credentialCache.get(tenantId)
   if (cached && Date.now() < cached.expiresAt) {
     return { phoneNumberId: cached.phoneNumberId, accessToken: cached.accessToken }
