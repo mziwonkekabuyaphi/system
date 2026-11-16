@@ -775,6 +775,7 @@ export function KioskApp({
     <div className="kiosk" style={cssVars}>
       {step === "welcome" && (
         <WelcomeScreen
+          unit={unit}
           branding={branding}
           tagline={
             isWeb && branding.tagline.trim().toLowerCase().startsWith("tap anywhere")
@@ -1015,16 +1016,29 @@ function BrandLogo({ url, size, ringWidth, dotSize }: { url: string; size: LogoL
   )
 }
 
-function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; tagline: string; onTap: () => void }) {
+// Sizes are worked out here from the screen scale (`unit`, the same number that feeds --u) and
+// applied inline as plain px, so the logo and the text always move together and nothing depends on
+// a chain of CSS variables. The logo is also capped at 24% of the short side of the screen, so a
+// big logo can never take over the page, and the text is sized to lead (shop name > logo weight).
+function WelcomeScreen({ unit, branding, tagline, onTap }: { unit: number; branding: KioskBranding; tagline: string; onTap: () => void }) {
+  const px = (n: number) => Math.round(n * unit)
   return (
-    <button className="welcome" onClick={onTap} type="button" aria-label="Tap to begin">
+    <button
+      className="welcome"
+      onClick={onTap}
+      type="button"
+      aria-label="Tap to begin"
+      style={{ gap: px(22), padding: px(32) }}
+    >
       {branding.logoUrl && (
-        <span className="logoSlot">
-          <BrandLogo url={branding.logoUrl} size="calc(var(--u) * 140)" ringWidth="calc(var(--u) * 2.5)" dotSize="calc(var(--u) * 10)" />
+        <span className="logoSlot" style={{ marginBottom: px(22) }}>
+          <BrandLogo url={branding.logoUrl} size={`min(${px(110)}px, 24vmin)`} ringWidth={Math.max(2, px(2))} dotSize={px(8)} />
         </span>
       )}
-      <h1>{branding.displayName}</h1>
-      <p className="tap">{tagline}</p>
+      <h1 style={{ fontSize: px(60) }}>{branding.displayName}</h1>
+      <p className="tap" style={{ fontSize: px(28) }}>
+        {tagline}
+      </p>
 
       <style jsx>{`
         .welcome {
@@ -1033,19 +1047,15 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: calc(var(--u) * 23);
           background: var(--paper);
           border: none;
           cursor: pointer;
-          padding: calc(var(--u) * 33);
           text-align: center;
         }
         .logoSlot {
-          display: block;
-          margin-bottom: calc(var(--u) * 27); /* the ring and its dot sit outside the tile; this keeps them clear of the shop name */
+          display: block; /* the ring and its dot sit outside the tile; the margin keeps them clear of the shop name */
         }
         h1 {
-          font-size: calc(var(--u) * 53);
           font-weight: 800;
           margin: 0;
           color: var(--ink);
@@ -1054,7 +1064,6 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
           overflow-wrap: anywhere;
         }
         .tap {
-          font-size: calc(var(--u) * 23);
           font-weight: 700;
           color: var(--accent);
           margin: 0;
