@@ -88,7 +88,7 @@
  * 1, so /web/[slug] keeps its one-service flow until it passes them.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
 
 import type { KioskBranding } from "@/app/kiosk/[slug]/page"
@@ -650,10 +650,87 @@ export function KioskApp({
   // number counts digits only (10 needed), so spaces, dashes and a "+" don't count.
   const canSubmit = detailsComplete(fields, { name, surname, phone, email, custom: customAnswer })
 
+  // ---- layout chrome: step label, summary card and "Back" ----------------
+
+  const hasChoice = branding.registrationType !== "booking" && branding.registrationType !== "queue"
+
+  const leaveFlow = () => {
+    if (hasChoice) setStep("choice")
+    else resetAll()
+  }
+
+  const goBack = () => {
+    setError(null)
+    if (step === "service") {
+      leaveFlow()
+    } else if (step === "date") {
+      if (requireServiceBooking) setStep("service")
+      else leaveFlow()
+    } else if (step === "time") {
+      if (dateOptions.length !== 1) setStep("date")
+      else if (requireServiceBooking) setStep("service")
+      else leaveFlow()
+    } else if (step === "details") {
+      if (path === "booking") setStep("time")
+      else if (requireServiceSelection) setStep("service")
+      else leaveFlow()
+    }
+  }
+
+  const flowSteps: Step[] =
+    path === "queue"
+      ? [...(requireServiceSelection ? (["service"] as Step[]) : []), "details"]
+      : [
+          ...(requireServiceBooking ? (["service"] as Step[]) : []),
+          ...(dateOptions.length === 1 && step !== "date" ? [] : (["date"] as Step[])),
+          "time",
+          "details",
+        ]
+  const stepWords: Partial<Record<Step, string>> = {
+    service: "Pick a service",
+    date: "Pick a day",
+    time: "Pick a time",
+    details: "Your details",
+  }
+  const stepIndex = flowSteps.indexOf(step)
+  const stepLabel =
+    step === "choice"
+      ? "Welcome"
+      : step === "pay"
+        ? "Waiting for payment"
+        : step === "ticket"
+          ? ticket?.kind === "booking"
+            ? "You're booked"
+            : "You're in the queue"
+          : stepIndex >= 0
+            ? `Step ${stepIndex + 1} of ${flowSteps.length} · ${stepWords[step] ?? ""}`
+            : (stepWords[step] ?? "")
+
+  const summary: KioskSummary = {
+    path,
+    serviceName: selectedServices.length ? selectedServices.map((s) => s.name).join(" + ") : null,
+    minutes: selectedServices.reduce((sum, s) => sum + s.durationMinutes, 0),
+    price: selectedServices.reduce((sum, s) => sum + s.price, 0),
+    when: selectedDate ? (selectedSlot ? `${selectedDate.label}, ${selectedSlot.label}` : selectedDate.label) : null,
+  }
+
+  const chrome: KioskChrome = {
+    displayName: branding.displayName,
+    logoUrl: branding.logoUrl || null,
+    stepLabel,
+    summary,
+    onBack: step === "service" || step === "date" || step === "time" || step === "details" ? goBack : null,
+    onStartOver: resetAll,
+  }
+
   const cssVars = useMemo(() => {
     const accentTokens = tileContrastTokens(branding.primaryColor)
     const amberTokens = tileContrastTokens(branding.secondaryColor)
+    const queueTheme = path === "queue"
     return {
+      "--theme": queueTheme ? branding.secondaryColor : branding.primaryColor,
+      "--theme-deep": darkenHex(queueTheme ? branding.secondaryColor : branding.primaryColor, 0.22),
+      "--theme-on": queueTheme ? amberTokens.on : accentTokens.on,
       "--ink": "#171412",
       "--paper": "#FAF8F5",
       "--accent": branding.primaryColor,
@@ -669,25 +746,11 @@ export function KioskApp({
       "--line": "#E4DED4",
       "--muted": "#6B655C",
     } as React.CSSProperties
-  }, [branding.primaryColor, branding.secondaryColor])
+  }, [branding.primaryColor, branding.secondaryColor, path])
 
   return (
+    <KioskChromeContext.Provider value={chrome}>
     <div className="kiosk" style={cssVars}>
-      {step !== "welcome" && step !== "ticket" && (
-        <button className="startOver" onClick={resetAll} type="button">
-          Start over
-        </button>
-      )}
-
-      {branding.logoUrl && step !== "welcome" && (
-        // Small logo + ring centred at the top of every screen after Welcome.
-        // On the ticket screen it only shows on tall displays, where it can't
-        // collide with the centred ticket stub.
-        <div className={step === "ticket" ? "headerLogo ticketOnly" : "headerLogo"}>
-          <BrandLogo url={branding.logoUrl} size={52} ringWidth={2} dotSize={8} />
-        </div>
-      )}
-
       {step === "welcome" && (
         <WelcomeScreen
           branding={branding}
@@ -707,6 +770,8 @@ export function KioskApp({
           title={branding.serviceScreenTitle}
           services={services}
           maxSelectable={maxServices}
+          initial={selectedServices}
+          nextLabel={path === "queue" ? "Next: your details" : "Next: pick a day"}
           onConfirm={chooseServices}
           busy={busy}
           error={error}
@@ -714,7 +779,14 @@ export function KioskApp({
       )}
 
       {step === "date" && (
-        <DateScreen title={branding.dateScreenTitle} options={dateOptions} onSelect={chooseDate} busy={busy} error={error} />
+        <DateScreen
+          title={branding.dateScreenTitle}
+          options={dateOptions}
+          initial={selectedDate}
+          onSelect={chooseDate}
+          busy={busy}
+          error={error}
+        />
       )}
 
       {step === "time" && (
@@ -722,6 +794,7 @@ export function KioskApp({
           titlePrefix={branding.timeScreenTitle}
           slots={slots}
           dateLabel={selectedDate?.label ?? ""}
+          initial={selectedSlot}
           onSelect={chooseSlot}
           busy={busy}
           error={error}
@@ -746,6 +819,7 @@ export function KioskApp({
           whatsAppOptInLabel={optInLabel}
           whatsAppOptIn={whatsappOptIn}
           onWhatsAppOptInChange={setWhatsappOptIn}
+          ctaLabel={path === "queue" ? "Join the queue" : "Confirm booking"}
           onSubmit={submit}
           canSubmit={canSubmit}
           busy={busy}
@@ -803,49 +877,13 @@ export function KioskApp({
           color: var(--ink);
           display: flex;
           flex-direction: column;
-          overflow: hidden;
-        }
-
-        .startOver {
-          position: absolute;
-          top: 28px;
-          left: 28px;
-          z-index: 10;
-          background: transparent;
-          border: none;
-          color: var(--muted);
-          font-family: inherit;
-          font-size: 20px;
-          font-weight: 600;
-          padding: 16px 20px;
-          min-height: 56px;
-          cursor: pointer;
-        }
-
-        .startOver:active {
-          opacity: 0.6;
-        }
-
-        .headerLogo {
-          position: absolute;
-          top: 30px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 5;
-          pointer-events: none;
-        }
-
-        .headerLogo.ticketOnly {
-          display: none;
-        }
-
-        @media (min-height: 900px) {
-          .headerLogo.ticketOnly {
-            display: block;
-          }
+          overflow-x: hidden;
+          /* 1u = 1px on a 900 x 600 screen. Grows on a big PC monitor, never below 1px on a tablet. */
+          --u: clamp(1px, min(calc(100vw / 900), calc(100vh / 600)), 2.4px);
         }
       `}</style>
     </div>
+    </KioskChromeContext.Provider>
   )
 }
 
@@ -993,17 +1031,337 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
 }
 
 // ----------------------------------------------------------------------------
-// Choice — book vs queue
+// Shared layout — dark header bar, a main column and (on the booking steps) a
+// "Your booking" summary card with the one action for the step. Sizes use
+// var(--u), the kiosk's own scale unit (set on .kiosk): 1u = 1px at a 900 x 600
+// screen, growing on a big PC monitor and never dropping below 1px on a tablet.
 // ----------------------------------------------------------------------------
 
-// Booking gets --accent, queue gets --amber — the same two brand colors
-// every other tenant-facing surface (ticket header, welcome tagline)
-// already uses, so a shop's two colors are the only thing that changes
-// this screen's look between tenants; the wording is the other axis of
-// customization, resolved from branding below.
+interface KioskSummary {
+  path: Path | null
+  serviceName: string | null
+  minutes: number
+  price: number
+  when: string | null
+}
+
+interface KioskChrome {
+  displayName: string
+  logoUrl: string | null
+  stepLabel: string
+  summary: KioskSummary
+  /** null on screens that have nowhere to go back to. */
+  onBack: (() => void) | null
+  onStartOver: () => void
+}
+
+const KioskChromeContext = createContext<KioskChrome | null>(null)
+
+function Screen({
+  title,
+  children,
+  error,
+  busy,
+  action,
+  preview,
+  centered,
+  hideStartOver,
+}: {
+  title?: string
+  children: React.ReactNode
+  error?: string | null
+  busy?: boolean
+  /** The step's one forward action. Shown in the summary card on the right (below it on a narrow screen). */
+  action?: { label: string; onClick: () => void; disabled?: boolean }
+  /** What the customer has picked on THIS screen but not confirmed yet, so the card can show it already. */
+  preview?: Partial<KioskSummary>
+  /** One centred column, no summary card (choice, payment, ticket). */
+  centered?: boolean
+  hideStartOver?: boolean
+}) {
+  const chrome = useContext(KioskChromeContext)
+  const s: KioskSummary = { ...(chrome?.summary ?? { path: null, serviceName: null, minutes: 0, price: 0, when: null }), ...(preview ?? {}) }
+  const onBack = chrome?.onBack ?? null
+  const showCard = !centered && !!action
+
+  return (
+    <div className="screen">
+      <header className="bar">
+        <div className="brand">
+          {chrome?.logoUrl && <BrandLogo url={chrome.logoUrl} size={36} ringWidth={2} dotSize={6} />}
+          <span className="shopName">{chrome?.displayName}</span>
+        </div>
+        <div className="barRight">
+          {chrome?.stepLabel && <span className="stepLabel">{chrome.stepLabel}</span>}
+          {!hideStartOver && chrome && (
+            <button className="startOver" type="button" onClick={chrome.onStartOver}>
+              Start over
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className={centered ? "body centered" : "body"}>
+        <div className="main">
+          {title && <h2>{title}</h2>}
+          {busy && <p className="status">Loading…</p>}
+          {error && <p className="status errorText">{error}</p>}
+          {children}
+          {!showCard && !centered && onBack && (
+            <button className="backLink" type="button" onClick={onBack}>
+              Back
+            </button>
+          )}
+        </div>
+
+        {showCard && action && (
+          <aside className="card">
+            <p className="cardLabel">{s.path === "queue" ? "Your visit" : "Your booking"}</p>
+            <p className={s.serviceName ? "cardTitle" : "cardTitle cardEmpty"}>{s.serviceName ?? "Nothing chosen yet"}</p>
+            <p className="cardLines">
+              {s.when && <span>{s.when}</span>}
+              {s.minutes > 0 && <span>{s.minutes} min</span>}
+              {s.path === "queue" && <span>Walk-in queue</span>}
+            </p>
+            {s.price > 0 && (
+              <div className="total">
+                <span>Total</span>
+                <b>R{s.price.toFixed(0)}</b>
+              </div>
+            )}
+            <button className="cta" type="button" onClick={action.onClick} disabled={action.disabled}>
+              {action.label}
+            </button>
+            {onBack && (
+              <button className="back" type="button" onClick={onBack}>
+                Back
+              </button>
+            )}
+          </aside>
+        )}
+      </div>
+
+      <style jsx>{`
+        .screen {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+        }
+        .bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: calc(var(--u) * 16);
+          padding: calc(var(--u) * 20) calc(var(--u) * 32);
+          background: var(--ink);
+          color: var(--paper);
+        }
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: calc(var(--u) * 12);
+          min-width: 0;
+        }
+        .shopName {
+          font-size: calc(var(--u) * 20);
+          font-weight: 700;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .barRight {
+          display: flex;
+          align-items: center;
+          gap: calc(var(--u) * 16);
+          flex-shrink: 0;
+        }
+        .stepLabel {
+          font-size: calc(var(--u) * 14);
+          color: rgba(250, 248, 245, 0.72);
+        }
+        .startOver {
+          min-height: 44px;
+          padding: 0 calc(var(--u) * 14);
+          border-radius: calc(var(--u) * 10);
+          border: 1px solid rgba(250, 248, 245, 0.3);
+          background: transparent;
+          color: var(--paper);
+          font-family: inherit;
+          font-size: calc(var(--u) * 14);
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .startOver:active {
+          opacity: 0.6;
+        }
+        .body {
+          flex: 1;
+          display: flex;
+          gap: calc(var(--u) * 28);
+          padding: calc(var(--u) * 24) calc(var(--u) * 32);
+          min-height: 0;
+        }
+        .body.centered {
+          justify-content: center;
+          align-items: center;
+        }
+        .main {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: calc(var(--u) * 16);
+        }
+        .centered .main {
+          flex: 0 1 auto;
+          align-items: center;
+          text-align: center;
+          width: 100%;
+          max-width: calc(var(--u) * 760);
+        }
+        h2 {
+          margin: 0;
+          font-size: calc(var(--u) * 14);
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
+        .centered h2 {
+          font-size: calc(var(--u) * 30);
+          font-weight: 700;
+          letter-spacing: 0;
+          text-transform: none;
+          color: var(--ink);
+        }
+        .status {
+          margin: 0;
+          font-size: calc(var(--u) * 16);
+          font-weight: 600;
+          color: var(--muted);
+        }
+        .errorText {
+          color: #b3261e;
+        }
+        .backLink {
+          align-self: flex-start;
+          min-height: 48px;
+          padding: 0 calc(var(--u) * 6);
+          border: none;
+          background: transparent;
+          color: var(--muted);
+          font-family: inherit;
+          font-size: calc(var(--u) * 15);
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .card {
+          width: calc(var(--u) * 260);
+          flex-shrink: 0;
+          align-self: flex-start;
+          box-sizing: border-box;
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: calc(var(--u) * 16);
+          padding: calc(var(--u) * 22);
+          display: flex;
+          flex-direction: column;
+          gap: calc(var(--u) * 12);
+        }
+        .cardLabel {
+          margin: 0;
+          font-size: calc(var(--u) * 13);
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
+        .cardTitle {
+          margin: 0;
+          font-size: calc(var(--u) * 20);
+          font-weight: 700;
+          color: var(--ink);
+          overflow-wrap: anywhere;
+        }
+        .cardEmpty {
+          font-weight: 500;
+          color: var(--muted);
+        }
+        .cardLines {
+          margin: 0;
+          display: flex;
+          flex-direction: column;
+          gap: calc(var(--u) * 2);
+          font-size: calc(var(--u) * 15);
+          line-height: 1.5;
+          color: var(--ink);
+        }
+        .total {
+          display: flex;
+          justify-content: space-between;
+          padding-top: calc(var(--u) * 12);
+          border-top: 1px solid var(--line);
+          font-size: calc(var(--u) * 16);
+          color: var(--ink);
+        }
+        .cta {
+          min-height: 56px;
+          margin-top: calc(var(--u) * 8);
+          border: none;
+          border-radius: calc(var(--u) * 12);
+          background: var(--theme);
+          color: var(--theme-on);
+          font-family: inherit;
+          font-size: calc(var(--u) * 17);
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .cta:active:not(:disabled) {
+          background: var(--theme-deep);
+        }
+        .cta:disabled {
+          opacity: 0.4;
+          cursor: default;
+        }
+        .back {
+          min-height: 48px;
+          border: none;
+          background: transparent;
+          color: var(--muted);
+          font-family: inherit;
+          font-size: calc(var(--u) * 14);
+          font-weight: 600;
+          cursor: pointer;
+        }
+        @media (max-width: 820px) {
+          .bar {
+            padding: calc(var(--u) * 16) calc(var(--u) * 20);
+          }
+          .stepLabel {
+            display: none;
+          }
+          .body {
+            flex-direction: column;
+            padding: calc(var(--u) * 20);
+          }
+          .card {
+            width: 100%;
+            align-self: stretch;
+          }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+// ----------------------------------------------------------------------------
+// Choice — book a time vs join the queue (booking = primary colour, queue = secondary)
+// ----------------------------------------------------------------------------
+
 function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoose: (path: Path) => void }) {
   return (
-    <Screen title={branding.choiceTitle}>
+    <Screen title={branding.choiceTitle} centered>
       <div className={`tiles layout-${branding.choiceLayout ?? "cards"}`}>
         <button className="tile tileBooking" onClick={() => onChoose("booking")} type="button">
           <span className="tileIcon" aria-hidden="true">
@@ -1033,28 +1391,28 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
 
       <style jsx>{`
         .tiles {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 24px;
+          display: flex;
+          gap: calc(var(--u) * 20);
           width: 100%;
-          max-width: 900px;
         }
         .tile {
-          min-height: 220px;
-          border: none;
-          border-radius: 24px;
+          flex: 1;
+          min-height: calc(var(--u) * 200);
           display: flex;
           flex-direction: column;
-          justify-content: center;
+          justify-content: flex-end;
           align-items: flex-start;
-          gap: 20px;
-          padding: 36px;
+          gap: calc(var(--u) * 14);
+          padding: calc(var(--u) * 24);
+          border: none;
+          border-radius: calc(var(--u) * 20);
           text-align: left;
-          cursor: pointer;
           font-family: inherit;
-          color: #fff;
-          box-shadow: 0 14px 30px rgba(23, 20, 18, 0.18);
-          transition: transform 120ms ease, box-shadow 120ms ease;
+          cursor: pointer;
+          position: relative;
+        }
+        .tile:active {
+          transform: scale(0.985);
         }
         .tileBooking {
           background: linear-gradient(155deg, var(--accent), var(--accent-deep));
@@ -1064,40 +1422,31 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
           background: linear-gradient(155deg, var(--amber), var(--amber-deep));
           color: var(--amber-on);
         }
-        .tile:active {
-          transform: scale(0.97);
-          box-shadow: 0 6px 16px rgba(23, 20, 18, 0.16);
-        }
         .tileIcon {
-          display: flex;
+          display: inline-flex;
+          width: calc(var(--u) * 52);
+          height: calc(var(--u) * 52);
           align-items: center;
           justify-content: center;
-          width: 64px;
-          height: 64px;
-          border-radius: 16px;
+          border-radius: calc(var(--u) * 14);
         }
-        .tileBooking .tileIcon,
-        .tileBooking .tileArrow {
+        .tileBooking .tileIcon {
           background: var(--accent-overlay);
         }
-        .tileQueue .tileIcon,
-        .tileQueue .tileArrow {
+        .tileQueue .tileIcon {
           background: var(--amber-overlay);
         }
         .tileText {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: calc(var(--u) * 6);
         }
         .tileTitle {
-          font-size: 30px;
-          font-weight: 800;
-          color: inherit;
-          line-height: 1.15;
+          font-size: calc(var(--u) * 28);
+          font-weight: 700;
         }
         .tileSub {
-          font-size: 18px;
-          font-weight: 500;
+          font-size: calc(var(--u) * 15);
         }
         .tileBooking .tileSub {
           color: var(--accent-on-muted);
@@ -1106,70 +1455,29 @@ function ChoiceScreen({ branding, onChoose }: { branding: KioskBranding; onChoos
           color: var(--amber-on-muted);
         }
         .tileArrow {
-          margin-top: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          align-self: flex-end;
-          color: inherit;
+          position: absolute;
+          top: calc(var(--u) * 22);
+          right: calc(var(--u) * 22);
+          opacity: 0.8;
         }
         .layout-rows {
-          grid-template-columns: 1fr;
-          gap: 20px;
+          flex-direction: column;
         }
         .layout-rows .tile {
-          min-height: 150px;
+          min-height: calc(var(--u) * 110);
           flex-direction: row;
           align-items: center;
           justify-content: flex-start;
-          gap: 28px;
-          padding: 28px 36px;
-        }
-        .layout-rows .tileText {
-          flex: 1;
-        }
-        .layout-rows .tileArrow {
-          margin-top: 0;
-          align-self: center;
-        }
-        .layout-split {
-          gap: 0;
-          max-width: 1100px;
-          border-radius: 28px;
-          overflow: hidden;
-          box-shadow: 0 14px 30px rgba(23, 20, 18, 0.18);
         }
         .layout-split .tile {
-          min-height: 420px;
-          border-radius: 0;
-          box-shadow: none;
-          align-items: center;
-          text-align: center;
-          gap: 28px;
+          min-height: calc(var(--u) * 300);
         }
-        .layout-split .tileText {
-          align-items: center;
-        }
-        .layout-split .tileIcon {
-          width: 96px;
-          height: 96px;
-          border-radius: 28px;
-        }
-        .layout-split .tileTitle {
-          font-size: 38px;
-        }
-        .layout-split .tileArrow {
-          align-self: center;
-        }
-        @media (max-width: 720px) {
+        @media (max-width: 640px) {
           .tiles {
-            grid-template-columns: 1fr;
+            flex-direction: column;
           }
-          .layout-split .tile {
-            min-height: 240px;
+          .tile {
+            min-height: calc(var(--u) * 130);
           }
         }
       `}</style>
@@ -1219,20 +1527,25 @@ function ServiceScreen({
   title,
   services,
   maxSelectable,
+  initial,
+  nextLabel,
   onConfirm,
   busy,
   error,
 }: {
   title: string
   services: CatalogService[]
-  /** Most services the customer may tick on this path. 1 = tap one and go. */
+  /** Most services the customer may tick on this path. 1 = pick one. */
   maxSelectable: number
+  /** What was picked before, so "Back" from the next step shows it ticked. */
+  initial: CatalogService[]
+  nextLabel: string
   onConfirm: (chosen: CatalogService[]) => void
   busy: boolean
   error: string | null
 }) {
   // In the order ticked, so the first one is the primary service.
-  const [picked, setPicked] = useState<CatalogService[]>([])
+  const [picked, setPicked] = useState<CatalogService[]>(initial)
 
   if (services.length === 0) {
     return (
@@ -1240,24 +1553,26 @@ function ServiceScreen({
         <p className="empty">No services are available right now. Please ask a member of staff.</p>
         <style jsx>{`
           .empty {
-            font-size: 22px;
+            margin: 0;
+            font-size: calc(var(--u) * 20);
             color: var(--muted);
-            text-align: center;
           }
         `}</style>
       </Screen>
     )
   }
 
-  // Nothing to combine with one service on offer, so a limit above the number
-  // of services behaves like the plain single-tap screen.
+  // Nothing to combine with one service on offer, so a limit above the number of services behaves like a single pick.
   const limit = Math.min(Math.max(1, maxSelectable), services.length)
   const multi = limit > 1
-
   const isPicked = (service: CatalogService) => picked.some((p) => p.id === service.id)
   const atLimit = picked.length >= limit
 
   const toggle = (service: CatalogService) => {
+    if (!multi) {
+      setPicked([service])
+      return
+    }
     setPicked((current) =>
       current.some((p) => p.id === service.id)
         ? current.filter((p) => p.id !== service.id)
@@ -1267,158 +1582,118 @@ function ServiceScreen({
     )
   }
 
-  const totalMinutes = picked.reduce((sum, s) => sum + s.durationMinutes, 0)
-  const totalPrice = picked.reduce((sum, s) => sum + s.price, 0)
+  const preview = {
+    serviceName: picked.length ? picked.map((s) => s.name).join(" + ") : null,
+    minutes: picked.reduce((sum, s) => sum + s.durationMinutes, 0),
+    price: picked.reduce((sum, s) => sum + s.price, 0),
+  }
 
   return (
-    <Screen title={title} error={error} busy={busy}>
-      {multi && <p className="hint">Choose up to {limit}. Tap again to remove one.</p>}
+    <Screen
+      title={title}
+      error={error}
+      busy={busy}
+      preview={preview}
+      action={{ label: nextLabel, onClick: () => onConfirm(picked), disabled: busy || picked.length === 0 }}
+    >
+      {multi && <p className="hint">Pick one, or up to {limit} to combine. Tap again to remove one.</p>}
 
-      <div className="grid">
+      <div className="list">
         {services.map((service) => {
-          const on = multi && isPicked(service)
+          const on = isPicked(service)
           return (
             <button
               key={service.id}
-              className={`tile${on ? " tileOn" : ""}`}
-              onClick={() => (multi ? toggle(service) : onConfirm([service]))}
+              className={on ? "row rowOn" : "row"}
+              onClick={() => toggle(service)}
               type="button"
-              // A ticked tile stays tappable at the limit so it can be removed;
-              // only the unticked ones lock.
+              // A ticked row stays tappable at the limit so it can be removed; only the unticked ones lock.
               disabled={busy || (multi && atLimit && !on)}
-              aria-pressed={multi ? on : undefined}
+              aria-pressed={on}
             >
-              <span className="name">
-                {on && (
-                  <span className="check" aria-hidden="true">
-                    ✓
-                  </span>
-                )}
-                {service.name}
+              <span className="left">
+                <span className={on ? "dot dotOn" : "dot"} aria-hidden="true">
+                  {on ? "✓" : ""}
+                </span>
+                <span className="name">{service.name}</span>
+                <span className="meta">{service.durationMinutes} min</span>
               </span>
-              <span className="meta">
-                {service.durationMinutes} min · R{service.price.toFixed(0)}
-              </span>
+              <span className="price">R{service.price.toFixed(0)}</span>
             </button>
           )
         })}
       </div>
 
-      {multi && (
-        <div className="bar">
-          <p className="total">
-            {picked.length === 0
-              ? "Nothing chosen yet"
-              : `${picked.length} chosen · ${totalMinutes} min · R${totalPrice.toFixed(0)}`}
-          </p>
-          <button
-            className="continue"
-            onClick={() => onConfirm(picked)}
-            type="button"
-            disabled={busy || picked.length === 0}
-          >
-            Continue
-          </button>
-        </div>
-      )}
-
       <style jsx>{`
         .hint {
-          margin: -12px 0 0;
-          font-size: 19px;
-          font-weight: 600;
+          margin: 0;
+          font-size: calc(var(--u) * 14);
           color: var(--muted);
-          text-align: center;
         }
-        .grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-          gap: 20px;
-          width: 100%;
-          max-width: 1000px;
-        }
-        .tile {
-          min-height: 120px;
-          background: #fff;
-          border: 2px solid var(--line);
-          border-radius: 18px;
+        .list {
           display: flex;
           flex-direction: column;
-          justify-content: center;
-          gap: 8px;
-          padding: 24px;
+          gap: calc(var(--u) * 12);
+        }
+        .row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: calc(var(--u) * 12);
+          width: 100%;
+          min-height: max(calc(var(--u) * 64), 56px);
+          padding: 0 calc(var(--u) * 18);
+          background: #fff;
+          border: 1px solid #cfc9bc;
+          border-radius: calc(var(--u) * 12);
+          color: var(--ink);
+          font-family: inherit;
+          font-size: calc(var(--u) * 17);
           text-align: left;
           cursor: pointer;
-          font-family: inherit;
         }
-        .tile:active {
-          border-color: var(--accent);
-          background: var(--paper);
+        .rowOn {
+          border: 2px solid var(--theme);
+          background: color-mix(in srgb, var(--theme) 12%, #fff);
         }
-        .tile:disabled {
-          opacity: 0.5;
+        .row:disabled {
+          opacity: 0.45;
+          cursor: default;
         }
-        .tileOn,
-        .tileOn:disabled {
-          border-color: var(--accent);
-          background: var(--paper);
-          opacity: 1;
-        }
-        .name {
-          font-size: 22px;
-          font-weight: 700;
-          color: var(--ink);
+        .left {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: calc(var(--u) * 12);
+          min-width: 0;
         }
-        .check {
+        .dot {
+          width: calc(var(--u) * 22);
+          height: calc(var(--u) * 22);
+          flex-shrink: 0;
+          box-sizing: border-box;
+          border-radius: 50%;
+          border: 2px solid #cfc9bc;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          flex-shrink: 0;
-          width: 30px;
-          height: 30px;
-          border-radius: 50%;
-          background: var(--accent);
-          color: var(--accent-on);
-          font-size: 18px;
-          font-weight: 800;
+          font-size: calc(var(--u) * 14);
+          font-weight: 700;
+        }
+        .dotOn {
+          border-color: var(--theme);
+          background: var(--theme);
+          color: var(--theme-on);
+        }
+        .name {
+          font-weight: 700;
         }
         .meta {
-          font-size: 17px;
-          font-weight: 500;
+          font-size: calc(var(--u) * 14);
           color: var(--muted);
         }
-        .bar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 24px;
-          width: 100%;
-          max-width: 1000px;
-        }
-        .total {
-          margin: 0;
-          font-size: 22px;
+        .price {
           font-weight: 700;
-          color: var(--ink);
-        }
-        .continue {
-          min-height: 96px;
-          min-width: 280px;
-          background: var(--accent);
-          color: var(--accent-on);
-          border: none;
-          border-radius: 16px;
-          font-size: 26px;
-          font-weight: 700;
-          font-family: inherit;
-          cursor: pointer;
-        }
-        .continue:disabled {
-          opacity: 0.4;
-          cursor: default;
+          white-space: nowrap;
         }
       `}</style>
     </Screen>
@@ -1426,27 +1701,44 @@ function ServiceScreen({
 }
 
 // ----------------------------------------------------------------------------
-// Date picker
+// Day picker
 // ----------------------------------------------------------------------------
 
 function DateScreen({
   title,
   options,
+  initial,
   onSelect,
   busy,
   error,
 }: {
   title: string
   options: DateOption[]
+  initial: DateOption | null
   onSelect: (option: DateOption) => void
   busy: boolean
   error: string | null
 }) {
+  const [picked, setPicked] = useState<DateOption | null>(initial)
+
   return (
-    <Screen title={title} error={error} busy={busy}>
+    <Screen
+      title={title}
+      error={error}
+      busy={busy}
+      preview={picked ? { when: picked.label } : { when: null }}
+      action={{ label: "Next: pick a time", onClick: () => picked && onSelect(picked), disabled: busy || !picked }}
+    >
       <div className="grid">
         {options.map((option) => (
-          <button key={option.date} className="tile" onClick={() => onSelect(option)} type="button" disabled={busy}>
+          <button
+            key={option.date}
+            className={picked?.date === option.date ? "tile tileOn" : "tile"}
+            onClick={() => setPicked(option)}
+            type="button"
+            disabled={busy}
+            aria-pressed={picked?.date === option.date}
+          >
             {option.label}
           </button>
         ))}
@@ -1455,25 +1747,26 @@ function DateScreen({
       <style jsx>{`
         .grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-          gap: 18px;
-          width: 100%;
-          max-width: 900px;
+          grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 118), 1fr));
+          gap: calc(var(--u) * 12);
         }
         .tile {
-          min-height: 96px;
+          min-height: max(calc(var(--u) * 84), 64px);
+          padding: calc(var(--u) * 8);
           background: #fff;
-          border: 2px solid var(--line);
-          border-radius: 16px;
-          font-size: 20px;
-          font-weight: 700;
+          border: 1px solid #cfc9bc;
+          border-radius: calc(var(--u) * 14);
           color: var(--ink);
-          cursor: pointer;
           font-family: inherit;
+          font-size: calc(var(--u) * 17);
+          font-weight: 700;
+          line-height: 1.3;
+          cursor: pointer;
         }
-        .tile:active {
-          border-color: var(--accent);
-          background: var(--paper);
+        .tileOn {
+          border: 2px solid var(--theme);
+          background: var(--theme);
+          color: var(--theme-on);
         }
         .tile:disabled {
           opacity: 0.5;
@@ -1484,13 +1777,19 @@ function DateScreen({
 }
 
 // ----------------------------------------------------------------------------
-// Time picker
+// Time picker — grouped Morning / Afternoon / Evening
 // ----------------------------------------------------------------------------
+
+function slotHour(label: string): number {
+  const hour = Number(label.slice(0, 2))
+  return Number.isFinite(hour) ? hour : 0
+}
 
 function TimeScreen({
   titlePrefix,
   slots,
   dateLabel,
+  initial,
   onSelect,
   busy,
   error,
@@ -1498,61 +1797,99 @@ function TimeScreen({
   titlePrefix: string
   slots: BookingSlot[]
   dateLabel: string
+  initial: BookingSlot | null
   onSelect: (slot: BookingSlot) => void
   busy: boolean
   error: string | null
 }) {
+  const [picked, setPicked] = useState<BookingSlot | null>(initial && slots.some((s) => s.start === initial.start) ? initial : null)
+
   if (!busy && slots.length === 0) {
     return (
       <Screen title={`No times left on ${dateLabel}`} error={error}>
         <p className="empty">Please go back and choose a different day.</p>
         <style jsx>{`
           .empty {
-            font-size: 22px;
+            margin: 0;
+            font-size: calc(var(--u) * 20);
             color: var(--muted);
-            text-align: center;
           }
         `}</style>
       </Screen>
     )
   }
 
+  const groups = [
+    { title: "Morning", items: slots.filter((s) => slotHour(s.label) < 12) },
+    { title: "Afternoon", items: slots.filter((s) => slotHour(s.label) >= 12 && slotHour(s.label) < 17) },
+    { title: "Evening", items: slots.filter((s) => slotHour(s.label) >= 17) },
+  ].filter((g) => g.items.length > 0)
+
   return (
-    <Screen title={`${titlePrefix} — ${dateLabel}`} error={error} busy={busy}>
-      <div className="grid">
-        {slots.map((slot) => (
-          <button key={slot.start} className="tile" onClick={() => onSelect(slot)} type="button" disabled={busy}>
-            {slot.label}
-          </button>
-        ))}
-      </div>
+    <Screen
+      title={`${titlePrefix} — ${dateLabel}`}
+      error={error}
+      busy={busy}
+      preview={{ when: picked ? `${dateLabel}, ${picked.label}` : dateLabel }}
+      action={{ label: "Next: your details", onClick: () => picked && onSelect(picked), disabled: busy || !picked }}
+    >
+      {groups.map((group) => (
+        <section key={group.title} className="group">
+          <p className="groupTitle">{group.title}</p>
+          <div className="grid">
+            {group.items.map((slot) => (
+              <button
+                key={slot.start}
+                className={picked?.start === slot.start ? "slot slotOn" : "slot"}
+                onClick={() => setPicked(slot)}
+                type="button"
+                disabled={busy}
+                aria-pressed={picked?.start === slot.start}
+              >
+                {slot.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
 
       <style jsx>{`
+        .group {
+          display: flex;
+          flex-direction: column;
+          gap: calc(var(--u) * 10);
+        }
+        .groupTitle {
+          margin: 0;
+          font-size: calc(var(--u) * 13);
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--muted);
+        }
         .grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-          gap: 16px;
-          width: 100%;
-          max-width: 900px;
-          max-height: 60vh;
-          overflow-y: auto;
+          grid-template-columns: repeat(auto-fill, minmax(calc(var(--u) * 92), 1fr));
+          gap: calc(var(--u) * 10);
         }
-        .tile {
-          min-height: 96px;
+        .slot {
+          min-height: max(calc(var(--u) * 48), 52px);
           background: #fff;
-          border: 2px solid var(--line);
-          border-radius: 16px;
-          font-size: 22px;
-          font-weight: 700;
+          border: 1px solid #cfc9bc;
+          border-radius: calc(var(--u) * 10);
           color: var(--ink);
-          cursor: pointer;
           font-family: inherit;
+          font-size: calc(var(--u) * 16);
+          font-weight: 600;
+          cursor: pointer;
         }
-        .tile:active {
-          border-color: var(--accent);
-          background: var(--paper);
+        .slotOn {
+          border: 2px solid var(--theme);
+          background: var(--theme);
+          color: var(--theme-on);
+          font-weight: 700;
         }
-        .tile:disabled {
+        .slot:disabled {
           opacity: 0.5;
         }
       `}</style>
@@ -1561,7 +1898,7 @@ function TimeScreen({
 }
 
 // ----------------------------------------------------------------------------
-// Name + phone
+// Details
 // ----------------------------------------------------------------------------
 
 function DetailsScreen({
@@ -1581,6 +1918,7 @@ function DetailsScreen({
   whatsAppOptInLabel,
   whatsAppOptIn,
   onWhatsAppOptInChange,
+  ctaLabel,
   onSubmit,
   canSubmit,
   busy,
@@ -1602,13 +1940,19 @@ function DetailsScreen({
   whatsAppOptInLabel: string
   whatsAppOptIn: boolean
   onWhatsAppOptInChange: (v: boolean) => void
+  ctaLabel: string
   onSubmit: () => void
   canSubmit: boolean
   busy: boolean
   error: string | null
 }) {
   return (
-    <Screen title={title} error={error} busy={busy}>
+    <Screen
+      title={title}
+      error={error}
+      busy={busy}
+      action={{ label: busy ? "One moment…" : ctaLabel, onClick: onSubmit, disabled: !canSubmit || busy }}
+    >
       <div className="form">
         {fields.showName && (
           <label>
@@ -1672,103 +2016,64 @@ function DetailsScreen({
             />
           </label>
         )}
-
-        {showWhatsAppOptIn && (
-          <label className="optin">
-            <input
-              type="checkbox"
-              checked={whatsAppOptIn}
-              onChange={(e) => onWhatsAppOptInChange(e.target.checked)}
-            />
-            <span>
-              {whatsAppOptInLabel}
-            </span>
-          </label>
-        )}
-
-        <button className="submit" onClick={onSubmit} type="button" disabled={!canSubmit || busy}>
-          {busy ? "One moment…" : "Confirm"}
-        </button>
       </div>
+
+      {showWhatsAppOptIn && (
+        <label className="optin">
+          <input type="checkbox" checked={whatsAppOptIn} onChange={(e) => onWhatsAppOptInChange(e.target.checked)} />
+          <span>{whatsAppOptInLabel}</span>
+        </label>
+      )}
 
       <style jsx>{`
         .form {
-          display: flex;
-          flex-direction: column;
-          gap: 24px;
-          width: 100%;
-          max-width: 560px;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(calc(var(--u) * 240), 1fr));
+          gap: calc(var(--u) * 16);
         }
         label {
           display: flex;
           flex-direction: column;
-          gap: 10px;
-        }
-        label span {
-          font-size: 19px;
+          gap: calc(var(--u) * 6);
+          font-size: calc(var(--u) * 13);
           font-weight: 600;
           color: var(--muted);
         }
-        input {
-          min-height: 96px;
-          font-size: 30px;
-          font-weight: 600;
-          font-family: inherit;
-          color: var(--ink);
+        input[type="text"],
+        input[type="tel"],
+        input[type="email"],
+        input:not([type]) {
+          box-sizing: border-box;
+          width: 100%;
+          min-height: max(calc(var(--u) * 54), 52px);
+          padding: 0 calc(var(--u) * 14);
           background: #fff;
-          border: 2px solid var(--line);
-          border-radius: 16px;
-          padding: 0 24px;
+          border: 1px solid #cfc9bc;
+          border-radius: calc(var(--u) * 10);
+          color: var(--ink);
+          font-family: inherit;
+          font-size: max(calc(var(--u) * 18), 16px);
         }
         input:focus {
           outline: none;
-          border-color: var(--accent);
+          border-color: var(--theme);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme) 25%, transparent);
         }
-        label.optin {
+        .optin {
           flex-direction: row;
           align-items: center;
-          gap: 20px;
-          min-height: 96px;
-          padding: 0 8px;
-          cursor: pointer;
-        }
-        label.optin input {
-          min-height: 0;
-          width: 48px;
-          height: 48px;
-          padding: 0;
-          flex-shrink: 0;
-          accent-color: var(--accent);
-          cursor: pointer;
-        }
-        label.optin span {
-          font-size: 22px;
-          font-weight: 600;
-          color: var(--ink);
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-        label.optin small {
-          font-size: 16px;
+          gap: calc(var(--u) * 12);
+          font-size: calc(var(--u) * 15);
           font-weight: 500;
-          color: var(--muted);
-        }
-        .submit {
-          min-height: 96px;
-          margin-top: 12px;
-          background: var(--accent);
-          color: #fff;
-          border: none;
-          border-radius: 16px;
-          font-size: 26px;
-          font-weight: 700;
-          font-family: inherit;
+          color: var(--ink);
           cursor: pointer;
         }
-        .submit:disabled {
-          opacity: 0.4;
-          cursor: default;
+        .optin input {
+          width: calc(var(--u) * 26);
+          height: calc(var(--u) * 26);
+          min-width: 22px;
+          min-height: 22px;
+          accent-color: var(--theme);
         }
       `}</style>
     </Screen>
@@ -1776,7 +2081,7 @@ function DetailsScreen({
 }
 
 // ----------------------------------------------------------------------------
-// Pay — the booking is held; the customer pays by card, then the ticket appears
+// Payment — shown while a booking is held for the customer's card payment
 // ----------------------------------------------------------------------------
 
 function PayScreen({
@@ -1836,7 +2141,7 @@ function PayScreen({
   }
 
   return (
-    <Screen title={expired ? "Time ran out" : `Pay ${payment.amountLabel} to confirm`}>
+    <Screen title={expired ? "Time ran out" : `Pay ${payment.amountLabel} to confirm`} centered>
       {expired ? (
         <>
           <p className="payNote">Your time wasn't held because the payment wasn't completed. Please start again.</p>
@@ -1861,65 +2166,68 @@ function PayScreen({
             Holding your time for {minutes}:{seconds}
           </p>
           <button className="payCancel" type="button" onClick={cancel} disabled={leaving}>
-            Cancel
+            Cancel booking
           </button>
         </>
       )}
       <style jsx>{`
-  .qr {
-    background: #fff;
-    padding: 16px;
-    border-radius: 20px;
-    border: 2px solid var(--ink);
-  }
-  .payNote {
-    margin: 0;
-    max-width: 560px;
-    text-align: center;
-    font-size: 22px;
-    font-weight: 600;
-    color: var(--ink);
-  }
-  .timer {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .payBtn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 96px;
-    min-width: 280px;
-    padding: 0 32px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 16px;
-    font-size: 26px;
-    font-weight: 700;
-    font-family: inherit;
-    text-decoration: none;
-    cursor: pointer;
-  }
-  .payCancel {
-    min-height: 64px;
-    min-width: 200px;
-    background: transparent;
-    color: var(--muted);
-    border: 2px solid var(--muted);
-    border-radius: 14px;
-    font-size: 20px;
-    font-weight: 700;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  .payCancel:disabled {
-    opacity: 0.5;
-  }
-`}</style>
+        .qr {
+          width: calc(var(--u) * 220);
+          height: calc(var(--u) * 220);
+          background: #fff;
+          padding: calc(var(--u) * 12);
+          box-sizing: content-box;
+          border-radius: calc(var(--u) * 16);
+          border: 2px solid var(--line);
+        }
+        .payNote {
+          margin: 0;
+          max-width: calc(var(--u) * 520);
+          font-size: calc(var(--u) * 16);
+          color: var(--muted);
+        }
+        .timer {
+          margin: 0;
+          padding: calc(var(--u) * 10) calc(var(--u) * 20);
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--theme) 14%, #fff);
+          font-size: calc(var(--u) * 16);
+          font-weight: 600;
+          color: var(--ink);
+          font-variant-numeric: tabular-nums;
+        }
+        .payBtn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 56px;
+          padding: 0 calc(var(--u) * 32);
+          background: var(--theme);
+          color: var(--theme-on);
+          border: none;
+          border-radius: calc(var(--u) * 12);
+          font-size: calc(var(--u) * 18);
+          font-weight: 700;
+          font-family: inherit;
+          text-decoration: none;
+          cursor: pointer;
+        }
+        .payCancel {
+          min-height: 48px;
+          padding: 0 calc(var(--u) * 24);
+          background: #fff;
+          color: var(--muted);
+          border: 1px solid #cfc9bc;
+          border-radius: calc(var(--u) * 12);
+          font-size: calc(var(--u) * 15);
+          font-weight: 600;
+          font-family: inherit;
+          cursor: pointer;
+        }
+        .payCancel:disabled {
+          opacity: 0.5;
+        }
+      `}</style>
     </Screen>
   )
 }
@@ -1949,7 +2257,7 @@ function TicketScreen({
   const isBooking = ticket.kind === "booking"
 
   return (
-    <div className="ticketScreen">
+    <Screen centered hideStartOver>
       <div className="stub">
         <div className="top">
           <p className="eyebrow">{isBooking ? bookingEyebrow : queueEyebrow}</p>
@@ -1972,9 +2280,10 @@ function TicketScreen({
               <Row label="Est. wait" value={`${(ticket as KioskQueueTicket).etaMinutes} min`} />
             </>
           )}
-          {showTextNote && <p className="sms">We'll text you a confirmation shortly.</p>}
         </div>
       </div>
+
+      {showTextNote && <p className="sms">We'll text you a confirmation shortly.</p>}
 
       {/* Never blocks "Done" or hides the ticket number above — printing
           is a bonus, the screen is the source of truth either way. */}
@@ -1993,116 +2302,89 @@ function TicketScreen({
       </button>
 
       <style jsx>{`
+        .stub {
+          width: calc(var(--u) * 380);
+          max-width: 100%;
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: calc(var(--u) * 20);
+          overflow: hidden;
+          text-align: left;
+        }
+        .top {
+          padding: calc(var(--u) * 22);
+          text-align: center;
+          background: var(--theme);
+          color: var(--theme-on);
+        }
+        .eyebrow {
+          margin: 0;
+          font-size: calc(var(--u) * 13);
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          opacity: 0.9;
+        }
+        .number {
+          margin: calc(var(--u) * 4) 0 0;
+          font-size: calc(var(--u) * 64);
+          font-weight: 700;
+          line-height: 1.1;
+        }
+        .perf {
+          border-top: 2px dashed #cfc9bc;
+        }
+        .bottom {
+          padding: calc(var(--u) * 10) calc(var(--u) * 26);
+          display: flex;
+          flex-direction: column;
+        }
+        .sms {
+          margin: 0;
+          font-size: calc(var(--u) * 14);
+          color: var(--muted);
+        }
         .printStatus {
-          margin: -16px 0 0;
-          font-size: 17px;
+          margin: 0;
+          font-size: calc(var(--u) * 15);
           font-weight: 600;
           color: var(--muted);
         }
         .printStatusError {
-          color: var(--amber);
+          color: #b3261e;
         }
         .printFailed {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 16px;
+          gap: calc(var(--u) * 12);
         }
         .retry {
-          min-height: 64px;
-          padding: 0 28px;
-          background: transparent;
-          border: 2px solid var(--line);
-          border-radius: 14px;
+          min-height: 52px;
+          padding: 0 calc(var(--u) * 24);
+          background: #fff;
+          border: 1px solid #cfc9bc;
+          border-radius: calc(var(--u) * 12);
           color: var(--ink);
           font-family: inherit;
-          font-size: 19px;
+          font-size: calc(var(--u) * 15);
           font-weight: 600;
           cursor: pointer;
         }
-        .ticketScreen {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 40px;
-          padding: 40px;
-        }
-        .stub {
-          width: 100%;
-          max-width: 480px;
-          background: #fff;
-          border-radius: 24px;
-          box-shadow: 0 12px 32px rgba(23, 20, 18, 0.1);
-          position: relative;
-          overflow: hidden;
-        }
-        .top {
-          padding: 40px 32px 32px;
-          text-align: center;
-          background: var(--amber);
-          color: #fff;
-        }
-        .eyebrow {
-          margin: 0 0 8px;
-          font-size: 18px;
-          font-weight: 600;
-          opacity: 0.85;
-        }
-        .number {
-          margin: 0;
-          font-size: 56px;
-          font-weight: 800;
-          letter-spacing: 0.02em;
-        }
-        .perf {
-          height: 0;
-          border-top: 3px dashed var(--line);
-          position: relative;
-        }
-        .perf::before,
-        .perf::after {
-          content: "";
-          position: absolute;
-          top: -14px;
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          background: var(--paper);
-        }
-        .perf::before {
-          left: -14px;
-        }
-        .perf::after {
-          right: -14px;
-        }
-        .bottom {
-          padding: 32px;
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-        .sms {
-          margin: 12px 0 0;
-          font-size: 16px;
-          color: var(--muted);
-          text-align: center;
-        }
         .done {
-          min-height: 96px;
-          min-width: 280px;
-          background: var(--accent);
-          color: #fff;
+          min-height: 56px;
+          padding: 0 calc(var(--u) * 56);
+          background: var(--ink);
+          color: var(--paper);
           border: none;
-          border-radius: 16px;
-          font-size: 26px;
+          border-radius: calc(var(--u) * 12);
+          font-size: calc(var(--u) * 17);
           font-weight: 700;
           font-family: inherit;
           cursor: pointer;
         }
       `}</style>
-    </div>
+    </Screen>
   )
 }
 
@@ -2116,15 +2398,15 @@ function Row({ label, value }: { label: string; value: string }) {
           display: flex;
           justify-content: space-between;
           align-items: baseline;
-          gap: 16px;
+          gap: calc(var(--u) * 16);
+          padding: calc(var(--u) * 10) 0;
         }
         .label {
-          font-size: 17px;
-          font-weight: 600;
+          font-size: calc(var(--u) * 16);
           color: var(--muted);
         }
         .value {
-          font-size: 20px;
+          font-size: calc(var(--u) * 17);
           font-weight: 700;
           color: var(--ink);
           text-align: right;
@@ -2134,55 +2416,3 @@ function Row({ label, value }: { label: string; value: string }) {
   )
 }
 
-// ----------------------------------------------------------------------------
-// Shared screen chrome — title + optional error/busy row, full-bleed
-// ----------------------------------------------------------------------------
-
-function Screen({
-  title,
-  children,
-  error,
-  busy,
-}: {
-  title: string
-  children: React.ReactNode
-  error?: string | null
-  busy?: boolean
-}) {
-  return (
-    <div className="screen">
-      <h2>{title}</h2>
-      {busy && <p className="status">Loading…</p>}
-      {error && <p className="status errorText">{error}</p>}
-      {children}
-
-      <style jsx>{`
-        .screen {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 32px;
-          padding: 100px 40px 40px;
-        }
-        h2 {
-          font-size: 38px;
-          font-weight: 700;
-          color: var(--ink);
-          margin: 0;
-          text-align: center;
-        }
-        .status {
-          margin: -12px 0 0;
-          font-size: 19px;
-          font-weight: 600;
-          color: var(--muted);
-        }
-        .errorText {
-          color: var(--amber);
-        }
-      `}</style>
-    </div>
-  )
-}
