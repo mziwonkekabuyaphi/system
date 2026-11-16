@@ -924,12 +924,18 @@ export function KioskApp({
 // the small header logo. Uses <span>s, not <div>s: the Welcome screen is a
 // <button>. Custom logos only reach here on plans with the branding module
 // (page.tsx blanks logoUrl otherwise).
-function BrandLogo({ url, size, ringWidth, dotSize }: { url: string; size: number; ringWidth: number; dotSize: number }) {
+type LogoLength = number | string
+
+// A plain number means px (the small header logo); a string is used as-is, so the welcome
+// screen can pass calc(var(--u) * N) and scale with the screen.
+const logoLength = (value: LogoLength) => (typeof value === "number" ? `${value}px` : value)
+
+function BrandLogo({ url, size, ringWidth, dotSize }: { url: string; size: LogoLength; ringWidth: LogoLength; dotSize: LogoLength }) {
   return (
     <span
       className="logoWrap"
       aria-hidden="true"
-      style={{ "--s": `${size}px`, "--bw": `${ringWidth}px`, "--dot": `${dotSize}px` } as React.CSSProperties}
+      style={{ "--s": logoLength(size), "--bw": logoLength(ringWidth), "--dot": logoLength(dotSize) } as React.CSSProperties}
     >
       <span className="logoTile">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1014,7 +1020,7 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
     <button className="welcome" onClick={onTap} type="button" aria-label="Tap to begin">
       {branding.logoUrl && (
         <span className="logoSlot">
-          <BrandLogo url={branding.logoUrl} size={168} ringWidth={3} dotSize={12} />
+          <BrandLogo url={branding.logoUrl} size="calc(var(--u) * 140)" ringWidth="calc(var(--u) * 2.5)" dotSize="calc(var(--u) * 10)" />
         </span>
       )}
       <h1>{branding.displayName}</h1>
@@ -1027,26 +1033,28 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 28px;
+          gap: calc(var(--u) * 23);
           background: var(--paper);
           border: none;
           cursor: pointer;
-          padding: 40px;
+          padding: calc(var(--u) * 33);
           text-align: center;
         }
         .logoSlot {
           display: block;
-          margin-bottom: 32px; /* the ring and its dot sit outside the tile; this keeps them clear of the shop name */
+          margin-bottom: calc(var(--u) * 27); /* the ring and its dot sit outside the tile; this keeps them clear of the shop name */
         }
         h1 {
-          font-size: 64px;
+          font-size: calc(var(--u) * 53);
           font-weight: 800;
           margin: 0;
           color: var(--ink);
           line-height: 1.1;
+          max-width: 100%;
+          overflow-wrap: anywhere;
         }
         .tap {
-          font-size: 28px;
+          font-size: calc(var(--u) * 23);
           font-weight: 700;
           color: var(--accent);
           margin: 0;
