@@ -772,6 +772,7 @@ export function KioskApp({
           maxSelectable={maxServices}
           initial={selectedServices}
           nextLabel={path === "queue" ? "Next: your details" : "Next: pick a day"}
+          hint={branding.serviceHint?.trim() || DEFAULT_SERVICE_HINT}
           onConfirm={chooseServices}
           busy={busy}
           error={error}
@@ -1037,6 +1038,9 @@ function WelcomeScreen({ branding, tagline, onTap }: { branding: KioskBranding; 
 // screen, growing on a big PC monitor and never dropping below 1px on a tablet.
 // ----------------------------------------------------------------------------
 
+/** Shown under the service heading when the shop lets customers pick several. The shop can reword it in Settings > Kiosk. */
+const DEFAULT_SERVICE_HINT = "Pick one, or up to {max} to combine."
+
 interface KioskSummary {
   path: Path | null
   serviceName: string | null
@@ -1154,8 +1158,8 @@ function Screen({
           align-items: center;
           gap: calc(var(--u) * 16);
           padding: calc(var(--u) * 20) calc(var(--u) * 32);
-          background: var(--ink);
-          color: var(--paper);
+          background: var(--theme);
+          color: var(--theme-on);
         }
         .brand {
           display: flex;
@@ -1178,15 +1182,15 @@ function Screen({
         }
         .stepLabel {
           font-size: calc(var(--u) * 14);
-          color: rgba(250, 248, 245, 0.72);
+          color: color-mix(in srgb, var(--theme-on) 78%, transparent);
         }
         .startOver {
           min-height: 44px;
           padding: 0 calc(var(--u) * 14);
           border-radius: calc(var(--u) * 10);
-          border: 1px solid rgba(250, 248, 245, 0.3);
+          border: 1px solid color-mix(in srgb, var(--theme-on) 40%, transparent);
           background: transparent;
-          color: var(--paper);
+          color: var(--theme-on);
           font-family: inherit;
           font-size: calc(var(--u) * 14);
           font-weight: 600;
@@ -1529,6 +1533,7 @@ function ServiceScreen({
   maxSelectable,
   initial,
   nextLabel,
+  hint,
   onConfirm,
   busy,
   error,
@@ -1540,6 +1545,8 @@ function ServiceScreen({
   /** What was picked before, so "Back" from the next step shows it ticked. */
   initial: CatalogService[]
   nextLabel: string
+  /** The shop's own wording under the heading when more than one service can be picked. "{max}" becomes the limit. */
+  hint: string
   onConfirm: (chosen: CatalogService[]) => void
   busy: boolean
   error: string | null
@@ -1596,7 +1603,7 @@ function ServiceScreen({
       preview={preview}
       action={{ label: nextLabel, onClick: () => onConfirm(picked), disabled: busy || picked.length === 0 }}
     >
-      {multi && <p className="hint">Pick one, or up to {limit} to combine. Tap again to remove one.</p>}
+      {multi && hint.trim() && <p className="hint">{hint.replace(/\{max\}/gi, String(limit))}</p>}
 
       <div className="list">
         {services.map((service) => {
