@@ -710,6 +710,12 @@ export function productListBody(title: string): string {
   return `🛒 *${title}*\n\nTap an item to add it to your cart 👇`;
 }
 
+/**
+ * Body of the category list. NOT a greeting: the router has already greeted the customer by the time they tap
+ * "Order Now" (smart greeting + shop name + main menu), so a second "Welcome to ...!" here read as a duplicate.
+ */
+export const MENU_LIST_BODY = '🛒 *Menu*\n\nPick a category to start your order 👇';
+
 export const REMOVE_ITEM_LIST_BODY = '🗑️ *Remove an item*\n\nTap the item you want to remove 👇';
 
 export const SCHEDULE_TIME_LIST_BODY = 'What time would you like to collect it? Pick a time below 👇';
