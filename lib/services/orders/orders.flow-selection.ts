@@ -433,7 +433,7 @@ export function buildCategoryView(
  * Pages with "More ▸" from state.
  */
 export function categoryListReply(
-  brandName: string,
+  _brandName: string, // kept so existing callers don't change; the list no longer greets (the router already did)
   categories: PendingCategory[],
   cart: CartItem[],
   sameAgain: string | null,
@@ -459,7 +459,7 @@ export function categoryListReply(
     TAP_MORE,
   );
 
-  const body = cart.length > 0 ? messages.cartMenuBody(itemCount) : messages.welcomeMessage(brandName);
+  const body = cart.length > 0 ? messages.cartMenuBody(itemCount) : messages.MENU_LIST_BODY;
   return listReply(body, 'View menu', [{ title: 'Menu', rows }, { title: 'Quick', rows: quick }], {
     state: ORDER_STATE_AWAITING_CATEGORY,
     data: { pendingCategories: categories, cart, sameAgain },
