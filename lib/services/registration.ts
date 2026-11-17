@@ -154,6 +154,12 @@ const REGISTRATION_STATE_PREFIX = "registration_awaiting_"
 const FULL_NAME_STATE = `${REGISTRATION_STATE_PREFIX}full_name`
 const CONFIRMATION_STATE = `${REGISTRATION_STATE_PREFIX}confirmation`
 
+/**
+ * Shown when something other than typed text arrives at the name prompt. The chat still shows earlier buttons
+ * and lists, and tapping one sends its LABEL (message.contentSummary): it used to be saved as the customer's name.
+ */
+const NAME_NEEDS_TYPING = "Please *type* your name as a message. Tapping a button won't work here.\n\n"
+
 function matchesButton(rawValue: string, button: string): boolean {
   return rawValue.trim().toLowerCase() === button.trim().toLowerCase()
 }
@@ -225,6 +231,16 @@ async function handleFullName(
   tenantId: string,
 ): Promise<ActionResult> {
   const resume = getResume(state)
+
+  // A button or list tap (or an image, a voice note...) is not a name: ask again, keep the same step.
+  if (message.type !== "text" || message.interactiveId) {
+    return {
+      reply: NAME_NEEDS_TYPING + promptForFullName(),
+      buttons: [],
+      nextState: state,
+    }
+  }
+
   const rawValue = rawTextOf(message)
 
   if (!rawValue) {

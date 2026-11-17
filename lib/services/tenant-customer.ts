@@ -290,6 +290,16 @@ export async function checkRegistrationGate(tenantId: string, phone: string): Pr
 }
 
 /**
+ * A name must look like one: 2 to 80 characters with at least two letters in a row (any alphabet), so an
+ * emoji, a number or a lone letter is refused. The message is shown to the customer, who is asked again.
+ */
+function assertPlausibleName(value: string): void {
+  if (value.length < 2 || value.length > 80 || !/\p{L}{2,}/u.test(value)) {
+    throw new Error('That doesn\'t look like a name. Please type your name, e.g. "Thabo Mokoena".');
+  }
+}
+
+/**
  * Begin or continue registration by storing the one remaining field.
  *
  * ASSUMPTION (matches registration.ts's own file-header note): `field` is
@@ -310,6 +320,8 @@ export async function continueRegistration(
   if (!sanitised) {
     throw new Error(`${field} cannot be empty.`);
   }
+
+  if (field === 'name') assertPlausibleName(sanitised);
 
   await updateCustomer(tenantId, phone, { name: sanitised });
 
