@@ -22,6 +22,7 @@ import * as messages from '@/lib/services/messages/orders';
 import { listReply, pageRows } from '@/lib/services/shared/tap-lists';
 import { actionResult, cartTotal } from './orders.helpers';
 import { beginCartPaymentStep, beginScheduleChoiceStep } from './orders.flow-selection';
+import { getLastDeliveryAddress } from './orders.address';
 import type { OrderingCustomer } from './orders.db';
 import {
   deliveryFeeFor,
@@ -169,11 +170,16 @@ function areaListReply(ctx: TenantContext, areas: DeliveryAreaRow[], cart: CartI
 async function beginAreaStep(ctx: TenantContext, customer: OrderingCustomer | null, cart: CartItem[]): Promise<ActionResult> {
   const areas = ctx.catalog.deliveryAreas;
   if (areas.length === 0) return actionResult(messages.FULFILMENT_NOT_AVAILABLE);
-  if (areas.length === 1) return selectArea(ctx, cart, areas[0]);
+  if (areas.length === 1) return selectArea(ctx, customer, cart, areas[0]);
   return areaListReply(ctx, areas, cart, 0);
 }
 
-function selectArea(ctx: TenantContext, cart: CartItem[], area: DeliveryAreaRow): ActionResult {
+async function selectArea(
+  ctx: TenantContext,
+  customer: OrderingCustomer | null,
+  cart: CartItem[],
+  area: DeliveryAreaRow,
+): Promise<ActionResult> {
   const subtotal = cartTotal(cart);
   if (area.minOrder > 0 && subtotal < area.minOrder) {
     return actionResult(
@@ -184,14 +190,31 @@ function selectArea(ctx: TenantContext, cart: CartItem[], area: DeliveryAreaRow)
   }
   const fee = deliveryFeeFor(area, subtotal);
   const feeLine = fee > 0 ? `Delivery to ${area.name} costs ${ctx.formatMoney(fee)}.` : `Delivery to ${area.name} is free.`;
+  const fulfilment: FulfilmentSelection = { method: 'delivery', areaId: area.id, areaName: area.name };
+
+  // A returning customer is offered the address from their last delivery to this area: one tap, no typing.
+  const saved = customer ? await getLastDeliveryAddress(ctx, customer.id, area.id) : null;
+  if (saved) {
+    return actionResult(
+      `${feeLine}\n\n${messages.savedAddressPrompt(saved)}`,
+      { state: ORDER_STATE_AWAITING_DELIVERY_ADDRESS, data: { cart, fulfilment, savedAddress: saved } },
+      messages.SAVED_ADDRESS_BUTTONS,
+    );
+  }
+
   return actionResult(`${feeLine}\n\n${messages.DELIVERY_ADDRESS_REQUEST}`, {
     state: ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
-    data: { cart, fulfilment: { method: 'delivery', areaId: area.id, areaName: area.name } },
+    data: { cart, fulfilment },
   });
 }
 
 /** Typed fallback for the area step ("2" or the area's name). Taps go through handleFulfilmentTap. */
-export function handleDeliveryAreaChoice(ctx: TenantContext, rawMessage: string, stateData: OrdersStateData): ActionResult {
+export async function handleDeliveryAreaChoice(
+  ctx: TenantContext,
+  customer: OrderingCustomer | null,
+  rawMessage: string,
+  stateData: OrdersStateData,
+): Promise<ActionResult> {
   const cart = stateData.cart ?? [];
   const areas = ctx.catalog.deliveryAreas;
   const typed = rawMessage.trim().toLowerCase();
@@ -205,7 +228,7 @@ export function handleDeliveryAreaChoice(ctx: TenantContext, rawMessage: string,
   }
 
   if (!area) return areaListReply(ctx, areas, cart, 0);
-  return selectArea(ctx, cart, area);
+  return selectArea(ctx, customer, cart, area);
 }
 
 export async function handleDeliveryAddress(
@@ -215,7 +238,25 @@ export async function handleDeliveryAddress(
   stateData: OrdersStateData,
 ): Promise<ActionResult> {
   const cart = stateData.cart ?? [];
-  const address = rawMessage.trim().replace(/\s+/g, ' ');
+  const typed = rawMessage.trim();
+  const saved = typeof stateData.savedAddress === 'string' ? stateData.savedAddress : null;
+
+  if (saved) {
+    // "Use this address": reuse the saved one (it already passed validation when it was first typed).
+    if (typed.toLowerCase() === messages.SAVED_ADDRESS_USE_BUTTON.toLowerCase() && stateData.fulfilment?.areaId) {
+      return beginScheduleChoiceStep(ctx, cart, { ...stateData.fulfilment, method: 'delivery', address: saved }, customer);
+    }
+    // "Different address": drop the saved one and ask for a typed address.
+    if (typed.toLowerCase() === messages.SAVED_ADDRESS_CHANGE_BUTTON.toLowerCase()) {
+      return actionResult(messages.DELIVERY_ADDRESS_REQUEST, {
+        state: ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
+        data: { cart, fulfilment: stateData.fulfilment },
+      });
+    }
+    // anything else typed is read as a new address (below)
+  }
+
+  const address = typed.replace(/\s+/g, ' ');
 
   if (address.length < MIN_ADDRESS || address.length > MAX_ADDRESS || !stateData.fulfilment?.areaId) {
     return actionResult(messages.DELIVERY_ADDRESS_INVALID, { state: ORDER_STATE_AWAITING_DELIVERY_ADDRESS, data: stateData });
@@ -268,7 +309,7 @@ export async function handleFulfilmentTap(
     const index = Number(tapId.slice(TAP_AREA.length));
     const id = Number.isInteger(index) ? stateData.pendingAreaIds?.[index] : undefined;
     const area = ctx.catalog.deliveryAreas.find((a) => a.id === id);
-    return area ? selectArea(ctx, cart, area) : areaListReply(ctx, ctx.catalog.deliveryAreas, cart, 0);
+    return area ? selectArea(ctx, customer, cart, area) : areaListReply(ctx, ctx.catalog.deliveryAreas, cart, 0);
   }
 
   if (tapId.startsWith(TAP_MORE) && stateName === ORDER_STATE_AWAITING_DELIVERY_AREA) {

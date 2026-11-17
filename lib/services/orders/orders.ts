@@ -649,7 +649,7 @@ async function continueOrdersFlow(
       return handleFulfilmentChoice(ctx, customer, rawMessage, stateData);
 
     case ORDER_STATE_AWAITING_DELIVERY_AREA:
-      return handleDeliveryAreaChoice(ctx, rawMessage, stateData);
+      return handleDeliveryAreaChoice(ctx, customer, rawMessage, stateData);
 
     case ORDER_STATE_AWAITING_DELIVERY_ADDRESS:
       return handleDeliveryAddress(ctx, customer, rawMessage, stateData);
