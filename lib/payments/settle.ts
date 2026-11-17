@@ -486,7 +486,7 @@ async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: strin
   try {
     if (metadata?.channel === "kiosk" && !(await mayMessageKioskCustomer(db, tenantId))) return
 
-    const { data: b } = await db
+    const { data: b, error: bookingError } = await db
       .from("bookings")
       .select(
         `id, customer_id, start_time, end_time, booking_reference, ticket_number,
@@ -496,11 +496,29 @@ async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: strin
       .eq("id", bookingId)
       .eq("tenant_id", tenantId)
       .maybeSingle()
+    if (bookingError) {
+      console.error(`[${provider.id}-webhook] booking confirmation: booking lookup failed`, { tenantId, bookingId, error: bookingError.message })
+      return
+    }
     if (!b) return
 
-    const { data: cust } = await db.from("tenant_customers").select("name, phone").eq("id", b.customer_id as string).eq("tenant_id", tenantId).maybeSingle()
+    // tenant_customers stores the name in full_name (there is no "name" column).
+    const { data: cust, error: custError } = await db
+      .from("tenant_customers")
+      .select("full_name, phone")
+      .eq("id", b.customer_id as string)
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+    if (custError) {
+      console.error(`[${provider.id}-webhook] booking confirmation: customer lookup failed`, { tenantId, bookingId, error: custError.message })
+      return
+    }
     const phone = (cust?.phone as string | null) ?? null
-    if (!phone) return
+    if (!phone) {
+      console.warn(`[${provider.id}-webhook] booking confirmation: no phone for customer, nothing sent`, { tenantId, bookingId })
+      return
+    }
+    const customerName = (cust?.full_name as string | null) ?? null
 
     // Services in the order the customer picked them (falls back to the primary service).
     type Svc = { name: string; price: number }
@@ -534,7 +552,7 @@ async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: strin
       tenantId,
       phone,
       bookingPaidConfirmedMessage({
-        customerName: (cust?.name as string | null) ?? null,
+        customerName: customerName,
         serviceName: serviceNames.join(" + ") || "Appointment",
         slotLabel,
         bookingReference: b.booking_reference as string,
@@ -548,7 +566,7 @@ async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: strin
     const ticketUrl = await tryGenerateBookingTicketUrl(tenantId, {
       bookingId,
       bookingReference: b.booking_reference as string,
-      customerName: (cust?.name as string | null) ?? null,
+      customerName: customerName,
       customerPhone: phone,
       serviceNames,
       totalPrice,
