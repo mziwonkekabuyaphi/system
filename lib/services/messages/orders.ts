@@ -718,3 +718,12 @@ export const SCHEDULE_TIME_LIST_BODY_DELIVERY = 'What time should we deliver it?
 /** Fulfilment + delivery-area lists (collection / delivery / dine-in). */
 export const FULFILMENT_LIST_BODY = '🧾 *How would you like your order?*\n\nPick an option below 👇';
 export const DELIVERY_AREA_LIST_BODY = '🚚 *Where should we deliver?*\n\nPick your area below 👇';
+
+/** Delivery address step when the customer already has an address from a previous order in this area. */
+export const SAVED_ADDRESS_USE_BUTTON = 'Use this address';
+export const SAVED_ADDRESS_CHANGE_BUTTON = 'Different address';
+export const SAVED_ADDRESS_BUTTONS = [SAVED_ADDRESS_USE_BUTTON, SAVED_ADDRESS_CHANGE_BUTTON];
+
+export function savedAddressPrompt(address: string): string {
+  return `📍 Deliver to the same address as last time?\n\n*${address}*\n\nTap *Use this address*, or type a new one.`;
+}
