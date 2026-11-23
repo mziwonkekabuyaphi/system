@@ -18,8 +18,10 @@
  *   - If the customer is in a confirm / payment / top-up / cancel step, the voice note is NOT acted on: we repeat
  *     what we heard and ask them to tap the button or type it. (See RISKY_STATE; adjust to your state names.)
  *   - Limits: one clip max MAX_SECONDS long, MAX_PER_HOUR voice notes per customer, 3 MB file cap.
- *   - The audio file itself is NOT kept in phase 1, only the transcript (shown in the inbox), which keeps
- *     personal data to a minimum. Replay + retention arrive with phase 2.
+ *   - The audio file is kept ONLY if the shop switched on "keep recordings" (tenant_ai_settings.voice_store_audio, off by
+ *     default). It goes to a private bucket (see voice-audio-store.ts) and is deleted after the shop's retention days.
+ *     When it is kept, the customer is told so in the echo (POPIA: people should know their voice is being kept).
+ *     The recording is kept even when the note is too long or can't be transcribed, so staff can still listen to it.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -28,6 +30,7 @@ import type { IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import { downloadWhatsAppAudio } from "@/lib/whatsapp/media"
 import { resolveVoiceAccess, transcribeAudio } from "@/lib/ai/voice-transcription"
 import { stateService } from "@/lib/services/state"
+import { storeVoiceAudio } from "@/lib/whatsapp/voice-audio-store"
 
 const MAX_SECONDS = 90
 const MAX_PER_HOUR = 20
@@ -36,6 +39,11 @@ const OVERALL_TIMEOUT_MS = 35_000
 
 /** Conversation steps where a spoken "yes" must never confirm anything. Matched against the state name. */
 const RISKY_STATE = /confirm|payment|pay_|topup|top_up|cancel/i
+
+/** Added under the echo when the shop keeps recordings. Edit the wording freely; keep the number of days in it. */
+function recordingNotice(days: number): string {
+  return `\n\n_Voice notes are kept for ${days} day${days === 1 ? "" : "s"} so our team can listen back._`
+}
 
 const MSG = {
   off: "🎙️ I can't listen to voice notes here yet. Please type your message, or tap *menu*.",
@@ -72,12 +80,27 @@ async function prepare(supabase: SupabaseClient, tenantId: string, message: Inco
   // 3. Download.
   const audio = await downloadWhatsAppAudio(tenantId, mediaIdOf(message))
   if (!audio.ok) return { kind: "reply", text: audio.reason === "too_large" ? MSG.tooLong : MSG.unclear }
-  if (audio.durationSeconds > MAX_SECONDS) return { kind: "reply", text: MSG.tooLong }
+
+  // 3b. Keep the recording for staff playback, but only if this shop switched that on. It runs alongside the steps below
+  //     and is awaited before every return, so it can't be cut off when the request ends. It never throws.
+  const storing = access.storeAudio
+    ? storeVoiceAudio({
+        supabase, tenantId, waMessageId: message.waMessageId, bytes: audio.bytes, mimeType: audio.mimeType, durationSeconds: audio.durationSeconds,
+      })
+    : Promise.resolve("skipped" as const)
+
+  if (audio.durationSeconds > MAX_SECONDS) {
+    await storing
+    return { kind: "reply", text: MSG.tooLong }
+  }
 
   // 4. Transcribe (and record the cost).
-  const result = await transcribeAudio({
-    supabase, tenantId, access, bytes: audio.bytes, mimeType: audio.mimeType, seconds: audio.durationSeconds, conversationId,
-  })
+  const [result] = await Promise.all([
+    transcribeAudio({
+      supabase, tenantId, access, bytes: audio.bytes, mimeType: audio.mimeType, seconds: audio.durationSeconds, conversationId,
+    }),
+    storing,
+  ])
   if (!result.ok) return { kind: "reply", text: MSG.unclear }
   const transcript = result.text.slice(0, MAX_TRANSCRIPT_CHARS)
 
@@ -89,7 +112,7 @@ async function prepare(supabase: SupabaseClient, tenantId: string, message: Inco
     .eq("meta_message_id", message.waMessageId)
     .then(({ error }) => error && console.error("[voice] could not save transcript", { tenantId, error: error.message }))
 
-  const heard = `🎙️ I heard: “${transcript}”`
+  const heard = `🎙️ I heard: “${transcript}”${access.storeAudio ? recordingNotice(access.retentionDays) : ""}`
 
   // 6. Never let a spoken word confirm money or a cancellation.
   const state = await stateService.getState(tenantId, message.from).catch(() => null)
