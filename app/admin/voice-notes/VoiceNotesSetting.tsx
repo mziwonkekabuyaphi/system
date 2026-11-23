@@ -1,5 +1,5 @@
-// app/admin/voice-notes/VoiceNotesSetting.tsx — drop <VoiceNotesSetting /> into the AI settings page. Nothing else to wire up:
-// it loads its own state, so the page around it doesn't need to change.
+// app/admin/voice-notes/VoiceNotesSetting.tsx — shown on the AI tab of Settings > WhatsApp Settings (passed in from page.tsx
+// as voiceNotesSlot). Nothing else to wire up: it loads its own state, so the page around it doesn't need to change.
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantPermissions } from "@/lib/tenant/require-tenant-permission"
 

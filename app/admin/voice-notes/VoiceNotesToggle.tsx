@@ -1,9 +1,11 @@
 "use client"
 
 // app/admin/voice-notes/VoiceNotesToggle.tsx — the card itself. Switches instantly and puts it back if saving fails.
+// Built from the same Settings pieces as the rest of Settings (SettingsCard + ToggleRow in app/admin/settings/ui),
+// so it looks like "AI configuration" and the other cards.
 import { useState, useTransition } from "react"
 
-import { cardCls, cx, ToggleRow, useNotice } from "@/app/admin/orders/ui"
+import { SettingsCard, ToggleRow } from "@/app/admin/settings/ui"
 
 import { setVoiceNotesEnabled } from "./actions"
 
@@ -21,46 +23,42 @@ export function VoiceNotesToggle({
 }) {
   const [enabled, setEnabled] = useState(initialEnabled)
   const [pending, start] = useTransition()
-  const { show, node } = useNotice()
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   function change(next: boolean) {
+    setMessage(null)
     setEnabled(next)
     start(async () => {
       const res = await setVoiceNotesEnabled(next)
       if (!res.ok) {
         setEnabled(!next)
-        show(res.error, true)
+        setMessage({ ok: false, text: res.error })
         return
       }
-      show(next ? "Voice notes switched on." : "Voice notes switched off.")
+      setMessage({ ok: true, text: next ? "Voice notes switched on." : "Voice notes switched off." })
     })
   }
 
   return (
-    <section className={cx(cardCls, "space-y-3 p-5")}>
-      <div>
-        <h2 className="text-base font-medium text-admin-text">Voice notes</h2>
-        <p className="text-xs text-admin-text/60">
-          Customers can send a voice note on WhatsApp. It is turned into text and answered like a typed message. The bot always repeats what it heard, and never
-          confirms a payment or a cancellation by voice.
-        </p>
-      </div>
-
+    <SettingsCard
+      title="Voice notes"
+      description="Customers can send a voice note on WhatsApp. It is turned into text and answered like a typed message. The bot always repeats what it heard, and never confirms a payment or a cancellation by voice."
+    >
       <ToggleRow
-        label="Understand voice notes"
-        hint={costNote ?? undefined}
+        title="Understand voice notes"
+        description={costNote ?? undefined}
         checked={enabled}
         onChange={change}
         disabled={!canManage || pending}
       />
 
       {enabled && problem && (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-admin-text">
+        <p role="status" className="rounded-md border border-line-strong bg-tint p-3 text-sm text-ink">
           Switched on, but it won&apos;t work yet: {problem}
         </p>
       )}
-      {!canManage && <p className="text-xs text-admin-text/50">Only an owner or manager can change this.</p>}
-      {node}
-    </section>
+      {!canManage && <p className="text-xs text-ink-muted">Only an owner or manager can change this.</p>}
+      {message && <p className={`text-sm ${message.ok ? "text-emerald-700" : "text-red-700"}`}>{message.text}</p>}
+    </SettingsCard>
   )
 }
