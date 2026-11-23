@@ -26,6 +26,7 @@ export const NO_ORDERS_PERMISSIONS: OrdersPermissions = { view: false, operate: 
 
 export type OrderStatus =
   | "pending" // card checkout started, not paid yet
+  | "awaiting_acceptance" // placed (and paid, if the shop requires it), waiting for staff to accept or decline
   | "scheduled" // paid/accepted, waiting for scheduled_for
   | "placed"
   | "preparing"
@@ -155,8 +156,6 @@ export interface AdminDeliveryArea {
   id: string
   name: string
   fee: number
-  /** 0 = no minimum. */
-  minOrder: number
   /** null = never free. Delivery is free once the items total reaches this. */
   freeOver: number | null
   isActive: boolean
@@ -186,6 +185,14 @@ export interface AdminOrderSettings {
   prepTimeMinutes: number
   deliveryTimeMinutes: number
   deliveryAreas: AdminDeliveryArea[]
+  /** true = new orders go straight to the board. false = staff must accept each one first. */
+  autoAcceptOrders: boolean
+  /** true = customers must pay up front (wallet or card); "pay at counter" is not offered. */
+  requirePayment: boolean
+  /** Smallest items total (delivery fee not counted) a customer can check out with. 0 = no minimum. */
+  minOrderValue: number
+  /** Largest items total a customer can check out with. null = no maximum. */
+  maxOrderValue: number | null
 }
 
 export type OrderSettingsInput = Omit<AdminOrderSettings, "configured" | "deliveryAreas"> & { deliveryAreas: DeliveryAreaInput[] }

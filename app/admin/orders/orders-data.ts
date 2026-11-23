@@ -23,7 +23,7 @@ import type {
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
-const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "scheduled", "placed", "preparing", "ready", "out_for_delivery"]
+const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "awaiting_acceptance", "scheduled", "placed", "preparing", "ready", "out_for_delivery"]
 /** Finished orders stay on the board for this long. */
 const FINISHED_WINDOW_HOURS = 24
 const ORDER_LIMIT = 500
@@ -45,6 +45,10 @@ export const DEFAULT_ORDER_SETTINGS: AdminOrderSettings = {
   prepTimeMinutes: 15,
   deliveryTimeMinutes: 45,
   deliveryAreas: [],
+  autoAcceptOrders: true,
+  requirePayment: false,
+  minOrderValue: 0,
+  maxOrderValue: null,
 }
 
 const ORDER_SELECT = `id, order_number, status, payment_method, payment_status, total_amount,
@@ -97,7 +101,6 @@ export function mapDeliveryArea(a: any): AdminDeliveryArea {
     id: a.id,
     name: a.name,
     fee: Number(a.fee),
-    minOrder: Number(a.min_order ?? 0),
     freeOver: a.free_over == null ? null : Number(a.free_over),
     isActive: !!a.is_active,
   }
@@ -106,7 +109,7 @@ export function mapDeliveryArea(a: any): AdminDeliveryArea {
 export async function loadDeliveryAreas(supabase: ServerClient, tenantId: string): Promise<AdminDeliveryArea[]> {
   const { data, error } = await supabase
     .from("order_delivery_areas")
-    .select("id, name, fee, min_order, free_over, is_active")
+    .select("id, name, fee, free_over, is_active")
     .eq("tenant_id", tenantId)
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true })
@@ -132,6 +135,10 @@ export function mapSettings(s: any, deliveryAreas: AdminDeliveryArea[] = []): Ad
     prepTimeMinutes: Number(s.prep_time_minutes ?? 15),
     deliveryTimeMinutes: Number(s.delivery_time_minutes ?? 45),
     deliveryAreas,
+    autoAcceptOrders: s.auto_accept_orders ?? true,
+    requirePayment: !!s.require_payment,
+    minOrderValue: Number(s.min_order_value ?? 0),
+    maxOrderValue: s.max_order_value == null ? null : Number(s.max_order_value),
   }
 }
 

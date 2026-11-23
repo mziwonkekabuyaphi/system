@@ -14,6 +14,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-tenant-permission"
 import { getEffectiveModules } from "@/lib/tenant/effective-modules"
+import { notifyText } from "@/lib/services/orders/orders.integrations"
+import { orderAcceptedMessage, orderDeclinedMessage } from "@/lib/services/messages/orders"
 
 import { loadDeliveryAreas, loadOrders, mapCategory, mapProduct, mapSettings, mapVendor } from "./orders-data"
 import {
@@ -145,6 +147,55 @@ export async function cancelOrder(
     if (r.outcome === "not_cancellable") throw new UserError(`${r.order_number ?? "This order"} is already ${r.status} and can't be cancelled.`)
     if (r.outcome !== "ok") throw new UserError("The order couldn't be cancelled.")
     return { orderNumber: r.order_number ?? "", wasPaid: !!r.was_paid, paymentStatus: (r.payment_status ?? "pending") as PaymentStatus }
+  })
+}
+
+/** Staff accept an order that is waiting (shops with "Automatically accept orders" switched off).
+ *  The customer is told on WhatsApp. */
+export async function acceptOrder(orderId: string): Promise<ActionResult<{ status: OrderStatus }>> {
+  return run(OPERATE, async ({ supabase, tenantId }) => {
+    const { data, error } = await supabase.rpc("accept_order", { p_tenant: tenantId, p_order: orderId })
+    if (error) fail(error, "Accept order")
+    const r = data as { outcome: string; order_number?: string; status?: string; customer_phone?: string }
+    if (r.outcome === "not_found") throw new UserError("Order not found.")
+    if (r.outcome === "not_awaiting") throw new UserError(`${r.order_number ?? "This order"} was already dealt with (${r.status}). The board has been refreshed.`)
+    if (r.outcome !== "ok") throw new UserError("The order couldn't be accepted.")
+    const status = (r.status ?? "placed") as OrderStatus
+    if (r.customer_phone) await notifyText(tenantId, r.customer_phone, orderAcceptedMessage(r.order_number ?? "", status === "scheduled"))
+    return { status }
+  })
+}
+
+/** Staff decline an order that is waiting. Goes through cancel_order, so a wallet payment is refunded and stock is
+ *  put back; a paid card order is flagged "refund to do". The customer is told on WhatsApp. */
+export async function declineOrder(
+  orderId: string,
+): Promise<ActionResult<{ orderNumber: string; wasPaid: boolean; paymentStatus: PaymentStatus }>> {
+  return run(OPERATE, async ({ supabase, tenantId }) => {
+    const { data: current, error: readErr } = await supabase
+      .from("orders")
+      .select("status, customer_phone")
+      .eq("tenant_id", tenantId)
+      .eq("id", orderId)
+      .maybeSingle()
+    if (readErr) fail(readErr, "Decline order")
+    if (!current) throw new UserError("Order not found.")
+    if (current.status !== "awaiting_acceptance") throw new UserError("This order was already dealt with. The board has been refreshed.")
+
+    const { data, error } = await supabase.rpc("cancel_order", { p_tenant: tenantId, p_order: orderId })
+    if (error) fail(error, "Decline order")
+    const r = data as { outcome: string; order_number?: string; was_paid?: boolean; payment_status?: PaymentStatus; status?: string }
+    if (r.outcome === "not_found") throw new UserError("Order not found.")
+    if (r.outcome !== "ok") throw new UserError(`${r.order_number ?? "This order"} is already ${r.status} and can't be declined.`)
+    const paymentStatus = (r.payment_status ?? "pending") as PaymentStatus
+    if (current.customer_phone) {
+      await notifyText(
+        tenantId,
+        current.customer_phone as string,
+        orderDeclinedMessage(r.order_number ?? "", !!r.was_paid),
+      )
+    }
+    return { orderNumber: r.order_number ?? "", wasPaid: !!r.was_paid, paymentStatus }
   })
 }
 
@@ -391,8 +442,27 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
   return run(MANAGE, async ({ supabase, tenantId }) => {
     const prefix = input.orderNumberPrefix.trim().toUpperCase()
     if (!/^[A-Z0-9]{1,4}$/.test(prefix)) throw new UserError("Order number prefix is 1 to 4 letters or numbers.")
-    const methods = PAYMENT_METHODS.filter((m) => input.allowedPaymentMethods.includes(m))
-    if (methods.length === 0) throw new UserError("Allow at least one payment method.")
+    const requirePayment = !!input.requirePayment
+    // Paying up front means "pay at counter" can't be offered at all.
+    const methods = PAYMENT_METHODS.filter((m) => input.allowedPaymentMethods.includes(m) && !(requirePayment && m === "cash"))
+    if (methods.length === 0) {
+      throw new UserError(
+        requirePayment
+          ? "Customers must pay before ordering, so allow wallet or card payments (cash can't be the only option)."
+          : "Allow at least one payment method.",
+      )
+    }
+
+    // Order value limits (items total, delivery fee not counted).
+    const limit = (v: unknown, what: string) => {
+      const n = Number(v)
+      if (!Number.isFinite(n) || n < 0 || n > 1_000_000) throw new UserError(`${what} must be between 0 and 1,000,000.`)
+      return Math.round(n * 100) / 100
+    }
+    const minOrderValue = limit(input.minOrderValue ?? 0, "Minimum order value")
+    const maxOrderValue = input.maxOrderValue == null ? null : limit(input.maxOrderValue, "Maximum order value")
+    if (maxOrderValue !== null && maxOrderValue <= 0) throw new UserError("Maximum order value must be more than 0, or switched off.")
+    if (maxOrderValue !== null && maxOrderValue < minOrderValue) throw new UserError("Maximum order value can't be lower than the minimum.")
     if (!Number.isInteger(input.scheduleMinLeadMinutes) || input.scheduleMinLeadMinutes < 0) {
       throw new UserError("Minimum lead time must be 0 or more minutes.")
     }
@@ -442,6 +512,10 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
           collection_instructions: instructions,
           prep_time_minutes: input.prepTimeMinutes,
           delivery_time_minutes: input.deliveryTimeMinutes,
+          auto_accept_orders: !!input.autoAcceptOrders,
+          require_payment: requirePayment,
+          min_order_value: minOrderValue,
+          max_order_value: maxOrderValue,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "tenant_id" },
@@ -474,7 +548,7 @@ function cleanAreas(input: DeliveryAreaInput[]): CleanArea[] {
     }
     const freeOver = a.freeOver == null || (a.freeOver as unknown) === "" ? null : money(a.freeOver, "the free delivery amount")
     if (freeOver !== null && freeOver <= 0) throw new UserError(`${name}: the free delivery amount must be more than 0, or left empty.`)
-    return { id: a.id, name, fee: money(a.fee, "the delivery fee"), minOrder: money(a.minOrder, "the minimum order"), freeOver, isActive: !!a.isActive, sortOrder: i }
+    return { id: a.id, name, fee: money(a.fee, "the delivery fee"), freeOver, isActive: !!a.isActive, sortOrder: i }
   })
 }
 
@@ -496,7 +570,7 @@ async function syncDeliveryAreas(
     if (error) fail(error, "Save delivery areas")
   }
   for (const a of areas) {
-    const row = { name: a.name, fee: a.fee, min_order: a.minOrder, free_over: a.freeOver, is_active: a.isActive, sort_order: a.sortOrder }
+    const row = { name: a.name, fee: a.fee, free_over: a.freeOver, is_active: a.isActive, sort_order: a.sortOrder }
     const query =
       a.id && existingIds.has(a.id)
         ? supabase.from("order_delivery_areas").update(row).eq("tenant_id", tenantId).eq("id", a.id)

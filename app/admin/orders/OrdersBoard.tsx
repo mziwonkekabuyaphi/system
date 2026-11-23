@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 
-import { advanceOrder, cancelOrder, listOrders } from "./actions"
+import { acceptOrder, advanceOrder, cancelOrder, declineOrder, listOrders } from "./actions"
 import { Pill, Stat, btn, cardCls, cx, inputCls, money, useNotice, useNow } from "./ui"
 import { nextOrderStep, type AdminOrder, type AdminOrderVendor, type OrderStatus } from "./types"
 
@@ -81,6 +81,8 @@ export function OrdersBoard({
   const columns = allColumns.filter((c) => c.title !== "Out for delivery" || visible.some((o) => o.fulfilment === "delivery"))
   const scheduled = by("scheduled").sort((a, b) => String(a.scheduledFor).localeCompare(String(b.scheduledFor)))
   const awaitingPayment = by("pending")
+  // Shops that don't auto-accept: oldest first, that's the customer who has waited longest.
+  const awaitingAcceptance = by("awaiting_acceptance").reverse()
   const finished = by("collected", "completed", "cancelled")
 
   const openCount = orders.filter((o) => ["placed", "preparing", "ready", "out_for_delivery"].includes(o.status)).length
@@ -95,6 +97,39 @@ export function OrdersBoard({
       return
     }
     onOrdersChange((prev) => prev.map((x) => (x.id === o.id ? { ...x, status: res.data.status, paymentStatus: res.data.paymentStatus } : x)))
+  }
+
+  async function accept(o: AdminOrder) {
+    setBusy(o.id)
+    const res = await acceptOrder(o.id)
+    setBusy(null)
+    if (!res.ok) {
+      show(res.error, true)
+      void refresh(true)
+      return
+    }
+    onOrdersChange((prev) => prev.map((x) => (x.id === o.id ? { ...x, status: res.data.status } : x)))
+    show(`${o.orderNumber} accepted. The customer has been told.`)
+  }
+
+  async function decline(o: AdminOrder) {
+    const paidNote =
+      o.paymentStatus === "paid"
+        ? o.paymentMethod === "wallet"
+          ? " The customer's wallet will be refunded."
+          : " It was paid by card, so the refund has to be done through your card provider."
+        : ""
+    if (!window.confirm(`Decline ${o.orderNumber}? The customer will be told.${paidNote}`)) return
+    setBusy(o.id)
+    const res = await declineOrder(o.id)
+    setBusy(null)
+    if (!res.ok) {
+      show(res.error, true)
+      void refresh(true)
+      return
+    }
+    onOrdersChange((prev) => prev.map((x) => (x.id === o.id ? { ...x, status: "cancelled", paymentStatus: res.data.paymentStatus } : x)))
+    show(res.data.paymentStatus === "refund_pending" ? `${o.orderNumber} declined. Card refund still to do.` : `${o.orderNumber} declined. The customer has been told.`)
   }
 
   async function cancel(o: AdminOrder) {
@@ -118,7 +153,7 @@ export function OrdersBoard({
   }
 
   const card = (o: AdminOrder) => (
-    <OrderCard key={o.id} order={o} now={now} timezone={timezone} currency={currency} busy={busy === o.id} canOperate={canOperate} onAdvance={advance} onCancel={cancel} />
+    <OrderCard key={o.id} order={o} now={now} timezone={timezone} currency={currency} busy={busy === o.id} canOperate={canOperate} onAdvance={advance} onCancel={cancel} onAccept={accept} onDecline={decline} />
   )
 
   return (
@@ -129,6 +164,17 @@ export function OrdersBoard({
         <Stat label="Scheduled" value={orders.filter((o) => o.status === "scheduled").length} hint="Booked for later" />
         <Stat label="Awaiting payment" value={orders.filter((o) => o.status === "pending").length} hint="Card checkout not finished" />
       </div>
+
+      {awaitingAcceptance.length > 0 && (
+        <section className="space-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-admin-text">
+            Waiting for you to accept
+            <Pill tone="warn">{awaitingAcceptance.length}</Pill>
+          </h2>
+          <p className="text-xs text-admin-text/60">The customer is waiting for your answer. Accepting sends the order to the board; declining cancels it and refunds a wallet payment.</p>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{awaitingAcceptance.map(card)}</div>
+        </section>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <input className={cx(inputCls, "max-w-xs")} placeholder="Search order number, name or phone" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search orders" />
@@ -230,6 +276,8 @@ function OrderCard({
   canOperate,
   onAdvance,
   onCancel,
+  onAccept,
+  onDecline,
 }: {
   order: AdminOrder
   now: number
@@ -239,7 +287,10 @@ function OrderCard({
   canOperate: boolean
   onAdvance: (o: AdminOrder) => void
   onCancel: (o: AdminOrder) => void
+  onAccept: (o: AdminOrder) => void
+  onDecline: (o: AdminOrder) => void
 }) {
+  const waiting = o.status === "awaiting_acceptance"
   const next = nextOrderStep(o.status, o.fulfilment)
   const cancellable = !["collected", "completed", "cancelled"].includes(o.status)
   const closed = o.status === "cancelled"
@@ -293,10 +344,22 @@ function OrderCard({
 
       <div className="flex flex-wrap items-center gap-2">
         {closed ? <Pill tone="bad">Cancelled</Pill> : ["collected", "completed"].includes(o.status) ? <Pill tone="good">{o.fulfilment === "delivery" ? "Delivered" : o.fulfilment === "dine_in" ? "Served" : "Collected"}</Pill> : null}
+        {waiting && <Pill tone="warn">Needs accepting</Pill>}
         <PaymentBadge o={o} />
       </div>
 
-      {canOperate && (next || cancellable) && (
+      {canOperate && waiting && (
+        <div className="flex gap-2 pt-1">
+          <button type="button" className={cx(btn.primary, "flex-1")} disabled={busy} onClick={() => onAccept(o)}>
+            {busy ? "Saving…" : "Accept order"}
+          </button>
+          <button type="button" className={btn.danger} disabled={busy} onClick={() => onDecline(o)}>
+            Decline
+          </button>
+        </div>
+      )}
+
+      {canOperate && !waiting && (next || cancellable) && (
         <div className="flex gap-2 pt-1">
           {next && (
             <button type="button" className={cx(btn.primary, "flex-1")} disabled={busy} onClick={() => onAdvance(o)}>
