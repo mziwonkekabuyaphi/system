@@ -3,6 +3,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getTenantPermissions } from "@/lib/tenant/require-tenant-permission"
 
+import { DEFAULT_RETENTION_DAYS } from "./retention"
 import { VoiceNotesToggle } from "./VoiceNotesToggle"
 
 const MODEL = process.env.VOICE_TRANSCRIBE_MODEL?.trim() || "gpt-transcribe"
@@ -26,20 +27,31 @@ export async function VoiceNotesSetting() {
   const supabase = getSupabaseServerClient()
 
   let enabled = false
+  let storeAudio = false
+  let retentionDays = DEFAULT_RETENTION_DAYS
+  let keptCount = 0
   let settingsRowExists = false
   let resolved: { provider: string | null; key_source: string | null; blocked_reason: string | null } | null = null
   let costNote: string | null = null
 
   if (supabase) {
-    const [settingsRes, resolveRes, priceRes, fxRes] = await Promise.all([
-      supabase.from("tenant_ai_settings").select("voice_notes_enabled").eq("tenant_id", member.tenantId).maybeSingle(),
+    const [settingsRes, resolveRes, priceRes, fxRes, keptRes] = await Promise.all([
+      supabase
+        .from("tenant_ai_settings")
+        .select("voice_notes_enabled, voice_store_audio, voice_retention_days")
+        .eq("tenant_id", member.tenantId)
+        .maybeSingle(),
       supabase.rpc("ai_resolve_tenant", { p_tenant_id: member.tenantId }).maybeSingle(),
       supabase.from("ai_model_pricing").select("audio_usd_per_minute").eq("provider", "openai").eq("model", MODEL).maybeSingle(),
       supabase.from("ai_platform_settings").select("usd_to_zar").maybeSingle(),
+      supabase.from("message_audio").select("id", { count: "exact", head: true }).eq("tenant_id", member.tenantId).is("deleted_at", null),
     ])
-    const row = settingsRes.data as { voice_notes_enabled?: boolean } | null
+    const row = settingsRes.data as { voice_notes_enabled?: boolean; voice_store_audio?: boolean; voice_retention_days?: number } | null
     settingsRowExists = row !== null
     enabled = row?.voice_notes_enabled === true
+    storeAudio = row?.voice_store_audio === true
+    retentionDays = row?.voice_retention_days ?? DEFAULT_RETENTION_DAYS
+    keptCount = keptRes.count ?? 0
     resolved = (resolveRes.data as typeof resolved) ?? null
 
     const usdPerMinute = Number((priceRes.data as { audio_usd_per_minute?: number | string } | null)?.audio_usd_per_minute)
@@ -55,6 +67,9 @@ export async function VoiceNotesSetting() {
   return (
     <VoiceNotesToggle
       initialEnabled={enabled}
+      initialStoreAudio={storeAudio}
+      initialRetentionDays={retentionDays}
+      keptCount={keptCount}
       canManage={granted.has("settings.manage")}
       problem={problemFor(settingsRowExists, resolved)}
       costNote={costNote}
