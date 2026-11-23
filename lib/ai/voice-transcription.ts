@@ -4,6 +4,8 @@
  * ----------------------------------------------------------------------------
  * Access (resolveVoiceAccess): a shop gets transcription only when ALL of these hold:
  *   - tenant_ai_settings.voice_notes_enabled is true   (own switch, OFF by default: it costs money)
+ *     (voice_store_audio / voice_retention_days are a SEPARATE opt-in: keep the recording for staff playback, phase 2.
+ *      They are only read here and passed on; they never decide whether transcription runs.)
  *   - ai_resolve_tenant() has no blocked_reason         (AI switched on, shop active, key fine, monthly budget not used up)
  *   - there is a speech provider we can use:
  *       managed shop        -> the PLATFORM key (OPENAI_API_KEY)
@@ -34,17 +36,20 @@ export function transcriptionModel(): string {
 }
 
 export type VoiceAccess =
-  | { ok: true; apiKey: string; keySource: "byok" | "managed" }
+  | { ok: true; apiKey: string; keySource: "byok" | "managed"; storeAudio: boolean; retentionDays: number }
   | { ok: false; reason: "not_enabled" | "disabled" | "budget" | "no_provider" }
 
 export async function resolveVoiceAccess(supabase: SupabaseClient, tenantId: string): Promise<VoiceAccess> {
   try {
     const { data: settings } = await supabase
       .from("tenant_ai_settings")
-      .select("voice_notes_enabled")
+      .select("voice_notes_enabled, voice_store_audio, voice_retention_days")
       .eq("tenant_id", tenantId)
       .maybeSingle()
-    if (!(settings as { voice_notes_enabled?: boolean } | null)?.voice_notes_enabled) return { ok: false, reason: "not_enabled" }
+    const flags = settings as { voice_notes_enabled?: boolean; voice_store_audio?: boolean; voice_retention_days?: number } | null
+    if (!flags?.voice_notes_enabled) return { ok: false, reason: "not_enabled" }
+    const storeAudio = flags.voice_store_audio === true
+    const retentionDays = flags.voice_retention_days ?? 30
 
     const { data, error } = await supabase.rpc("ai_resolve_tenant", { p_tenant_id: tenantId }).maybeSingle()
     if (error || !data) return { ok: false, reason: "disabled" }
@@ -55,11 +60,11 @@ export async function resolveVoiceAccess(supabase: SupabaseClient, tenantId: str
 
     if (row.key_source === "byok") {
       return row.provider === "openai" && row.api_key
-        ? { ok: true, apiKey: row.api_key, keySource: "byok" }
+        ? { ok: true, apiKey: row.api_key, keySource: "byok", storeAudio, retentionDays }
         : { ok: false, reason: "no_provider" }
     }
     const platformKey = process.env.OPENAI_API_KEY?.trim()
-    return platformKey ? { ok: true, apiKey: platformKey, keySource: "managed" } : { ok: false, reason: "no_provider" }
+    return platformKey ? { ok: true, apiKey: platformKey, keySource: "managed", storeAudio, retentionDays } : { ok: false, reason: "no_provider" }
   } catch (error) {
     console.error("[voice] access check failed", { tenantId, error: error instanceof Error ? error.message : "unknown" })
     return { ok: false, reason: "disabled" }
