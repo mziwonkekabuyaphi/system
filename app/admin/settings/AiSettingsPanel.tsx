@@ -50,7 +50,8 @@ const BLOCKED_MESSAGES: Record<string, string> = {
 const rand = (n: number) => `R${n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const count = (n: number) => n.toLocaleString("en-ZA")
 
-export function AiSettingsPanel() {
+/** `embedded`: rendered inside WhatsApp Settings, so the page header is left out. */
+export function AiSettingsPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const [settings, setSettings] = useState<AiSettingsDto | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -95,7 +96,7 @@ export function AiSettingsPanel() {
   if (loadError) {
     return (
       <div className="space-y-6">
-        <SettingsPageHeader title="AI" description="Use your own AI account and keep an eye on what it costs." />
+        {!embedded && <SettingsPageHeader title="AI" description="Use your own AI account and keep an eye on what it costs." />}
         <p className="rounded-md border border-line bg-tint p-3 text-sm text-ink">{loadError}</p>
       </div>
     )
@@ -103,7 +104,7 @@ export function AiSettingsPanel() {
   if (!settings) {
     return (
       <div className="space-y-6">
-        <SettingsPageHeader title="AI" description="Use your own AI account and keep an eye on what it costs." />
+        {!embedded && <SettingsPageHeader title="AI" description="Use your own AI account and keep an eye on what it costs." />}
         <p className="text-sm text-ink-muted">Loading…</p>
       </div>
     )
@@ -176,10 +177,12 @@ export function AiSettingsPanel() {
 
   return (
     <div className="space-y-6">
-      <SettingsPageHeader
-        title="AI"
-        description="Use your own AI account for the WhatsApp assistant, and see exactly what it uses."
-      />
+      {!embedded && (
+        <SettingsPageHeader
+          title="AI"
+          description="Use your own AI account for the WhatsApp assistant, and see exactly what it uses."
+        />
+      )}
 
       {settings.blockedReason && settings.blockedReason !== "disabled" && (
         <p role="status" className="rounded-md border border-line-strong bg-tint p-3 text-sm text-ink">

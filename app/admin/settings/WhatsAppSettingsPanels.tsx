@@ -1,42 +1,54 @@
 // app/admin/settings/WhatsAppSettingsPanels.tsx
 //
-// Settings > WhatsApp Settings. Moved here from the Inbox's right-hand drawer
-// (WhatsAppSettingsDrawer, now removed) so it behaves like every other settings page: it is
-// listed in SettingsManager's nav and only appears while the `whatsapp` module is effective
-// for the shop (switched on AND at least one module that uses WhatsApp is on).
-// The two original panels are unchanged:
+// Settings > WhatsApp Settings. One page for everything WhatsApp, in four tabs:
 //
-//   Connection & templates -> WhatsAppTemplatesPanel (embeds the connection panel)
-//   Messages               -> MessageSettingsPanel (AI default + message wording)
+//   Connection -> WhatsAppConnectionPanel (number, connect / reconnect)
+//   Templates  -> WhatsAppTemplatesPanel (Meta-approved templates, grouped Appointments / Queue / Staff / Orders)
+//   Messages   -> MessageSettingsPanel (AI default + message wording)
+//   AI         -> AiSettingsPanel (own provider key, spending limit, usage). Moved here from its own settings page.
 //
-// Both stay mounted (just hidden) so unsaved edits survive switching between the two.
-// What each lists follows the shop's modules: booking wording and booking templates need Booking, queue ones
-// need Queue, shift texts need Shifts, pay texts need Payroll, and the staff number check needs staff.
-// The AI default is for every WhatsApp conversation, so the Messages tab is always there.
+// The page only appears while the `whatsapp` module is effective for the shop. Inside it, each template
+// group only appears while its parent module is on (see GROUPS in WhatsAppTemplatesPanel).
+//
+// All tabs stay mounted (just hidden) so unsaved edits survive switching between them.
 "use client"
 
 import { useState } from "react"
+import type { ReactNode } from "react"
 
 import type { AdminMessageSettings } from "../types"
+import { AiSettingsPanel } from "./AiSettingsPanel"
 import { MessageSettingsPanel } from "./OperationsPanels"
+import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel"
 import { WhatsAppTemplatesPanel } from "./WhatsAppTemplatesPanel"
 
-type Tab = "connection" | "messages"
+export type WhatsAppSettingsTab = "connection" | "templates" | "messages" | "ai"
+type Tab = WhatsAppSettingsTab
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "connection", label: "Connection & templates" },
+  { id: "connection", label: "Connection" },
+  { id: "templates", label: "Templates" },
   { id: "messages", label: "Messages" },
+  { id: "ai", label: "AI" },
 ]
 
 export function WhatsAppSettingsPanels({
   messageSettings,
   modules,
+  initialTab,
+  aiExtra,
 }: {
   messageSettings: AdminMessageSettings
-  /** Effective module state (flags.on). Decides which templates and wording fields are listed. */
+  /** Effective module state (flags.on). Decides which template groups and wording fields are listed. */
   modules: Record<string, boolean>
+  /** Open on this tab (old "AI settings" links open "ai"). Defaults to Connection. */
+  initialTab?: WhatsAppSettingsTab
+  /** Shown under the AI settings, e.g. the server-rendered voice notes setting. */
+  aiExtra?: ReactNode
 }) {
-  const [tab, setTab] = useState<Tab>("connection")
+  const [tab, setTab] = useState<Tab>(initialTab ?? "connection")
+  // Bumped after a (re)connect so the Templates tab re-reads its "connected" flag.
+  const [connectionVersion, setConnectionVersion] = useState(0)
 
   return (
     <div className="space-y-5">
@@ -60,7 +72,10 @@ export function WhatsAppSettingsPanels({
       </div>
 
       <div className={tab === "connection" ? "" : "hidden"}>
-        <WhatsAppTemplatesPanel modules={modules} />
+        <WhatsAppConnectionPanel onConnected={() => setConnectionVersion((v) => v + 1)} />
+      </div>
+      <div className={tab === "templates" ? "" : "hidden"}>
+        <WhatsAppTemplatesPanel modules={modules} reloadKey={connectionVersion} />
       </div>
       <div className={tab === "messages" ? "" : "hidden"}>
         <MessageSettingsPanel
@@ -68,6 +83,12 @@ export function WhatsAppSettingsPanels({
           showBooking={modules.booking === true}
           showQueue={modules.queue === true}
         />
+      </div>
+      <div className={tab === "ai" ? "" : "hidden"}>
+        <div className="space-y-5">
+          <AiSettingsPanel embedded />
+          {aiExtra}
+        </div>
       </div>
     </div>
   )
