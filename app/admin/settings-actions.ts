@@ -1097,6 +1097,10 @@ export async function updateQueueSettings(input: {
   maxServicesPerQueueEntry: number
   /** false = no printed slip at the kiosk for walk-ins; omitted = unchanged. */
   kioskPrintTicket?: boolean
+  /** Customer self-service rules (WhatsApp). Omitted = unchanged. */
+  allowCustomersLeave?: boolean
+  allowPositionCheck?: boolean
+  showEstimatedWait?: boolean
 }): Promise<ActionResult> {
   try {
     if (!isValidServicesPerVisit(input.maxServicesPerQueueEntry)) {
@@ -1130,6 +1134,9 @@ export async function updateQueueSettings(input: {
         ticket_number_prefix: ticketNumberPrefix,
         max_services_per_queue_entry: input.maxServicesPerQueueEntry,
         ...(input.kioskPrintTicket !== undefined ? { kiosk_print_ticket: input.kioskPrintTicket === true } : {}),
+        ...(input.allowCustomersLeave !== undefined ? { allow_customers_leave: input.allowCustomersLeave === true } : {}),
+        ...(input.allowPositionCheck !== undefined ? { allow_position_check: input.allowPositionCheck === true } : {}),
+        ...(input.showEstimatedWait !== undefined ? { show_estimated_wait: input.showEstimatedWait === true } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
