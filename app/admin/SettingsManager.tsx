@@ -30,12 +30,11 @@ import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
 import { OrderSettingsPanel } from "./orders/OrderSettingsPanel"
 import type { AdminOrderSettings, AdminOrderVendor } from "./orders/types"
 import { WhatsAppSettingsPanels } from "./settings/WhatsAppSettingsPanels"
-import { AiSettingsPanel } from "./settings/AiSettingsPanel"
 import { EventSettingsPanel } from "./settings/EventSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-export type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "ai"
+export type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -117,12 +116,6 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
     <RailIcon {...p}>
       <path d="M20 11.5a8 8 0 0 1-11.9 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z" />
       <path d="M9 9.2c.3 2.4 2.4 4.5 4.8 4.8l1.2-1.2-1.7-.9-.8.6c-.9-.4-1.6-1.1-2-2l.6-.8-.9-1.7Z" />
-    </RailIcon>
-  ),
-  ai: (p) => (
-    <RailIcon {...p}>
-      <path d="M12 3.5l1.6 4.4 4.4 1.6-4.4 1.6L12 15.5l-1.6-4.4L6 9.5l4.4-1.6z" />
-      <path d="M18 15l.7 1.8 1.8.7-1.8.7L18 20l-.7-1.8-1.8-.7 1.8-.7z" />
     </RailIcon>
   ),
   orders: (p) => (
@@ -234,16 +227,7 @@ const SETTINGS_NAV: Array<{
         id: "whatsapp",
         label: "WhatsApp Settings",
         title: "WhatsApp Settings",
-        description: "Your number, approved templates, and what customers are sent.",
-        anyOf: ["whatsapp"],
-      },
-      {
-        // The assistant's AI account: bring-your-own key, spending limit and usage. Same visibility
-        // as WhatsApp Settings (it only matters while the WhatsApp assistant is on).
-        id: "ai",
-        label: "AI Settings",
-        title: "AI Settings",
-        description: "Your AI account, spending limit and what the assistant has used.",
+        description: "Your number, approved templates, message wording, and the AI assistant's account and spending limit.",
         anyOf: ["whatsapp"],
       },
       {
@@ -396,10 +380,13 @@ export function SettingsManager({
   /** Open on this page instead of Shop details (e.g. the Events page's gear opens "events"). Falls back to the
    *  first page when it isn't listed for this shop. */
   initialSubTab?: SubTab
-  /** Server-rendered <VoiceNotesSetting />, passed down from page.tsx (it loads its own data, so it cannot be imported here). Shown under the AI settings. */
+  /** Server-rendered <VoiceNotesSetting />, passed down from page.tsx (it loads its own data, so it cannot be imported here). Shown under the AI tab of WhatsApp Settings. */
   voiceNotesSlot?: ReactNode
 }) {
-  const [subTab, setSubTab] = useState<SubTab>(initialSubTab ?? "general")
+  // "ai" used to be its own settings page; it is now the AI tab of WhatsApp Settings. Old links that still
+  // ask for it land on that tab.
+  const legacyAi = (initialSubTab as string | undefined) === "ai"
+  const [subTab, setSubTab] = useState<SubTab>(legacyAi ? "whatsapp" : (initialSubTab ?? "general"))
   // Kept here (not only inside the panels) so the summary tiles on Shop details follow a save.
   const [shopInfo, setShopInfo] = useState(initialSettings)
   const [shopHours, setShopHours] = useState(initialBusinessHours)
@@ -431,7 +418,6 @@ export function SettingsManager({
       .filter((i) => i.id !== "orders" || ordersEnabled)
       .filter((i) => i.id !== "events" || eventsManage)
       .filter((i) => i.id !== "whatsapp" || initialMessageSettings !== undefined)
-      .filter((i) => i.id !== "ai" || initialMessageSettings !== undefined)
       .filter((i) => i.id !== "services" || servicesManage),
   })).filter((g) => g.items.length > 0)
   const settingsPages = settingsNav.flatMap((g) => g.items)
@@ -580,13 +566,12 @@ export function SettingsManager({
       )}
       {activePage.id === "payments" && <PaymentsPanel />}
       {activePage.id === "whatsapp" && initialMessageSettings && (
-        <WhatsAppSettingsPanels messageSettings={initialMessageSettings} modules={flags.on} />
-      )}
-      {activePage.id === "ai" && (
-        <div className="space-y-5">
-          <AiSettingsPanel />
-          {voiceNotesSlot}
-        </div>
+        <WhatsAppSettingsPanels
+          messageSettings={initialMessageSettings}
+          modules={flags.on}
+          initialTab={legacyAi ? "ai" : undefined}
+          aiExtra={voiceNotesSlot}
+        />
       )}
       {activePage.id === "events" && <EventSettingsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
