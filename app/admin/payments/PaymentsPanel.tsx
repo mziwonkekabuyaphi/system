@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { connectProvider, disconnectProvider, loadPaymentSettings, type PaymentSettings } from "./actions"
 import { ACCENT_TEXT, BTN_DANGER, BTN_GHOST, BTN_PRIMARY, Chip, INPUT, Icon, LABEL, PANEL, WELL } from "../events/ui"
+import { PaymentRulesSection } from "./PaymentRulesSection"
 
 export function PaymentsPanel() {
   const [info, setInfo] = useState<PaymentSettings | null>(null)
@@ -213,6 +214,8 @@ export function PaymentsPanel() {
           )}
         </div>
       )}
+
+      {connected && !editing && <PaymentRulesSection />}
 
       {error && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-600">{error}</p>}
       {done && <p role="status" className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700">{done}</p>}
