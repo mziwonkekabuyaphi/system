@@ -58,12 +58,35 @@ function paidLine(choice: OrderPaymentChoice): string {
   }
 }
 
+/** Heading and closing line of an order message: "confirmed" normally, "received" while staff still have to accept it. */
+function orderHeadline(awaiting?: boolean): string {
+  return awaiting ? '🕐 Order received!' : '🎉 Order confirmed!';
+}
+
+const AWAITING_ACCEPTANCE_NOTE =
+  "The shop will confirm your order shortly and we'll message you as soon as it's accepted. Reply *track my order* anytime for updates.";
+
+/** Sent when staff accept an order that was waiting. */
+export function orderAcceptedMessage(orderNumber: string, scheduled: boolean): string {
+  return scheduled
+    ? `✅ Order *#${orderNumber}* has been accepted! We'll start preparing it closer to the time you chose.`
+    : `✅ Order *#${orderNumber}* has been accepted and is being prepared. We'll message you when it's ready.`;
+}
+
+/** Sent when staff decline an order that was waiting. */
+export function orderDeclinedMessage(orderNumber: string, wasPaid: boolean): string {
+  return `Sorry, the shop couldn't take order *#${orderNumber}* right now.${
+    wasPaid ? ' Your payment will be refunded in full.' : ''
+  } Reply *menu* to order again, or contact the shop directly.`;
+}
+
 // ============================================================================
 // ORDER STATUS DISPLAY
 // ============================================================================
 
 const ORDER_STATUS_DISPLAY: Record<string, string> = {
   pending: "We've received your order and are confirming your payment.",
+  awaiting_acceptance: "We've received your order and are waiting for the shop to accept it. We'll message you as soon as it's confirmed.",
   scheduled: 'Your order is booked for the time you chose.',
   placed: 'Your order has been confirmed and sent to our team.',
   preparing: 'Your order is being prepared. 👨‍🍳',
@@ -76,6 +99,7 @@ const ORDER_STATUS_DISPLAY: Record<string, string> = {
 
 const ORDER_STATUS_PROGRESS: Record<string, string> = {
   pending: '⬜⬜⬜⬜ Confirming',
+  awaiting_acceptance: '⬜⬜⬜⬜ Waiting for the shop',
   scheduled: '⏰⬜⬜⬜ Scheduled',
   placed: '🟩⬜⬜⬜ Placed',
   preparing: '🟩🟩⬜⬜ Preparing',
@@ -314,7 +338,7 @@ export function cartOrderCreatedMessage(
   paymentChoice: OrderPaymentChoice,
   collectionPoints: string[],
   scheduledLabel?: string | null,
-  opts?: { offersDelivery?: boolean; extraLines?: string[] },
+  opts?: { offersDelivery?: boolean; extraLines?: string[]; awaitingAcceptance?: boolean },
 ): string {
   const itemLines = items.map(
     (item) => `• ${qtyLabel(item.quantity)} ${item.productName} — ${formatCurrency(item.unitPrice * item.quantity)}`,
@@ -327,7 +351,7 @@ export function cartOrderCreatedMessage(
       : ['📍 Collect at:', ...unique.map((point) => `   • *${point}*`)];
 
   return [
-    `🎉 Order confirmed! *#${orderNumber}*`,
+    `${orderHeadline(opts?.awaitingAcceptance)} *#${orderNumber}*`,
     '',
     ...itemLines,
     `Total: *${formatCurrency(totalAmount)}*`,
@@ -338,9 +362,11 @@ export function cartOrderCreatedMessage(
     ...(opts?.extraLines ?? []),
     opts?.offersDelivery ? undefined : "We don't offer delivery — all orders are collected in person.",
     '',
-    scheduledLabel
-      ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
-      : "We'll message you when it's ready. Reply *track my order* anytime for updates.",
+    opts?.awaitingAcceptance
+      ? AWAITING_ACCEPTANCE_NOTE
+      : scheduledLabel
+        ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
+        : "We'll message you when it's ready. Reply *track my order* anytime for updates.",
   ]
     .filter((line) => line !== undefined)
     .join('\n');
@@ -359,7 +385,7 @@ export function multiOrderCreatedMessage(
   totalAmount: number,
   paymentChoice: OrderPaymentChoice,
   scheduledLabel?: string | null,
-  opts?: { extraLines?: string[] },
+  opts?: { extraLines?: string[]; awaitingAcceptance?: boolean },
 ): string {
   const orderBlocks = groups.map((group) => {
     const itemLines = group.items.map(
@@ -374,7 +400,7 @@ export function multiOrderCreatedMessage(
   });
 
   return [
-    `🎉 Order confirmed! You have *${pluralize(groups.length, 'order')}* to collect:`,
+    `${orderHeadline(opts?.awaitingAcceptance)} You have *${pluralize(groups.length, 'order')}* to collect:`,
     '',
     orderBlocks.join('\n\n'),
     '',
@@ -383,9 +409,11 @@ export function multiOrderCreatedMessage(
     scheduledLabel ? scheduleConfirmedLabel(scheduledLabel) : undefined,
     ...(opts?.extraLines ?? []),
     '',
-    scheduledLabel
-      ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
-      : "We'll message you when each is ready. Reply *track my order* anytime for updates.",
+    opts?.awaitingAcceptance
+      ? AWAITING_ACCEPTANCE_NOTE
+      : scheduledLabel
+        ? `We'll start preparing it closer to ${scheduledLabel}. Reply *track my order* anytime for updates.`
+        : "We'll message you when each is ready. Reply *track my order* anytime for updates.",
   ]
     .filter((line) => line !== undefined)
     .join('\n');
@@ -633,9 +661,18 @@ export const TABLE_INVALID = 'Please reply with your table number or name (up to
 export const FULFILMENT_NOT_AVAILABLE =
   "Sorry, that way of getting your order isn't available right now. Please pick another option.";
 
-export function belowMinimumOrder(minOrder: number, subtotal: number, areaName: string): string {
-  return `Delivery to ${areaName} needs an order of at least ${formatCurrency(minOrder)} (yours is ${formatCurrency(subtotal)}). Add something more, or choose collection instead.`;
+/** The shop's minimum order value (items total, delivery fee not counted). */
+export function belowMinimumOrder(minOrder: number, subtotal: number): string {
+  return `Orders need to total at least ${formatCurrency(minOrder)} (yours is ${formatCurrency(subtotal)}). Add something more to continue.`;
 }
+
+/** The shop's maximum order value (items total, delivery fee not counted). */
+export function aboveMaximumOrder(maxOrder: number, subtotal: number): string {
+  return `Orders can be up to ${formatCurrency(maxOrder)} at a time (yours is ${formatCurrency(subtotal)}). Please remove something from your cart to continue.`;
+}
+
+export const PAYMENT_REQUIRED =
+  'This shop needs payment before it can take your order. Please pay with your wallet or by card.';
 
 /** Delivery confirmation (one block per vendor order, the fee is on the order that carries it). */
 export function deliveryOrderCreatedMessage(args: {
@@ -647,6 +684,7 @@ export function deliveryOrderCreatedMessage(args: {
   paymentChoice: OrderPaymentChoice;
   etaMinutes: number;
   scheduledLabel?: string | null;
+  awaitingAcceptance?: boolean;
 }): string {
   const blocks = args.orders.map((order) =>
     [
@@ -655,7 +693,7 @@ export function deliveryOrderCreatedMessage(args: {
     ].join('\n'),
   );
   return [
-    `🎉 Order confirmed! ${args.orders.length > 1 ? `You have *${pluralize(args.orders.length, 'order')}* on the way:` : `*#${args.orders[0].orderNumber}*`}`,
+    `${orderHeadline(args.awaitingAcceptance)} ${args.orders.length > 1 ? `You have *${pluralize(args.orders.length, 'order')}* on the way:` : `*#${args.orders[0].orderNumber}*`}`,
     '',
     ...(args.orders.length > 1 ? [blocks.join('\n\n')] : [blocks[0].split('\n').slice(1).join('\n')]),
     '',
@@ -664,10 +702,18 @@ export function deliveryOrderCreatedMessage(args: {
     args.paymentChoice === 'cash' ? '💵 Pay cash on delivery' : paidLine(args.paymentChoice),
     '',
     `🚚 Delivering to: *${args.address}* (${args.areaName})`,
-    args.scheduledLabel ? scheduleConfirmedLabel(args.scheduledLabel) : `Estimated delivery: about ${args.etaMinutes} minutes.`,
+    args.awaitingAcceptance
+      ? undefined
+      : args.scheduledLabel
+        ? scheduleConfirmedLabel(args.scheduledLabel)
+        : `Estimated delivery: about ${args.etaMinutes} minutes.`,
     '',
-    "We'll message you when it's on its way. Reply *track my order* anytime for updates.",
-  ].join('\n');
+    args.awaitingAcceptance
+      ? AWAITING_ACCEPTANCE_NOTE
+      : "We'll message you when it's on its way. Reply *track my order* anytime for updates.",
+  ]
+    .filter((line) => line !== undefined)
+    .join('\n');
 }
 
 export function dineInOrderCreatedMessage(args: {
@@ -676,21 +722,24 @@ export function dineInOrderCreatedMessage(args: {
   total: number;
   paymentChoice: OrderPaymentChoice;
   prepMinutes: number;
+  awaitingAcceptance?: boolean;
 }): string {
   const lines = args.orders.flatMap((o) => [
     `*#${o.orderNumber}*`,
     ...o.items.map((i) => `• ${qtyLabel(i.quantity)} ${i.productName} — ${formatCurrency(i.unitPrice * i.quantity)}`),
   ]);
   return [
-    '🎉 Order confirmed!',
+    orderHeadline(args.awaitingAcceptance),
     '',
     ...lines,
     '',
     `Total: *${formatCurrency(args.total)}*`,
     args.paymentChoice === 'cash' ? '💵 Pay at the table when you are served' : paidLine(args.paymentChoice),
     '',
-    `🍽️ We'll bring it to table *${args.table}*${args.prepMinutes > 0 ? ` in about ${args.prepMinutes} minutes` : ''}.`,
-    'Reply *track my order* anytime for updates.',
+    args.awaitingAcceptance
+      ? AWAITING_ACCEPTANCE_NOTE
+      : `🍽️ We'll bring it to table *${args.table}*${args.prepMinutes > 0 ? ` in about ${args.prepMinutes} minutes` : ''}.`,
+    ...(args.awaitingAcceptance ? [] : ['Reply *track my order* anytime for updates.']),
   ].join('\n');
 }
 
