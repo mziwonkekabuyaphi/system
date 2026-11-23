@@ -1,12 +1,12 @@
 "use client"
 
 // app/admin/voice-notes/VoiceNotesToggle.tsx — the card itself. Switches instantly and puts it back if saving fails.
-// Built from the same Settings pieces as the rest of Settings (SettingsCard + ToggleRow in app/admin/settings/ui),
-// so it looks like "AI configuration" and the other cards.
+// Built from the same Settings pieces as the rest of Settings (SettingsCard, SubSection, ToggleRow, FieldRow, inputClass in
+// app/admin/settings/ui), so it looks like "AI configuration" and the other cards, in light and dark theme.
 // Two separate choices: (1) understand voice notes (turn them into text), (2) keep the recordings so staff can replay them.
 import { useState, useTransition } from "react"
 
-import { SettingsCard, ToggleRow } from "@/app/admin/settings/ui"
+import { FieldRow, SettingsCard, SubSection, ToggleRow, inputClass } from "@/app/admin/settings/ui"
 
 import { setVoiceAudioSettings, setVoiceNotesEnabled } from "./actions"
 import { RETENTION_OPTIONS } from "./retention"
@@ -90,7 +90,10 @@ export function VoiceNotesToggle({
       )}
 
       {enabled && (
-        <div className="space-y-3 pt-3">
+        <SubSection
+          title="Recordings"
+          hint="A voice recording is personal information under POPIA. Keep it for as short a time as you can, and mention it in your privacy notice. Shortening the period, or switching this off, also deletes recordings that no longer qualify (within about 15 minutes)."
+        >
           <ToggleRow
             title="Keep recordings so staff can replay them"
             description="Off by default. When on, the audio is stored privately and staff can play it in the inbox, even if the bot couldn't make it out. Customers are told their voice notes are kept."
@@ -100,10 +103,9 @@ export function VoiceNotesToggle({
           />
 
           {storeAudio && (
-            <label className="flex flex-wrap items-center gap-2 text-sm text-ink">
-              <span>Delete recordings after</span>
+            <FieldRow label="Delete recordings after">
               <select
-                className="rounded-md border border-line-strong bg-transparent px-2 py-1 text-sm text-ink"
+                className={`${inputClass} sm:max-w-[12rem]`}
                 value={retentionDays}
                 disabled={!canManage || pending}
                 onChange={(event) => saveAudio(true, Number(event.target.value))}
@@ -114,15 +116,15 @@ export function VoiceNotesToggle({
                   </option>
                 ))}
               </select>
-            </label>
+            </FieldRow>
           )}
 
-          <p className="text-xs text-ink-muted">
-            A voice recording is personal information under POPIA. Keep it for as short a time as you can, and mention it in your privacy notice. Shortening the period, or
-            switching this off, also deletes recordings that no longer qualify (within about 15 minutes).
-            {keptCount > 0 ? ` ${keptCount} recording${keptCount === 1 ? " is" : "s are"} being kept right now.` : ""}
-          </p>
-        </div>
+          {keptCount > 0 && (
+            <p className="text-xs text-ink-muted">
+              {keptCount} recording{keptCount === 1 ? " is" : "s are"} being kept right now.
+            </p>
+          )}
+        </SubSection>
       )}
 
       {!canManage && <p className="text-xs text-ink-muted">Only an owner or manager can change this.</p>}
