@@ -46,7 +46,7 @@ export function VoiceNotesToggle({
     >
       <ToggleRow
         title="Understand voice notes"
-        description={costNote ?? undefined}
+        description={costNote ?? "Each voice note is billed per minute of audio and counts towards your monthly AI budget."}
         checked={enabled}
         onChange={change}
         disabled={!canManage || pending}
@@ -58,7 +58,7 @@ export function VoiceNotesToggle({
         </p>
       )}
       {!canManage && <p className="text-xs text-ink-muted">Only an owner or manager can change this.</p>}
-      {message && <p className={`text-sm ${message.ok ? "text-emerald-700" : "text-red-700"}`}>{message.text}</p>}
+      {message && <p className={`text-sm ${message.ok ? "text-success" : "text-red-700"}`}>{message.text}</p>}
     </SettingsCard>
   )
 }
