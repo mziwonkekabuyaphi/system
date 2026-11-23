@@ -207,6 +207,32 @@ export function QueueRulesDrawer({
               </DrawerField>
             </DrawerGroup>
 
+            <DrawerGroup title="What customers can do" hint="Applies to the walk-in queue only. Bookings are not affected.">
+              <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Allow customers to leave the queue"
+                  description="Customers can cancel their own queue spot from WhatsApp. Turn off and only staff can remove them."
+                  checked={draft.allowCustomersLeave ?? true}
+                  disabled={saving}
+                  onChange={(v) => set("allowCustomersLeave", v)}
+                />
+                <DrawerSwitch
+                  title="Allow customers to check their queue position"
+                  description="Customers can ask for their place in line from WhatsApp."
+                  checked={draft.allowPositionCheck ?? true}
+                  disabled={saving}
+                  onChange={(v) => set("allowPositionCheck", v)}
+                />
+                <DrawerSwitch
+                  title="Show estimated waiting time"
+                  description="Include the estimated wait in what customers see. Turn off if your wait times are too unpredictable to quote."
+                  checked={draft.showEstimatedWait ?? true}
+                  disabled={saving}
+                  onChange={(v) => set("showEstimatedWait", v)}
+                />
+              </div>
+            </DrawerGroup>
+
             <DrawerGroup title="Where walk-ins can join" hint="This only affects walk-ins. Bookings join the line from Settings → Booking rules.">
               <div className="divide-y divide-line rounded-lg border border-line bg-card px-4">
                 <DrawerSwitch title="WhatsApp" description="Customers can join by messaging you." checked={draft.allowWalkinWhatsapp} disabled={saving} onChange={(v) => set("allowWalkinWhatsapp", v)} />
