@@ -51,7 +51,7 @@ import {
 import { searchProducts } from './orders.db';
 import { beginCartPaymentStep, beginProductSelectionReply } from './orders.flow-selection';
 import { beginOrderConfirmation } from './orders.flow-checkout';
-import { beginCheckoutStep, needsFulfilmentStep } from './orders.fulfilment';
+import { beginCheckoutStep, needsFulfilmentStep, orderLimitReply } from './orders.fulfilment';
 
 // ============================================================================
 // GATE — cheap pre-check so we don't burn an LLM call on every "hi" / "menu"
@@ -260,7 +260,10 @@ export async function trySmartOrderEntry(
   if (!paymentChoice) {
     console.log('[orders][smart-entry] Everything resolved except payment method');
     // Delivery / dine-in shops need that answered first; collection-only shops go straight to payment.
-    return needsFulfilmentStep(ctx) ? beginCheckoutStep(ctx, cart, { tableLabel }) : beginCartPaymentStep(ctx, cart);
+    // Outside the shop's minimum / maximum order value: back to the cart before payment.
+    const limit = orderLimitReply(ctx, cart);
+    if (limit) return limit;
+    return needsFulfilmentStep(ctx) ? beginCheckoutStep(ctx, null, cart, { tableLabel }) : beginCartPaymentStep(ctx, cart);
   }
 
   // ---- Everything known — ONE confirmation before anything is charged ---

@@ -11,7 +11,7 @@
 //
 // A shop that only offers collection never sees any of this (beginCheckoutStep goes straight to the pay list).
 // What the customer picked is only ever a request: place_order re-checks the method, the area, the address, the
-// minimum order and works out the fee itself.
+// order value limits and works out the fee itself.
 //
 // Every step takes `customer` (or null) only so the pay list can show the wallet balance. Steps that used to
 // return an ActionResult now return a Promise of one.
@@ -28,12 +28,14 @@ import {
   deliveryFeeFor,
   enabledFulfilments,
   fulfilmentLabel,
+  orderLimitProblem,
   ORDERING_NOT_AVAILABLE,
   type DeliveryAreaRow,
   type TenantContext,
 } from './orders.tenant';
 import {
   CART_ACTION_BUTTONS,
+  CART_VIEW_BUTTONS,
   ORDER_STATE_AWAITING_CART_ACTION,
   ORDER_STATE_AWAITING_DELIVERY_ADDRESS,
   ORDER_STATE_AWAITING_DELIVERY_AREA,
@@ -80,6 +82,30 @@ function fulfilmentListReply(methods: OrderFulfilment[], cart: CartItem[], table
   );
 }
 
+/**
+ * The shop's minimum / maximum order value, checked before the customer is taken any further (place_order checks it
+ * again and stays the authority). Returns a reply that sends them back to the cart, or null when the cart is fine.
+ */
+export function orderLimitReply(ctx: TenantContext, cart: CartItem[]): ActionResult | null {
+  const subtotal = cartTotal(cart);
+  const problem = orderLimitProblem(ctx.config, subtotal);
+  if (problem === 'below') {
+    return actionResult(
+      messages.belowMinimumOrder(ctx.config.minOrderValue, subtotal),
+      { state: ORDER_STATE_AWAITING_CART_ACTION, data: { cart } },
+      CART_ACTION_BUTTONS,
+    );
+  }
+  if (problem === 'above') {
+    return actionResult(
+      messages.aboveMaximumOrder(ctx.config.maxOrderValue ?? 0, subtotal),
+      { state: ORDER_STATE_AWAITING_CART_ACTION, data: { cart } },
+      CART_VIEW_BUTTONS,
+    );
+  }
+  return null;
+}
+
 /** First step of checkout. Plain collection-only shops skip straight to the pay list. */
 export async function beginCheckoutStep(
   ctx: TenantContext,
@@ -87,6 +113,9 @@ export async function beginCheckoutStep(
   cart: CartItem[],
   prior?: Pick<OrdersStateData, 'tableLabel'>,
 ): Promise<ActionResult> {
+  const limit = orderLimitReply(ctx, cart);
+  if (limit) return limit;
+
   const methods = enabledFulfilments(ctx.config, ctx.catalog);
   if (methods.length === 0) return actionResult(ORDERING_NOT_AVAILABLE);
 
@@ -147,7 +176,6 @@ export async function handleFulfilmentChoice(
 
 function areaHint(ctx: TenantContext, area: DeliveryAreaRow): string {
   const parts = [area.fee > 0 ? `fee ${ctx.formatMoney(area.fee)}` : 'free delivery'];
-  if (area.minOrder > 0) parts.push(`min ${ctx.formatMoney(area.minOrder)}`);
   if (area.freeOver !== null && area.fee > 0) parts.push(`free over ${ctx.formatMoney(area.freeOver)}`);
   return parts.join(' · ');
 }
@@ -181,13 +209,6 @@ async function selectArea(
   area: DeliveryAreaRow,
 ): Promise<ActionResult> {
   const subtotal = cartTotal(cart);
-  if (area.minOrder > 0 && subtotal < area.minOrder) {
-    return actionResult(
-      messages.belowMinimumOrder(area.minOrder, subtotal, area.name),
-      { state: ORDER_STATE_AWAITING_CART_ACTION, data: { cart } },
-      CART_ACTION_BUTTONS,
-    );
-  }
   const fee = deliveryFeeFor(area, subtotal);
   const feeLine = fee > 0 ? `Delivery to ${area.name} costs ${ctx.formatMoney(fee)}.` : `Delivery to ${area.name} is free.`;
   const fulfilment: FulfilmentSelection = { method: 'delivery', areaId: area.id, areaName: area.name };

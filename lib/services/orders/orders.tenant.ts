@@ -31,8 +31,6 @@ export interface DeliveryAreaRow {
   id: string;
   name: string;
   fee: number;
-  /** 0 = no minimum. */
-  minOrder: number;
   /** null = the fee is always charged. */
   freeOver: number | null;
 }
@@ -62,6 +60,14 @@ export interface TenantConfig {
   collectionInstructions: string | null;
   prepTimeMinutes: number;
   deliveryTimeMinutes: number;
+  /** false = staff must accept each order before it reaches the board. */
+  autoAcceptOrders: boolean;
+  /** true = customers must pay up front: cash ("pay at counter") is never offered. */
+  requirePayment: boolean;
+  /** Smallest items total a customer can check out with. 0 = no minimum. */
+  minOrderValue: number;
+  /** Largest items total a customer can check out with. null = no maximum. */
+  maxOrderValue: number | null;
   /** Keyed by day_of_week (0–6, same convention as business_hours). */
   businessHours: Record<number, DayHours>;
 }
@@ -118,6 +124,16 @@ export function fulfilmentLabel(method: OrderFulfilment): string {
 /** Same rule place_order applies (it stays the authority): free once the items total reaches free_over. */
 export function deliveryFeeFor(area: DeliveryAreaRow, itemsTotal: number): number {
   return area.freeOver !== null && itemsTotal >= area.freeOver ? 0 : area.fee;
+}
+
+/**
+ * The shop's order value limits, checked on the ITEMS total (delivery fee not counted) — the same rule place_order
+ * applies, which stays the authority. Returns which limit the cart breaks, or null when it is within both.
+ */
+export function orderLimitProblem(config: Pick<TenantConfig, 'minOrderValue' | 'maxOrderValue'>, itemsTotal: number): 'below' | 'above' | null {
+  if (config.minOrderValue > 0 && itemsTotal < config.minOrderValue) return 'below';
+  if (config.maxOrderValue !== null && itemsTotal > config.maxOrderValue) return 'above';
+  return null;
 }
 
 export function paymentChoiceLabel(config: Pick<TenantConfig, 'walletLabel'>, choice: CustomerPaymentChoice): string {
@@ -261,7 +277,7 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
       db.from('tenant_branding').select('display_name').eq('tenant_id', tenantId)
         .maybeSingle<{ display_name: string | null }>(),
       db.from('order_settings')
-        .select('wallet_label, allowed_payment_methods, allow_scheduling, schedule_min_lead_minutes, min_age, search_aliases, collection_enabled, delivery_enabled, dine_in_enabled, collection_instructions, prep_time_minutes, delivery_time_minutes')
+        .select('wallet_label, allowed_payment_methods, allow_scheduling, schedule_min_lead_minutes, min_age, search_aliases, collection_enabled, delivery_enabled, dine_in_enabled, collection_instructions, prep_time_minutes, delivery_time_minutes, auto_accept_orders, require_payment, min_order_value, max_order_value')
         .eq('tenant_id', tenantId)
         .maybeSingle<{
           wallet_label: string;
@@ -276,6 +292,10 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
           collection_instructions: string | null;
           prep_time_minutes: number;
           delivery_time_minutes: number;
+          auto_accept_orders: boolean | null;
+          require_payment: boolean | null;
+          min_order_value: number | null;
+          max_order_value: number | null;
         }>(),
       db.from('business_hours').select('day_of_week, is_closed, open_time, close_time').eq('tenant_id', tenantId)
         .returns<Array<{ day_of_week: number; is_closed: boolean; open_time: string | null; close_time: string | null }>>(),
@@ -288,10 +308,10 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
         }>>(),
       db.from('order_vendors').select('id, name, collection_point').eq('tenant_id', tenantId).eq('is_active', true)
         .returns<Array<{ id: string; name: string; collection_point: string }>>(),
-      db.from('order_delivery_areas').select('id, name, fee, min_order, free_over')
+      db.from('order_delivery_areas').select('id, name, fee, free_over')
         .eq('tenant_id', tenantId).eq('is_active', true)
         .order('sort_order', { ascending: true }).order('name', { ascending: true })
-        .returns<Array<{ id: string; name: string; fee: number; min_order: number; free_over: number | null }>>(),
+        .returns<Array<{ id: string; name: string; fee: number; free_over: number | null }>>(),
       db.from('tenant_modules').select('enabled, modules!inner(key)')
         .eq('tenant_id', tenantId).eq('modules.key', 'orders').maybeSingle<{ enabled: boolean }>(),
     ]);
@@ -323,7 +343,10 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
     currency: settingsRes.data?.currency ?? 'ZAR',
     timeZone: settingsRes.data?.timezone && settingsRes.data.timezone !== 'UTC' ? settingsRes.data.timezone : 'Africa/Johannesburg',
     walletLabel: orderSettings.wallet_label,
-    paymentMethods: orderSettings.allowed_payment_methods,
+    // With "payment before ordering" on, cash is never offered (place_order refuses it too).
+    paymentMethods: orderSettings.require_payment
+      ? orderSettings.allowed_payment_methods.filter((m) => m !== 'cash')
+      : orderSettings.allowed_payment_methods,
     allowScheduling: orderSettings.allow_scheduling,
     scheduleMinLeadMinutes: orderSettings.schedule_min_lead_minutes,
     minAge: orderSettings.min_age,
@@ -336,6 +359,10 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
     collectionInstructions: orderSettings.collection_instructions ?? null,
     prepTimeMinutes: Number(orderSettings.prep_time_minutes ?? 15),
     deliveryTimeMinutes: Number(orderSettings.delivery_time_minutes ?? 45),
+    autoAcceptOrders: orderSettings.auto_accept_orders ?? true,
+    requirePayment: !!orderSettings.require_payment,
+    minOrderValue: Number(orderSettings.min_order_value ?? 0),
+    maxOrderValue: orderSettings.max_order_value == null ? null : Number(orderSettings.max_order_value),
     businessHours,
   };
 
@@ -355,7 +382,6 @@ export async function loadTenantContext(db: SupabaseClient, tenantId: string): P
       id: a.id,
       name: a.name,
       fee: Number(a.fee),
-      minOrder: Number(a.min_order ?? 0),
       freeOver: a.free_over == null ? null : Number(a.free_over),
     })),
   };

@@ -21,7 +21,7 @@ import * as messages from '@/lib/services/messages/orders';
 import type { ActionResult } from '@/lib/types/action';
 import { PASSPORT_STATE_TOPUP_AMOUNT as WALLET_STATE_TOPUP_AMOUNT } from '@/lib/services/passport';
 import type { CartItem, CustomerPaymentChoice, FulfilmentSelection, OrdersStateData } from './orders.types';
-import { beginCheckoutStep, needsFulfilmentStep } from './orders.fulfilment';
+import { beginCheckoutStep, needsFulfilmentStep, orderLimitReply } from './orders.fulfilment';
 import { deliveryFeeForSelection, fulfilmentSummary } from './orders.flow-selection';
 import {
   CONFIRM_YES_NO_BUTTONS,
@@ -77,7 +77,11 @@ function placeFailureReply(failure: PlaceOrderFailure): string {
     case 'empty_cart':
       return messages.EMPTY_CART;
     case 'below_minimum_order':
-      return messages.belowMinimumOrder(failure.minOrder, failure.subtotal, 'your area');
+      return messages.belowMinimumOrder(failure.minOrder, failure.subtotal);
+    case 'above_maximum_order':
+      return messages.aboveMaximumOrder(failure.maxOrder, failure.subtotal);
+    case 'payment_required':
+      return messages.PAYMENT_REQUIRED;
     case 'invalid_fulfilment':
     case 'fulfilment_not_allowed':
     case 'delivery_area_unavailable':
@@ -100,6 +104,8 @@ function buildPlacedReply(
 ): string {
   const scheduledLabel = scheduledFor ? ctx.formatTime(new Date(scheduledFor)) : null;
   const first = orders[0];
+  // Shops that don't auto-accept hold the order for staff: the customer is told it is received, not confirmed.
+  const awaitingAcceptance = orders.some((o) => o.status === 'awaiting_acceptance');
 
   // Delivery and dine-in are read from the orders themselves (so the card webhook, which has no
   // conversation state, produces the same message).
@@ -113,6 +119,7 @@ function buildPlacedReply(
       paymentChoice: choice,
       etaMinutes: ctx.config.deliveryTimeMinutes,
       scheduledLabel,
+      awaitingAcceptance,
     });
   }
   if (first.fulfilment === 'dine_in') {
@@ -122,11 +129,12 @@ function buildPlacedReply(
       total,
       paymentChoice: choice,
       prepMinutes: ctx.config.prepTimeMinutes,
+      awaitingAcceptance,
     });
   }
 
   const extraLines = [
-    !scheduledLabel && ctx.config.prepTimeMinutes > 0 ? `⏱️ Ready in about ${ctx.config.prepTimeMinutes} minutes.` : undefined,
+    !awaitingAcceptance && !scheduledLabel && ctx.config.prepTimeMinutes > 0 ? `⏱️ Ready in about ${ctx.config.prepTimeMinutes} minutes.` : undefined,
     ctx.config.collectionInstructions ? `ℹ️ ${ctx.config.collectionInstructions}` : undefined,
   ].filter((line): line is string => line !== undefined);
   const offersDelivery = enabledFulfilments(ctx.config, ctx.catalog).includes('delivery');
@@ -142,13 +150,14 @@ function buildPlacedReply(
       total,
       choice,
       scheduledLabel,
-      { extraLines },
+      { extraLines, awaitingAcceptance },
     );
   }
   const order = orders[0];
   return messages.cartOrderCreatedMessage(order.orderNumber, order.items, total, choice, [order.collectionPoint], scheduledLabel, {
     offersDelivery,
     extraLines,
+    awaitingAcceptance,
   });
 }
 
@@ -171,6 +180,10 @@ export function beginOrderConfirmation(
   scheduledFor?: string | null,
   fulfilment?: FulfilmentSelection | null,
 ): ActionResult | Promise<ActionResult> {
+  // Outside the shop's minimum / maximum order value: back to the cart before anything else.
+  const limit = orderLimitReply(ctx, cart);
+  if (limit) return limit;
+
   // Shops that offer delivery or dine-in need that answered before anything is charged.
   // (null customer: this path has none to hand, so the pay list just omits the wallet balance line.)
   if (!fulfilment && needsFulfilmentStep(ctx)) {

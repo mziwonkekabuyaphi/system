@@ -320,6 +320,8 @@ export interface PlacedOrder {
   deliveryArea: string | null;
   deliveryAddress: string | null;
   tableLabel: string | null;
+  /** orders.status when it was read. 'awaiting_acceptance' = the shop still has to accept it. */
+  status: OrderStatus;
 }
 
 export type PlaceOrderFailure =
@@ -327,6 +329,7 @@ export type PlaceOrderFailure =
   | { outcome: 'product_unavailable' | 'out_of_stock'; productName: string }
   | { outcome: 'low_stock'; productName: string; stock: number }
   | { outcome: 'below_minimum_order'; minOrder: number; subtotal: number }
+  | { outcome: 'above_maximum_order'; maxOrder: number; subtotal: number }
   | {
       outcome:
         | 'wallet_not_found'
@@ -336,6 +339,7 @@ export type PlaceOrderFailure =
         | 'empty_cart'
         | 'no_vendor_configured'
         | 'payment_method_not_allowed'
+        | 'payment_required'
         | 'scheduling_not_allowed'
         | 'invalid_fulfilment'
         | 'fulfilment_not_allowed'
@@ -364,6 +368,7 @@ interface RpcOrderJson {
   delivery_area?: string | null;
   delivery_address?: string | null;
   table_label?: string | null;
+  status?: OrderStatus;
   items: Array<{ product_name: string; quantity: number; unit_price: number }>;
 }
 
@@ -380,6 +385,7 @@ export function parseOrdersJson(raw: unknown): PlacedOrder[] {
     deliveryArea: o.delivery_area ?? null,
     deliveryAddress: o.delivery_address ?? null,
     tableLabel: o.table_label ?? null,
+    status: o.status ?? 'placed',
     items: (o.items ?? []).map((i) => ({
       productName: i.product_name,
       quantity: Number(i.quantity),
@@ -433,6 +439,8 @@ export async function placeOrder(ctx: TenantContext, params: PlaceOrderParams): 
       return { outcome: 'low_stock', productName: String(result.product_name ?? ''), stock: Number(result.stock ?? 0) };
     case 'below_minimum_order':
       return { outcome: 'below_minimum_order', minOrder: Number(result.min_order ?? 0), subtotal: Number(result.subtotal ?? 0) };
+    case 'above_maximum_order':
+      return { outcome: 'above_maximum_order', maxOrder: Number(result.max_order ?? 0), subtotal: Number(result.subtotal ?? 0) };
     default:
       return { outcome: result.outcome } as PlaceOrderFailure;
   }
@@ -554,7 +562,7 @@ function ordersForPhone(ctx: TenantContext, phone: string) {
   return ctx.db.from('orders').select(ORDER_COLUMNS).eq('tenant_id', ctx.tenantId).eq('customer_phone', phone);
 }
 
-const ACTIVE_STATUSES: OrderStatus[] = ['pending', 'placed', 'preparing', 'ready', 'out_for_delivery'];
+const ACTIVE_STATUSES: OrderStatus[] = ['pending', 'awaiting_acceptance', 'placed', 'preparing', 'ready', 'out_for_delivery'];
 
 export async function getLatestOrderForPhone(ctx: TenantContext, phone: string): Promise<OrderRow | null> {
   const { data, error } = await ordersForPhone(ctx, phone)

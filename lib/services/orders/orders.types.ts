@@ -5,6 +5,7 @@
 
 export type OrderStatus =
   | 'pending'
+  | 'awaiting_acceptance'
   | 'placed'
   | 'preparing'
   | 'ready'
