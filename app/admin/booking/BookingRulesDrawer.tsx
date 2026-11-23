@@ -157,8 +157,11 @@ export function BookingRulesDrawer({
     setSaving(true)
     setMessage(null)
     const value = draft
+    // Payment is owned by Settings > Payments (payment_policies). Never send requirePayment from here:
+    // this form's copy can be older than what was saved there, and sending it would overwrite the new rule.
+    const { requirePayment: _requirePayment, ...payload } = value
     try {
-      const res = await updateBookingSettings(value)
+      const res = await updateBookingSettings(payload)
       if (res.success) {
         setBaseline(value)
         onSaved(value)
@@ -321,25 +324,12 @@ export function BookingRulesDrawer({
               title="Payment"
               hint="Applies to bookings customers make themselves on WhatsApp and at the kiosk. Bookings you add in the admin are never charged."
             >
-              <div className="rounded-lg border border-line bg-card px-4">
-                <DrawerSwitch
-                  title="Customers pay when they book"
-                  description="The customer gets a card payment link (a QR code on the kiosk) for the total of the services they picked. Their time is held for 15 minutes and the booking is confirmed once they have paid. If they don't pay, the time is released. Services with a price of 0 are booked without payment. When off, bookings are free and confirm straight away."
-                  checked={draft.requirePayment ?? false}
-                  disabled={saving || (!draft.cardPaymentsConnected && !(draft.requirePayment ?? false))}
-                  onChange={(v) => set("requirePayment", v)}
-                />
-              </div>
-              {!draft.cardPaymentsConnected && (
-                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  {draft.requirePayment
-                    ? "No card payment provider is connected right now, so customers can't book on WhatsApp or the kiosk until you reconnect one in Settings > Payments."
-                    : "Connect a card payment provider in Settings > Payments to turn this on."}
+              <div className="rounded-lg border border-line bg-card px-4 py-3">
+                <p className="text-sm text-ink">Payment is now set in Settings &gt; Payments.</p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  Choose whether customers pay in full, pay a deposit or pay after the service, and set the payment deadline and refund policy there.
                 </p>
-              )}
-              <p className="text-xs text-ink-muted">
-                Switching this changes new bookings only. Bookings already made, and ones waiting for payment, keep the rules they were made under.
-              </p>
+              </div>
             </DrawerGroup>
 
             <DrawerGroup title="Staff">
