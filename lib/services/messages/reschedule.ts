@@ -116,6 +116,11 @@ export function rescheduleTooLateMessage(windowMinutes: number): string {
   return `Sorry, it's too late to move this booking. ${rule}. Please contact the shop directly and they'll help.`
 }
 
+/** The shop switched customer rescheduling off (Booking rules > Customers can reschedule). */
+export function rescheduleNotAllowedMessage(): string {
+  return "Sorry, bookings can't be moved here. Please contact the shop directly and they'll help you."
+}
+
 export function rescheduleInQueueMessage(): string {
   return "Your appointment is already in today's queue (or you're being served), so I can't move it from here. Please speak to someone at the shop."
 }

@@ -68,6 +68,11 @@ export function cancelTooLateMessage(windowMinutes: number): string {
   )
 }
 
+/** The shop switched customer cancellations off (Booking rules > Customers can cancel). */
+export function cancelNotAllowedMessage(): string {
+  return "Sorry, bookings can't be cancelled here. Please contact the shop directly and they'll help you."
+}
+
 export function cancelledBookingMessage(label: string): string {
   return `✅ Done — your booking has been cancelled.\n\n${label}\n\nWe hope to see you another time!`
 }

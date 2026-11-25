@@ -236,6 +236,21 @@ export function bookingAlreadyHasUpcomingMessage(): string {
   return "You already have an upcoming booking with us. To make a new one, please cancel the existing booking first, or choose *Check Status* to see it."
 }
 
+/** The customer already holds as many upcoming bookings as the shop allows (Booking rules > Max active bookings). */
+export function bookingActiveLimitMessage(): string {
+  return "You've reached the number of upcoming bookings we allow at one time. Once one of them has passed, or if you cancel one, you can book again. Choose *Check Status* to see them."
+}
+
+/** The customer already has the most bookings the shop allows on that day. */
+export function bookingDayLimitMessage(): string {
+  return "Sorry, you already have the most bookings we allow on that day. Please pick a different day, or reply *menu* to start again."
+}
+
+/** Same-day bookings are switched off: that day (today) can't be booked by customers. */
+export function bookingSameDayNotAllowedMessage(): string {
+  return "Sorry, we don't take same-day bookings here. Please reply *menu* and pick a day from tomorrow onwards."
+}
+
 export function bookingCancelledMessage(): string {
   return "No problem, your booking wasn't made. Reply *menu* any time to book again."
 }
@@ -288,6 +303,76 @@ export function nameCollectionRetryMessage(): string {
 
 export function nameCollectionThanksMessage(name: string): string {
   return `Thanks, ${name}! See you then 👋`
+}
+
+// ---------------------------------------------------------------------------
+// Bookings that need approval (booking_settings.require_approval)
+// ---------------------------------------------------------------------------
+
+/** Sent instead of the confirmation: the time is held, but the shop has to approve the booking first. */
+export function bookingPendingApprovalMessage(params: {
+  customerName: string | null | undefined
+  serviceName: string
+  slotLabel: string
+  bookingReference: string
+}): string {
+  const { customerName, serviceName, slotLabel, bookingReference } = params
+  return (
+    `Thanks${customerName ? `, ${customerName}` : ""}! We've received your booking request. 🕐\n\n` +
+    `*${serviceName}* on ${slotLabel}\n` +
+    `Reference: *${bookingReference}*\n\n` +
+    "Your time is being held for you. We'll message you as soon as the shop has confirmed it."
+  )
+}
+
+/** Same, for a customer who has already paid: the payment is kept while they wait. */
+export function bookingPaidPendingApprovalMessage(params: {
+  customerName: string | null | undefined
+  serviceName: string
+  slotLabel: string
+  bookingReference: string
+  amountLabel: string
+}): string {
+  const { customerName, serviceName, slotLabel, bookingReference, amountLabel } = params
+  return (
+    `✅ *Payment received (${amountLabel}).*\n\n` +
+    `Thanks${customerName ? `, ${customerName}` : ""}! Your booking request is with the shop. 🕐\n\n` +
+    `*${serviceName}* on ${slotLabel}\n` +
+    `Reference: *${bookingReference}*\n\n` +
+    "Your time is being held. We'll message you as soon as the shop has confirmed it. If it can't go ahead you'll be refunded in full."
+  )
+}
+
+/** The shop approved the request (sent from the admin). */
+export function bookingApprovedMessage(params: {
+  customerName: string | null | undefined
+  serviceName: string
+  slotLabel: string
+  bookingReference: string
+  ticketLabel?: string | null
+}): string {
+  const { customerName, serviceName, slotLabel, bookingReference, ticketLabel } = params
+  return (
+    `✅ Good news${customerName ? `, ${customerName}` : ""} — your booking is confirmed! 🎉\n\n` +
+    `*${serviceName}* on ${slotLabel}\n` +
+    (ticketLabel ? `Ticket: *${ticketLabel}*\n` : "") +
+    `Reference: *${bookingReference}*\n\n` +
+    "See you then!"
+  )
+}
+
+/** The shop declined the request (sent from the admin). `paid` = the customer had already paid. */
+export function bookingDeclinedMessage(params: {
+  serviceName: string
+  slotLabel: string
+  paid: boolean
+}): string {
+  const { serviceName, slotLabel, paid } = params
+  return (
+    `Sorry, the shop couldn't confirm your booking for *${serviceName}* on ${slotLabel}. ` +
+    (paid ? "You'll be refunded in full — the shop will sort that out with you. " : "") +
+    "Reply *menu* to book another time."
+  )
 }
 
 // ---------------------------------------------------------------------------
