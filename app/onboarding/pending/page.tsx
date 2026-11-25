@@ -13,8 +13,6 @@ import { getCurrentTenantMember, getSessionUser } from "@/lib/tenant/current-ten
 export const metadata = { title: "We're reviewing your application · QLess" }
 export const dynamic = "force-dynamic"
 
-const LABELS: Record<string, string> = { booking: "Booking", queue: "Queue", shisha: "Shisha", shifts: "Shifts", payroll: "Payroll" }
-
 export default async function PendingPage() {
   if (!(await getSessionUser())) redirect("/login")
 
@@ -26,14 +24,27 @@ export default async function PendingPage() {
 
   const { data: tenant } = await supabase
     .from("tenants")
-    .select("name, status, requested_modules")
+    .select("name, status, industry, requested_modules")
     .eq("id", member.tenantId)
     .maybeSingle()
 
   if (!tenant || tenant.status === "active" || tenant.status === "suspended") redirect("/admin")
 
   const declined = tenant.status === "inactive"
-  const asked = ((tenant.requested_modules as string[] | null) ?? []).map((k) => LABELS[k] ?? k)
+  const requested = (tenant.requested_modules as string[] | null) ?? []
+
+  // Names come from the database so new modules (events, orders, wallet, ...)
+  // show up without touching this file.
+  const [{ data: moduleRows }, { data: presetRow }] = await Promise.all([
+    requested.length > 0
+      ? supabase.from("modules").select("key, name").in("key", requested)
+      : Promise.resolve({ data: [] as { key: string; name: string }[] }),
+    tenant.industry
+      ? supabase.from("industry_presets").select("name").eq("key", tenant.industry).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+  const nameByKey = new Map((moduleRows ?? []).map((m) => [m.key, m.name]))
+  const asked = requested.map((k) => nameByKey.get(k) ?? k)
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-16">
@@ -45,8 +56,9 @@ export default async function PendingPage() {
           </>
         ) : (
           <>
-            Thanks for signing up <strong>{tenant.name}</strong>. We check every new business before it goes live, then switch on what
-            you need. We&apos;ll be in touch soon.
+            Thanks for signing up <strong>{tenant.name}</strong>
+            {presetRow?.name ? <> ({presetRow.name})</> : null}. Booking and Queue switch on straight away, but the modules you picked
+            need a quick check first. Your settings are already prepared, so once you&apos;re approved you can start right away.
           </>
         )}
       </p>
