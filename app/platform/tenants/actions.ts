@@ -94,33 +94,58 @@ export async function createShop(input: {
   } catch (e) { return fail(e) }
 }
 
-/** Approves a shop that signed itself up: switches on the chosen modules, then makes it active. */
-export async function approveShop(input: { tenantId: string; modules: NewShopModule[] }): Promise<R> {
+/**
+ * Approves a shop that signed itself up and is still waiting (it only asked for approval-gated
+ * modules): switches on the chosen modules and makes it active, in ONE database call
+ * (approve_tenant_modules locks the shop row, so two admins can't both approve it).
+ */
+export async function approveShop(input: { tenantId: string; modules: string[] }): Promise<R> {
   try {
     const { supabase } = await ctx()
-
-    const { data: tenant, error } = await supabase.from("tenants").select("id, status").eq("id", input.tenantId).maybeSingle()
-    if (error) return fail(error)
-    if (!tenant) return { success: false, error: "Shop not found." }
-    if (tenant.status !== "pending") return { success: false, error: "That shop isn't waiting for approval any more." }
-
-    // Modules first, then activate: a pending shop has nothing live (isProductEnabled needs status 'active'),
-    // so a failure here leaves it safely pending and the admin can just try again.
-    await enableModulesForNewShop(supabase, tenant.id, cleanModuleKeys(input.modules))
-
-    const { data: claimed, error: claimError } = await supabase
-      .from("tenants")
-      .update({ status: "active" })
-      .eq("id", tenant.id)
-      .eq("status", "pending") // a second admin clicking at the same time can't approve it twice
-      .select("id")
-      .maybeSingle()
-    if (claimError) return fail(claimError)
-    if (!claimed) return { success: false, error: "Someone else already handled that shop." }
+    const { error } = await supabase.rpc("approve_tenant_modules", {
+      p_tenant_id: input.tenantId,
+      p_modules: input.modules,
+      p_activate: true,
+    })
+    if (error) return { success: false, error: error.message }
 
     revalidatePath("/platform")
     revalidatePath("/platform/tenants")
     revalidatePath("/platform/modules")
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+/** A live shop asked for modules that need approval (e.g. Staff, Events, Orders): switch the chosen ones on. */
+export async function approveModuleRequests(input: { tenantId: string; modules: string[] }): Promise<R> {
+  try {
+    const { supabase } = await ctx()
+    if (input.modules.length === 0) return { success: false, error: "Pick at least one module to switch on." }
+    const { error } = await supabase.rpc("approve_tenant_modules", {
+      p_tenant_id: input.tenantId,
+      p_modules: input.modules,
+      p_activate: false,
+    })
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/platform")
+    revalidatePath("/platform/tenants")
+    revalidatePath("/platform/modules")
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+/** Turn down held module requests; the shop keeps everything that's already on. */
+export async function declineModuleRequests(input: { tenantId: string; modules: string[] }): Promise<R> {
+  try {
+    const { supabase } = await ctx()
+    const { error } = await supabase.rpc("decline_tenant_modules", {
+      p_tenant_id: input.tenantId,
+      p_modules: input.modules,
+    })
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath("/platform/tenants")
     return { success: true }
   } catch (e) { return fail(e) }
 }

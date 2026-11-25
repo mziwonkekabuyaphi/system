@@ -43,31 +43,70 @@ export default async function TenantsPage() {
     }))
     .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
 
-  // Shops waiting for approval (self-signups), oldest first, with who signed up and what they asked for.
-  const waiting = ((tenants.data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at?: string; requested_modules?: string[] | null }>)
-    .filter((t) => t.status === "pending")
-    .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+  type TenantRow = {
+    id: string; name: string; slug: string; status: string; created_at?: string
+    requested_modules?: string[] | null; pending_modules?: string[] | null; industry?: string | null
+  }
+  const all = (tenants.data ?? []) as TenantRow[]
 
-  const pending = await Promise.all(
-    waiting.map(async (t) => {
-      let ownerName: string | null = null
-      let ownerEmail: string | null = null
-      try {
-        const { data: member } = await supabase.from("tenant_members").select("profile_id").eq("tenant_id", t.id).limit(1).maybeSingle()
-        if (member?.profile_id) {
-          const [{ data: profile }, { data: auth }] = await Promise.all([
-            supabase.from("profiles").select("full_name").eq("id", member.profile_id).maybeSingle(),
-            supabase.auth.admin.getUserById(member.profile_id),
-          ])
-          ownerName = profile?.full_name ?? null
-          ownerEmail = auth?.user?.email ?? null
-        }
-      } catch {
-        // The card still works without the owner's details.
+  const [{ data: presetRows }, { data: moduleRows }] = await Promise.all([
+    supabase.from("industry_presets").select("key, name"),
+    supabase
+      .from("modules")
+      .select("key, name")
+      .in("kind", ["product", "addon"])
+      .neq("key", "custom_domain")
+      .order("display_order", { nullsFirst: false }),
+  ])
+  const industryName = new Map((presetRows ?? []).map((p) => [p.key, p.name]))
+  const moduleOptions = (moduleRows ?? []) as Array<{ key: string; name: string }>
+
+  // Who signed up: owner's name and email, best-effort.
+  async function owner(tenantId: string) {
+    let ownerName: string | null = null
+    let ownerEmail: string | null = null
+    try {
+      const { data: member } = await supabase!.from("tenant_members").select("profile_id").eq("tenant_id", tenantId).limit(1).maybeSingle()
+      if (member?.profile_id) {
+        const [{ data: profile }, { data: auth }] = await Promise.all([
+          supabase!.from("profiles").select("full_name").eq("id", member.profile_id).maybeSingle(),
+          supabase!.auth.admin.getUserById(member.profile_id),
+        ])
+        ownerName = profile?.full_name ?? null
+        ownerEmail = auth?.user?.email ?? null
       }
-      return { id: t.id, name: t.name, slug: t.slug, createdAt: t.created_at ?? null, requested: t.requested_modules ?? [], ownerName, ownerEmail }
-    }),
+    } catch {
+      // The card still works without the owner's details.
+    }
+    return { ownerName, ownerEmail }
+  }
+
+  const toCard = async (t: TenantRow, requested: string[]) => ({
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    createdAt: t.created_at ?? null,
+    requested,
+    industry: t.industry ? industryName.get(t.industry) ?? t.industry : null,
+    ...(await owner(t.id)),
+  })
+
+  // Shops that only asked for approval-gated modules (nothing live yet), oldest first.
+  const pending = await Promise.all(
+    all
+      .filter((t) => t.status === "pending")
+      .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+      // New signups store what's held in pending_modules; older ones only have requested_modules.
+      .map((t) => toCard(t, t.pending_modules?.length ? t.pending_modules : t.requested_modules ?? [])),
   )
 
-  return <Tenants rows={rows} pending={pending} />
+  // Live shops (Booking/Queue are self-serve) that also asked for modules needing approval.
+  const requests = await Promise.all(
+    all
+      .filter((t) => t.status === "active" && (t.pending_modules?.length ?? 0) > 0)
+      .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+      .map((t) => toCard(t, t.pending_modules ?? [])),
+  )
+
+  return <Tenants rows={rows} pending={pending} requests={requests} moduleOptions={moduleOptions} />
 }

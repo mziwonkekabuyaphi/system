@@ -6,9 +6,10 @@ import { useState, useTransition } from "react"
 import { ModulePicker } from "@/components/platform/ModulePicker"
 import { PageHeader } from "@/components/platform/PageHeader"
 import { CREATABLE_MODULES, type NewShopModule } from "@/lib/services/new-shop-modules"
-import { approveShop, createOwnerInvite, createShop, declineShop } from "./actions"
+import { approveModuleRequests, approveShop, createOwnerInvite, createShop, declineModuleRequests, declineShop } from "./actions"
 
-type Pending = { id: string; name: string; slug: string; createdAt: string | null; requested: string[]; ownerName: string | null; ownerEmail: string | null }
+type Pending = { id: string; name: string; slug: string; createdAt: string | null; requested: string[]; industry: string | null; ownerName: string | null; ownerEmail: string | null }
+type ModuleOption = { key: string; name: string }
 type Row ={ id: string; name: string; slug: string; status: string; createdAt: string | null; members: number; referredBy: string | null }
 
 const date = (s: string | null) => (s ? new Date(s).toLocaleDateString("en-ZA") : "—")
@@ -19,7 +20,7 @@ const btn2 = "rounded-lg border border-stone-300 px-3 py-1.5 text-sm text-stone-
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
 
-export function Tenants({ rows, pending }: { rows: Row[]; pending: Pending[] }) {
+export function Tenants({ rows, pending, requests, moduleOptions }: { rows: Row[]; pending: Pending[]; requests: Pending[]; moduleOptions: ModuleOption[] }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [invite, setInvite] = useState<{ shop: string; code: string } | null>(null)
   const [busy, start] = useTransition()
@@ -33,7 +34,8 @@ export function Tenants({ rows, pending }: { rows: Row[]; pending: Pending[] }) 
       {msg && <p className={`rounded-lg px-3 py-2 text-sm ${msg.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{msg.text}</p>}
       {invite && <InviteBox shop={invite.shop} code={invite.code} onClose={() => setInvite(null)} />}
 
-      {pending.length > 0 && <WaitingForApproval pending={pending} busy={busy} start={start} setMsg={setMsg} />}
+      {pending.length > 0 && <WaitingForApproval pending={pending} moduleOptions={moduleOptions} busy={busy} start={start} setMsg={setMsg} />}
+      {requests.length > 0 && <ModuleRequests requests={requests} moduleOptions={moduleOptions} busy={busy} start={start} setMsg={setMsg} />}
 
       <NewShop busy={busy} start={start} setMsg={setMsg} setInvite={setInvite} />
 
@@ -85,15 +87,15 @@ export function Tenants({ rows, pending }: { rows: Row[]; pending: Pending[] }) 
 type Msg = { ok: boolean; text: string } | null
 
 /** Self-signed-up shops waiting for a decision. The ticks start at what the owner asked for; change them before approving. */
-function WaitingForApproval({ pending, busy, start, setMsg }: {
+function WaitingForApproval({ pending, moduleOptions, busy, start, setMsg }: {
   pending: Pending[]
+  moduleOptions: ModuleOption[]
   busy: boolean
   start: (fn: () => Promise<void>) => void
   setMsg: (m: Msg) => void
 }) {
-  const [picked, setPicked] = useState<Record<string, NewShopModule[]>>({})
-  const current = (p: Pending): NewShopModule[] =>
-    picked[p.id] ?? CREATABLE_MODULES.filter((m) => p.requested.includes(m.key)).map((m) => m.key)
+  const [picked, setPicked] = useState<Record<string, string[]>>({})
+  const current = (p: Pending): string[] => picked[p.id] ?? p.requested.filter((k) => moduleOptions.some((m) => m.key === k))
 
   return (
     <section className="overflow-hidden rounded-2xl border border-amber-300 bg-white shadow-sm">
@@ -112,7 +114,7 @@ function WaitingForApproval({ pending, busy, start, setMsg }: {
                     <h3 className="text-base font-semibold text-stone-900">{p.name}</h3>
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">Pending</span>
                   </div>
-                  <p className="mt-0.5 font-mono text-xs text-stone-500">/{p.slug}</p>
+                  <p className="mt-0.5 font-mono text-xs text-stone-500">/{p.slug}{p.industry ? ` · ${p.industry}` : ""}</p>
                 </div>
                 <p className="text-xs text-stone-500">Signed up {date(p.createdAt)}</p>
               </div>
@@ -122,7 +124,8 @@ function WaitingForApproval({ pending, busy, start, setMsg }: {
               </p>
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400">Switch on when approved</p>
-                <ModulePicker
+                <ModuleChecklist
+                  options={moduleOptions}
                   value={chosen}
                   requested={p.requested}
                   disabled={busy}
@@ -152,6 +155,112 @@ function WaitingForApproval({ pending, busy, start, setMsg }: {
                     start(async () => {
                       const res = await declineShop({ tenantId: p.id })
                       setMsg(res.success ? { ok: true, text: `${p.name} declined.` } : { ok: false, text: res.error })
+                    })
+                  }}
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+/** Plain checklist driven by the modules table, so new modules (Events, Orders, Wallet, ...) appear automatically. The database checks dependencies. */
+function ModuleChecklist({ options, value, requested, disabled, onChange }: {
+  options: ModuleOption[]
+  value: string[]
+  requested: string[]
+  disabled: boolean
+  onChange: (next: string[]) => void
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {options.map((m) => {
+        const on = value.includes(m.key)
+        return (
+          <label key={m.key} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${on ? "border-stone-900 bg-stone-50" : "border-stone-200"}`}>
+            <input
+              type="checkbox"
+              checked={on}
+              disabled={disabled}
+              onChange={() => onChange(on ? value.filter((k) => k !== m.key) : [...value, m.key])}
+            />
+            <span className="text-stone-800">{m.name}</span>
+            {requested.includes(m.key) && <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">Asked for</span>}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Live shops (Booking/Queue are self-serve) that also asked for modules needing approval. */
+function ModuleRequests({ requests, moduleOptions, busy, start, setMsg }: {
+  requests: Pending[]
+  moduleOptions: ModuleOption[]
+  busy: boolean
+  start: (fn: () => Promise<void>) => void
+  setMsg: (m: Msg) => void
+}) {
+  const [picked, setPicked] = useState<Record<string, string[]>>({})
+  const current = (r: Pending) => picked[r.id] ?? r.requested
+  const nameOf = (k: string) => moduleOptions.find((m) => m.key === k)?.name ?? k
+  const label = "mb-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400"
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-sky-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-sky-100 bg-sky-50 px-5 py-3">
+        <h2 className="text-sm font-semibold text-stone-800">Module requests</h2>
+        <span className="rounded-full bg-sky-200 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-sky-900">{requests.length}</span>
+      </div>
+      <div className="divide-y divide-stone-100">
+        {requests.map((r) => {
+          const chosen = current(r)
+          return (
+            <div key={r.id} className="space-y-3 p-5 text-sm">
+              <div>
+                <h3 className="text-base font-semibold text-stone-900">{r.name}</h3>
+                <p className="text-xs text-stone-500">
+                  Live now{r.industry ? ` · ${r.industry}` : ""} · {r.ownerName ?? "Owner"} · {r.ownerEmail ?? "no email"}
+                </p>
+              </div>
+              <div>
+                <p className={label}>Asked for: {r.requested.map(nameOf).join(", ")}</p>
+                <ModuleChecklist
+                  options={moduleOptions.filter((m) => r.requested.includes(m.key))}
+                  value={chosen}
+                  requested={r.requested}
+                  disabled={busy}
+                  onChange={(next) => setPicked((cur) => ({ ...cur, [r.id]: next }))}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className={btn}
+                  disabled={busy || chosen.length === 0}
+                  onClick={() => {
+                    setMsg(null)
+                    start(async () => {
+                      const res = await approveModuleRequests({ tenantId: r.id, modules: chosen })
+                      setMsg(res.success ? { ok: true, text: `${r.name}: ${chosen.map(nameOf).join(", ")} switched on.` } : { ok: false, text: res.error })
+                    })
+                  }}
+                >
+                  Switch on selected
+                </button>
+                <button
+                  className={btn2}
+                  disabled={busy}
+                  onClick={() => {
+                    if (!window.confirm(`Decline ${r.requested.map(nameOf).join(", ")} for ${r.name}? The shop keeps everything already on.`)) return
+                    setMsg(null)
+                    start(async () => {
+                      const res = await declineModuleRequests({ tenantId: r.id, modules: r.requested })
+                      setMsg(res.success ? { ok: true, text: `Request declined for ${r.name}.` } : { ok: false, text: res.error })
                     })
                   }}
                 >
