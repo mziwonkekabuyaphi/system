@@ -352,7 +352,7 @@ async function getSettingsData(
     supabase
       .from("booking_settings")
       .select(
-        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice, booking_number_prefix, kiosk_print_ticket",
+        "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, max_services_per_booking, max_dates_offered, queue_priority_mode, allow_customer_staff_choice, booking_number_prefix, kiosk_print_ticket, allow_customer_cancel, allow_customer_reschedule, reschedule_deadline_minutes, allow_same_day_bookings, allow_recurring_bookings, require_approval, max_bookings_per_customer_per_day, max_active_bookings_per_customer",
       )
       .eq("tenant_id", tenantId)
       .single(),
@@ -537,6 +537,14 @@ async function getSettingsData(
       allowCustomerStaffChoice: bookingSettingsResult.data.allow_customer_staff_choice === true,
       bookingNumberPrefix: bookingSettingsResult.data.booking_number_prefix ?? "B",
       kioskPrintTicket: bookingSettingsResult.data.kiosk_print_ticket !== false,
+      allowCustomerCancel: bookingSettingsResult.data.allow_customer_cancel !== false,
+      allowCustomerReschedule: bookingSettingsResult.data.allow_customer_reschedule !== false,
+      rescheduleDeadlineMinutes: bookingSettingsResult.data.reschedule_deadline_minutes ?? null,
+      allowSameDayBookings: bookingSettingsResult.data.allow_same_day_bookings !== false,
+      allowRecurringBookings: bookingSettingsResult.data.allow_recurring_bookings === true,
+      requireApproval: bookingSettingsResult.data.require_approval === true,
+      maxBookingsPerCustomerPerDay: bookingSettingsResult.data.max_bookings_per_customer_per_day ?? null,
+      maxActiveBookingsPerCustomer: bookingSettingsResult.data.max_active_bookings_per_customer ?? 1,
       requirePayment: await readRequirePayment(supabase, tenantId),
       cardPaymentsConnected: await hasCardPayments(supabase, tenantId),
       queuePriorityMode: (["fifo", "priority", "hybrid"] as const).includes(bookingSettingsResult.data.queue_priority_mode)

@@ -950,6 +950,22 @@ export async function updateBookingSettings(input: {
   kioskPrintTicket?: boolean
   /** true = WhatsApp and kiosk bookings are held until the customer pays by card; omitted = unchanged. */
   requirePayment?: boolean
+  /** false = customers can't cancel their own booking on WhatsApp; omitted = unchanged. */
+  allowCustomerCancel?: boolean
+  /** false = customers can't move their own booking; omitted = unchanged. */
+  allowCustomerReschedule?: boolean
+  /** Minutes before the start that moving is still allowed. null = same as the cancellation window; omitted = unchanged. */
+  rescheduleDeadlineMinutes?: number | null
+  /** false = customers can't book for today; omitted = unchanged. */
+  allowSameDayBookings?: boolean
+  /** true = staff can add repeating appointments; omitted = unchanged. */
+  allowRecurringBookings?: boolean
+  /** true = bookings customers make wait for staff approval; omitted = unchanged. */
+  requireApproval?: boolean
+  /** null = no limit (1-20 otherwise); omitted = unchanged. */
+  maxBookingsPerCustomerPerDay?: number | null
+  /** Upcoming bookings one customer may hold (1-20); omitted = unchanged. */
+  maxActiveBookingsPerCustomer?: number
 }): Promise<ActionResult> {
   try {
     const bookingNumberPrefix = input.bookingNumberPrefix?.trim().toUpperCase()
@@ -992,6 +1008,39 @@ export async function updateBookingSettings(input: {
 
     if (!VALID_QUEUE_PRIORITY_MODES.includes(input.queuePriorityMode)) {
       return { success: false, error: "Choose a valid queue priority mode." }
+    }
+
+    if (
+      input.rescheduleDeadlineMinutes != null &&
+      (!Number.isInteger(input.rescheduleDeadlineMinutes) || input.rescheduleDeadlineMinutes < 0)
+    ) {
+      return { success: false, error: "Rescheduling deadline must be a whole number of minutes, 0 or more." }
+    }
+
+    if (
+      input.maxBookingsPerCustomerPerDay != null &&
+      (!Number.isInteger(input.maxBookingsPerCustomerPerDay) ||
+        input.maxBookingsPerCustomerPerDay < 1 ||
+        input.maxBookingsPerCustomerPerDay > 20)
+    ) {
+      return { success: false, error: "Bookings per customer per day must be a whole number from 1 to 20, or empty for no limit." }
+    }
+
+    if (
+      input.maxActiveBookingsPerCustomer !== undefined &&
+      (!Number.isInteger(input.maxActiveBookingsPerCustomer) ||
+        input.maxActiveBookingsPerCustomer < 1 ||
+        input.maxActiveBookingsPerCustomer > 20)
+    ) {
+      return { success: false, error: "Upcoming bookings per customer must be a whole number from 1 to 20." }
+    }
+
+    // Customers couldn't book at all: no same-day AND no days ahead.
+    if (input.allowSameDayBookings === false && input.maxAdvanceDays < 1) {
+      return {
+        success: false,
+        error: "Same-day bookings are off, so customers need at least 1 day of advance booking. Raise “How far ahead customers can book” or allow same-day bookings.",
+      }
     }
 
     if (
@@ -1069,6 +1118,14 @@ export async function updateBookingSettings(input: {
         ...(input.allowCustomerStaffChoice !== undefined
           ? { allow_customer_staff_choice: input.allowCustomerStaffChoice === true }
           : {}),
+        ...(input.allowCustomerCancel !== undefined ? { allow_customer_cancel: input.allowCustomerCancel === true } : {}),
+        ...(input.allowCustomerReschedule !== undefined ? { allow_customer_reschedule: input.allowCustomerReschedule === true } : {}),
+        ...(input.rescheduleDeadlineMinutes !== undefined ? { reschedule_deadline_minutes: input.rescheduleDeadlineMinutes } : {}),
+        ...(input.allowSameDayBookings !== undefined ? { allow_same_day_bookings: input.allowSameDayBookings === true } : {}),
+        ...(input.allowRecurringBookings !== undefined ? { allow_recurring_bookings: input.allowRecurringBookings === true } : {}),
+        ...(input.requireApproval !== undefined ? { require_approval: input.requireApproval === true } : {}),
+        ...(input.maxBookingsPerCustomerPerDay !== undefined ? { max_bookings_per_customer_per_day: input.maxBookingsPerCustomerPerDay } : {}),
+        ...(input.maxActiveBookingsPerCustomer !== undefined ? { max_active_bookings_per_customer: input.maxActiveBookingsPerCustomer } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)
@@ -1097,10 +1154,6 @@ export async function updateQueueSettings(input: {
   maxServicesPerQueueEntry: number
   /** false = no printed slip at the kiosk for walk-ins; omitted = unchanged. */
   kioskPrintTicket?: boolean
-  /** Customer self-service rules (WhatsApp). Omitted = unchanged. */
-  allowCustomersLeave?: boolean
-  allowPositionCheck?: boolean
-  showEstimatedWait?: boolean
 }): Promise<ActionResult> {
   try {
     if (!isValidServicesPerVisit(input.maxServicesPerQueueEntry)) {
@@ -1134,9 +1187,6 @@ export async function updateQueueSettings(input: {
         ticket_number_prefix: ticketNumberPrefix,
         max_services_per_queue_entry: input.maxServicesPerQueueEntry,
         ...(input.kioskPrintTicket !== undefined ? { kiosk_print_ticket: input.kioskPrintTicket === true } : {}),
-        ...(input.allowCustomersLeave !== undefined ? { allow_customers_leave: input.allowCustomersLeave === true } : {}),
-        ...(input.allowPositionCheck !== undefined ? { allow_position_check: input.allowPositionCheck === true } : {}),
-        ...(input.showEstimatedWait !== undefined ? { show_estimated_wait: input.showEstimatedWait === true } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("tenant_id", tenantId)

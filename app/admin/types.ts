@@ -167,7 +167,7 @@ export interface AdminBooking {
   startTime: string
   /** ISO timestamp */
   endTime: string
-  status: "confirmed" | "awaiting_payment" | "cancelled" | "completed"
+  status: "confirmed" | "awaiting_payment" | "pending_approval" | "cancelled" | "completed"
   bookingReference: string
   /** Running per-shop ticket, e.g. "B0012". Null for bookings made before ticket numbers existed. */
   ticketLabel: string | null
@@ -535,6 +535,22 @@ export interface AdminBookingSettings {
   requirePayment?: boolean
   /** Read-only: the shop has a card provider connected (Settings > Payments), so payment can be switched on. Never saved. */
   cardPaymentsConnected?: boolean
+  /** false = customers can't cancel their own booking on WhatsApp. booking_settings.allow_customer_cancel (default true). */
+  allowCustomerCancel?: boolean
+  /** false = customers can't move their own booking. booking_settings.allow_customer_reschedule (default true). */
+  allowCustomerReschedule?: boolean
+  /** Minutes before the start a booking can still be moved. null = same as the cancellation window. */
+  rescheduleDeadlineMinutes?: number | null
+  /** false = customers can't book for today (staff still can). booking_settings.allow_same_day_bookings (default true). */
+  allowSameDayBookings?: boolean
+  /** true = staff can add repeating appointments. booking_settings.allow_recurring_bookings (default false). */
+  allowRecurringBookings?: boolean
+  /** true = bookings customers make wait for staff approval. booking_settings.require_approval (default false). */
+  requireApproval?: boolean
+  /** null = no limit. booking_settings.max_bookings_per_customer_per_day. */
+  maxBookingsPerCustomerPerDay?: number | null
+  /** Upcoming bookings one customer may hold (1-20). booking_settings.max_active_bookings_per_customer (default 1). */
+  maxActiveBookingsPerCustomer?: number
   /** false = bookings skip the service step. Optional so a loader that
    *  doesn't send it yet still compiles; the panel treats missing as true. */
   requireServiceSelection?: boolean

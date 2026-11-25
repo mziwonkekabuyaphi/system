@@ -28,7 +28,7 @@
  * the ActionResult error return happens first.
  */
 
-import { randomInt } from "node:crypto"
+import { randomInt, randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
@@ -45,7 +45,11 @@ import {
   BOOKING_NOT_COMPLETABLE,
   BOOKING_SLOT_NO_LONGER_AVAILABLE,
   BOOKING_OUTSIDE_ALLOWED_WINDOW,
+  BOOKING_ALREADY_IN_QUEUE,
 } from "@/lib/services/booking"
+import { getBookingSettings, getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
+import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
+import { bookingApprovedMessage, bookingDeclinedMessage } from "@/lib/services/messages/booking"
 import { joinQueue, formatQueueTicketNumber, getQueueSimulation } from "@/lib/services/queue"
 import { updateCustomer } from "@/lib/services/tenant-customer"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
@@ -241,6 +245,182 @@ export async function completeBooking(bookingId: string): Promise<ActionResult> 
   return { ok: true }
 }
 
+// ----------------------------------------------------------------------------
+// Approve / decline a booking request (Booking rules > Require approval)
+// ----------------------------------------------------------------------------
+
+/** What the customer message needs about a booking. null when it can't be loaded. */
+async function loadBookingNotice(supabase: ServerClient, tenantId: string, bookingId: string) {
+  const { data: b } = await supabase
+    .from("bookings")
+    .select(
+      `id, customer_id, start_time, end_time, booking_reference, ticket_number,
+       services!bookings_service_id_fkey ( name, price ),
+       booking_services ( position, services ( name, price ) ),
+       tenant_customers ( full_name, phone )`,
+    )
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (!b) return null
+
+  type Svc = { name: string; price: number }
+  const row = b as any
+  const linked: Svc[] = ((row.booking_services ?? []) as Array<{ position: number; services: Svc | Svc[] | null }>)
+    .slice()
+    .sort((x, y) => x.position - y.position)
+    .map((r) => (Array.isArray(r.services) ? r.services[0] : r.services))
+    .filter((s): s is Svc => !!s)
+  const primary: Svc | null = Array.isArray(row.services) ? (row.services[0] ?? null) : (row.services ?? null)
+  const services = linked.length > 0 ? linked : primary ? [primary] : []
+
+  const timeZone = await getTenantTimezone(supabase, tenantId)
+  const start = new Date(row.start_time as string)
+  const slotLabel =
+    new Intl.DateTimeFormat("en-ZA", { weekday: "short", day: "numeric", month: "short", timeZone }).format(start) +
+    " at " +
+    new Intl.DateTimeFormat("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }).format(start)
+
+  const customer = Array.isArray(row.tenant_customers) ? row.tenant_customers[0] : row.tenant_customers
+  return {
+    phone: (customer?.phone as string | null) ?? null,
+    customerName: (customer?.full_name as string | null) ?? null,
+    serviceNames: services.map((s) => s.name),
+    totalPrice: services.reduce((sum, s) => sum + Number(s.price), 0),
+    slotLabel,
+    reference: row.booking_reference as string,
+    ticketNumber: (row.ticket_number as number | null) ?? null,
+    startTime: row.start_time as string,
+    endTime: row.end_time as string,
+  }
+}
+
+export async function approveBooking(bookingId: string): Promise<ActionResult> {
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { data: current, error: readError } = await supabase
+    .from("bookings")
+    .select("id, status, start_time")
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (readError) return { ok: false, error: readError.message }
+  if (!current) return { ok: false, error: "Booking not found." }
+  if (current.status === "confirmed") return { ok: true } // second click
+  if (current.status !== "pending_approval") return { ok: false, error: "This booking is no longer waiting for approval. Please refresh." }
+  if (new Date(current.start_time).getTime() <= Date.now()) {
+    return { ok: false, error: "The time for this booking has already passed, so it can't be approved. Decline it instead." }
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("bookings")
+    .update({ status: "confirmed" })
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .eq("status", "pending_approval") // guards against a race with a decline in another tab
+    .select("id")
+  if (updateError) return { ok: false, error: updateError.message }
+  if (!updated || updated.length === 0) return { ok: false, error: "This booking was already changed. Please refresh and try again." }
+
+  // Tell the customer. Best effort: the booking is confirmed whether or not the message goes.
+  try {
+    const notice = await loadBookingNotice(supabase, tenantId!, bookingId)
+    if (notice?.phone) {
+      const { formatBookingTicketNumber } = await import("@/lib/services/ticket-format")
+      const { data: prefixRow } = await supabase.from("booking_settings").select("booking_number_prefix").eq("tenant_id", tenantId).maybeSingle()
+      const ticketLabel =
+        notice.ticketNumber == null
+          ? null
+          : formatBookingTicketNumber(notice.ticketNumber, (prefixRow?.booking_number_prefix as string | undefined)?.trim() || "B")
+      await sendWhatsAppTextMessage(
+        tenantId!,
+        notice.phone,
+        bookingApprovedMessage({
+          customerName: notice.customerName,
+          serviceName: notice.serviceNames.join(" + ") || "Appointment",
+          slotLabel: notice.slotLabel,
+          bookingReference: notice.reference,
+          ticketLabel,
+        }),
+      )
+      const { tryGenerateBookingTicketUrl } = await import("@/lib/whatsapp/booking-ticket-image")
+      const ticketUrl = await tryGenerateBookingTicketUrl(tenantId!, {
+        bookingId,
+        bookingReference: notice.reference,
+        customerName: notice.customerName,
+        customerPhone: notice.phone,
+        serviceNames: notice.serviceNames,
+        totalPrice: notice.totalPrice,
+        startTime: notice.startTime,
+        endTime: notice.endTime,
+      })
+      if (ticketUrl) await sendWhatsAppImageMessage(tenantId!, notice.phone, ticketUrl)
+    }
+  } catch (err) {
+    console.error("[admin] approveBooking: customer message failed (booking is already confirmed)", { tenantId, bookingId, err })
+  }
+
+  await logActivity(supabase, tenantId!, { category: "bookings", action: "Approved a booking" })
+  revalidatePath("/admin")
+  return { ok: true }
+}
+
+export async function declineBooking(bookingId: string): Promise<ActionResult & { paid?: boolean }> {
+  const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
+  if (!supabase) return { ok: false, error: error! }
+
+  const { data: current, error: readError } = await supabase
+    .from("bookings")
+    .select("id, status")
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+  if (readError) return { ok: false, error: readError.message }
+  if (!current) return { ok: false, error: "Booking not found." }
+  if (current.status === "cancelled") return { ok: true } // second click
+  if (current.status !== "pending_approval") return { ok: false, error: "This booking is no longer waiting for approval. Please refresh." }
+
+  // Load what the message needs BEFORE cancelling, and whether the customer already paid.
+  const notice = await loadBookingNotice(supabase, tenantId!, bookingId)
+  const { data: payment } = await supabase
+    .from("tenant_payments")
+    .select("status")
+    .eq("tenant_id", tenantId)
+    .eq("purpose", "booking_payment")
+    .eq("purpose_id", bookingId)
+    .eq("status", "succeeded")
+    .limit(1)
+    .maybeSingle()
+  const paid = !!payment
+
+  const { data: updated, error: updateError } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("id", bookingId)
+    .eq("tenant_id", tenantId)
+    .eq("status", "pending_approval")
+    .select("id")
+  if (updateError) return { ok: false, error: updateError.message }
+  if (!updated || updated.length === 0) return { ok: false, error: "This booking was already changed. Please refresh and try again." }
+
+  try {
+    if (notice?.phone) {
+      await sendWhatsAppTextMessage(
+        tenantId!,
+        notice.phone,
+        bookingDeclinedMessage({ serviceName: notice.serviceNames.join(" + ") || "Appointment", slotLabel: notice.slotLabel, paid }),
+      )
+    }
+  } catch (err) {
+    console.error("[admin] declineBooking: customer message failed (booking is already cancelled)", { tenantId, bookingId, err })
+  }
+
+  await logActivity(supabase, tenantId!, { category: "bookings", action: "Declined a booking" })
+  revalidatePath("/admin")
+  return { ok: true, paid }
+}
+
 
 // ----------------------------------------------------------------------------
 // Create an appointment from the admin (staff booking on a customer's behalf).
@@ -284,7 +464,7 @@ export async function getAdminBookingDates(): Promise<
   const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
   try {
-    return { ok: true, dates: await buildDateOptions(tenantId!) }
+    return { ok: true, dates: await buildDateOptions(tenantId!, { forStaff: true }) }
   } catch (err) {
     console.error("[admin] getAdminBookingDates failed", { tenantId, err })
     return { ok: false, error: "Couldn't load available dates." }
@@ -300,16 +480,35 @@ export async function getAdminBookingSlots(
   try {
     const service = (await getBookableServices(tenantId!)).find((s) => s.id === serviceId)
     if (!service) return { ok: false, error: "That service isn't available." }
-    return { ok: true, slots: await getAvailableSlots(tenantId!, dateISO, service.durationMinutes) }
+    return { ok: true, slots: await getAvailableSlots(tenantId!, dateISO, service.durationMinutes, undefined, undefined, true) }
   } catch (err) {
     console.error("[admin] getAdminBookingSlots failed", { tenantId, err })
     return { ok: false, error: "Couldn't load available times." }
   }
 }
 
+const MAX_SERIES_APPOINTMENTS = 12
+
 function looksLikePhone(value: string): boolean {
   const digits = value.replace(/\D/g, "")
   return digits.length >= 9 && digits.length <= 15
+}
+
+/** Whether staff may add repeating appointments (Booking rules > Allow recurring appointments). */
+export async function getAdminRecurringAllowed(): Promise<boolean> {
+  const { supabase, tenantId } = await getTenantScopedClient(undefined, "booking")
+  if (!supabase) return false
+  try {
+    return (await getBookingSettings(supabase, tenantId!)).allowRecurringBookings
+  } catch {
+    return false
+  }
+}
+
+/** One date a repeating series couldn't be booked for, and why (shown to staff). */
+export interface AdminSeriesSkip {
+  dateISO: string
+  reason: string
 }
 
 export async function createAdminBooking(input: {
@@ -318,8 +517,21 @@ export async function createAdminBooking(input: {
   slotStart: string
   phone: string
   name?: string
+  /** Repeat the appointment at the same time: every 7 or 14 days, `count` appointments in all (2-12).
+   *  Only when Booking rules > Recurring appointments is on (re-checked here). */
+  repeat?: { everyDays: 7 | 14; count: number }
 }): Promise<
-  { ok: true; bookingReference: string; ticketLabel: string | null; startTime: string } | { ok: false; error: string }
+  | {
+      ok: true
+      bookingReference: string
+      ticketLabel: string | null
+      startTime: string
+      /** Appointments created (1 unless it repeats). */
+      created: number
+      /** Dates in the series that couldn't be booked. */
+      skipped: AdminSeriesSkip[]
+    }
+  | { ok: false; error: string }
 > {
   const { supabase, tenantId, error } = await getTenantScopedClient(undefined, "booking")
   if (!supabase) return { ok: false, error: error! }
@@ -327,17 +539,30 @@ export async function createAdminBooking(input: {
   const phone = input.phone.trim()
   if (!looksLikePhone(phone)) return { ok: false, error: "Enter the customer's phone number." }
 
+  const repeat = input.repeat
+  if (repeat) {
+    if (![7, 14].includes(repeat.everyDays) || !Number.isInteger(repeat.count) || repeat.count < 2 || repeat.count > MAX_SERIES_APPOINTMENTS) {
+      return { ok: false, error: `Choose how often it repeats and how many appointments (2 to ${MAX_SERIES_APPOINTMENTS}).` }
+    }
+    const rules = await getBookingSettings(supabase, tenantId!)
+    if (!rules.allowRecurringBookings) {
+      return { ok: false, error: "Recurring appointments are switched off. Turn them on in Booking rules." }
+    }
+  }
+
   try {
     const service = (await getBookableServices(tenantId!)).find((s) => s.id === input.serviceId)
     if (!service) return { ok: false, error: "That service isn't available." }
 
     // Only accept a start time the availability logic itself offers right
     // now — the client can't submit an arbitrary timestamp.
-    const slots = await getAvailableSlots(tenantId!, input.dateISO, service.durationMinutes)
+    const slots = await getAvailableSlots(tenantId!, input.dateISO, service.durationMinutes, undefined, undefined, true)
     const slot = slots.find((s) => s.start === input.slotStart)
     if (!slot) return { ok: false, error: "That time is no longer available — please pick another." }
 
-    const result = await createBooking(tenantId!, { service, dateISO: input.dateISO, slot, phone })
+    // Staff bookings aren't held to the per-customer limits (staffCreated); a series shares one id.
+    const seriesId = repeat ? randomUUID() : undefined
+    const result = await createBooking(tenantId!, { service, dateISO: input.dateISO, slot, phone, staffCreated: true, seriesId })
 
     const name = input.name?.trim()
     if (name && name.length >= 2) {
@@ -349,9 +574,55 @@ export async function createAdminBooking(input: {
       }
     }
 
-    await logActivity(supabase, tenantId!, { category: "bookings", action: "Created a booking" })
+    // The rest of the series: the same local time on each later date. A date that is closed, full or
+    // otherwise unavailable is skipped and reported, never silently moved.
+    let created = 1
+    const skipped: AdminSeriesSkip[] = []
+    if (repeat && seriesId) {
+      for (let i = 1; i < repeat.count; i++) {
+        const dateISO = addDaysKey(input.dateISO, i * repeat.everyDays)
+        try {
+          const daySlots = await getAvailableSlots(tenantId!, dateISO, service.durationMinutes, undefined, undefined, true, true)
+          const sameTime = daySlots.find((s) => s.label === slot.label)
+          if (!sameTime) {
+            skipped.push({ dateISO, reason: "No free time at " + slot.label })
+            continue
+          }
+          await createBooking(tenantId!, { service, dateISO, slot: sameTime, phone, staffCreated: true, seriesId })
+          created += 1
+        } catch (err) {
+          const message = err instanceof Error ? err.message : ""
+          skipped.push({
+            dateISO,
+            reason:
+              message === BOOKING_SLOT_NO_LONGER_AVAILABLE
+                ? "That time was just taken"
+                : message === BOOKING_OUTSIDE_ALLOWED_WINDOW
+                  ? "Outside your opening hours or booking rules"
+                  : message === BOOKING_ALREADY_IN_QUEUE
+                    ? "Customer is in the queue"
+                    : "Couldn't be booked",
+          })
+          if (message !== BOOKING_SLOT_NO_LONGER_AVAILABLE && message !== BOOKING_OUTSIDE_ALLOWED_WINDOW) {
+            console.error("[admin] createAdminBooking: series occurrence failed", { tenantId, dateISO, err })
+          }
+        }
+      }
+    }
+
+    await logActivity(supabase, tenantId!, {
+      category: "bookings",
+      action: created > 1 ? `Created a repeating booking (${created} appointments)` : "Created a booking",
+    })
     revalidatePath("/admin")
-    return { ok: true, bookingReference: result.bookingReference, ticketLabel: result.ticketLabel, startTime: result.startTime }
+    return {
+      ok: true,
+      bookingReference: result.bookingReference,
+      ticketLabel: result.ticketLabel,
+      startTime: result.startTime,
+      created,
+      skipped,
+    }
   } catch (err) {
     if (err instanceof Error) {
       if (err.message === BOOKING_SLOT_NO_LONGER_AVAILABLE) {
@@ -362,6 +633,9 @@ export async function createAdminBooking(input: {
           ok: false,
           error: "That time is outside your booking rules (business hours, minimum notice or how far ahead bookings are allowed).",
         }
+      }
+      if (err.message === BOOKING_ALREADY_IN_QUEUE) {
+        return { ok: false, error: "This customer is still in the walk-in queue. Finish or cancel that first." }
       }
       if (err.message === PLAN_VISIT_LIMIT_REACHED) {
         return { ok: false, error: "This shop has reached its visit limit for the current plan." }
