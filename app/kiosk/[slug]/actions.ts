@@ -57,6 +57,9 @@ import {
   BOOKING_SLOT_NO_LONGER_AVAILABLE,
   BOOKING_ALREADY_HAS_UPCOMING,
   BOOKING_ALREADY_IN_QUEUE,
+  BOOKING_ACTIVE_LIMIT,
+  BOOKING_DAY_LIMIT,
+  BOOKING_SAME_DAY_NOT_ALLOWED,
   BOOKING_SERVICE_REQUIRED,
   BOOKING_TOO_MANY_SERVICES,
   BOOKING_PAYMENT_UNAVAILABLE,
@@ -68,6 +71,7 @@ import QRCode from "qrcode"
 import { joinQueue, formatQueueTicketNumber, QUEUE_TOO_MANY_SERVICES } from "@/lib/services/queue"
 import { PLAN_VISIT_LIMIT_REACHED, isKioskEnabled, isProductNotEnabledError } from "@/lib/services/plans"
 import { updateCustomer } from "@/lib/services/tenant-customer"
+import { getBookingSettings } from "@/lib/services/shared/tenant-scheduling"
 import { sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { isPlausiblePhoneNumber } from "@/lib/utils/phone"
 import { detailsFieldsFrom, isValidEmail, type KioskDetailsFields } from "@/lib/kiosk/detailsFields"
@@ -398,6 +402,8 @@ export interface KioskBookingTicket {
   serviceName: string
   dateLabel: string
   slotLabel: string
+  /** true = the shop has to approve this booking before it is confirmed (Booking rules > Require approval). */
+  pendingApproval?: boolean
 }
 
 /**
@@ -474,6 +480,13 @@ export async function submitKioskBooking(
       dateLabel: input.dateLabel,
       slotLabel: input.slot.label,
     }
+    // Waiting for the shop to approve it (a paid booking is approved after it is paid, so look at the setting).
+    if (result.status === "pending_approval") {
+      ticket.pendingApproval = true
+    } else if (result.status === "awaiting_payment") {
+      const supabaseForRules = getSupabaseServerClient()
+      if (supabaseForRules && (await getBookingSettings(supabaseForRules, tenantId)).requireApproval) ticket.pendingApproval = true
+    }
 
     // Waiting for payment: nothing is confirmed yet. Send the link by WhatsApp too (best effort), and let the
     // kiosk show a QR code. The signed webhook confirms the booking and messages the customer once paid.
@@ -504,6 +517,20 @@ export async function submitKioskBooking(
       }
     }
 
+    if (ticket.pendingApproval) {
+      try {
+        if (await kioskWhatsAppAllowed(tenantId)) await sendWhatsAppTextMessage(
+          tenantId,
+          input.phone,
+          `Hi${name ? ` ${name}` : ""}! We've received your booking request${serviceNames ? ` for ${serviceNames}` : ""} on ${input.dateLabel} at ${input.slot.label}. ` +
+            `Your reference is ${result.bookingReference}. Your time is being held, and we'll message you as soon as the shop has confirmed it.`,
+        )
+      } catch (sendError) {
+        console.error("[kiosk] Booking request WhatsApp send failed", { tenantId, error: sendError })
+      }
+      return { ok: true, data: ticket }
+    }
+
     try {
       if (await kioskWhatsAppAllowed(tenantId)) await sendWhatsAppTextMessage(
         tenantId,
@@ -530,6 +557,15 @@ export async function submitKioskBooking(
         ok: false,
         error: "This number already has an upcoming booking. Please speak to staff if you need to change it.",
       }
+    }
+    if (error instanceof Error && error.message === BOOKING_ACTIVE_LIMIT) {
+      return { ok: false, error: "This number already has the most upcoming bookings we allow. Please speak to staff if you need to change one." }
+    }
+    if (error instanceof Error && error.message === BOOKING_DAY_LIMIT) {
+      return { ok: false, error: "This number already has the most bookings we allow on that day. Please pick another day." }
+    }
+    if (error instanceof Error && error.message === BOOKING_SAME_DAY_NOT_ALLOWED) {
+      return { ok: false, error: "We don't take same-day bookings here. Please pick a day from tomorrow onwards." }
     }
     if (error instanceof Error && error.message === BOOKING_SERVICE_REQUIRED) {
       return { ok: false, error: "Please choose a service." }
@@ -582,7 +618,7 @@ export async function checkKioskBookingPayment(slug: string, bookingId: string):
     const { data, error } = await supabase.from("bookings").select("status").eq("id", bookingId).eq("tenant_id", tenantId).maybeSingle()
     if (error) return { ok: false, error: "Something went wrong. Please try again." }
     const status = data?.status as string | undefined
-    if (status === "confirmed" || status === "completed") return { ok: true, data: { state: "paid" } }
+    if (status === "confirmed" || status === "pending_approval" || status === "completed") return { ok: true, data: { state: "paid" } }
     if (status === "awaiting_payment") return { ok: true, data: { state: "waiting" } }
     return { ok: true, data: { state: "expired" } }
   } catch (error) {
