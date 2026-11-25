@@ -16,6 +16,7 @@ import { getTenantPermissions, type PermissionKey } from "@/lib/tenant/require-t
 import { getEffectiveModules } from "@/lib/tenant/effective-modules"
 import { notifyText } from "@/lib/services/orders/orders.integrations"
 import { orderAcceptedMessage, orderDeclinedMessage } from "@/lib/services/messages/orders"
+import { notifyOrderStatusChange, parseStatusNotifications } from "@/lib/services/orders/orders.status-notify"
 
 import { loadDeliveryAreas, loadOrders, mapCategory, mapProduct, mapSettings, mapVendor } from "./orders-data"
 import {
@@ -107,7 +108,7 @@ export async function advanceOrder(
   return run(OPERATE, async ({ supabase, tenantId }) => {
     const { data: current, error: readErr } = await supabase
       .from("orders")
-      .select("payment_method, payment_status, fulfilment")
+      .select("order_number, customer_phone, payment_method, payment_status, fulfilment")
       .eq("tenant_id", tenantId)
       .eq("id", orderId)
       .maybeSingle()
@@ -134,6 +135,14 @@ export async function advanceOrder(
       .maybeSingle()
     if (error) fail(error, "Update order")
     if (!data) throw new UserError("This order was just changed somewhere else. The board has been refreshed.")
+    // Tell the customer (skipped when this shop has switched that update off; never blocks the move).
+    await notifyOrderStatusChange({
+      tenantId,
+      phone: current.customer_phone as string | null,
+      orderNumber: current.order_number as string,
+      fulfilment: current.fulfilment as string | null,
+      toStatus: to,
+    })
     return { status: data.status as OrderStatus, paymentStatus: data.payment_status as PaymentStatus }
   })
 }
@@ -144,12 +153,26 @@ export async function cancelOrder(
   orderId: string,
 ): Promise<ActionResult<{ orderNumber: string; wasPaid: boolean; paymentStatus: PaymentStatus }>> {
   return run(OPERATE, async ({ supabase, tenantId }) => {
+    const { data: before } = await supabase
+      .from("orders")
+      .select("customer_phone, fulfilment")
+      .eq("tenant_id", tenantId)
+      .eq("id", orderId)
+      .maybeSingle()
     const { data, error } = await supabase.rpc("cancel_order", { p_tenant: tenantId, p_order: orderId })
     if (error) fail(error, "Cancel order")
     const r = data as { outcome: string; order_number?: string; was_paid?: boolean; payment_status?: PaymentStatus; status?: string }
     if (r.outcome === "not_found") throw new UserError("Order not found.")
     if (r.outcome === "not_cancellable") throw new UserError(`${r.order_number ?? "This order"} is already ${r.status} and can't be cancelled.`)
     if (r.outcome !== "ok") throw new UserError("The order couldn't be cancelled.")
+    await notifyOrderStatusChange({
+      tenantId,
+      phone: (before?.customer_phone as string | null | undefined) ?? null,
+      orderNumber: r.order_number ?? "",
+      fulfilment: (before?.fulfilment as string | null | undefined) ?? null,
+      toStatus: "cancelled",
+      wasPaid: !!r.was_paid,
+    })
     return { orderNumber: r.order_number ?? "", wasPaid: !!r.was_paid, paymentStatus: (r.payment_status ?? "pending") as PaymentStatus }
   })
 }
@@ -520,6 +543,7 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
           require_payment: requirePayment,
           min_order_value: minOrderValue,
           max_order_value: maxOrderValue,
+          status_notifications: parseStatusNotifications(input.statusNotifications),
           updated_at: new Date().toISOString(),
         },
         { onConflict: "tenant_id" },

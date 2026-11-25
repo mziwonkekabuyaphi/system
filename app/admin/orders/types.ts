@@ -1,4 +1,6 @@
 // app/admin/orders/types.ts
+
+import type { StatusNotifications } from "@/lib/services/orders/orders.status-notify"
 //
 // Shapes for the Order management module (tables from 001_orders_multitenant.sql).
 // camelCase here, snake_case in the database; orders-data.ts is the one place
@@ -193,6 +195,8 @@ export interface AdminOrderSettings {
   minOrderValue: number
   /** Largest items total a customer can check out with. null = no maximum. */
   maxOrderValue: number | null
+  /** Which WhatsApp updates customers get as staff move an order along. */
+  statusNotifications: StatusNotifications
 }
 
 export type OrderSettingsInput = Omit<AdminOrderSettings, "configured" | "deliveryAreas"> & { deliveryAreas: DeliveryAreaInput[] }

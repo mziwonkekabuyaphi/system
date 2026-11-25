@@ -20,6 +20,8 @@ import {
   secondaryButtonClass,
 } from "@/app/admin/settings/ui"
 
+import { STATUS_NOTIFY_KEYS, STATUS_NOTIFY_LABELS } from "@/lib/services/orders/orders.status-notify"
+
 import { saveOrderSettings } from "./actions"
 import type { AdminOrderSettings, AdminOrderVendor, DeliveryAreaInput, OrderSettingsInput, PaymentMethod } from "./types"
 
@@ -192,6 +194,20 @@ export function OrderSettingsPanel({
               </FieldRow>
             </div>
             {limitsError && <p className={errorClass}>{limitsError}</p>}
+          </div>
+        </SettingsCard>
+
+        <SettingsCard title="Customer updates" description="WhatsApp messages customers get as your team moves their order along. Switch off any you don't want sent.">
+          <div className="space-y-4">
+            {STATUS_NOTIFY_KEYS.map((key) => (
+              <ToggleRow
+                key={key}
+                title={STATUS_NOTIFY_LABELS[key].title}
+                description={STATUS_NOTIFY_LABELS[key].hint}
+                checked={d.statusNotifications[key]}
+                onChange={(on) => set("statusNotifications", { ...d.statusNotifications, [key]: on })}
+              />
+            ))}
           </div>
         </SettingsCard>
 

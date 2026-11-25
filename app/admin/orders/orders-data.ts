@@ -20,6 +20,7 @@ import type {
   PaymentStatus,
   ProductStatus,
 } from "./types"
+import { DEFAULT_STATUS_NOTIFICATIONS, parseStatusNotifications } from "@/lib/services/orders/orders.status-notify"
 
 type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
@@ -49,6 +50,7 @@ export const DEFAULT_ORDER_SETTINGS: AdminOrderSettings = {
   requirePayment: false,
   minOrderValue: 0,
   maxOrderValue: null,
+  statusNotifications: { ...DEFAULT_STATUS_NOTIFICATIONS },
 }
 
 const ORDER_SELECT = `id, order_number, status, payment_method, payment_status, total_amount,
@@ -139,6 +141,7 @@ export function mapSettings(s: any, deliveryAreas: AdminDeliveryArea[] = []): Ad
     requirePayment: !!s.require_payment,
     minOrderValue: Number(s.min_order_value ?? 0),
     maxOrderValue: s.max_order_value == null ? null : Number(s.max_order_value),
+    statusNotifications: parseStatusNotifications(s.status_notifications),
   }
 }
 
