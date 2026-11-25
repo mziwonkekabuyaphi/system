@@ -206,3 +206,52 @@ export interface OrdersData {
 }
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string }
+
+// ---------------------------------------------------------------------------
+// Stock take (stock_takes / stock_take_lines)
+// ---------------------------------------------------------------------------
+
+export type StockTakeStatus = "in_progress" | "completed" | "cancelled"
+
+export interface StockTakeSummary {
+  id: string
+  name: string
+  notes: string | null
+  status: StockTakeStatus
+  /** ISO timestamps */
+  createdAt: string
+  completedAt: string | null
+  lineCount: number
+  countedCount: number
+  /** Completed counts only: products whose stock was changed. */
+  adjustedCount: number
+  unitsAdded: number
+  unitsRemoved: number
+}
+
+export interface StockTakeLine {
+  productId: string
+  name: string
+  categoryLabel: string | null
+  /** What the system said when the count started. */
+  expected: number
+  /** null = not counted yet. */
+  counted: number | null
+  /** Completed counts only: the change that was applied to stock. */
+  appliedDelta: number | null
+  stockAfter: number | null
+}
+
+export interface StockTakeDetail {
+  summary: StockTakeSummary
+  lines: StockTakeLine[]
+}
+
+export interface StockTakeResult {
+  counted: number
+  adjusted: number
+  unitsAdded: number
+  unitsRemoved: number
+  /** productId -> stock after the count, to refresh the product list on screen. */
+  stock: Record<string, number>
+}

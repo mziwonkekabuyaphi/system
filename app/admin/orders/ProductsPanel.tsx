@@ -20,6 +20,7 @@
 import { useMemo, useState } from "react"
 
 import { createProduct, deleteProduct, duplicateProduct, updateProduct, uploadProductImage } from "./actions"
+import { StockTakeDrawer } from "./StockTakeDrawer"
 import { Drawer, EmptyState, Field, Pill, Stat, ToggleRow, Toggle, btn, cardCls, cx, inputCls, money, useNotice } from "./ui"
 import { PRODUCT_STATUSES, type AdminOrderVendor, type AdminProduct, type AdminProductCategory, type ProductInput, type ProductStatus } from "./types"
 
@@ -51,6 +52,7 @@ export function ProductsPanel({
   defaultVendorId,
   canManage,
   currency,
+  timezone,
 }: {
   products: AdminProduct[]
   onProductsChange: SetProducts
@@ -60,11 +62,13 @@ export function ProductsPanel({
   defaultVendorId: string | null
   canManage: boolean
   currency: string
+  timezone: string
 }) {
   const [query, setQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState<"" | "all" | ProductStatus>("")
   const [drawer, setDrawer] = useState<{ mode: "add" } | { mode: "edit"; id: string } | null>(null)
+  const [stockTakeOpen, setStockTakeOpen] = useState(false)
   const { show, node } = useNotice()
 
   const categoryName = useMemo(() => new Map(categories.map((c) => [c.id, c.label])), [categories])
@@ -130,8 +134,11 @@ export function ProductsPanel({
             </option>
           ))}
         </select>
+        <button type="button" className={cx(btn.ghost, "ml-auto")} onClick={() => setStockTakeOpen(true)}>
+          Stock take
+        </button>
         {canManage && (
-          <button type="button" className={cx(btn.primary, "ml-auto")} onClick={() => setDrawer({ mode: "add" })}>
+          <button type="button" className={btn.primary} onClick={() => setDrawer({ mode: "add" })}>
             Add product
           </button>
         )}
@@ -305,6 +312,15 @@ export function ProductsPanel({
             setDrawer(null)
           }}
           onError={(m) => show(m, true)}
+        />
+      )}
+      {stockTakeOpen && (
+        <StockTakeDrawer
+          open
+          onClose={() => setStockTakeOpen(false)}
+          timezone={timezone}
+          canManage={canManage}
+          onApplied={(stock) => onProductsChange((prev) => prev.map((p) => (p.id in stock ? { ...p, stockQuantity: stock[p.id] } : p)))}
         />
       )}
       {node}

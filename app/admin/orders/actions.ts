@@ -35,6 +35,10 @@ import {
   type PaymentMethod,
   type PaymentStatus,
   type ProductInput,
+  type StockTakeDetail,
+  type StockTakeResult,
+  type StockTakeStatus,
+  type StockTakeSummary,
   type VendorInput,
 } from "./types"
 
@@ -50,14 +54,14 @@ const OPERATE = ["orders.operate", "orders.manage"] as PermissionKey[]
 const MANAGE = ["orders.manage"] as PermissionKey[]
 
 async function guard(anyOf: PermissionKey[]) {
-  const { tenantId } = await requireTenantMember()
+  const { tenantId, userId } = await requireTenantMember()
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new UserError("The server isn't configured.")
   const mods = await getEffectiveModules(tenantId)
   if (!mods.on("orders")) throw new UserError("Order management isn't switched on for this shop.")
   const { granted } = await getTenantPermissions(anyOf)
   if (!anyOf.some((k) => granted.has(k))) throw new UserError("You don't have permission to do that.")
-  return { supabase, tenantId }
+  return { supabase, tenantId, userId }
 }
 
 async function run<T>(anyOf: PermissionKey[], fn: (c: Awaited<ReturnType<typeof guard>>) => Promise<T>): Promise<ActionResult<T>> {
@@ -578,4 +582,161 @@ async function syncDeliveryAreas(
     const { error } = await query
     if (error) fail(error, "Save delivery areas")
   }
+}
+
+
+// ============================================================================
+// STOCK TAKE
+// ============================================================================
+
+type TakeRow = { id: string; name: string; notes: string | null; status: StockTakeStatus; created_at: string; completed_at: string | null }
+type LineRow = {
+  product_id: string | null
+  product_name: string
+  category_label: string | null
+  expected_qty: number
+  counted_qty: number | null
+  applied_delta: number | null
+  stock_after: number | null
+}
+
+function summarise(t: TakeRow, lines: Pick<LineRow, "counted_qty" | "applied_delta">[]): StockTakeSummary {
+  let adjusted = 0
+  let up = 0
+  let down = 0
+  let counted = 0
+  for (const l of lines) {
+    if (l.counted_qty !== null) counted++
+    if (t.status === "completed" && l.applied_delta) {
+      adjusted++
+      if (l.applied_delta > 0) up += l.applied_delta
+      else down += -l.applied_delta
+    }
+  }
+  return {
+    id: t.id,
+    name: t.name,
+    notes: t.notes,
+    status: t.status,
+    createdAt: t.created_at,
+    completedAt: t.completed_at,
+    lineCount: lines.length,
+    countedCount: counted,
+    adjustedCount: adjusted,
+    unitsAdded: up,
+    unitsRemoved: down,
+  }
+}
+
+const TAKE_COLUMNS = "id, name, notes, status, created_at, completed_at"
+
+export async function listStockTakes(): Promise<ActionResult<StockTakeSummary[]>> {
+  return run(VIEW, async ({ supabase, tenantId }) => {
+    const { data: takes, error } = await supabase
+      .from("stock_takes")
+      .select(TAKE_COLUMNS)
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+    if (error) fail(error, "Load stock takes")
+    const rows = (takes ?? []) as unknown as TakeRow[]
+    if (rows.length === 0) return []
+    const { data: lines, error: lerr } = await supabase
+      .from("stock_take_lines")
+      .select("stock_take_id, counted_qty, applied_delta")
+      .eq("tenant_id", tenantId)
+      .in("stock_take_id", rows.map((r) => r.id))
+      .limit(50000)
+    if (lerr) fail(lerr, "Load stock takes")
+    const by = new Map<string, Pick<LineRow, "counted_qty" | "applied_delta">[]>()
+    for (const l of (lines ?? []) as unknown as Array<{ stock_take_id: string; counted_qty: number | null; applied_delta: number | null }>) {
+      const arr = by.get(l.stock_take_id) ?? []
+      arr.push(l)
+      by.set(l.stock_take_id, arr)
+    }
+    return rows.map((r) => summarise(r, by.get(r.id) ?? []))
+  })
+}
+
+export async function getStockTake(id: string): Promise<ActionResult<StockTakeDetail>> {
+  return run(VIEW, async ({ supabase, tenantId }) => {
+    const { data: take, error } = await supabase.from("stock_takes").select(TAKE_COLUMNS).eq("tenant_id", tenantId).eq("id", id).maybeSingle()
+    if (error) fail(error, "Load stock take")
+    if (!take) throw new UserError("That stock take wasn't found.")
+    const { data: lines, error: lerr } = await supabase
+      .from("stock_take_lines")
+      .select("product_id, product_name, category_label, expected_qty, counted_qty, applied_delta, stock_after")
+      .eq("tenant_id", tenantId)
+      .eq("stock_take_id", id)
+      .order("product_name", { ascending: true })
+      .limit(50000)
+    if (lerr) fail(lerr, "Load stock take")
+    const rows = (lines ?? []) as unknown as LineRow[]
+    return {
+      summary: summarise(take as unknown as TakeRow, rows),
+      lines: rows
+        .filter((l) => l.product_id)
+        .map((l) => ({
+          productId: l.product_id as string,
+          name: l.product_name,
+          categoryLabel: l.category_label,
+          expected: l.expected_qty,
+          counted: l.counted_qty,
+          appliedDelta: l.applied_delta,
+          stockAfter: l.stock_after,
+        })),
+    }
+  })
+}
+
+export async function startStockTake(name: string, notes?: string): Promise<ActionResult<{ id: string }>> {
+  return run(MANAGE, async ({ supabase, tenantId, userId }) => {
+    const n = name.trim()
+    if (n.length < 1 || n.length > 80) throw new UserError("Give the stock take a name (up to 80 characters).")
+    if ((notes ?? "").length > 500) throw new UserError("Notes can be up to 500 characters.")
+    const { data, error } = await supabase.rpc("start_stock_take", { p_tenant: tenantId, p_user: userId, p_name: n, p_notes: notes ?? null })
+    if (error) fail(error, "Start stock take")
+    const r = data as { outcome: string; stock_take_id?: string }
+    if (r.outcome === "nothing_to_count") throw new UserError("No products have stock tracking switched on yet. Turn on \"Track inventory\" for the products you want to count.")
+    if ((r.outcome === "ok" || r.outcome === "already_in_progress") && r.stock_take_id) return { id: r.stock_take_id }
+    throw new UserError("Couldn't start the stock take. Try again.")
+  })
+}
+
+export async function saveStockTakeCounts(id: string, counts: Array<{ productId: string; counted: number | null }>): Promise<ActionResult<{ saved: number }>> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const payload = counts.map((c) => ({ product_id: c.productId, counted: c.counted }))
+    const { data, error } = await supabase.rpc("save_stock_take_counts", { p_tenant: tenantId, p_take: id, p_counts: payload })
+    if (error) fail(error, "Save counts")
+    const r = data as { outcome: string; saved?: number }
+    if (r.outcome === "ok") return { saved: r.saved ?? 0 }
+    if (r.outcome === "invalid_count") throw new UserError("Counts must be whole numbers from 0 upwards.")
+    if (r.outcome === "not_in_progress") throw new UserError("This stock take is already finished.")
+    throw new UserError("That stock take wasn't found.")
+  })
+}
+
+export async function completeStockTake(id: string): Promise<ActionResult<StockTakeResult>> {
+  return run(MANAGE, async ({ supabase, tenantId, userId }) => {
+    const { data, error } = await supabase.rpc("complete_stock_take", { p_tenant: tenantId, p_take: id, p_user: userId })
+    if (error) fail(error, "Finish stock take")
+    const r = data as { outcome: string; counted: number; adjusted: number; units_added: number; units_removed: number; stock: Record<string, number> }
+    if (r.outcome === "not_in_progress") throw new UserError("This stock take is already finished.")
+    if (r.outcome !== "ok") throw new UserError("That stock take wasn't found.")
+    return { counted: r.counted, adjusted: r.adjusted, unitsAdded: r.units_added, unitsRemoved: r.units_removed, stock: r.stock ?? {} }
+  })
+}
+
+export async function cancelStockTake(id: string): Promise<ActionResult> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const { data, error } = await supabase
+      .from("stock_takes")
+      .update({ status: "cancelled" })
+      .eq("tenant_id", tenantId)
+      .eq("id", id)
+      .eq("status", "in_progress")
+      .select("id")
+    if (error) fail(error, "Cancel stock take")
+    if (!data || data.length === 0) throw new UserError("This stock take is already finished.")
+  })
 }

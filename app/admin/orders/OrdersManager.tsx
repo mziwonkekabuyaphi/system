@@ -56,6 +56,7 @@ export function OrdersManager({
           defaultVendorId={settings.defaultVendorId}
           canManage={canManage}
           currency={currency}
+          timezone={timezone}
         />
       )}
       {section === "catalogue" && (
