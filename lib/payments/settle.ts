@@ -612,6 +612,8 @@ async function notifyBookingPaid(
       customerPhone: phone,
       serviceNames,
       totalPrice,
+      // Deposit bookings: the ticket also says what is still owed at the appointment.
+      balanceDue,
       startTime: b.start_time as string,
       endTime: b.end_time as string,
     })
