@@ -2338,7 +2338,9 @@ function TicketScreen({
     <Screen centered hideStartOver>
       <div className="stub">
         <div className="top">
-          <p className="eyebrow">{isBooking ? bookingEyebrow : queueEyebrow}</p>
+          <p className="eyebrow">
+            {isBooking ? ((ticket as KioskBookingTicket).pendingApproval ? "Booking requested" : bookingEyebrow) : queueEyebrow}
+          </p>
           <p className="number">{ticket.ticketNumber}</p>
         </div>
 
@@ -2361,7 +2363,14 @@ function TicketScreen({
         </div>
       </div>
 
-      {showTextNote && <p className="sms">We'll text you a confirmation shortly.</p>}
+      {isBooking && (ticket as KioskBookingTicket).pendingApproval ? (
+        <p className="sms">
+          Your time is being held. The shop will confirm your booking shortly
+          {showTextNote ? " and we'll text you." : "."}
+        </p>
+      ) : (
+        showTextNote && <p className="sms">We'll text you a confirmation shortly.</p>
+      )}
 
       {/* Never blocks "Done" or hides the ticket number above — printing
           is a bonus, the screen is the source of truth either way. */}
