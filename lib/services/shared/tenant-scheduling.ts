@@ -204,6 +204,22 @@ export interface TenantBookingSettings {
   maxAdvanceDays: number
   cancellationWindowMinutes: number
   queuePriorityMode: QueuePriorityMode
+  /** false = customers can't cancel their own booking on WhatsApp (staff still can in the admin). */
+  allowCustomerCancel: boolean
+  /** false = customers can't move their own booking. */
+  allowCustomerReschedule: boolean
+  /** Minutes before the start that a booking can still be moved. null = same as the cancellation window. */
+  rescheduleDeadlineMinutes: number | null
+  /** false = customers can't book for today. Staff can still add same-day appointments in the admin. */
+  allowSameDayBookings: boolean
+  /** true = staff may add a repeating series of appointments in the admin. */
+  allowRecurringBookings: boolean
+  /** true = bookings customers make themselves wait for staff to approve before they are confirmed. */
+  requireApproval: boolean
+  /** null = no limit. */
+  maxBookingsPerCustomerPerDay: number | null
+  /** How many upcoming bookings one customer may hold at a time (1 or more). */
+  maxActiveBookingsPerCustomer: number
 }
 
 // Mirrors booking_settings' own column DEFAULTs exactly. Used only if a
@@ -218,13 +234,21 @@ const DEFAULT_BOOKING_SETTINGS: TenantBookingSettings = {
   maxAdvanceDays: 30,
   cancellationWindowMinutes: 60,
   queuePriorityMode: "fifo",
+  allowCustomerCancel: true,
+  allowCustomerReschedule: true,
+  rescheduleDeadlineMinutes: null,
+  allowSameDayBookings: true,
+  allowRecurringBookings: false,
+  requireApproval: false,
+  maxBookingsPerCustomerPerDay: null,
+  maxActiveBookingsPerCustomer: 1,
 }
 
 export async function getBookingSettings(supabase: SupabaseClient, tenantId: string): Promise<TenantBookingSettings> {
   const { data, error } = await supabase
     .from("booking_settings")
     .select(
-      "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, queue_priority_mode",
+      "unify_with_queue, queue_lead_time_minutes, min_notice_minutes, max_advance_days, cancellation_window_minutes, queue_priority_mode, allow_customer_cancel, allow_customer_reschedule, reschedule_deadline_minutes, allow_same_day_bookings, allow_recurring_bookings, require_approval, max_bookings_per_customer_per_day, max_active_bookings_per_customer",
     )
     .eq("tenant_id", tenantId)
     .maybeSingle()
@@ -243,5 +267,13 @@ export async function getBookingSettings(supabase: SupabaseClient, tenantId: str
     maxAdvanceDays: data.max_advance_days,
     cancellationWindowMinutes: data.cancellation_window_minutes,
     queuePriorityMode,
+    allowCustomerCancel: data.allow_customer_cancel !== false,
+    allowCustomerReschedule: data.allow_customer_reschedule !== false,
+    rescheduleDeadlineMinutes: data.reschedule_deadline_minutes ?? null,
+    allowSameDayBookings: data.allow_same_day_bookings !== false,
+    allowRecurringBookings: data.allow_recurring_bookings === true,
+    requireApproval: data.require_approval === true,
+    maxBookingsPerCustomerPerDay: data.max_bookings_per_customer_per_day ?? null,
+    maxActiveBookingsPerCustomer: Math.max(1, Number(data.max_active_bookings_per_customer ?? 1) || 1),
   }
 }
