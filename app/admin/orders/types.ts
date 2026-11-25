@@ -91,6 +91,9 @@ export interface AdminOrder {
   deliveryFee: number
   customerName: string | null
   customerPhone: string
+  /** Delivery orders only: the driver who has (or was given) the job. */
+  driverId: string | null
+  driverName: string | null
   /** ISO timestamp */
   createdAt: string
   vendorId: string
@@ -166,6 +169,22 @@ export interface AdminDeliveryArea {
 /** Editable area: `id` is absent for rows not saved yet. */
 export type DeliveryAreaInput = Omit<AdminDeliveryArea, "id"> & { id?: string }
 
+/** first_come = ready deliveries are offered to every on-duty driver, first to tap gets it.
+ *  dispatcher = nothing is offered; staff pick a driver on the board. */
+export type DriverDispatchMode = "first_come" | "dispatcher"
+
+export interface AdminDriver {
+  id: string
+  name: string
+  /** "+27821234567" */
+  phone: string
+  isActive: boolean
+  /** Set by the driver replying "on duty" on WhatsApp. */
+  onDuty: boolean
+}
+
+export type DriverInput = { id?: string; name: string; phone: string; isActive: boolean }
+
 export interface AdminOrderSettings {
   /** false = no order_settings row yet; the bot answers "ordering not configured" until the first save. */
   configured: boolean
@@ -197,6 +216,8 @@ export interface AdminOrderSettings {
   maxOrderValue: number | null
   /** Which WhatsApp updates customers get as staff move an order along. */
   statusNotifications: StatusNotifications
+  /** How delivery jobs reach drivers. */
+  driverDispatchMode: DriverDispatchMode
 }
 
 export type OrderSettingsInput = Omit<AdminOrderSettings, "configured" | "deliveryAreas"> & { deliveryAreas: DeliveryAreaInput[] }
@@ -206,6 +227,7 @@ export interface OrdersData {
   products: AdminProduct[]
   categories: AdminProductCategory[]
   vendors: AdminOrderVendor[]
+  drivers: AdminDriver[]
   settings: AdminOrderSettings
 }
 

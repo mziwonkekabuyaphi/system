@@ -17,15 +17,25 @@ import { getEffectiveModules } from "@/lib/tenant/effective-modules"
 import { notifyText } from "@/lib/services/orders/orders.integrations"
 import { orderAcceptedMessage, orderDeclinedMessage } from "@/lib/services/messages/orders"
 import { notifyOrderStatusChange, parseStatusNotifications } from "@/lib/services/orders/orders.status-notify"
+import {
+  dispatchReadyDelivery,
+  normalizeDriverPhone,
+  notifyDriverAssigned,
+  notifyDriverRemoved,
+  type DriverJob,
+} from "@/lib/services/orders/orders.drivers"
 
-import { loadDeliveryAreas, loadOrders, mapCategory, mapProduct, mapSettings, mapVendor } from "./orders-data"
+import { loadDeliveryAreas, loadDrivers, loadOrders, mapCategory, mapDriver, mapProduct, mapSettings, mapVendor } from "./orders-data"
 import {
   nextOrderStep,
   PRODUCT_STATUSES,
   type ActionResult,
   type AdminOrder,
   type AdminOrderSettings,
+  type AdminDriver,
   type AdminOrderVendor,
+  type DriverDispatchMode,
+  type DriverInput,
   type AdminProduct,
   type AdminProductCategory,
   type CategoryInput,
@@ -143,6 +153,9 @@ export async function advanceOrder(
       fulfilment: current.fulfilment as string | null,
       toStatus: to,
     })
+    // A delivery order that is now ready goes to a driver: offered to every on-duty driver (first come) or, if
+    // a driver was already assigned on the board, sent straight to them. Staff-assigned shops offer nothing here.
+    if (to === "ready" && current.fulfilment === "delivery") await dispatchReadyDelivery(tenantId, orderId)
     return { status: data.status as OrderStatus, paymentStatus: data.payment_status as PaymentStatus }
   })
 }
@@ -155,7 +168,7 @@ export async function cancelOrder(
   return run(OPERATE, async ({ supabase, tenantId }) => {
     const { data: before } = await supabase
       .from("orders")
-      .select("customer_phone, fulfilment")
+      .select("customer_phone, fulfilment, driver_id")
       .eq("tenant_id", tenantId)
       .eq("id", orderId)
       .maybeSingle()
@@ -173,6 +186,8 @@ export async function cancelOrder(
       toStatus: "cancelled",
       wasPaid: !!r.was_paid,
     })
+    // A driver who already has this job is told it's off.
+    if (before?.driver_id) await notifyDriverRemoved(tenantId, before.driver_id as string, r.order_number ?? "", "cancelled")
     return { orderNumber: r.order_number ?? "", wasPaid: !!r.was_paid, paymentStatus: (r.payment_status ?? "pending") as PaymentStatus }
   })
 }
@@ -223,6 +238,82 @@ export async function declineOrder(
       )
     }
     return { orderNumber: r.order_number ?? "", wasPaid: !!r.was_paid, paymentStatus }
+  })
+}
+
+// ============================================================================
+// DELIVERY DRIVERS
+// ============================================================================
+
+export async function listDrivers(): Promise<ActionResult<AdminDriver[]>> {
+  return run(VIEW, ({ supabase, tenantId }) => loadDrivers(supabase, tenantId))
+}
+
+/** Add or edit a driver. The number is matched against the WhatsApp number the driver messages from. */
+export async function saveDriver(input: DriverInput): Promise<ActionResult<AdminDriver>> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const name = input.name.trim()
+    if (!name) throw new UserError("Driver name is required.")
+    if (name.length > 60) throw new UserError("Driver name must be 60 characters or fewer.")
+    const phone = normalizeDriverPhone(input.phone)
+    if (!phone) throw new UserError("Enter the driver's WhatsApp number with the country code, e.g. +27 82 123 4567.")
+
+    const row = { name, phone, is_active: !!input.isActive }
+    const q = input.id
+      ? supabase.from("order_drivers").update(row).eq("tenant_id", tenantId).eq("id", input.id)
+      : supabase.from("order_drivers").insert({ ...row, tenant_id: tenantId })
+    const { data, error } = await q.select("id, name, phone, is_active, on_duty").maybeSingle()
+    if (error?.code === "23505") throw new UserError("A driver with that number already exists.")
+    if (error) fail(error, "Save driver")
+    if (!data) throw new UserError("Driver not found.")
+    return mapDriver(data)
+  })
+}
+
+export async function deleteDriver(id: string): Promise<ActionResult> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const { count } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("driver_id", id)
+      .in("status", ["ready", "out_for_delivery"])
+    if ((count ?? 0) > 0) throw new UserError("This driver has a delivery in progress. Re-assign it first, or switch them off instead.")
+    const { error } = await supabase.from("order_drivers").delete().eq("tenant_id", tenantId).eq("id", id)
+    if (error) fail(error, "Delete driver")
+  })
+}
+
+/** Staff give a delivery order to a driver, take it away (driverId null) or hand it to someone else.
+ *  A ready (or on-the-way) order tells the driver right away; an earlier one tells them when it becomes ready. */
+export async function assignDriver(orderId: string, driverId: string | null): Promise<ActionResult<{ driverId: string | null; driverName: string | null }>> {
+  return run(OPERATE, async ({ supabase, tenantId }) => {
+    const { data, error } = await supabase.rpc("assign_order_driver", { p_tenant: tenantId, p_order: orderId, p_driver: driverId })
+    if (error) fail(error, "Assign driver")
+    const r = data as {
+      outcome: string
+      order_number?: string
+      status?: string
+      previous_driver_id?: string | null
+      driver_name?: string | null
+      driver_phone?: string | null
+      job?: DriverJob
+    }
+    if (r.outcome === "not_found") throw new UserError("Order not found.")
+    if (r.outcome === "not_delivery") throw new UserError("Only delivery orders have a driver.")
+    if (r.outcome === "driver_not_found") throw new UserError("That driver isn't available. Check they are switched on under Drivers.")
+    if (r.outcome === "wrong_status") throw new UserError(`${r.order_number ?? "This order"} is ${r.status} so it can't be given to a driver.`)
+    if (r.outcome !== "ok") throw new UserError("The driver couldn't be assigned.")
+
+    if (r.previous_driver_id && r.previous_driver_id !== driverId) {
+      await notifyDriverRemoved(tenantId, r.previous_driver_id, r.order_number ?? "", "reassigned")
+    }
+    if (driverId && r.driver_phone && r.job && (r.status === "ready" || r.status === "out_for_delivery")) {
+      await notifyDriverAssigned(tenantId, r.driver_phone, r.job)
+    }
+    // Taken off a ready order in a first-come shop: offer it to the on-duty drivers again.
+    if (!driverId && r.status === "ready") await dispatchReadyDelivery(tenantId, orderId)
+    return { driverId, driverName: r.driver_name ?? null }
   })
 }
 
@@ -490,6 +581,9 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
     const maxOrderValue = input.maxOrderValue == null ? null : limit(input.maxOrderValue, "Maximum order value")
     if (maxOrderValue !== null && maxOrderValue <= 0) throw new UserError("Maximum order value must be more than 0, or switched off.")
     if (maxOrderValue !== null && maxOrderValue < minOrderValue) throw new UserError("Maximum order value can't be lower than the minimum.")
+    if (input.driverDispatchMode !== "first_come" && input.driverDispatchMode !== "dispatcher") {
+      throw new UserError("Choose how delivery jobs are given out.")
+    }
     if (!Number.isInteger(input.scheduleMinLeadMinutes) || input.scheduleMinLeadMinutes < 0) {
       throw new UserError("Minimum lead time must be 0 or more minutes.")
     }
@@ -544,6 +638,7 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
           min_order_value: minOrderValue,
           max_order_value: maxOrderValue,
           status_notifications: parseStatusNotifications(input.statusNotifications),
+          driver_dispatch_mode: input.driverDispatchMode as DriverDispatchMode,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "tenant_id" },

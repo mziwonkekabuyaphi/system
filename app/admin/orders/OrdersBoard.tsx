@@ -12,9 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 
-import { acceptOrder, advanceOrder, cancelOrder, declineOrder, listOrders } from "./actions"
+import { acceptOrder, advanceOrder, assignDriver, cancelOrder, declineOrder, listOrders } from "./actions"
 import { Pill, Stat, btn, cardCls, cx, inputCls, money, useNotice, useNow } from "./ui"
-import { nextOrderStep, type AdminOrder, type AdminOrderVendor, type OrderStatus } from "./types"
+import { nextOrderStep, type AdminDriver, type AdminOrder, type AdminOrderVendor, type DriverDispatchMode, type OrderStatus } from "./types"
 
 const POLL_MS = 15_000
 
@@ -22,6 +22,8 @@ export function OrdersBoard({
   orders,
   onOrdersChange,
   vendors,
+  drivers,
+  dispatchMode,
   canOperate,
   timezone,
   currency,
@@ -29,6 +31,8 @@ export function OrdersBoard({
   orders: AdminOrder[]
   onOrdersChange: (next: AdminOrder[] | ((prev: AdminOrder[]) => AdminOrder[])) => void
   vendors: AdminOrderVendor[]
+  drivers: AdminDriver[]
+  dispatchMode: DriverDispatchMode
   canOperate: boolean
   timezone: string
   currency: string
@@ -99,6 +103,19 @@ export function OrdersBoard({
     onOrdersChange((prev) => prev.map((x) => (x.id === o.id ? { ...x, status: res.data.status, paymentStatus: res.data.paymentStatus } : x)))
   }
 
+  async function assign(o: AdminOrder, driverId: string | null) {
+    setBusy(o.id)
+    const res = await assignDriver(o.id, driverId)
+    setBusy(null)
+    if (!res.ok) {
+      show(res.error, true)
+      void refresh(true)
+      return
+    }
+    onOrdersChange((prev) => prev.map((x) => (x.id === o.id ? { ...x, driverId: res.data.driverId, driverName: res.data.driverName } : x)))
+    show(driverId ? `${o.orderNumber} given to ${res.data.driverName}.` : `${o.orderNumber} has no driver now.`)
+  }
+
   async function accept(o: AdminOrder) {
     setBusy(o.id)
     const res = await acceptOrder(o.id)
@@ -153,7 +170,7 @@ export function OrdersBoard({
   }
 
   const card = (o: AdminOrder) => (
-    <OrderCard key={o.id} order={o} now={now} timezone={timezone} currency={currency} busy={busy === o.id} canOperate={canOperate} onAdvance={advance} onCancel={cancel} onAccept={accept} onDecline={decline} />
+    <OrderCard key={o.id} order={o} now={now} timezone={timezone} currency={currency} busy={busy === o.id} canOperate={canOperate} onAdvance={advance} onCancel={cancel} onAccept={accept} onDecline={decline} drivers={drivers} dispatchMode={dispatchMode} onAssign={assign} />
   )
 
   return (
@@ -278,6 +295,9 @@ function OrderCard({
   onCancel,
   onAccept,
   onDecline,
+  drivers,
+  dispatchMode,
+  onAssign,
 }: {
   order: AdminOrder
   now: number
@@ -289,11 +309,16 @@ function OrderCard({
   onCancel: (o: AdminOrder) => void
   onAccept: (o: AdminOrder) => void
   onDecline: (o: AdminOrder) => void
+  drivers: AdminDriver[]
+  dispatchMode: DriverDispatchMode
+  onAssign: (o: AdminOrder, driverId: string | null) => void
 }) {
   const waiting = o.status === "awaiting_acceptance"
   const next = nextOrderStep(o.status, o.fulfilment)
   const cancellable = !["collected", "completed", "cancelled"].includes(o.status)
   const closed = o.status === "cancelled"
+  const driverStage = o.fulfilment === "delivery" && ["scheduled", "placed", "preparing", "ready", "out_for_delivery"].includes(o.status)
+  const activeDrivers = drivers.filter((d) => d.isActive || d.id === o.driverId)
   return (
     <article className={cx(cardCls, "space-y-3 p-4", closed && "opacity-60")}>
       <header className="flex items-start justify-between gap-3">
@@ -346,7 +371,31 @@ function OrderCard({
         {closed ? <Pill tone="bad">Cancelled</Pill> : ["collected", "completed"].includes(o.status) ? <Pill tone="good">{o.fulfilment === "delivery" ? "Delivered" : o.fulfilment === "dine_in" ? "Served" : "Collected"}</Pill> : null}
         {waiting && <Pill tone="warn">Needs accepting</Pill>}
         <PaymentBadge o={o} />
+        {driverStage && o.driverId && <Pill tone="info">Driver: {o.driverName ?? "assigned"}</Pill>}
+        {driverStage && !o.driverId && o.status === "ready" && <Pill tone="warn">{dispatchMode === "first_come" ? "Waiting for a driver to take it" : "Needs a driver"}</Pill>}
       </div>
+
+      {canOperate && driverStage && (activeDrivers.length > 0 || o.driverId) && (
+        <label className="flex items-center gap-2 text-xs text-admin-text/70">
+          <span className="shrink-0">Driver</span>
+          <select
+            className={cx(inputCls, "py-1.5")}
+            value={o.driverId ?? ""}
+            disabled={busy}
+            onChange={(e) => onAssign(o, e.target.value || null)}
+            aria-label={`Driver for ${o.orderNumber}`}
+          >
+            <option value="">{dispatchMode === "first_come" ? "Open to all drivers" : "No driver yet"}</option>
+            {activeDrivers.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.onDuty ? "● " : ""}
+                {d.name}
+                {d.isActive ? "" : " (switched off)"}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {canOperate && waiting && (
         <div className="flex gap-2 pt-1">

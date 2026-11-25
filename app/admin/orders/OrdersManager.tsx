@@ -10,6 +10,7 @@
 import { useState, type Dispatch, type SetStateAction } from "react"
 
 import { CatalogueSetup } from "./CatalogueSetup"
+import { DriversPanel } from "./DriversPanel"
 import { OrdersBoard } from "./OrdersBoard"
 import { ProductsPanel } from "./ProductsPanel"
 import type { AdminOrderSettings, AdminOrderVendor, OrdersData, OrdersPermissions, OrdersSection } from "./types"
@@ -38,6 +39,7 @@ export function OrdersManager({
   const [orders, setOrders] = useState(initialData.orders)
   const [products, setProducts] = useState(initialData.products)
   const [categories, setCategories] = useState(initialData.categories)
+  const [drivers, setDrivers] = useState(initialData.drivers)
 
   const canManage = permissions.manage
   const canOperate = permissions.operate || permissions.manage
@@ -45,7 +47,16 @@ export function OrdersManager({
   return (
     <>
       {section === "board" && (
-        <OrdersBoard orders={orders} onOrdersChange={setOrders} vendors={vendors} canOperate={canOperate} timezone={timezone} currency={currency} />
+        <OrdersBoard
+          orders={orders}
+          onOrdersChange={setOrders}
+          vendors={vendors}
+          drivers={drivers}
+          dispatchMode={settings.driverDispatchMode}
+          canOperate={canOperate}
+          timezone={timezone}
+          currency={currency}
+        />
       )}
       {section === "products" && (
         <ProductsPanel
@@ -60,7 +71,10 @@ export function OrdersManager({
         />
       )}
       {section === "catalogue" && (
-        <CatalogueSetup categories={categories} onCategoriesChange={setCategories} vendors={vendors} onVendorsChange={onVendorsChange} products={products} canManage={canManage} />
+        <div className="space-y-6">
+          <CatalogueSetup categories={categories} onCategoriesChange={setCategories} vendors={vendors} onVendorsChange={onVendorsChange} products={products} canManage={canManage} />
+          <DriversPanel drivers={drivers} onChange={setDrivers} canManage={canManage} dispatchMode={settings.driverDispatchMode} />
+        </div>
       )}
     </>
   )

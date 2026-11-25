@@ -211,6 +211,15 @@ export function OrderSettingsPanel({
           </div>
         </SettingsCard>
 
+        <SettingsCard title="Delivery drivers" description="How delivery jobs reach your drivers on WhatsApp. Add drivers under Orders > Categories & vendors.">
+          <FieldRow label="How jobs are given out" hint={d.driverDispatchMode === "first_come" ? "When a delivery order is ready, every driver who is on duty is offered it. The first to tap Take job gets it." : "Nothing is offered automatically. Your team picks a driver for each delivery on the Orders board, and that driver is messaged."}>
+            <select className={`${inputClass} max-w-xs`} value={d.driverDispatchMode} onChange={(e) => set("driverDispatchMode", e.target.value as OrderSettingsInput["driverDispatchMode"])}>
+              <option value="first_come">First come, first served</option>
+              <option value="dispatcher">My team assigns each delivery</option>
+            </select>
+          </FieldRow>
+        </SettingsCard>
+
         <SettingsCard title="Payment">
           <div className="space-y-4">
             {METHODS.filter((m) => !(d.requirePayment && m.id === "cash")).map((m) => (

@@ -9,6 +9,8 @@ import type { getSupabaseServerClient } from "@/lib/supabase/admin"
 import type {
   AdminOrder,
   AdminDeliveryArea,
+  AdminDriver,
+  DriverDispatchMode,
   AdminOrderSettings,
   AdminOrderVendor,
   AdminProduct,
@@ -51,11 +53,13 @@ export const DEFAULT_ORDER_SETTINGS: AdminOrderSettings = {
   minOrderValue: 0,
   maxOrderValue: null,
   statusNotifications: { ...DEFAULT_STATUS_NOTIFICATIONS },
+  driverDispatchMode: "first_come",
 }
 
 const ORDER_SELECT = `id, order_number, status, payment_method, payment_status, total_amount,
   scheduled_for, table_label, fulfilment, delivery_area_name, delivery_address, delivery_fee,
-  customer_name, customer_phone, created_at, vendor_id,
+  customer_name, customer_phone, created_at, vendor_id, driver_id,
+  order_drivers ( name ),
   order_items ( product_name, quantity, unit_price, created_at )`
 
 const PRODUCT_SELECT =
@@ -142,6 +146,7 @@ export function mapSettings(s: any, deliveryAreas: AdminDeliveryArea[] = []): Ad
     minOrderValue: Number(s.min_order_value ?? 0),
     maxOrderValue: s.max_order_value == null ? null : Number(s.max_order_value),
     statusNotifications: parseStatusNotifications(s.status_notifications),
+    driverDispatchMode: (s.driver_dispatch_mode === "dispatcher" ? "dispatcher" : "first_come") as DriverDispatchMode,
   }
 }
 
@@ -165,12 +170,28 @@ function mapOrder(o: any, vendors: Map<string, AdminOrderVendor>): AdminOrder {
     deliveryFee: Number(o.delivery_fee ?? 0),
     customerName: o.customer_name ?? null,
     customerPhone: o.customer_phone,
+    driverId: o.driver_id ?? null,
+    driverName: (Array.isArray(o.order_drivers) ? o.order_drivers[0]?.name : o.order_drivers?.name) ?? null,
     createdAt: o.created_at,
     vendorId: o.vendor_id,
     vendorName: vendor?.name ?? "Unknown vendor",
     collectionPoint: vendor?.collectionPoint ?? "",
     items: items.map((i: any) => ({ name: i.product_name, quantity: i.quantity, unitPrice: Number(i.unit_price) })),
   }
+}
+
+export function mapDriver(d: any): AdminDriver {
+  return { id: d.id, name: d.name, phone: d.phone, isActive: !!d.is_active, onDuty: !!d.on_duty }
+}
+
+export async function loadDrivers(supabase: ServerClient, tenantId: string): Promise<AdminDriver[]> {
+  const { data, error } = await supabase
+    .from("order_drivers")
+    .select("id, name, phone, is_active, on_duty")
+    .eq("tenant_id", tenantId)
+    .order("name", { ascending: true })
+  if (error) throw new Error(`Failed to load drivers: ${error.message}`)
+  return (data ?? []).map(mapDriver)
 }
 
 export async function loadVendors(supabase: ServerClient, tenantId: string): Promise<AdminOrderVendor[]> {
@@ -206,7 +227,7 @@ export async function loadOrders(
 }
 
 export async function loadOrdersData(supabase: ServerClient, tenantId: string): Promise<OrdersData> {
-  const [productsRes, categoriesRes, settingsRes, vendors, deliveryAreas] = await Promise.all([
+  const [productsRes, categoriesRes, settingsRes, vendors, deliveryAreas, drivers] = await Promise.all([
     supabase.from("products").select(PRODUCT_SELECT).eq("tenant_id", tenantId).order("name", { ascending: true }),
     supabase
       .from("product_categories")
@@ -217,6 +238,7 @@ export async function loadOrdersData(supabase: ServerClient, tenantId: string): 
     supabase.from("order_settings").select("*").eq("tenant_id", tenantId).maybeSingle(),
     loadVendors(supabase, tenantId),
     loadDeliveryAreas(supabase, tenantId),
+    loadDrivers(supabase, tenantId),
   ])
   if (productsRes.error) throw new Error(`Failed to load products: ${productsRes.error.message}`)
   if (categoriesRes.error) throw new Error(`Failed to load categories: ${categoriesRes.error.message}`)
@@ -229,6 +251,7 @@ export async function loadOrdersData(supabase: ServerClient, tenantId: string): 
     products: (productsRes.data ?? []).map(mapProduct),
     categories: (categoriesRes.data ?? []).map(mapCategory),
     vendors,
+    drivers,
     settings: settingsRes.data ? mapSettings(settingsRes.data, deliveryAreas) : { ...DEFAULT_ORDER_SETTINGS, deliveryAreas },
   }
 }
