@@ -16,7 +16,9 @@ import {
   getAdminBookableServices,
   getAdminBookingDates,
   getAdminBookingSlots,
+  getAdminRecurringAllowed,
   type AdminBookableService,
+  type AdminSeriesSkip,
 } from "../actions"
 
 const FIELD =
@@ -31,7 +33,14 @@ export function NewAppointmentForm({
   onCreated,
 }: {
   onClose: () => void
-  onCreated: (result: { bookingReference: string; ticketLabel: string | null; startTime: string; dateISO: string }) => void
+  onCreated: (result: {
+    bookingReference: string
+    ticketLabel: string | null
+    startTime: string
+    dateISO: string
+    created: number
+    skipped: AdminSeriesSkip[]
+  }) => void
 }) {
   const [services, setServices] = useState<AdminBookableService[] | null>(null)
   const [dates, setDates] = useState<Array<{ date: string; label: string }>>([])
@@ -45,6 +54,10 @@ export function NewAppointmentForm({
   const [slotStart, setSlotStart] = useState("")
   const [phone, setPhone] = useState("")
   const [name, setName] = useState("")
+  // Repeating appointments: only offered while Booking rules > Allow recurring appointments is on.
+  const [recurringAllowed, setRecurringAllowed] = useState(false)
+  const [repeatEvery, setRepeatEvery] = useState<"none" | "7" | "14">("none")
+  const [repeatCount, setRepeatCount] = useState(4)
 
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
@@ -61,6 +74,14 @@ export function NewAppointmentForm({
       setDates(d.dates)
       if (d.dates[0]) setDate(d.dates[0].date)
     })().catch(() => !cancelled && setLoadError("Couldn't reach the server."))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    getAdminRecurringAllowed().then((allowed) => !cancelled && setRecurringAllowed(allowed)).catch(() => {})
     return () => {
       cancelled = true
     }
@@ -93,12 +114,22 @@ export function NewAppointmentForm({
     setSubmitting(true)
     setError(null)
     try {
-      const result = await createAdminBooking({ serviceId, dateISO: date, slotStart, phone, name })
+      const repeating = recurringAllowed && repeatEvery !== "none"
+      const result = await createAdminBooking({
+        serviceId,
+        dateISO: date,
+        slotStart,
+        phone,
+        name,
+        ...(repeating ? { repeat: { everyDays: repeatEvery === "7" ? (7 as const) : (14 as const), count: repeatCount } } : {}),
+      })
       if (result.ok) onCreated({
           bookingReference: result.bookingReference,
           ticketLabel: result.ticketLabel,
           startTime: result.startTime,
           dateISO: date,
+          created: result.created,
+          skipped: result.skipped,
         })
       else setError(result.error)
     } catch {
@@ -216,6 +247,40 @@ export function NewAppointmentForm({
         Customer name (optional)
         <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" className={FIELD} />
       </label>
+
+      {recurringAllowed && (
+        <fieldset className="rounded-md border border-line px-3 py-2">
+          <legend className="px-1 text-ink-muted">Repeat</legend>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="block text-ink-muted">
+              How often
+              <select value={repeatEvery} onChange={(e) => setRepeatEvery(e.target.value as "none" | "7" | "14")} className={FIELD}>
+                <option value="none">Does not repeat</option>
+                <option value="7">Every week</option>
+                <option value="14">Every 2 weeks</option>
+              </select>
+            </label>
+            {repeatEvery !== "none" && (
+              <label className="block text-ink-muted">
+                Appointments in total (2-12)
+                <input
+                  type="number"
+                  min={2}
+                  max={12}
+                  value={repeatCount}
+                  onChange={(e) => setRepeatCount(Math.min(12, Math.max(2, Math.floor(Number(e.target.value)) || 2)))}
+                  className={`${FIELD} w-24`}
+                />
+              </label>
+            )}
+          </div>
+          {repeatEvery !== "none" && (
+            <p className="mt-2 text-xs text-ink-muted">
+              Same time each time. Dates that are closed or already full are skipped, and you'll see which.
+            </p>
+          )}
+        </fieldset>
+      )}
 
       {error && (
         <p role="alert" className="rounded-md bg-accent/10 px-3 py-2 text-accent">

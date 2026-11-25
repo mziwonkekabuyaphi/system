@@ -3,7 +3,7 @@
 // Booking rules as a right-hand overlay on the Appointments tab (same pattern
 // as Shisha's TV display). Replaces the "Booking rules" page under Settings.
 //
-// Tabs: Timing, Services, Reminders, Queue link, Ticket. The first four edit
+// Tabs: Timing, Services, Customers, Reminders, Queue link, Ticket. The first four edit
 // one booking_settings row, so they share ONE Save footer (same action as
 // before: updateBookingSettings). The Ticket tab hosts the existing
 // BookingTicketCard, which has its own preview and Save, so the footer hides there.
@@ -29,7 +29,7 @@ import { updateBookingSettings } from "../settings-actions"
 import { BookingTicketCard } from "./BookingTicketCard"
 import type { AdminBookingSettings, AdminQueuePriorityMode } from "../types"
 
-type Tab = "timing" | "services" | "reminders" | "queue" | "ticket"
+type Tab = "timing" | "services" | "customers" | "reminders" | "queue" | "ticket"
 type Message = { kind: "success" | "error"; text: string }
 
 /** AdminBookingSettings plus the staff-choice flag the old panel already read and wrote. */
@@ -38,6 +38,7 @@ type BookingForm = AdminBookingSettings & { allowCustomerStaffChoice?: boolean }
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "timing", label: "Timing" },
   { id: "services", label: "Services" },
+  { id: "customers", label: "Customers" },
   { id: "reminders", label: "Reminders" },
   { id: "queue", label: "Queue link" },
   { id: "ticket", label: "Ticket" },
@@ -77,6 +78,14 @@ function withDefaults(s: BookingForm): BookingForm {
     kioskPrintTicket: s.kioskPrintTicket ?? true,
     requirePayment: s.requirePayment ?? false,
     cardPaymentsConnected: s.cardPaymentsConnected ?? false,
+    allowCustomerCancel: s.allowCustomerCancel ?? true,
+    allowCustomerReschedule: s.allowCustomerReschedule ?? true,
+    rescheduleDeadlineMinutes: s.rescheduleDeadlineMinutes ?? null,
+    allowSameDayBookings: s.allowSameDayBookings ?? true,
+    allowRecurringBookings: s.allowRecurringBookings ?? false,
+    requireApproval: s.requireApproval ?? false,
+    maxBookingsPerCustomerPerDay: s.maxBookingsPerCustomerPerDay ?? null,
+    maxActiveBookingsPerCustomer: s.maxActiveBookingsPerCustomer ?? 1,
   }
 }
 
@@ -92,6 +101,18 @@ function validate(s: BookingForm, queueEnabled: boolean): Partial<Record<Tab, st
   else if (!isInt(s.cancellationWindowMinutes, 0)) e.timing = "Cancellation window must be a whole number of minutes, 0 or more."
   else if ((s.bookingNumberPrefix ?? "").trim().length < 1 || (s.bookingNumberPrefix ?? "").trim().length > 4)
     e.timing = "Ticket prefix must be 1-4 characters."
+  else if (s.allowSameDayBookings === false && s.maxAdvanceDays < 1)
+    e.timing = "Same-day bookings are off, so customers need at least 1 day of advance booking."
+  else if (
+    s.allowCustomerReschedule !== false &&
+    s.rescheduleDeadlineMinutes != null &&
+    !isInt(s.rescheduleDeadlineMinutes, 0)
+  )
+    e.timing = "Rescheduling deadline must be a whole number of minutes, 0 or more (or empty to use the cancellation window)."
+
+  if (!isInt(s.maxActiveBookingsPerCustomer, 1, 20)) e.customers = "Upcoming bookings per customer must be a whole number from 1 to 20."
+  else if (s.maxBookingsPerCustomerPerDay != null && !isInt(s.maxBookingsPerCustomerPerDay, 1, 20))
+    e.customers = "Bookings per customer per day must be a whole number from 1 to 20, or empty for no limit."
 
   if (!isInt(s.maxServicesPerBooking, 1, 5)) e.services = "Services per booking must be a whole number from 1 to 5."
   else if (s.requireServiceSelection === false && !isInt(s.defaultDurationMinutes, 5, 480))
@@ -138,7 +159,7 @@ export function BookingRulesDrawer({
 
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline])
   const errors = useMemo(() => validate(draft, queueEnabled), [draft, queueEnabled])
-  const firstError = errors.timing ?? errors.services ?? errors.reminders ?? errors.queue
+  const firstError = errors.timing ?? errors.services ?? errors.customers ?? errors.reminders ?? errors.queue
   const canSave = dirty && !saving && !firstError
 
   const requestClose = useCallback(() => {
@@ -157,11 +178,8 @@ export function BookingRulesDrawer({
     setSaving(true)
     setMessage(null)
     const value = draft
-    // Payment is owned by Settings > Payments (payment_policies). Never send requirePayment from here:
-    // this form's copy can be older than what was saved there, and sending it would overwrite the new rule.
-    const { requirePayment: _requirePayment, ...payload } = value
     try {
-      const res = await updateBookingSettings(payload)
+      const res = await updateBookingSettings(value)
       if (res.success) {
         setBaseline(value)
         onSaved(value)
@@ -178,6 +196,8 @@ export function BookingRulesDrawer({
 
   const num = (n: number | undefined) => (n === undefined || Number.isNaN(n) ? "" : n)
   const onNum = (v: string) => (v === "" ? Number.NaN : Number(v))
+  /** Empty box = null ("no limit" / "use the default"). */
+  const onNullableNum = (v: string) => (v === "" ? null : Number(v))
   const tabsWithFlags = TABS.filter((t) => queueEnabled || t.id !== "queue").map((t) => ({ ...t, label: errors[t.id] ? `${t.label} •` : t.label }))
   const remindersOn = draft.bookingRemindersEnabled ?? true
   const reminderLead = draft.bookingReminderLeadMinutes ?? 120
@@ -253,6 +273,15 @@ export function BookingRulesDrawer({
               >
                 <input type="number" min={1} max={14} className={DRAWER_FIELD} value={num(draft.maxDatesOffered)} onChange={(e) => set("maxDatesOffered", onNum(e.target.value))} />
               </DrawerField>
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Allow same-day bookings"
+                  description="Off = customers can only book from tomorrow onwards, on WhatsApp and the kiosk. You can still add same-day appointments yourself in the admin."
+                  checked={draft.allowSameDayBookings ?? true}
+                  disabled={saving}
+                  onChange={(v) => set("allowSameDayBookings", v)}
+                />
+              </div>
             </DrawerGroup>
 
             <DrawerGroup title="Ticket numbers">
@@ -281,12 +310,48 @@ export function BookingRulesDrawer({
             </DrawerGroup>
 
             <DrawerGroup title="Cancellations">
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Customers can cancel their own booking"
+                  description="Off = customers can't cancel on WhatsApp (including the reminder's “Can't make it” button) and are asked to contact the shop. You can still cancel from the Appointments screen."
+                  checked={draft.allowCustomerCancel ?? true}
+                  disabled={saving}
+                  onChange={(v) => set("allowCustomerCancel", v)}
+                />
+              </div>
               <DrawerField
                 label="Free cancellation window (minutes before start)"
-                hint="Once a booking is inside this window, it can no longer be cancelled from the Appointments screen."
+                hint="Once a booking is inside this window, it can no longer be cancelled by the customer or from the Appointments screen."
               >
                 <input type="number" min={0} className={DRAWER_FIELD} value={num(draft.cancellationWindowMinutes)} onChange={(e) => set("cancellationWindowMinutes", onNum(e.target.value))} />
               </DrawerField>
+            </DrawerGroup>
+
+            <DrawerGroup title="Rescheduling">
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Customers can reschedule their own booking"
+                  description="Off = customers can't move a booking on WhatsApp (including the reminder's “Move it” button) and are asked to contact the shop."
+                  checked={draft.allowCustomerReschedule ?? true}
+                  disabled={saving}
+                  onChange={(v) => set("allowCustomerReschedule", v)}
+                />
+              </div>
+              {(draft.allowCustomerReschedule ?? true) && (
+                <DrawerField
+                  label="Rescheduling deadline (minutes before start)"
+                  hint={`How close to the start a customer can still move their booking. Leave empty to use the cancellation window (${draft.cancellationWindowMinutes} min).`}
+                >
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder={`Same as cancellation window (${draft.cancellationWindowMinutes})`}
+                    className={DRAWER_FIELD}
+                    value={draft.rescheduleDeadlineMinutes ?? ""}
+                    onChange={(e) => set("rescheduleDeadlineMinutes", onNullableNum(e.target.value))}
+                  />
+                </DrawerField>
+              )}
             </DrawerGroup>
           </div>
         )}
@@ -324,12 +389,25 @@ export function BookingRulesDrawer({
               title="Payment"
               hint="Applies to bookings customers make themselves on WhatsApp and at the kiosk. Bookings you add in the admin are never charged."
             >
-              <div className="rounded-lg border border-line bg-card px-4 py-3">
-                <p className="text-sm text-ink">Payment is now set in Settings &gt; Payments.</p>
-                <p className="mt-1 text-xs text-ink-muted">
-                  Choose whether customers pay in full, pay a deposit or pay after the service, and set the payment deadline and refund policy there.
-                </p>
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Customers pay when they book"
+                  description="The customer gets a card payment link (a QR code on the kiosk) for the total of the services they picked. Their time is held for 15 minutes and the booking is confirmed once they have paid. If they don't pay, the time is released. Services with a price of 0 are booked without payment. When off, bookings are free and confirm straight away."
+                  checked={draft.requirePayment ?? false}
+                  disabled={saving || (!draft.cardPaymentsConnected && !(draft.requirePayment ?? false))}
+                  onChange={(v) => set("requirePayment", v)}
+                />
               </div>
+              {!draft.cardPaymentsConnected && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {draft.requirePayment
+                    ? "No card payment provider is connected right now, so customers can't book on WhatsApp or the kiosk until you reconnect one in Settings > Payments."
+                    : "Connect a card payment provider in Settings > Payments to turn this on."}
+                </p>
+              )}
+              <p className="text-xs text-ink-muted">
+                Switching this changes new bookings only. Bookings already made, and ones waiting for payment, keep the rules they were made under.
+              </p>
             </DrawerGroup>
 
             <DrawerGroup title="Staff">
@@ -340,6 +418,63 @@ export function BookingRulesDrawer({
                   checked={draft.allowCustomerStaffChoice ?? false}
                   disabled={saving}
                   onChange={(v) => set("allowCustomerStaffChoice", v)}
+                />
+              </div>
+            </DrawerGroup>
+          </div>
+        )}
+
+        {tab === "customers" && (
+          <div className="space-y-6">
+            <DrawerGroup
+              title="Approval"
+              hint="Applies to bookings customers make themselves on WhatsApp and at the kiosk. Bookings you add in the admin are always confirmed straight away."
+            >
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Require approval before confirming"
+                  description="New bookings are held as requests. The customer is told it's being reviewed, and you approve or decline each one on the Appointments screen. Their time stays held while they wait. If payment is required too, they pay first and you approve afterwards."
+                  checked={draft.requireApproval ?? false}
+                  disabled={saving}
+                  onChange={(v) => set("requireApproval", v)}
+                />
+              </div>
+              <p className="text-xs text-ink-muted">
+                Switching this changes new bookings only. Requests already waiting stay in the list until you approve or decline them. Declining a booking the customer has already paid for does not refund the card: refund it from your payment provider.
+              </p>
+            </DrawerGroup>
+
+            <DrawerGroup title="Limits per customer" hint="Apply to bookings customers make themselves. Bookings you add in the admin are not limited.">
+              <DrawerField
+                label="Upcoming bookings a customer can hold at once (1-20)"
+                hint="1 means a customer must wait until their booking has passed, or cancel it, before booking again."
+              >
+                <input type="number" min={1} max={20} className={DRAWER_FIELD} value={num(draft.maxActiveBookingsPerCustomer)} onChange={(e) => set("maxActiveBookingsPerCustomer", onNum(e.target.value))} />
+              </DrawerField>
+              <DrawerField
+                label="Bookings per customer per day (1-20)"
+                hint="The most bookings one customer can have on the same day. Leave empty for no limit."
+              >
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  placeholder="No limit"
+                  className={DRAWER_FIELD}
+                  value={draft.maxBookingsPerCustomerPerDay ?? ""}
+                  onChange={(e) => set("maxBookingsPerCustomerPerDay", onNullableNum(e.target.value))}
+                />
+              </DrawerField>
+            </DrawerGroup>
+
+            <DrawerGroup title="Recurring appointments">
+              <div className="rounded-lg border border-line bg-card px-4">
+                <DrawerSwitch
+                  title="Allow recurring appointments"
+                  description="Adds a “Repeat” option when you create an appointment: every week or every 2 weeks, for up to 12 appointments at the same time. Dates that are closed or already full are skipped and listed for you. Customers can't set up repeats themselves."
+                  checked={draft.allowRecurringBookings ?? false}
+                  disabled={saving}
+                  onChange={(v) => set("allowRecurringBookings", v)}
                 />
               </div>
             </DrawerGroup>

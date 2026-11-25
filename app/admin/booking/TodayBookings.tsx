@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
 import { NewAppointmentForm } from "./NewAppointmentDialog"
-import { cancelBooking, completeBooking } from "../actions"
+import { approveBooking, cancelBooking, completeBooking, declineBooking } from "../actions"
 import {
   BOOKING_WINDOW_DAYS_AHEAD,
   BOOKING_WINDOW_DAYS_BACK,
@@ -32,11 +32,12 @@ import type { AdminBooking, AdminBookingSettings } from "../types"
 type Status = AdminBooking["status"]
 type Scope = "day" | "week"
 type Notice = { kind: "success" | "error"; text: string }
-type Action = "cancel" | "complete"
+type Action = "cancel" | "complete" | "approve" | "decline"
 
 const STATUS_LABEL: Record<Status, string> = {
   confirmed: "Confirmed",
   awaiting_payment: "Awaiting payment",
+  pending_approval: "Needs approval",
   completed: "Completed",
   cancelled: "Cancelled",
 }
@@ -44,6 +45,7 @@ const STATUS_LABEL: Record<Status, string> = {
 const STATUS_BADGE: Record<Status, string> = {
   confirmed: "bg-ink/[0.07] text-ink",
   awaiting_payment: "bg-amber-100 text-amber-800",
+  pending_approval: "bg-amber-100 text-amber-800",
   completed: "bg-success/10 text-success",
   cancelled: "bg-accent/10 text-accent",
 }
@@ -196,6 +198,11 @@ export function TodayBookings({
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   }, [visible])
 
+  const pendingApproval = useMemo(
+    () => bookings.filter((b) => b.status === "pending_approval" && new Date(b.startTime).getTime() > now),
+    [bookings, now],
+  )
+
   const filtersActive =
     search.trim() !== "" || serviceFilter !== "all" || staffFilter !== "all" || statusFilter !== "all"
 
@@ -224,12 +231,29 @@ export function TodayBookings({
     setBusy({ id, action })
     setDialogError(null)
     try {
-      const result = action === "cancel" ? await cancelBooking(id) : await completeBooking(id)
+      const result =
+        action === "cancel"
+          ? await cancelBooking(id)
+          : action === "approve"
+            ? await approveBooking(id)
+            : action === "decline"
+              ? await declineBooking(id)
+              : await completeBooking(id)
       if (result.ok) {
-        setOverrides((prev) => ({ ...prev, [id]: action === "cancel" ? "cancelled" : "completed" }))
+        const next: Status = action === "approve" ? "confirmed" : action === "complete" ? "completed" : "cancelled"
+        setOverrides((prev) => ({ ...prev, [id]: next }))
         setNotice({
           kind: "success",
-          text: action === "cancel" ? "Appointment cancelled." : "Appointment marked as completed.",
+          text:
+            action === "cancel"
+              ? "Appointment cancelled."
+              : action === "approve"
+                ? "Booking approved. The customer has been told."
+                : action === "decline"
+                  ? "paid" in result && result.paid
+                    ? "Booking declined and the customer told. They had already paid, so remember to refund them from your payment provider."
+                    : "Booking declined and the customer told."
+                  : "Appointment marked as completed.",
         })
         setConfirmCancelId(null)
       } else if (action === "cancel") {
@@ -237,7 +261,13 @@ export function TodayBookings({
         // window) is next to the button that triggered it.
         setDialogError(result.error)
       } else {
-        setNotice({ kind: "error", text: `Couldn't mark that appointment as completed: ${result.error}` })
+        setNotice({
+          kind: "error",
+          text:
+            action === "complete"
+              ? `Couldn't mark that appointment as completed: ${result.error}`
+              : `Couldn't ${action} that booking: ${result.error}`,
+        })
       }
     } catch {
       const text = "Something went wrong reaching the server. Please try again."
@@ -285,6 +315,19 @@ export function TodayBookings({
           <span>{notice.text}</span>
           <button type="button" onClick={() => setNotice(null)} className="shrink-0 underline underline-offset-2">
             Dismiss
+          </button>
+        </div>
+      )}
+
+      {pendingApproval.length > 0 && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900">
+          <span>
+            {pendingApproval.length === 1
+              ? "1 booking is waiting for your approval."
+              : `${pendingApproval.length} bookings are waiting for your approval.`}
+          </span>
+          <button type="button" onClick={() => setStatusFilter("pending_approval")} className="underline underline-offset-2">
+            Show them
           </button>
         </div>
       )}
@@ -381,6 +424,7 @@ export function TodayBookings({
           <option value="all">All statuses</option>
           <option value="confirmed">Confirmed</option>
           <option value="awaiting_payment">Awaiting payment</option>
+          <option value="pending_approval">Needs approval</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
@@ -458,6 +502,23 @@ export function TodayBookings({
 
                       <div className="flex shrink-0 items-center gap-3 sm:justify-end">
                         <StatusBadge status={b.status} />
+                        {b.status === "pending_approval" && (
+                          <>
+                            <button type="button" onClick={() => run("approve", b.id)} disabled={anyBusy} className={BTN_PRIMARY}>
+                              {rowBusy && busy?.action === "approve" ? "Approving…" : "Approve"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm("Decline this booking? The customer will be told and the time is released.")) void run("decline", b.id)
+                              }}
+                              disabled={anyBusy}
+                              className="rounded-md px-2 py-1.5 text-sm text-accent underline decoration-accent/40 underline-offset-4 hover:decoration-accent disabled:opacity-50"
+                            >
+                              {rowBusy && busy?.action === "decline" ? "Declining…" : "Decline"}
+                            </button>
+                          </>
+                        )}
                         {b.status === "confirmed" && (
                           <>
                             <button
@@ -496,11 +557,17 @@ export function TodayBookings({
       <AdminDialog open={newOpen} title="New appointment" onClose={() => setNewOpen(false)}>
         <NewAppointmentForm
           onClose={() => setNewOpen(false)}
-          onCreated={({ bookingReference, ticketLabel, startTime, dateISO }) => {
+          onCreated={({ bookingReference, ticketLabel, startTime, dateISO, created, skipped }) => {
             setNewOpen(false)
             setNotice({
-              kind: "success",
-              text: `Appointment booked for ${formatDateShort(dateISO)} at ${formatTime(startTime, timezone)} (${ticketLabel ? `ticket ${ticketLabel}, ` : ""}ref ${bookingReference}).`,
+              kind: skipped.length > 0 ? "error" : "success",
+              text:
+                created > 1 || skipped.length > 0
+                  ? `${created} appointment${created === 1 ? "" : "s"} booked from ${formatDateShort(dateISO)} at ${formatTime(startTime, timezone)} (ref ${bookingReference}).` +
+                    (skipped.length > 0
+                      ? ` Skipped: ${skipped.map((s) => `${formatDateShort(s.dateISO)} (${s.reason})`).join(", ")}.`
+                      : "")
+                  : `Appointment booked for ${formatDateShort(dateISO)} at ${formatTime(startTime, timezone)} (${ticketLabel ? `ticket ${ticketLabel}, ` : ""}ref ${bookingReference}).`,
             })
             if (dateISO >= minKey && dateISO <= maxKey) setSelectedDate(dateISO)
           }}
@@ -513,7 +580,38 @@ export function TodayBookings({
         title="Appointment details"
         onClose={() => setDetailsId(null)}
         footer={
-          detailsBooking?.status === "confirmed" ? (
+          detailsBooking?.status === "pending_approval" ? (
+            <>
+              <button type="button" onClick={() => setDetailsId(null)} className={BTN}>
+                Close
+              </button>
+              <button
+                type="button"
+                disabled={anyBusy}
+                onClick={async () => {
+                  const id = detailsBooking.id
+                  if (!window.confirm("Decline this booking? The customer will be told and the time is released.")) return
+                  await run("decline", id)
+                  setDetailsId(null)
+                }}
+                className={BTN}
+              >
+                Decline…
+              </button>
+              <button
+                type="button"
+                disabled={anyBusy}
+                onClick={async () => {
+                  const id = detailsBooking.id
+                  await run("approve", id)
+                  setDetailsId(null)
+                }}
+                className={BTN_PRIMARY}
+              >
+                {busy?.action === "approve" ? "Approving…" : "Approve booking"}
+              </button>
+            </>
+          ) : detailsBooking?.status === "confirmed" ? (
             <>
               <button type="button" onClick={() => setDetailsId(null)} className={BTN}>
                 Close
