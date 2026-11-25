@@ -77,6 +77,7 @@ import { passportService } from "@/lib/services/passport"
 import { eventTicketsService } from "@/lib/services/event-tickets"
 import { ordersService, loadTenantContext } from "@/lib/services/orders/orders"
 import { getStaffForPhone, staffBotService, STAFF_ID_PREFIX, STAFF_MAIN_MENU_TAP } from "@/lib/services/staff-bot"
+import { driverBotService } from "@/lib/services/driver-bot"
 import { conciergeService } from "@/lib/ai/concierge"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
 
@@ -522,6 +523,14 @@ export async function routeAction(
     if (staffTap) await stateService.clearState(tenantId, message.from)
     const staffResult = await staffBotService.route(tenantId, state, message)
     if (staffResult) return staffResult
+  }
+
+  // ── -2b. DRIVER AREA (orders > delivery drivers) ───────────────────
+  // Driver taps ("drv_...") and the typed words "jobs" / "on duty" / "off duty" are handled by
+  // lib/services/driver-bot.ts, which answers null for everything else (customers are never affected).
+  {
+    const driverResult = await driverBotService.route(tenantId, state, message)
+    if (driverResult) return driverResult
   }
 
   // ── -1. MODULE GATE (shisha) ───────────────────────────────────────

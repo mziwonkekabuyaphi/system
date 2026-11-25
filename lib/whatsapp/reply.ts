@@ -28,6 +28,7 @@ import { ensureCustomer } from "@/lib/services/tenant-customer"
 import { routeIntent } from "@/lib/whatsapp/intent-router"
 import { MENU_ROW_IDS } from "@/lib/whatsapp/utils/services-list"
 import { REMINDER_TAP_PATTERN } from "@/lib/services/reminder-reply"
+import { DRIVER_ID_PREFIX } from "@/lib/services/orders/orders.drivers"
 import { WAITLIST_TAP_PATTERN } from "@/lib/services/waitlist-reply"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
@@ -45,7 +46,7 @@ const MAX_INBOUND_PER_HOUR = 40 // tune
 /** True when routeAction will route by id or state and never read the intent. */
 function intentIsIrrelevant(message: IncomingMessage, state: ConversationState | null): boolean {
   const id = message.interactiveId
-  if (id && (MENU_IDS.has(id) || REMINDER_TAP_PATTERN.test(id) || WAITLIST_TAP_PATTERN.test(id))) return true
+  if (id && (MENU_IDS.has(id) || REMINDER_TAP_PATTERN.test(id) || WAITLIST_TAP_PATTERN.test(id) || id.startsWith(DRIVER_ID_PREFIX))) return true
   if (id && state) return true // a button/list tap during a flow answers the flow
   const text = (message.contentSummary ?? message.text ?? "").trim().toLowerCase()
   return Boolean(state && PLAIN_ANSWER.test(text))
