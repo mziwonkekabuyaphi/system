@@ -30,6 +30,7 @@ export const DRV_OUT = 'drv_out:'; // + order id
 export const DRV_DONE = 'drv_done:'; // + order id
 export const DRV_DROP = 'drv_drop:'; // + order id
 export const DRV_DUTY = 'drv_duty:'; // + on | off
+export const DRV_EARN = 'drv_earn'; // the driver's own earnings
 
 export type DriverDispatchMode = 'first_come' | 'dispatcher';
 
