@@ -22,7 +22,7 @@ const HEADER_STYLES: Array<{ value: TicketHeaderStyle; title: string; descriptio
 
 const FIELD_TOGGLES: Array<{ key: keyof AdminBookingTicketSettings; label: string; hint: string }> = [
   { key: "showLogo", label: "Logo", hint: "Your logo in the header (needs a PNG, JPEG or SVG logo)." },
-  { key: "showPrice", label: "Price", hint: "Total price of the booked services." },
+  { key: "showPrice", label: "Price", hint: "Total price of the booked services. Deposit bookings also show the balance due at the appointment." },
   { key: "showDuration", label: "Duration", hint: "How long the appointment runs." },
   { key: "showAddress", label: "Address", hint: "Your shop address from General settings." },
   { key: "showReference", label: "Booking reference", hint: "The reference staff use to find the booking." },
@@ -243,7 +243,7 @@ export function BookingTicketCard() {
           </div>
           {previewing && preview && <p className="text-xs text-stone-400">Updating…</p>}
           {previewError && <p className="text-xs text-red-600">{previewError}</p>}
-          <p className="text-xs text-stone-400">Sample booking. Shows your saved logo, name and address.</p>
+          <p className="text-xs text-stone-400">Sample deposit booking. Shows your saved logo, name and address. The balance line only appears on real deposit bookings.</p>
         </div>
       </div>
 

@@ -230,6 +230,8 @@ export async function previewBookingTicket(input: AdminBookingTicketSettings): P
         customerPhone: "0731234567",
         serviceNames: ["Hair Cut", "Beard Trim"],
         totalPrice: 250,
+        // Sample deposit so the owner can see the balance line; it only appears on real deposit bookings.
+        balanceDue: 150,
         startTime: start.toISOString(),
         endTime: end.toISOString(),
       },
