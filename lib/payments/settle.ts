@@ -24,7 +24,11 @@ import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 import * as shishaMessages from "@/lib/services/messages/shisha"
 import { confirmOrderPaymentByAttempt } from "@/lib/services/orders/orders.flow-checkout"
-import { bookingPaidConfirmedMessage, bookingPaymentRefundedMessage } from "@/lib/services/messages/booking"
+import {
+  bookingPaidConfirmedMessage,
+  bookingPaidPendingApprovalMessage,
+  bookingPaymentRefundedMessage,
+} from "@/lib/services/messages/booking"
 import { formatMoneyFor } from "@/lib/services/orders/orders.tenant"
 
 import type { StoredConnection } from "./credentials"
@@ -447,10 +451,14 @@ async function settleBookingPayment(
   if (readError) throw new Error(`booking lookup failed: ${readError.message}`)
   if (!booking) return await refundAfterFailedFulfilment(db, provider, connection, payment, "booking not found", "booking")
 
+  // A shop that approves bookings first keeps the paid booking waiting for staff (Booking rules > Require approval).
+  const { data: rules } = await db.from("booking_settings").select("require_approval").eq("tenant_id", tenantId).maybeSingle()
+  const needsApproval = rules?.require_approval === true
+
   if (booking.status === "awaiting_payment") {
     const { data: updated, error: updateError } = await db
       .from("bookings")
-      .update({ status: "confirmed" })
+      .update({ status: needsApproval ? "pending_approval" : "confirmed" })
       .eq("id", bookingId)
       .eq("tenant_id", tenantId)
       .eq("status", "awaiting_payment")
@@ -458,7 +466,7 @@ async function settleBookingPayment(
     if (updateError) throw new Error(`booking confirm failed: ${updateError.message}`)
     // Changed under us (probably the hold just expired): let the provider retry, the next pass sees the new status.
     if (!updated || updated.length === 0) throw new Error("booking changed while confirming payment")
-  } else if (booking.status === "confirmed" || booking.status === "completed") {
+  } else if (booking.status === "confirmed" || booking.status === "pending_approval" || booking.status === "completed") {
     // A retry after a crash between the two writes: only this payment confirms a held booking.
     await markSucceeded(db, paymentId, providerPaymentId)
     return "booking_already_confirmed"
@@ -467,7 +475,7 @@ async function settleBookingPayment(
   }
 
   await markSucceeded(db, paymentId, providerPaymentId)
-  await notifyBookingPaid(db, provider, tenantId, bookingId, payment.metadata as Record<string, unknown> | null)
+  await notifyBookingPaid(db, provider, tenantId, bookingId, payment.metadata as Record<string, unknown> | null, needsApproval)
   return "booking_paid"
 }
 
@@ -482,7 +490,15 @@ async function mayMessageKioskCustomer(db: Db, tenantId: string): Promise<boolea
 }
 
 /** Best effort: the booking is already confirmed whether or not these messages go. */
-async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: string, bookingId: string, metadata: Record<string, unknown> | null) {
+async function notifyBookingPaid(
+  db: Db,
+  provider: CardProvider,
+  tenantId: string,
+  bookingId: string,
+  metadata: Record<string, unknown> | null,
+  /** true = paid, but staff still have to approve: say so, and send no ticket yet. */
+  pendingApproval = false,
+) {
   try {
     if (metadata?.channel === "kiosk" && !(await mayMessageKioskCustomer(db, tenantId))) return
 
@@ -547,6 +563,21 @@ async function notifyBookingPaid(db: Db, provider: CardProvider, tenantId: strin
 
     const { data: pay } = await db.from("tenant_payments").select("amount, currency").eq("purpose", "booking_payment").eq("purpose_id", bookingId).maybeSingle()
     const amountLabel = formatMoneyFor((pay?.currency as string | undefined) ?? "ZAR", Number(pay?.amount ?? totalPrice))
+
+    if (pendingApproval) {
+      await sendWhatsAppTextMessage(
+        tenantId,
+        phone,
+        bookingPaidPendingApprovalMessage({
+          customerName,
+          serviceName: serviceNames.join(" + ") || "Appointment",
+          slotLabel,
+          bookingReference: b.booking_reference as string,
+          amountLabel,
+        }),
+      )
+      return
+    }
 
     await sendWhatsAppTextMessage(
       tenantId,
