@@ -9,6 +9,7 @@
  * WHAT A DRIVER CAN DO
  *   "on duty" / "off duty"   only on-duty drivers are offered new jobs
  *   "jobs"                   my jobs + open jobs (+ duty switch)
+ *   "earnings"               my trips and fees today / this week / this month, and what is not paid out yet
  *   Take job                 first come, first served (shops in "first come" mode)
  *   Picked up                order -> out for delivery (customer is told)
  *   Delivered                order -> completed (customer is told; cash due is marked paid)
@@ -31,6 +32,7 @@ import {
   DRV_DONE,
   DRV_DROP,
   DRV_DUTY,
+  DRV_EARN,
   DRV_JOB,
   DRV_OUT,
   DRV_TAKE,
@@ -78,13 +80,14 @@ export async function getDriverForPhone(tenantId: string, phone: string): Promis
 // Words
 // ---------------------------------------------------------------------------
 
-type TypedIntent = "jobs" | "on" | "off"
+type TypedIntent = "jobs" | "on" | "off" | "earnings"
 
 function typedDriverIntent(raw: string): TypedIntent | null {
   const t = raw.trim().toLowerCase().replace(/[?!.]+$/g, "")
   if (!t || t.length > 30) return null
   if (/^(go )?(on ?duty|online|on shift)$/.test(t) || /^start (my )?shift$/.test(t)) return "on"
   if (/^(go )?(off ?duty|offline|off shift)$/.test(t) || /^(end|stop) (my )?shift$/.test(t)) return "off"
+  if (/^(my )?(earnings?|pay|trips)$/.test(t)) return "earnings"
   if (/^(my )?(jobs?|deliver(y|ies)|driver( menu)?|open jobs)$/.test(t)) return "jobs"
   return null
 }
@@ -154,7 +157,7 @@ async function home(tenantId: string, who: DriverIdentity, lead = ""): Promise<A
   if (open.length) {
     sections.push({
       title: "Open jobs",
-      rows: open.slice(0, 5).map((j) => ({
+      rows: open.slice(0, 4).map((j) => ({
         id: `${DRV_TAKE}${j.id}`,
         title: `Take #${j.order_number}`,
         description: clip(`${j.area ?? "Delivery"} · fee ${formatCurrency(j.fee)}${j.cash_due > 0 ? ` · cash ${formatCurrency(j.cash_due)}` : ""}`, 72),
@@ -162,11 +165,12 @@ async function home(tenantId: string, who: DriverIdentity, lead = ""): Promise<A
     })
   }
   sections.push({
-    title: "Duty",
+    title: "More",
     rows: [
       who.onDuty
         ? { id: `${DRV_DUTY}off`, title: "Go off duty", description: "Stop getting new job offers" }
         : { id: `${DRV_DUTY}on`, title: "Go on duty", description: "Start getting new job offers" },
+      { id: DRV_EARN, title: "My earnings", description: "Trips and fees" },
     ],
   })
 
@@ -178,6 +182,30 @@ async function home(tenantId: string, who: DriverIdentity, lead = ""): Promise<A
     nextState: null,
     followUp: [{ reply: "What would you like to do?", list: { buttonText: "Driver menu", sections } }],
   }
+}
+
+type Period = { trips: number; fees: number }
+type MyEarnings = { fees_tracked: boolean; today: Period; week: Period; month: Period; unpaid: Period & { cash: number } }
+
+const trips = (n: number) => `${n} trip${n === 1 ? "" : "s"}`
+
+async function earnings(tenantId: string, who: DriverIdentity): Promise<ActionResult> {
+  const call = rpc()
+  if (!call) return text("Sorry, something went wrong. Please try again.")
+  const { data, error } = await call<MyEarnings>("driver_my_earnings", { p_tenant: tenantId, p_driver: who.driverId })
+  if (error || !data) return text("Sorry, I couldn't load your earnings. Please try again.")
+  const line = (label: string, p: Period) => `${label}: ${trips(p.trips)}${data.fees_tracked ? ` · ${formatCurrency(p.fees)}` : ""}`
+  const lines = [
+    "💰 *Your earnings*",
+    line("Today", data.today),
+    line("This week", data.week),
+    line("This month", data.month),
+    "",
+    `Not paid out yet: ${trips(data.unpaid.trips)}${data.fees_tracked ? ` · ${formatCurrency(data.unpaid.fees)}` : ""}`,
+    data.unpaid.cash > 0 ? `💵 Cash you're holding for the shop: ${formatCurrency(data.unpaid.cash)}` : null,
+    !data.fees_tracked ? "\nThe shop hasn't set a driver fee yet, so only trips are counted." : null,
+  ]
+  return text(lines.filter((l) => l !== null).join("\n"))
 }
 
 function idAfter(prefix: string, id: string): string | null {
@@ -322,9 +350,11 @@ export const driverBotService = {
 
     if (keyword === "on") return setDuty(tenantId, who, true)
     if (keyword === "off") return setDuty(tenantId, who, false)
+    if (keyword === "earnings") return earnings(tenantId, who)
     if (keyword === "jobs") return home(tenantId, who)
 
     const tap = id as string
+    if (tap === DRV_EARN) return earnings(tenantId, who)
     if (tap.startsWith(DRV_DUTY)) return setDuty(tenantId, who, tap.slice(DRV_DUTY.length) === "on")
     const handlers: Array<[string, (t: string, w: DriverIdentity, o: string) => Promise<ActionResult>]> = [
       [DRV_TAKE, take],
