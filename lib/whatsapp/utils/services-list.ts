@@ -66,10 +66,12 @@ export function isMenuRowId(id: string | null | undefined): id is MenuRowId {
  * @param options.wallet Include the My Passport row (tenant has the wallet module on). Same default-false rule.
  * @param options.events Include the Events row (tenant has the events module on). Same default-false rule.
  * @param options.orders Include the Order Now row (tenant has the orders module on). Same default-false rule.
+ * @param options.ordersDescription Line under "Order Now", worded for what the shop offers (collection / delivery / dine-in).
+ *   Optional: without it the row says "Browse the menu and place an order".
  */
 export function buildServicesListMessage(
   bodyText: string,
-  options: { shisha?: boolean; staff?: boolean; wallet?: boolean; events?: boolean; orders?: boolean } = {},
+  options: { shisha?: boolean; staff?: boolean; wallet?: boolean; events?: boolean; orders?: boolean; ordersDescription?: string } = {},
 ): FollowUpMessage {
   const moduleRows = options.shisha
     ? [
@@ -103,7 +105,7 @@ export function buildServicesListMessage(
         {
           id: MENU_ROW_IDS.orders,
           title: "🛒 Order Now", // 12 chars
-          description: "Browse the menu and place an order", // 34 chars (no longer "for collection": shops can offer delivery)
+          description: (options.ordersDescription ?? "Browse the menu and place an order").slice(0, 72), // WhatsApp row descriptions max 72
         },
       ]
     : []
