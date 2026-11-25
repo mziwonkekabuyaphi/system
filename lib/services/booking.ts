@@ -227,6 +227,10 @@ import {
   nameCollectionThanksMessage,
   planLimitReachedMessage,
   bookingAlreadyHasUpcomingMessage,
+  bookingActiveLimitMessage,
+  bookingDayLimitMessage,
+  bookingSameDayNotAllowedMessage,
+  bookingPendingApprovalMessage,
   addToCalendarNote,
 } from "@/lib/services/messages/booking"
 
@@ -280,6 +284,17 @@ export const BOOKING_OUTSIDE_ALLOWED_WINDOW = "BOOKING_OUTSIDE_ALLOWED_WINDOW"
  *  not log it as an error. Exported so the kiosk action can match on it
  *  without string-comparing the raw database text. */
 export const BOOKING_ALREADY_HAS_UPCOMING = "BOOKING_ALREADY_HAS_UPCOMING"
+
+/** Thrown by createBooking() when the customer already holds as many upcoming bookings as the shop
+ *  allows (booking_settings.max_active_bookings_per_customer, above 1). Raised by the same trigger. */
+export const BOOKING_ACTIVE_LIMIT = "BOOKING_ACTIVE_LIMIT"
+
+/** Thrown by createBooking() when the customer already has the most bookings the shop allows
+ *  on that day (booking_settings.max_bookings_per_customer_per_day). */
+export const BOOKING_DAY_LIMIT = "BOOKING_DAY_LIMIT"
+
+/** Thrown by createBooking() when the shop doesn't take same-day bookings from customers. */
+export const BOOKING_SAME_DAY_NOT_ALLOWED = "BOOKING_SAME_DAY_NOT_ALLOWED"
 
 /** Thrown by createBooking() when the customer is still in the live walk-in queue
  *  (a 'waiting' or 'called' queue_entries row, including one promoted from an
@@ -485,8 +500,8 @@ async function getBookingsInWindow(
     .from("bookings")
     .select("staff_id, start_time, end_time")
     .eq("tenant_id", tenantId)
-    // An unpaid hold blocks its slot just like a confirmed booking.
-    .in("status", ["confirmed", "awaiting_payment"])
+    // An unpaid hold, or a request waiting for approval, blocks its slot just like a confirmed booking.
+    .in("status", ["confirmed", "awaiting_payment", "pending_approval"])
     .gte("start_time", windowStart.toISOString())
     .lte("start_time", windowEnd.toISOString())
   if (excludeBookingId) query = query.neq("id", excludeBookingId)
@@ -580,6 +595,10 @@ export async function getAvailableSlots(
   excludeBookingId?: string,
   /** Customer asked for this staff member: only their free times are offered. */
   requestedStaffId?: string,
+  /** Staff booking for a customer in the admin: the customer-only rules (no same-day bookings) don't apply. */
+  forStaff = false,
+  /** A repeating series staff are adding: dates beyond "how far ahead customers can book" are fine. */
+  ignoreAdvanceWindow = false,
 ): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
   await assertProductEnabled(supabase, tenantId, "booking")
@@ -597,7 +616,9 @@ export async function getAvailableSlots(
   if (!dayWindow.dayOpenUTC || !dayWindow.dayCloseUTC) return []
 
   const today = todayInTimezone(dayWindow.timezone)
-  if (!isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) return []
+  if (!ignoreAdvanceWindow && !isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) return []
+  // Shop doesn't take same-day bookings from customers (staff can still add them in the admin).
+  if (!forStaff && !bookingSettings.allowSameDayBookings && dateISO === today) return []
 
   const existingBookings = await getBookingsInWindow(
     supabase,
@@ -712,6 +733,10 @@ async function assertBookingIsAllowed(
   dateISO: string,
   slot: BookingSlot,
   durationMinutes: number,
+  /** Staff booking in the admin: customer-only rules (no same-day bookings) are skipped. */
+  forStaff = false,
+  /** A repeating series staff are adding: dates beyond the advance-booking window are fine. */
+  ignoreAdvanceWindow = false,
 ): Promise<void> {
   const [bookingSettings, dayWindow] = await Promise.all([
     getBookingSettings(supabase, tenantId),
@@ -723,8 +748,11 @@ async function assertBookingIsAllowed(
   }
 
   const today = todayInTimezone(dayWindow.timezone)
-  if (!isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) {
+  if (!ignoreAdvanceWindow && !isWithinAdvanceWindow(dateISO, today, bookingSettings.maxAdvanceDays)) {
     throw new Error(BOOKING_OUTSIDE_ALLOWED_WINDOW)
+  }
+  if (!forStaff && !bookingSettings.allowSameDayBookings && dateISO === today) {
+    throw new Error(BOOKING_SAME_DAY_NOT_ALLOWED)
   }
 
   const slotStart = new Date(slot.start)
@@ -846,6 +874,11 @@ export interface CreateBookingParams {
   payment?: "auto" | "skip"
   /** Where the booking came from. Stored with a payment so the webhook knows how to reach the customer afterwards. */
   channel?: "whatsapp" | "kiosk"
+  /** A booking staff add in the admin. Skips the customer-only rules (no same-day bookings, approval,
+   *  per-customer limits): those exist to limit what customers book for themselves. */
+  staffCreated?: boolean
+  /** Bookings added together as one repeating series share this id. Only with staffCreated. */
+  seriesId?: string
 }
 
 /** What the customer pays, when the booking is waiting for payment. */
@@ -876,8 +909,9 @@ export interface CreateBookingResult {
   endTime: string
   /** Who the booking was assigned to. */
   staffName?: string
-  /** "awaiting_payment" = the slot is held and `payment` has the link; the webhook confirms it once paid. */
-  status: "confirmed" | "awaiting_payment"
+  /** "awaiting_payment" = the slot is held and `payment` has the link; the webhook confirms it once paid.
+   *  "pending_approval" = the slot is held until staff approve it (Booking rules > Require approval). */
+  status: "confirmed" | "awaiting_payment" | "pending_approval"
   /** Sum of the services' prices. */
   totalPrice: number
   /** Set only while status is "awaiting_payment". */
@@ -925,7 +959,11 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   // rejected because the tenant is over their monthly visit cap anyway.
   await assertWithinVisitLimit(supabase, tenantId)
 
-  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, totalDurationMinutes)
+  const staffCreated = params.staffCreated === true
+  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, totalDurationMinutes, staffCreated, staffCreated && !!params.seriesId)
+
+  // Does staff have to approve this booking first? Only bookings customers make themselves.
+  const needsApproval = !staffCreated && params.payment === "auto" && (await getBookingSettings(supabase, tenantId)).requireApproval
 
   // A customer-requested staff member is only honoured while the shop allows it; otherwise
   // refuse rather than quietly assigning someone the customer didn't choose.
@@ -991,8 +1029,12 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
           staff_id: staff.id,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
-          status: payable ? "awaiting_payment" : "confirmed",
+          // Paid bookings are held for payment first; once paid they wait for approval if the shop asks for it
+          // (lib/payments/settle.ts).
+          status: payable ? "awaiting_payment" : needsApproval ? "pending_approval" : "confirmed",
           booking_reference: bookingReference,
+          staff_created: staffCreated,
+          series_id: staffCreated ? (params.seriesId ?? null) : null,
         },
       ])
       .select("id, ticket_number")
@@ -1016,6 +1058,12 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
     // handle it without matching on database wording.
     if (error.message.includes("already have an upcoming booking")) {
       throw new Error(BOOKING_ALREADY_HAS_UPCOMING)
+    }
+    if (error.message.includes("limit of upcoming bookings")) {
+      throw new Error(BOOKING_ACTIVE_LIMIT)
+    }
+    if (error.message.includes("daily booking limit")) {
+      throw new Error(BOOKING_DAY_LIMIT)
     }
     if (error.message.includes("already in the queue")) {
       throw new Error(BOOKING_ALREADY_IN_QUEUE)
@@ -1086,7 +1134,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   return {
     bookingId: inserted.id as string,
     customer: bookedCustomer,
-    status: payable ? "awaiting_payment" : "confirmed",
+    status: payable ? "awaiting_payment" : needsApproval ? "pending_approval" : "confirmed",
     totalPrice,
     payment,
     services,
@@ -1186,13 +1234,12 @@ export async function completeBooking(tenantId: string, bookingId: string): Prom
 // RESCHEDULING — move a confirmed booking to a new time in ONE step.
 // ============================================================================
 
-export type RescheduleOutcome = "rescheduled" | "unchanged" | "too_late" | "already_gone" | "in_queue"
+export type RescheduleOutcome = "rescheduled" | "unchanged" | "too_late" | "already_gone" | "in_queue" | "not_allowed"
 
 export interface RescheduleBookingResult {
   outcome: RescheduleOutcome
-  /** booking_settings.cancellation_window_minutes — reported so the caller can
-   *  explain a "too_late". Moving a booking follows the same cut-off as
-   *  cancelling it: both give the slot back. */
+  /** The cut-off that applied (booking_settings.reschedule_deadline_minutes, or the
+   *  cancellation window when none is set) — reported so the caller can explain a "too_late". */
   windowMinutes: number
   bookingReference?: string
   /** "Fade + Beard" for a multi-service booking. */
@@ -1248,7 +1295,8 @@ export async function rescheduleBooking(
   if (error) throw new Error(`Failed to load booking: ${error.message}`)
 
   const settings = await getBookingSettings(supabase, tenantId)
-  const windowMinutes = settings.cancellationWindowMinutes
+  const windowMinutes = settings.rescheduleDeadlineMinutes ?? settings.cancellationWindowMinutes
+  if (!settings.allowCustomerReschedule) return { outcome: "not_allowed", windowMinutes }
   if (!booking) return { outcome: "already_gone", windowMinutes }
 
   const oldStartMillis = new Date(booking.start_time).getTime()
@@ -1787,7 +1835,11 @@ async function getDatesOffered(supabase: SupabaseClient, tenantId: string): Prom
  * further capped by max_advance_days so a shop with a 3-day advance window
  * never lists dates that would just get rejected server-side if picked.
  */
-export async function buildDateOptions(tenantId: string): Promise<Array<{ date: string; label: string }>> {
+export async function buildDateOptions(
+  tenantId: string,
+  /** Staff booking in the admin: today is always offered, even when customers can't book same-day. */
+  options: { forStaff?: boolean } = {},
+): Promise<Array<{ date: string; label: string }>> {
   const supabase = getClientOrThrow()
 
   const [timezone, bookingSettings, datesOffered] = await Promise.all([
@@ -1801,10 +1853,13 @@ export async function buildDateOptions(tenantId: string): Promise<Array<{ date: 
   // (what can be booked at all); max_dates_offered is presentation (how many
   // date buttons are listed, today included). Offering index i = today + i,
   // so the last offered index is min(datesOffered - 1, maxAdvanceDays).
-  const daysToOffer = Math.min(Math.max(1, datesOffered) - 1, Math.max(0, bookingSettings.maxAdvanceDays))
+  // Same-day bookings off (customers only): start from tomorrow, keeping the same number of dates.
+  const skipToday = !options.forStaff && !bookingSettings.allowSameDayBookings
+  const firstIndex = skipToday ? 1 : 0
+  const daysToOffer = Math.min(Math.max(1, datesOffered) - 1 + firstIndex, Math.max(0, bookingSettings.maxAdvanceDays))
 
-  const options: Array<{ date: string; label: string }> = []
-  for (let i = 0; i <= daysToOffer; i++) {
+  const dates: Array<{ date: string; label: string }> = []
+  for (let i = firstIndex; i <= daysToOffer; i++) {
     const dateISO = addDaysToDateString(today, i)
     // Anchored at UTC noon purely so formatting this pure calendar
     // date can't roll over to the adjacent day in any timezone —
@@ -1818,10 +1873,10 @@ export async function buildDateOptions(tenantId: string): Promise<Array<{ date: 
     })
     // "Today" / "Tomorrow" always carry the real date, so there is never any doubt which day it is.
     const label = i === 0 ? `Today (${formatted})` : i === 1 ? `Tomorrow (${formatted})` : formatted
-    options.push({ date: dateISO, label })
+    dates.push({ date: dateISO, label })
   }
 
-  return options
+  return dates
 }
 
 async function handleServiceSelection(tenantId: string, state: ConversationState, message: IncomingMessage): Promise<ActionResult> {
@@ -2055,6 +2110,21 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
       }
     }
 
+    // The shop approves bookings first: the time is held, no ticket or calendar link until staff say yes
+    // (the admin's Approve button sends the confirmation, see approveBooking in app/admin/actions.ts).
+    if (result.status === "pending_approval") {
+      return {
+        reply: bookingPendingApprovalMessage({
+          customerName: result.customer.name,
+          serviceName: result.services.map((s) => s.name).join(" + ") || NO_SERVICE_LABEL,
+          slotLabel: selectedSlot.label,
+          bookingReference: result.bookingReference,
+        }),
+        buttons: [],
+        nextState: null,
+      }
+    }
+
     // The web link goes on the confirmation only when we are NOT about to ask
     // for the customer's name (that prompt must stay the last thing they see;
     // the link is added to the "thanks" message instead, see handleNameCollection).
@@ -2144,6 +2214,15 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
         buttons: CANCEL_OR_RESCHEDULE_BUTTONS,
         nextState: null,
       }
+    }
+    if (error instanceof Error && error.message === BOOKING_ACTIVE_LIMIT) {
+      return { reply: bookingActiveLimitMessage(), buttons: CANCEL_OR_RESCHEDULE_BUTTONS, nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_DAY_LIMIT) {
+      return { reply: bookingDayLimitMessage(), buttons: [], nextState: null }
+    }
+    if (error instanceof Error && error.message === BOOKING_SAME_DAY_NOT_ALLOWED) {
+      return { reply: bookingSameDayNotAllowedMessage(), buttons: [], nextState: null }
     }
     if (error instanceof Error && error.message === BOOKING_ALREADY_IN_QUEUE) {
       return { reply: bookingAlreadyInQueueMessage(), buttons: [], nextState: null }

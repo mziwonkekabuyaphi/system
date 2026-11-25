@@ -37,6 +37,7 @@ import {
   cancelAlreadyGoneMessage,
   cancelErrorMessage,
   cancelTooLateMessage,
+  cancelNotAllowedMessage,
   cancelledBookingMessage,
 } from "@/lib/services/messages/cancel"
 
@@ -97,6 +98,8 @@ export async function handleReminderTap(tenantId: string, message: IncomingMessa
         return reply(cancelledBookingMessage(`📅 Booking ${booking.booking_reference}`))
       case "too_late":
         return reply(cancelTooLateMessage(windowMinutes))
+      case "not_allowed":
+        return reply(cancelNotAllowedMessage())
       case "called":
         return reply(cancelAlreadyCalledMessage())
       default:

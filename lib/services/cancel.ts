@@ -63,6 +63,7 @@ import {
   CANCEL_CONFIRM_BUTTONS,
   cancelAlreadyCalledMessage,
   cancelAlreadyGoneMessage,
+  cancelNotAllowedMessage,
   cancelChooseMessage,
   cancelConfirmMessage,
   cancelConfirmReminderMessage,
@@ -215,9 +216,15 @@ async function handleCancel(tenantId: string, _intent: RoutedIntent, message: In
     if (!customer) return done(cancelNothingMessage())
 
     const activity = await loadCustomerActivity(tenantId, customer.id)
-    const { options, hasCalled } = buildOptions(activity)
+
+    // Shop switched customer cancellations off: bookings can't be cancelled here (walk-in queue spots still can).
+    const supabase = getClientOrThrow()
+    const bookingSettings = await getBookingSettings(supabase, tenantId)
+    const bookingsBlocked = !bookingSettings.allowCustomerCancel && activity.bookings.length > 0
+    const { options, hasCalled } = buildOptions(bookingSettings.allowCustomerCancel ? activity : { ...activity, bookings: [] })
 
     if (options.length === 0) {
+      if (bookingsBlocked) return done(cancelNotAllowedMessage())
       return done(hasCalled ? cancelAlreadyCalledMessage() : cancelNothingMessage())
     }
 
@@ -256,6 +263,7 @@ async function promptConfirm(tenantId: string, option: CancelOption): Promise<Ac
     if (!booking) return done(cancelAlreadyGoneMessage())
 
     const settings = await getBookingSettings(supabase, tenantId)
+    if (!settings.allowCustomerCancel) return done(cancelNotAllowedMessage())
     if (!isWithinCancellationWindow(booking.start_time, settings.cancellationWindowMinutes, Date.now())) {
       return done(cancelTooLateMessage(settings.cancellationWindowMinutes))
     }
@@ -292,7 +300,7 @@ async function handleChoice(tenantId: string, state: ConversationState, message:
 // STEP: yes / no -> cancel
 // ============================================================================
 
-export type CancelOutcome = "cancelled" | "too_late" | "already_gone" | "called"
+export type CancelOutcome = "cancelled" | "too_late" | "already_gone" | "called" | "not_allowed"
 
 /** Exported so the reminder's "Can't make it" button (reminder-reply.ts) cancels through
  *  exactly the same rules as the Cancel Now flow: window, called-entry check, queue cleanup. */
@@ -313,6 +321,9 @@ export async function cancelBooking(tenantId: string, customerId: string, bookin
 
   const settings = await getBookingSettings(supabase, tenantId)
   const windowMinutes = settings.cancellationWindowMinutes
+
+  // Re-checked here (not only when the flow starts): the reminder's "Can't make it" button comes straight here.
+  if (!settings.allowCustomerCancel) return { outcome: "not_allowed", windowMinutes }
 
   if (!isWithinCancellationWindow(booking.start_time, windowMinutes, Date.now())) {
     return { outcome: "too_late", windowMinutes }
@@ -412,6 +423,8 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
           return done(cancelledBookingMessage(option.label))
         case "too_late":
           return done(cancelTooLateMessage(windowMinutes))
+        case "not_allowed":
+          return done(cancelNotAllowedMessage())
         case "called":
           return done(cancelAlreadyCalledMessage())
         default:

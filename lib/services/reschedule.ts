@@ -95,6 +95,7 @@ import {
   rescheduleMenuPromptMessage,
   rescheduleNoTimesMessage,
   rescheduleNothingMessage,
+  rescheduleNotAllowedMessage,
   rescheduleSlotTakenMessage,
   rescheduleStartMessage,
   rescheduleTooLateMessage,
@@ -242,8 +243,10 @@ async function loadMovableBookings(tenantId: string, customerId: string): Promis
 
   const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null))
   const now = Date.now()
-  const windowMillis = Math.max(0, settings.cancellationWindowMinutes) * 60_000
-  const result: LoadedBookings = { movable: [], inQueue: 0, tooLate: 0, windowMinutes: settings.cancellationWindowMinutes }
+  // "Rescheduling deadline": its own cut-off when the shop set one, otherwise the same as the cancellation window.
+  const deadlineMinutes = settings.rescheduleDeadlineMinutes ?? settings.cancellationWindowMinutes
+  const windowMillis = Math.max(0, deadlineMinutes) * 60_000
+  const result: LoadedBookings = { movable: [], inQueue: 0, tooLate: 0, windowMinutes: deadlineMinutes }
 
   for (const row of rows) {
     if (liveIds.has(row.id)) {
@@ -302,6 +305,10 @@ async function startFlow(tenantId: string, phone: string, onlyBookingId?: string
   try {
     const customer = await getCustomer(tenantId, phone)
     if (!customer) return done(rescheduleNothingMessage())
+
+    // Shop switched customer rescheduling off. Also re-checked inside rescheduleBooking().
+    const flowSettings = await getBookingSettings(getClientOrThrow(), tenantId)
+    if (!flowSettings.allowCustomerReschedule) return done(rescheduleNotAllowedMessage())
 
     const loaded = await loadMovableBookings(tenantId, customer.id)
 
@@ -541,6 +548,8 @@ async function handleConfirm(tenantId: string, state: ConversationState, message
         return done(rescheduleUnchangedMessage())
       case "too_late":
         return done(rescheduleTooLateMessage(result.windowMinutes))
+      case "not_allowed":
+        return done(rescheduleNotAllowedMessage())
       case "in_queue":
         return done(rescheduleInQueueMessage())
       default:
