@@ -103,7 +103,7 @@ export function buildServicesListMessage(
         {
           id: MENU_ROW_IDS.orders,
           title: "🛒 Order Now", // 12 chars
-          description: "Browse the menu and order for collection",
+          description: "Browse the menu and place an order", // 34 chars (no longer "for collection": shops can offer delivery)
         },
       ]
     : []
