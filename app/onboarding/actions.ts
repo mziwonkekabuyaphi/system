@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSessionClient } from "@/lib/supabase/session-server";
 import { getSupabaseServerClient } from "@/lib/supabase/admin";
-import { modulesForChoice } from "@/lib/services/new-shop-modules";
 
 const TENANT_OWNER_ROLE_KEY = "tenant_owner";
 
@@ -51,9 +50,17 @@ async function uniqueSlug(
 export async function createTenantAction(formData: FormData) {
   const user = await getCurrentUserOrRedirect();
   const businessName = String(formData.get("businessName") ?? "").trim();
+  const industry = String(formData.get("industry") ?? "").trim();
+  const modules = Array.from(new Set(formData.getAll("modules").map(String)));
 
   if (!businessName) {
     return { error: "Enter a business name." };
+  }
+  if (!industry) {
+    return { error: "Choose the type of business you run." };
+  }
+  if (modules.length === 0) {
+    return { error: "Pick at least one thing to switch on." };
   }
 
   const admin = getSupabaseServerClient();
@@ -73,11 +80,13 @@ export async function createTenantAction(formData: FormData) {
 
   const slug = await uniqueSlug(admin, businessName);
 
+  // Created "pending"; apply_industry_preset() flips it to "active" when the
+  // shop asked for at least one self-serve module (see modules.self_serve).
+  // module_own_on() only honours modules for active tenants, so nothing is live
+  // before that decision.
   const { data: tenant, error: tenantError } = await admin
     .from("tenants")
-    // "pending" until a platform admin approves the shop on /platform/tenants. Nothing is switched
-    // on yet: the owner's choice is only a request, and the admin picks the real modules.
-    .insert({ name: businessName, slug, status: "pending", requested_modules: modulesForChoice(formData.get("need")) })
+    .insert({ name: businessName, slug, status: "pending" })
     .select("id")
     .single();
 
@@ -85,9 +94,20 @@ export async function createTenantAction(formData: FormData) {
     return { error: `Failed to create business: ${tenantError?.message}` };
   }
 
-  // trg_handle_new_tenant fires here and creates tenant_settings,
-  // tenant_branding, booking_settings, queue_settings, message_settings
-  // in the same transaction -- nothing else to insert for those.
+  // trg_handle_new_tenant has just created the base settings rows. Now layer the
+  // industry preset on top (modules, hours, booking/queue/order defaults,
+  // starter services, categories). The function validates the industry and the
+  // module choice itself, so nothing here trusts the browser.
+  const { data: applied, error: presetError } = await admin.rpc("apply_industry_preset", {
+    p_tenant_id: tenant.id,
+    p_industry: industry,
+    p_modules: modules,
+  });
+
+  if (presetError) {
+    await admin.from("tenants").delete().eq("id", tenant.id);
+    return { error: `Couldn't set up your business: ${presetError.message}` };
+  }
 
   const { error: memberError } = await admin.from("tenant_members").insert({
     tenant_id: tenant.id,
@@ -102,7 +122,12 @@ export async function createTenantAction(formData: FormData) {
   }
 
   revalidatePath("/admin");
-  redirect("/onboarding/pending");
+  // Booking and Queue are self-serve (covered by the free 100-visit plan), so a
+  // shop that asked for either is already active. Modules that still need
+  // approval stay in tenants.pending_modules and are switched on by a platform
+  // admin. A shop that asked ONLY for approval-gated modules waits on /pending.
+  const status = (applied as { status?: string } | null)?.status;
+  redirect(status === "active" ? "/admin" : "/onboarding/pending");
 }
 
 export async function joinTenantAction(formData: FormData) {
