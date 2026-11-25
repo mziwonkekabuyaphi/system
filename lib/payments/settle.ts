@@ -564,6 +564,15 @@ async function notifyBookingPaid(
     const { data: pay } = await db.from("tenant_payments").select("amount, currency").eq("purpose", "booking_payment").eq("purpose_id", bookingId).maybeSingle()
     const amountLabel = formatMoneyFor((pay?.currency as string | undefined) ?? "ZAR", Number(pay?.amount ?? totalPrice))
 
+    // Deposit bookings (Settings > Payments): createBooking() stores what is still owed in the payment's metadata.
+    // Say so, so a customer who paid a deposit doesn't think the booking is paid in full.
+    const balanceDue = Number(metadata?.balance_due ?? 0)
+    const sendBalanceNote = async () => {
+      if (!(balanceDue > 0)) return
+      const balanceLabel = formatMoneyFor((pay?.currency as string | undefined) ?? "ZAR", balanceDue)
+      await sendWhatsAppTextMessage(tenantId, phone, `Deposit received ✅ The remaining ${balanceLabel} is due when you arrive for your appointment.`)
+    }
+
     if (pendingApproval) {
       await sendWhatsAppTextMessage(
         tenantId,
@@ -576,6 +585,7 @@ async function notifyBookingPaid(
           amountLabel,
         }),
       )
+      await sendBalanceNote()
       return
     }
 
@@ -591,6 +601,7 @@ async function notifyBookingPaid(
         amountLabel,
       }),
     )
+    await sendBalanceNote()
 
     // The branded ticket image, like a normal WhatsApp booking. Never throws; null just means no image.
     const { tryGenerateBookingTicketUrl } = await import("@/lib/whatsapp/booking-ticket-image")
