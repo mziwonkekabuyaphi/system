@@ -11,6 +11,7 @@ import type {
   AdminDeliveryArea,
   AdminDriver,
   DriverDispatchMode,
+  DriverFeeMode,
   AdminOrderSettings,
   AdminOrderVendor,
   AdminProduct,
@@ -54,6 +55,8 @@ export const DEFAULT_ORDER_SETTINGS: AdminOrderSettings = {
   maxOrderValue: null,
   statusNotifications: { ...DEFAULT_STATUS_NOTIFICATIONS },
   driverDispatchMode: "first_come",
+  driverFeeMode: "none",
+  driverFeeValue: 0,
 }
 
 const ORDER_SELECT = `id, order_number, status, payment_method, payment_status, total_amount,
@@ -147,6 +150,8 @@ export function mapSettings(s: any, deliveryAreas: AdminDeliveryArea[] = []): Ad
     maxOrderValue: s.max_order_value == null ? null : Number(s.max_order_value),
     statusNotifications: parseStatusNotifications(s.status_notifications),
     driverDispatchMode: (s.driver_dispatch_mode === "dispatcher" ? "dispatcher" : "first_come") as DriverDispatchMode,
+    driverFeeMode: parseFeeMode(s.driver_fee_mode) ?? "none",
+    driverFeeValue: Number(s.driver_fee_value ?? 0),
   }
 }
 
@@ -180,14 +185,28 @@ function mapOrder(o: any, vendors: Map<string, AdminOrderVendor>): AdminOrder {
   }
 }
 
+export function parseFeeMode(v: unknown): DriverFeeMode | null {
+  return v === "none" || v === "flat" || v === "percent" || v === "full_fee" ? v : null
+}
+
+export const DRIVER_SELECT = "id, name, phone, is_active, on_duty, fee_mode, fee_value"
+
 export function mapDriver(d: any): AdminDriver {
-  return { id: d.id, name: d.name, phone: d.phone, isActive: !!d.is_active, onDuty: !!d.on_duty }
+  return {
+    id: d.id,
+    name: d.name,
+    phone: d.phone,
+    isActive: !!d.is_active,
+    onDuty: !!d.on_duty,
+    feeMode: parseFeeMode(d.fee_mode),
+    feeValue: d.fee_value == null ? null : Number(d.fee_value),
+  }
 }
 
 export async function loadDrivers(supabase: ServerClient, tenantId: string): Promise<AdminDriver[]> {
   const { data, error } = await supabase
     .from("order_drivers")
-    .select("id, name, phone, is_active, on_duty")
+    .select(DRIVER_SELECT)
     .eq("tenant_id", tenantId)
     .order("name", { ascending: true })
   if (error) throw new Error(`Failed to load drivers: ${error.message}`)

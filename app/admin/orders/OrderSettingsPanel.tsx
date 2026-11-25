@@ -220,6 +220,36 @@ export function OrderSettingsPanel({
           </FieldRow>
         </SettingsCard>
 
+        <SettingsCard title="Driver pay" description="What a driver earns for each completed delivery. Worked out when the delivery completes, so changing it later never changes past trips. A driver can have their own rule under Drivers.">
+          <FieldRow label="How drivers are paid">
+            <select className={`${inputClass} max-w-xs`} value={d.driverFeeMode} onChange={(e) => set("driverFeeMode", e.target.value as OrderSettingsInput["driverFeeMode"])}>
+              <option value="none">No driver fee (just count trips)</option>
+              <option value="flat">Flat amount per delivery</option>
+              <option value="percent">Percentage of the delivery fee</option>
+              <option value="full_fee">The whole delivery fee</option>
+            </select>
+          </FieldRow>
+          {(d.driverFeeMode === "flat" || d.driverFeeMode === "percent") && (
+            <FieldRow
+              label={d.driverFeeMode === "flat" ? "Amount per delivery" : "Percent of the delivery fee"}
+              hint={d.driverFeeMode === "percent" ? "The delivery fee is charged once per checkout, so this pays on the first order of a checkout only." : undefined}
+            >
+              <input
+                type="number"
+                min={0}
+                max={d.driverFeeMode === "percent" ? 100 : undefined}
+                step={d.driverFeeMode === "percent" ? 1 : 0.5}
+                className={narrowInput}
+                value={d.driverFeeValue}
+                onChange={(e) => set("driverFeeValue", num(e.target.value))}
+              />
+            </FieldRow>
+          )}
+          {d.driverFeeMode === "full_fee" && (
+            <p className="text-xs text-admin-text/60">The driver gets the delivery fee the customer paid. It is charged once per checkout, so it is paid on the first order of a checkout only.</p>
+          )}
+        </SettingsCard>
+
         <SettingsCard title="Payment">
           <div className="space-y-4">
             {METHODS.filter((m) => !(d.requirePayment && m.id === "cash")).map((m) => (

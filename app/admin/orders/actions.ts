@@ -25,7 +25,7 @@ import {
   type DriverJob,
 } from "@/lib/services/orders/orders.drivers"
 
-import { loadDeliveryAreas, loadDrivers, loadOrders, mapCategory, mapDriver, mapProduct, mapSettings, mapVendor } from "./orders-data"
+import { DRIVER_SELECT, loadDeliveryAreas, loadDrivers, loadOrders, mapCategory, mapDriver, mapProduct, mapSettings, mapVendor, parseFeeMode } from "./orders-data"
 import {
   nextOrderStep,
   PRODUCT_STATUSES,
@@ -35,7 +35,11 @@ import {
   type AdminDriver,
   type AdminOrderVendor,
   type DriverDispatchMode,
+  type DriverEarningsReport,
+  type DriverFeeMode,
   type DriverInput,
+  type DriverPayout,
+  type EarningsPeriod,
   type AdminProduct,
   type AdminProductCategory,
   type CategoryInput,
@@ -245,6 +249,110 @@ export async function declineOrder(
 // DELIVERY DRIVERS
 // ============================================================================
 
+/** Flat = an amount, percent = 0-100; the other rules carry no number. */
+function checkFeeValue(mode: DriverFeeMode, raw: unknown): number | null {
+  if (mode === "none" || mode === "full_fee") return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) throw new UserError("Enter the driver fee as a number, 0 or more.")
+  if (mode === "percent" && n > 100) throw new UserError("A percentage can't be more than 100.")
+  if (mode === "flat" && n > 100000) throw new UserError("That driver fee is too large.")
+  return Math.round(n * 100) / 100
+}
+
+const YMD = /^\d{4}-\d{2}-\d{2}$/
+const ymdInZone = (tz: string, d = new Date()): string => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d)
+function shiftDay(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
+}
+function periodRange(period: EarningsPeriod, tz: string, custom?: { from: string; to: string }): { from: string; to: string } {
+  const today = ymdInZone(tz)
+  if (period === "today") return { from: today, to: today }
+  if (period === "week") {
+    const [y, m, d] = today.split("-").map(Number)
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = Sunday
+    return { from: shiftDay(today, -((dow + 6) % 7)), to: today } // weeks start on Monday
+  }
+  if (period === "month") return { from: `${today.slice(0, 7)}-01`, to: today }
+  if (period === "last30") return { from: shiftDay(today, -29), to: today }
+  if (!custom || !YMD.test(custom.from) || !YMD.test(custom.to)) throw new UserError("Choose a start and end date.")
+  if (custom.from > custom.to) throw new UserError("The start date must be before the end date.")
+  if (shiftDay(custom.from, 366) < custom.to) throw new UserError("Choose a range of a year or less.")
+  return custom
+}
+
+/** Trips, fees and cash per driver for a period (days in the shop's timezone), plus what is still unpaid. */
+export async function getDriverEarnings(period: EarningsPeriod, custom?: { from: string; to: string }): Promise<ActionResult<DriverEarningsReport>> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const { data: ts } = await supabase.from("tenant_settings").select("timezone").eq("tenant_id", tenantId).maybeSingle()
+    const range = periodRange(period, (ts?.timezone as string | null) || "UTC", custom)
+    const loadedAt = new Date().toISOString()
+    const { data, error } = await supabase.rpc("driver_earnings_report", { p_tenant: tenantId, p_from: range.from, p_to: range.to })
+    if (error) fail(error, "Load driver earnings")
+    const rows = ((data as { drivers?: any[] } | null)?.drivers ?? []).map((r) => ({
+      driverId: r.driver_id as string,
+      name: r.name as string,
+      isActive: !!r.is_active,
+      trips: Number(r.trips ?? 0),
+      fees: Number(r.fees ?? 0),
+      cash: Number(r.cash ?? 0),
+      avgMinutes: r.avg_minutes == null ? null : Number(r.avg_minutes),
+      unpaidTrips: Number(r.unpaid_trips ?? 0),
+      unpaidFees: Number(r.unpaid_fees ?? 0),
+      unpaidCash: Number(r.unpaid_cash ?? 0),
+    }))
+    return { from: range.from, to: range.to, loadedAt, drivers: rows }
+  })
+}
+
+/** Mark every unpaid delivery of a driver (up to the moment the numbers were read) as settled and keep a payout record. */
+export async function settleDriver(
+  driverId: string,
+  through: string,
+  note: string,
+): Promise<ActionResult<{ trips: number; fees: number; cashHeld: number; net: number }>> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const at = new Date(through)
+    if (Number.isNaN(at.getTime())) throw new UserError("Refresh the earnings and try again.")
+    const cutoff = at.getTime() > Date.now() ? new Date() : at // never settle deliveries that haven't happened
+    const { data, error } = await supabase.rpc("driver_settle", {
+      p_tenant: tenantId,
+      p_driver: driverId,
+      p_through: cutoff.toISOString(),
+      p_note: note.trim().slice(0, 200) || null,
+    })
+    if (error) fail(error, "Settle driver")
+    const r = data as { outcome: string; trips?: number; fees?: number; cash_held?: number; net?: number }
+    if (r.outcome === "not_found") throw new UserError("Driver not found.")
+    if (r.outcome === "nothing_to_settle") throw new UserError("There is nothing to settle for this driver (already settled).")
+    if (r.outcome !== "ok") throw new UserError("The settlement couldn't be saved.")
+    return { trips: Number(r.trips ?? 0), fees: Number(r.fees ?? 0), cashHeld: Number(r.cash_held ?? 0), net: Number(r.net ?? 0) }
+  })
+}
+
+export async function listDriverPayouts(limit = 15): Promise<ActionResult<DriverPayout[]>> {
+  return run(MANAGE, async ({ supabase, tenantId }) => {
+    const { data, error } = await supabase
+      .from("driver_payouts")
+      .select("id, driver_id, trips, fees, cash_held, net, note, created_at, order_drivers ( name )")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(Math.min(Math.max(limit, 1), 50))
+    if (error) fail(error, "Load payouts")
+    return (data ?? []).map((p: any) => ({
+      id: p.id as string,
+      driverId: p.driver_id as string,
+      driverName: ((Array.isArray(p.order_drivers) ? p.order_drivers[0]?.name : p.order_drivers?.name) as string | undefined) ?? "Driver",
+      trips: Number(p.trips),
+      fees: Number(p.fees),
+      cashHeld: Number(p.cash_held),
+      net: Number(p.net),
+      note: (p.note as string | null) ?? null,
+      createdAt: p.created_at as string,
+    }))
+  })
+}
+
 export async function listDrivers(): Promise<ActionResult<AdminDriver[]>> {
   return run(VIEW, ({ supabase, tenantId }) => loadDrivers(supabase, tenantId))
 }
@@ -258,11 +366,16 @@ export async function saveDriver(input: DriverInput): Promise<ActionResult<Admin
     const phone = normalizeDriverPhone(input.phone)
     if (!phone) throw new UserError("Enter the driver's WhatsApp number with the country code, e.g. +27 82 123 4567.")
 
-    const row = { name, phone, is_active: !!input.isActive }
+    // A pay rule for this driver only; null = use the shop's rule.
+    const feeMode = input.feeMode == null ? null : parseFeeMode(input.feeMode)
+    if (input.feeMode != null && !feeMode) throw new UserError("Choose how this driver is paid.")
+    const feeValue = feeMode ? checkFeeValue(feeMode, input.feeValue) : null
+
+    const row = { name, phone, is_active: !!input.isActive, fee_mode: feeMode, fee_value: feeValue }
     const q = input.id
       ? supabase.from("order_drivers").update(row).eq("tenant_id", tenantId).eq("id", input.id)
       : supabase.from("order_drivers").insert({ ...row, tenant_id: tenantId })
-    const { data, error } = await q.select("id, name, phone, is_active, on_duty").maybeSingle()
+    const { data, error } = await q.select(DRIVER_SELECT).maybeSingle()
     if (error?.code === "23505") throw new UserError("A driver with that number already exists.")
     if (error) fail(error, "Save driver")
     if (!data) throw new UserError("Driver not found.")
@@ -272,13 +385,13 @@ export async function saveDriver(input: DriverInput): Promise<ActionResult<Admin
 
 export async function deleteDriver(id: string): Promise<ActionResult> {
   return run(MANAGE, async ({ supabase, tenantId }) => {
+    // A driver with any delivery on record keeps their history (trips, fees, payouts): switch them off instead.
     const { count } = await supabase
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId)
       .eq("driver_id", id)
-      .in("status", ["ready", "out_for_delivery"])
-    if ((count ?? 0) > 0) throw new UserError("This driver has a delivery in progress. Re-assign it first, or switch them off instead.")
+    if ((count ?? 0) > 0) throw new UserError("This driver has deliveries on record, so they can't be removed. Switch them off instead.")
     const { error } = await supabase.from("order_drivers").delete().eq("tenant_id", tenantId).eq("id", id)
     if (error) fail(error, "Delete driver")
   })
@@ -584,6 +697,9 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
     if (input.driverDispatchMode !== "first_come" && input.driverDispatchMode !== "dispatcher") {
       throw new UserError("Choose how delivery jobs are given out.")
     }
+    const feeMode = parseFeeMode(input.driverFeeMode)
+    if (!feeMode) throw new UserError("Choose how drivers are paid.")
+    const feeValue = checkFeeValue(feeMode, input.driverFeeValue)
     if (!Number.isInteger(input.scheduleMinLeadMinutes) || input.scheduleMinLeadMinutes < 0) {
       throw new UserError("Minimum lead time must be 0 or more minutes.")
     }
@@ -639,6 +755,8 @@ export async function saveOrderSettings(input: OrderSettingsInput): Promise<Acti
           max_order_value: maxOrderValue,
           status_notifications: parseStatusNotifications(input.statusNotifications),
           driver_dispatch_mode: input.driverDispatchMode as DriverDispatchMode,
+          driver_fee_mode: feeMode,
+          driver_fee_value: feeValue ?? 0,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "tenant_id" },

@@ -10,6 +10,7 @@
 import { useState, type Dispatch, type SetStateAction } from "react"
 
 import { CatalogueSetup } from "./CatalogueSetup"
+import { DriverEarningsPanel } from "./DriverEarningsPanel"
 import { DriversPanel } from "./DriversPanel"
 import { OrdersBoard } from "./OrdersBoard"
 import { ProductsPanel } from "./ProductsPanel"
@@ -73,7 +74,16 @@ export function OrdersManager({
       {section === "catalogue" && (
         <div className="space-y-6">
           <CatalogueSetup categories={categories} onCategoriesChange={setCategories} vendors={vendors} onVendorsChange={onVendorsChange} products={products} canManage={canManage} />
-          <DriversPanel drivers={drivers} onChange={setDrivers} canManage={canManage} dispatchMode={settings.driverDispatchMode} />
+          <DriversPanel
+            drivers={drivers}
+            onChange={setDrivers}
+            canManage={canManage}
+            dispatchMode={settings.driverDispatchMode}
+            currency={currency}
+            defaultFeeMode={settings.driverFeeMode}
+            defaultFeeValue={settings.driverFeeValue}
+          />
+          {canManage && <DriverEarningsPanel currency={currency} timezone={timezone} />}
         </div>
       )}
     </>

@@ -173,6 +173,29 @@ export type DeliveryAreaInput = Omit<AdminDeliveryArea, "id"> & { id?: string }
  *  dispatcher = nothing is offered; staff pick a driver on the board. */
 export type DriverDispatchMode = "first_come" | "dispatcher"
 
+/** How a driver is paid for a completed delivery.
+ *  none     = no fee tracked (trips are still counted)
+ *  flat     = a fixed amount per delivery
+ *  percent  = a share of the delivery fee the customer paid
+ *  full_fee = the whole delivery fee the customer paid
+ *  The customer's delivery fee sits on the first order of a checkout (0 on the others), so percent / full_fee pay on that order only. */
+export type DriverFeeMode = "none" | "flat" | "percent" | "full_fee"
+
+export const DRIVER_FEE_MODES: Array<{ value: DriverFeeMode; label: string }> = [
+  { value: "none", label: "No driver fee" },
+  { value: "flat", label: "Flat amount per delivery" },
+  { value: "percent", label: "Percentage of the delivery fee" },
+  { value: "full_fee", label: "The whole delivery fee" },
+]
+
+/** "R25.00 per delivery", "50% of the delivery fee", ... */
+export function feeRuleText(mode: DriverFeeMode, value: number, fmt: (n: number) => string): string {
+  if (mode === "flat") return `${fmt(value)} per delivery`
+  if (mode === "percent") return `${value}% of the delivery fee`
+  if (mode === "full_fee") return "The whole delivery fee"
+  return "No driver fee"
+}
+
 export interface AdminDriver {
   id: string
   name: string
@@ -181,9 +204,60 @@ export interface AdminDriver {
   isActive: boolean
   /** Set by the driver replying "on duty" on WhatsApp. */
   onDuty: boolean
+  /** Pay rule just for this driver. null = use the shop's rule. */
+  feeMode: DriverFeeMode | null
+  feeValue: number | null
 }
 
-export type DriverInput = { id?: string; name: string; phone: string; isActive: boolean }
+export type DriverInput = {
+  id?: string
+  name: string
+  phone: string
+  isActive: boolean
+  feeMode: DriverFeeMode | null
+  feeValue: number | null
+}
+
+export type EarningsPeriod = "today" | "week" | "month" | "last30" | "custom"
+
+export interface DriverEarningsRow {
+  driverId: string
+  name: string
+  isActive: boolean
+  /** In the chosen period */
+  trips: number
+  fees: number
+  /** Cash taken at the door for orders paid on delivery */
+  cash: number
+  /** Average minutes from picked up to delivered; null when no timed trips */
+  avgMinutes: number | null
+  /** Everything not yet settled, any date */
+  unpaidTrips: number
+  unpaidFees: number
+  unpaidCash: number
+}
+
+export interface DriverEarningsReport {
+  /** YYYY-MM-DD in the shop's timezone */
+  from: string
+  to: string
+  /** When the numbers were read: settling covers trips delivered up to this moment. */
+  loadedAt: string
+  drivers: DriverEarningsRow[]
+}
+
+export interface DriverPayout {
+  id: string
+  driverId: string
+  driverName: string
+  trips: number
+  fees: number
+  cashHeld: number
+  /** fees - cashHeld: positive = shop pays the driver, negative = driver hands money in */
+  net: number
+  note: string | null
+  createdAt: string
+}
 
 export interface AdminOrderSettings {
   /** false = no order_settings row yet; the bot answers "ordering not configured" until the first save. */
@@ -218,6 +292,10 @@ export interface AdminOrderSettings {
   statusNotifications: StatusNotifications
   /** How delivery jobs reach drivers. */
   driverDispatchMode: DriverDispatchMode
+  /** The shop's driver pay rule (a driver can have their own). */
+  driverFeeMode: DriverFeeMode
+  /** Amount (flat) or percentage (percent); ignored for none / full_fee. */
+  driverFeeValue: number
 }
 
 export type OrderSettingsInput = Omit<AdminOrderSettings, "configured" | "deliveryAreas"> & { deliveryAreas: DeliveryAreaInput[] }
