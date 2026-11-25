@@ -56,6 +56,8 @@ export interface BookingTicketInput {
   serviceNames: string[]
   /** Sum of the services' prices (in the tenant's currency). */
   totalPrice: number
+  /** Deposit bookings: what is still owed at the appointment. Omit or 0 = no balance line on the ticket. */
+  balanceDue?: number
   /** ISO timestamps, as returned by createBooking(). */
   startTime: string
   endTime: string
@@ -253,6 +255,8 @@ function toRenderable(resolved: ResolvedTenantTicket, booking: BookingTicketInpu
   return {
     serviceName: booking.serviceNames.join(" + "),
     priceLabel: resolved.style.showPrice ? formatMoney(booking.totalPrice, currency) : null,
+    balanceLabel:
+      resolved.style.showPrice && booking.balanceDue && booking.balanceDue > 0 ? formatMoney(booking.balanceDue, currency) : null,
     dateLabel: formatDate(booking.startTime, timeZone),
     timeLabel: `${formatTime(booking.startTime, timeZone)} - ${formatTime(booking.endTime, timeZone)}`,
     durationLabel: formatDuration(booking.startTime, booking.endTime),

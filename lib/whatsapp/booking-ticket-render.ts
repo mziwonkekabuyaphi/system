@@ -63,6 +63,9 @@ export interface RenderableTicket {
   serviceName: string
   /** Already formatted, e.g. "R250" or "R250.50". null hides the price. */
   priceLabel: string | null
+  /** Deposit bookings: what is still owed at the appointment, already formatted, e.g. "R150". Shown under the
+   *  price; null (the usual case) shows nothing. */
+  balanceLabel: string | null
   /** e.g. "Sat, 17 Oct 2026" (tenant's timezone). */
   dateLabel: string
   /** e.g. "12:30 - 13:15" (tenant's timezone). */
@@ -289,6 +292,15 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableTicket, qrDataUrl: s
               props: {
                 style: { display: "flex", fontSize: 30, fontWeight: 700, color: onHeader, marginTop: 14, opacity: 0.95 },
                 children: t.priceLabel,
+              },
+            }
+          : null,
+        style.showPrice && t.balanceLabel
+          ? {
+              type: "div",
+              props: {
+                style: { display: "flex", fontSize: 26, fontWeight: 700, color: onHeader, marginTop: 8, opacity: 0.9 },
+                children: `Balance due at appointment: ${t.balanceLabel}`,
               },
             }
           : null,
