@@ -11,6 +11,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 import { MODULE_KEYS, isTenantModuleEnabled, tenantHasModule } from "@/lib/services/plans"
 import {
   DISPLAY_LABEL_MAX,
@@ -39,6 +40,10 @@ async function scopedManage(): Promise<Scoped> {
   const tenantId = check.member.tenantId
   if (!(await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.shisha, { defaultOn: false, requirePlan: false }))) {
     return { ok: false, error: "Shisha isn't switched on for your business." }
+  }
+  // The TV monitor is an add-on of Shisha (platform admin > Modules > Shisha monitor).
+  if (!(await isModuleEnabled(tenantId, "shisha_monitor"))) {
+    return { ok: false, error: "The Shisha monitor isn't switched on for your business." }
   }
   return { ok: true, supabase, tenantId }
 }

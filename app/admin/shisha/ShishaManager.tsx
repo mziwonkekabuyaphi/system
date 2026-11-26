@@ -12,6 +12,7 @@ import { BRAND_BG, BRAND_FOCUS_BORDER, BRAND_ON } from "@/components/admin/brand
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { AdminDialog } from "../AdminDialog"
+import { ComingSoonDialog } from "../ComingSoonDialog"
 import {
   AUTOPRINT_REQUESTS_KEY,
   readAutoPrintEnabledAt,
@@ -175,12 +176,17 @@ export function ShishaManager({
   timezone,
   canOperate,
   canManage,
+  monitorEnabled,
+  posEnabled,
   section,
   onSectionChange,
 }: {
   timezone: string
   canOperate: boolean
   canManage: boolean
+  /** Add-ons of Shisha, switched per shop (platform admin > Modules). */
+  monitorEnabled: boolean
+  posEnabled: boolean
   /** Page to show, picked from the sidebar. */
   section: ShishaSection
   onSectionChange: (section: ShishaSection) => void
@@ -193,6 +199,7 @@ export function ShishaManager({
   const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ArchiveTarget | null>(null)
   const [displayOpen, setDisplayOpen] = useState(false)
+  const [posOpen, setPosOpen] = useState(false)
 
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [refreshFailed, setRefreshFailed] = useState(false)
@@ -457,9 +464,14 @@ export function ShishaManager({
           <button type="button" onClick={() => void doRefresh()} disabled={refreshing || busy} className={BTN}>
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
-          {canManage && (
+          {canManage && monitorEnabled && (
             <button type="button" onClick={() => setDisplayOpen(true)} className={BTN}>
               TV display
+            </button>
+          )}
+          {(canOperate || canManage) && posEnabled && (
+            <button type="button" onClick={() => setPosOpen(true)} className={BTN}>
+              Mobile POS
             </button>
           )}
         </div>
@@ -730,7 +742,15 @@ export function ShishaManager({
       </AdminDialog>
 
       {/* TV display settings: right-hand overlay panel */}
-      {canManage && <ShishaDisplayDrawer open={displayOpen} onClose={() => setDisplayOpen(false)} />}
+      {canManage && monitorEnabled && <ShishaDisplayDrawer open={displayOpen} onClose={() => setDisplayOpen(false)} />}
+
+      {/* Mobile POS add-on: placeholder until it is built. */}
+      {posEnabled && (
+        <ComingSoonDialog open={posOpen} title="Shisha mobile POS" onClose={() => setPosOpen(false)}>
+          <p>Take shisha orders and payments from a phone or tablet on the floor.</p>
+          <p className="text-ink-muted">This add-on is switched on for your business but isn&rsquo;t ready yet.</p>
+        </ComingSoonDialog>
+      )}
     </div>
   )
 }
