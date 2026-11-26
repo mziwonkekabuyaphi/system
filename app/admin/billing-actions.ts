@@ -152,7 +152,7 @@ export interface OrderBillingInfo {
   /** Completed orders so far this month. */
   ordersThisMonth: number
   overageOrders: number
-  /** Add-ons switched on (stock take, barcode / label printing), each with its flat monthly fee. */
+  /** Stock take and barcode / label printing, each a flat monthly fee. */
   addons: AddonCharge[]
   /** monthly fee + overage + add-ons, if the month ended now (staff are billed separately). */
   estimatedCents: number
@@ -162,7 +162,7 @@ export interface EventBillingInfo {
   perTicketCents: number
   currency: string
   ticketsThisMonth: number
-  /** Add-ons switched on (box office, VVIP tables & tabs), each with its flat monthly fee. */
+  /** Box office (per ticket) and Tables and Tabs (per table), with this month's usage and what it adds. */
   addons: AddonCharge[]
   /** tickets x fee + add-ons, if the month ended now (staff are billed separately). */
   estimatedCents: number
@@ -257,7 +257,7 @@ async function loadOrderBilling(
   const perOrderCents = rate ? toCents(rate.per_order_fee) : 0
   const includedOrders = rate?.included_orders ?? 0
   const overageOrders = Math.max(ordersThisMonth - includedOrders, 0)
-  const addons = (await addonChargesFor(supabase, [tenantId], "orders", ORDER_ADDONS)).get(tenantId) ?? []
+  const addons = (await addonChargesFor(supabase, [tenantId], "orders", ORDER_ADDONS, { fromIso: from, toIso: to })).get(tenantId) ?? []
   const addonsCents = addons.reduce((sum, a) => sum + a.feeCents, 0)
   return {
     monthlyFeeCents,
@@ -289,7 +289,7 @@ async function loadEventBilling(
   const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; ticket_fee: number | string; currency: string }>
   const rate = rates.find((r) => r.tenant_id === tenantId) ?? rates.find((r) => r.tenant_id === null)
   const perTicketCents = rate ? toCents(rate.ticket_fee) : 0
-  const addons = (await addonChargesFor(supabase, [tenantId], "events", EVENT_ADDONS)).get(tenantId) ?? []
+  const addons = (await addonChargesFor(supabase, [tenantId], "events", EVENT_ADDONS, { fromIso: from, toIso: to })).get(tenantId) ?? []
   const addonsCents = addons.reduce((sum, a) => sum + a.feeCents, 0)
   return { perTicketCents, currency: rate?.currency ?? "ZAR", ticketsThisMonth, addons, estimatedCents: perTicketCents * ticketsThisMonth + addonsCents }
 }
