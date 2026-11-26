@@ -26,10 +26,13 @@
  *   footer      footer_text (else "Show this QR code at the gate")
  *   toggles     header_style, show_logo, show_price, show_reference, show_phone, show_address
  *   on/off      tenant_event_ticket_settings.enabled (default on). Off = no image is drawn or sent.
+ *   QR message  tenant_event_ticket_settings.send_qr (default on). Off = the separate plain QR codes are
+ *               not sent (event-tickets.ts / settle.ts) and the image alone is the ticket. The image
+ *               always has the QR drawn on it. If the image then fails, the plain QR codes are sent as a fallback.
  *   dates/money tenant_settings.timezone / currency
  *   powered-by  hidden when tenant_branding.remove_powered_by is true
- * NOT applied to events: the `booking_ticket` plan module (event tickets are not plan-gated) and a
- * QR toggle (the QR is the entry pass, so it is always drawn).
+ * NOT applied to events: the `booking_ticket` plan module (event tickets are not plan-gated).
+ * The QR drawn ON the image is always there (it is the entry pass); send_qr only controls the separate QR message.
  *
  * Best-effort by design: tickets are already issued, so nothing here may ever throw into the order flow.
  * A branding / logo problem never blocks the ticket: it just falls back to the defaults.
@@ -44,7 +47,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { cleanHex, type HeaderStyle, type ResolvedTicketStyle } from "@/lib/whatsapp/booking-ticket-render"
 import { renderEventTicketPng, type RenderableEventTicket } from "@/lib/whatsapp/event-ticket-render"
-import { ticketSettingsToRow, type EventTicketSettings } from "@/lib/services/event-settings"
+import { loadEventTicketDelivery, ticketSettingsToRow, type EventTicketSettings } from "@/lib/services/event-settings"
+import { sendOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 
 const IMAGE_BUCKET = "ticket-images"
 const MAX_IMAGES_PER_ORDER = 10
@@ -375,9 +379,15 @@ async function renderAndUpload(supabase: SupabaseClient, tenantId: string, ticke
 export function scheduleOrderTicketImages(tenantId: string, orderId: string, phone: string): void {
   try {
     after(async () => {
+      // True once the customer has (or never needs) the plain QR codes. Set to false only when the shop
+      // switched the QR message off, so a failed image can fall back to sending them.
+      let qrCovered = true
+      let supabaseForFallback: SupabaseClient | null = null
       try {
         const supabase = getSupabaseServerClient()
         if (!supabase) throw new Error("Supabase client unavailable")
+        supabaseForFallback = supabase
+        qrCovered = (await loadEventTicketDelivery(supabase, tenantId)).qr
 
         const { data, error } = await supabase
           .from("event_tickets")
@@ -413,11 +423,22 @@ export function scheduleOrderTicketImages(tenantId: string, orderId: string, pho
         if (sent === 0) throw new Error("no ticket images could be created")
       } catch (err) {
         console.error("[ticket-image] could not send ticket images", { tenantId, orderId, error: err instanceof Error ? err.message : String(err) })
-        await sendWhatsAppTextMessage(
-          tenantId,
-          phone,
-          "Sorry, we couldn't create your ticket image. Your QR code and ticket numbers above still work at the gate.",
-        ).catch(() => {})
+        if (qrCovered) {
+          await sendWhatsAppTextMessage(
+            tenantId,
+            phone,
+            "Sorry, we couldn't create your ticket image. Your QR code and ticket numbers above still work at the gate.",
+          ).catch(() => {})
+        } else {
+          // Image-only shop and the image failed: send the plain QR codes so the customer still has something to scan.
+          await sendWhatsAppTextMessage(
+            tenantId,
+            phone,
+            "Sorry, we couldn't create your ticket image. Here are your QR codes instead. Show one at the gate.",
+          ).catch(() => {})
+          const client = supabaseForFallback ?? getSupabaseServerClient()
+          if (client) await sendOrderTicketQrs(client, tenantId, orderId, phone).catch(() => 0)
+        }
       }
     })
   } catch (err) {

@@ -22,6 +22,7 @@ import QRCode from "qrcode"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { sendWhatsAppImageMessage } from "@/lib/whatsapp/send-message"
 
 const QR_BUCKET = "ticket-qrcodes"
 /** WhatsApp is not a place to dump 50 images; the ticket numbers are in the text anyway. */
@@ -85,4 +86,22 @@ export async function getOrderTicketQrs(supabase: SupabaseClient, tenantId: stri
     console.error("[qr-generator] could not build QR codes", { tenantId, orderId, error: err instanceof Error ? err.message : String(err) })
     return []
   }
+}
+
+/**
+ * Sends one plain QR image per ticket of an order on WhatsApp. Each send is separate so one failure
+ * can't stop the rest. Never throws. Returns how many were sent.
+ * Used by the card-payment webhook and as the fallback when a ticket image can't be created.
+ */
+export async function sendOrderTicketQrs(supabase: SupabaseClient, tenantId: string, orderId: string, phone: string): Promise<number> {
+  let sent = 0
+  for (const qr of await getOrderTicketQrs(supabase, tenantId, orderId)) {
+    try {
+      await sendWhatsAppImageMessage(tenantId, phone, qr.url, qr.caption)
+      sent++
+    } catch (err) {
+      console.error("[qr-generator] QR image send failed", { tenantId, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  return sent
 }
