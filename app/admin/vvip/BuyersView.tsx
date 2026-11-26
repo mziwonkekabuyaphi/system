@@ -6,9 +6,10 @@
 // totals come from the server (computed over every booking, read page by page), not from the rows
 // on screen. Row action opens the buyer panel.
 
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
+import { checkInTableByCode, type TableScanResult } from "./actions"
 import { formatMoney } from "../events/format"
-import { ACCENT_TEXT, BTN_GHOST, Chip, EmptyState, FOCUS, INPUT, Icon, PANEL, ProgressBar, WELL } from "../events/ui"
+import { ACCENT_TEXT, BTN_GHOST, BTN_PRIMARY, Chip, EmptyState, FOCUS, INPUT, Icon, PANEL, ProgressBar, WELL } from "../events/ui"
 import { BOOKING_STATUS_LABEL, BOOKING_STATUS_TONE, type BookingStatus, type VvipBooking, type VvipData } from "./types"
 
 const PAGE_SIZE = 25
@@ -100,6 +101,8 @@ export function BuyersView({
   return (
     <div className="space-y-5">
       {loadError && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-600">{loadError}</p>}
+
+      <TableScanBox onChecked={onRetry} />
 
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Table buyers" value={String(summary.buyers)} />
@@ -229,5 +232,56 @@ function BuyerRow({ booking: b, currency, onOpen }: { booking: VvipBooking; tz: 
         </button>
       </td>
     </tr>
+  )
+}
+
+/** Door check-in for tables: a hardware scanner types the QR code and presses Enter; a person can type the VIP-XXXXXX reference. */
+function TableScanBox({ onChecked }: { onChecked: () => void }) {
+  const [code, setCode] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: true; data: TableScanResult } | { ok: false; error: string } | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (busy || !code.trim()) return
+    setBusy(true)
+    const res = await checkInTableByCode(code)
+    setBusy(false)
+    setCode("")
+    setResult(res)
+    if (res.ok && res.data.checkedIn) onChecked()
+    input.current?.focus()
+  }
+
+  const good = result?.ok === true && result.data.checkedIn
+  const info = result?.ok === true && !result.data.checkedIn
+
+  return (
+    <section className={`${PANEL} p-4`} aria-label="Check in a table">
+      <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
+        <label htmlFor="table-scan" className="text-sm font-bold text-stone-900">Check in a table</label>
+        <input
+          id="table-scan"
+          ref={input}
+          className={`${INPUT} !w-72 max-w-full`}
+          placeholder="Scan the QR code or type VIP-XXXXXX"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          autoComplete="off"
+        />
+        <button type="submit" className={BTN_PRIMARY} disabled={busy || !code.trim()}>{busy ? "Checking…" : "Check in"}</button>
+      </form>
+      {result && (
+        <p
+          role="status"
+          className={`mt-3 rounded-xl px-3 py-2 text-sm font-medium ${good ? "bg-emerald-600 text-white" : info ? "bg-amber-500 text-black" : "bg-red-600 text-white"}`}
+        >
+          {result.ok
+            ? `${result.data.checkedIn ? "Let them in" : `Already ${BOOKING_STATUS_LABEL[result.data.was].toLowerCase()}`}: ${result.data.customerName ?? "Guest"} · ${result.data.packageName}${result.data.tableLabel ? ` · Table ${result.data.tableLabel}` : ""} · ${result.data.reference}`
+            : result.error}
+        </p>
+      )}
+    </section>
   )
 }

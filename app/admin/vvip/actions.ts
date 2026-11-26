@@ -606,6 +606,61 @@ export async function setBookingStatus(bookingId: string, status: BookingStatus,
   return { ok: true, data: undefined }
 }
 
+export interface TableScanResult {
+  bookingId: string
+  reference: string
+  customerName: string | null
+  packageName: string
+  tableLabel: string | null
+  /** Status before this scan; "confirmed" means the guest was just checked in. */
+  was: BookingStatus
+  /** True when this scan checked the guest in; false when they were already in (or can't be). */
+  checkedIn: boolean
+}
+
+/**
+ * Check a table booking in from its QR code (the code the customer was sent) or its reference (VIP-XXXXXX).
+ * Tenant-scoped lookup, then the same database function as the Check in button, so the rules are identical.
+ */
+export async function checkInTableByCode(code: string): Promise<ActionResult<TableScanResult>> {
+  const c = await scoped("vvip.operate")
+  if (!c.ok) return c
+  const value = text(code, 80).trim()
+  if (!value) return fail("Scan or type a code first.")
+
+  const q = c.read
+    .from("vvip_bookings")
+    .select("id, reference, status, customer_id, package_id, table_id")
+    .eq("tenant_id", c.tenantId)
+  const { data, error } = UUID_RE.test(value) ? await q.eq("qr_token", value).maybeSingle() : await q.ilike("reference", value).maybeSingle()
+  if (error) return fail(GENERIC_ERROR)
+  const b = data as { id: string; reference: string; status: BookingStatus; customer_id: string | null; package_id: string; table_id: string | null } | null
+  if (!b) return fail("No table booking matches that code.")
+
+  const [cust, pkg, tbl] = await Promise.all([
+    b.customer_id ? c.read.from("tenant_customers").select("full_name").eq("tenant_id", c.tenantId).eq("id", b.customer_id).maybeSingle() : Promise.resolve({ data: null }),
+    c.read.from("vvip_packages").select("name").eq("tenant_id", c.tenantId).eq("id", b.package_id).maybeSingle(),
+    b.table_id ? c.read.from("vvip_tables").select("label").eq("tenant_id", c.tenantId).eq("id", b.table_id).maybeSingle() : Promise.resolve({ data: null }),
+  ])
+  const base = {
+    bookingId: b.id,
+    reference: b.reference,
+    customerName: ((cust.data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null,
+    packageName: (pkg.data as { name?: string } | null)?.name ?? "",
+    tableLabel: (tbl.data as { label?: string } | null)?.label ?? null,
+    was: b.status,
+  }
+
+  if (b.status === "cancelled") return fail(`${b.reference} was cancelled. Don't let them in.`)
+  if (b.status === "no_show") return fail(`${b.reference} was marked a no-show.`)
+  if (b.status !== "confirmed") return { ok: true, data: { ...base, checkedIn: false } }
+
+  const write = await sessionDb()
+  const { error: rpcError } = await write.rpc("vvip_set_booking_status", { p_booking_id: b.id, p_status: "checked_in", p_note: "Checked in by QR scan" })
+  if (rpcError) return fail(friendly(rpcError))
+  return { ok: true, data: { ...base, checkedIn: true } }
+}
+
 /** Cancel a booking. Refused by the database when the tab has had any activity. The refund goes to
  *  Passport when it was paid that way, otherwise it is recorded as a manual refund. */
 export async function cancelBooking(bookingId: string, refund: boolean, reason: string): Promise<ActionResult> {
