@@ -37,7 +37,7 @@ import {
 } from "@/app/admin/billing-actions"
 import { calculateBilling, formatCents, formatCentsCompact, type BillingCalculation } from "@/lib/services/billing-calculator"
 import type { Plan, PlanUsage } from "@/lib/services/plans"
-import type { AddonCharge } from "@/lib/services/addons"
+import { ADDON_UNIT_NOUN, type AddonCharge } from "@/lib/services/addons"
 
 const INK = "var(--color-ink)"
 const MUTED = "var(--color-ink-muted)"
@@ -484,15 +484,24 @@ function OrdersSection({ orders }: { orders: OrderBillingInfo }) {
   )
 }
 
-/** Itemised add-ons (flat monthly fee each) under a module card. Renders nothing when none are switched on. */
+/** "R49.00 / month", or "3 tickets × R1.00" for usage add-ons. */
+function addonBasis(a: AddonCharge, currency: string): string {
+  if (a.unit === "month") return `${formatCents(a.rateCents, currency)} / month`
+  const noun = a.quantity === 1 ? ADDON_UNIT_NOUN[a.unit].one : ADDON_UNIT_NOUN[a.unit].many
+  return `${a.quantity.toLocaleString("en-ZA")} ${noun} × ${formatCents(a.rateCents, currency)}`
+}
+
+/** Itemised add-ons under a module card: a flat monthly fee, or usage (tickets / tables) x rate. Renders nothing when none apply. */
 function AddonLines({ addons, currency }: { addons: AddonCharge[]; currency: string }) {
   if (addons.length === 0) return null
   return (
     <ul className="mt-3 divide-y divide-line rounded-lg border border-line text-sm">
       {addons.map((a) => (
-        <li key={a.key} className="flex items-center justify-between px-4 py-2">
-          <span className="text-ink">{a.label} <span className="text-ink-muted">add-on</span></span>
-          <span className="font-medium text-ink">{formatCents(a.feeCents, currency)} / month</span>
+        <li key={a.key} className="flex items-center justify-between gap-3 px-4 py-2">
+          <span className="text-ink">
+            {a.label} <span className="text-ink-muted">add-on · {addonBasis(a, currency)}</span>
+          </span>
+          <span className="font-medium text-ink">{formatCents(a.feeCents, currency)}</span>
         </li>
       ))}
     </ul>
@@ -508,7 +517,8 @@ function EventsSection({ events }: { events: EventBillingInfo }) {
         <span className="text-sm text-ink-muted">Billed monthly per ticket sold</span>
       </div>
       <p className="mt-1 text-sm text-ink-muted">
-        {formatCents(perTicketCents, currency)} per ticket sold. Cancelled and refunded tickets are not charged. Staff are billed separately.
+        {formatCents(perTicketCents, currency)} per ticket sold. Box office tickets and tables add their own per-ticket and per-table fees below.
+        Cancelled and refunded tickets are not charged. Staff are billed separately.
       </p>
       <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-3">
         <UsageStat label="Tickets sold this month" value={ticketsThisMonth.toLocaleString("en-ZA")} />
@@ -1051,7 +1061,7 @@ function InvoiceHistorySection({
                   <UsageStat label="Included orders" value={(inv.includedVisits ?? 0).toLocaleString("en-ZA")} />
                   <UsageStat label="Extra orders" value={`${inv.overageVisits.toLocaleString("en-ZA")} × ${formatCents(inv.rateCents, inv.currency)}`} />
                   {(inv.detail?.addons ?? []).map((a) => (
-                    <UsageStat key={a.key} label={`${a.label} add-on`} value={formatCents(a.feeCents, inv.currency)} />
+                    <UsageStat key={a.key} label={`${a.label} (${addonBasis(a, inv.currency)})`} value={formatCents(a.feeCents, inv.currency)} />
                   ))}
                   <div className="col-span-2 border-t border-line pt-2 sm:col-span-4">
                     <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
@@ -1064,7 +1074,7 @@ function InvoiceHistorySection({
                   <UsageStat label="Tickets sold" value={inv.visitCount.toLocaleString("en-ZA")} />
                   <UsageStat label="Fee per ticket" value={formatCents(inv.rateCents, inv.currency)} />
                   {(inv.detail?.addons ?? []).map((a) => (
-                    <UsageStat key={a.key} label={`${a.label} add-on`} value={formatCents(a.feeCents, inv.currency)} />
+                    <UsageStat key={a.key} label={`${a.label} (${addonBasis(a, inv.currency)})`} value={formatCents(a.feeCents, inv.currency)} />
                   ))}
                   <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
                 </dl>
