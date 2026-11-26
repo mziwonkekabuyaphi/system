@@ -20,6 +20,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { MODULE_KEYS, isTenantModuleEnabled, tenantHasModule } from "@/lib/services/plans"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 import {
   SHISHA_DISPLAY_SELECT,
   rowToShishaDisplaySettings,
@@ -73,7 +74,7 @@ export interface ShishaDisplayData {
   menu: Array<{ id: string; name: string; price: number }>
 }
 
-export type ShishaDisplayFailure = "not_found" | "shisha_off" | "screen_off" | "error"
+export type ShishaDisplayFailure = "not_found" | "shisha_off" | "monitor_off" | "screen_off" | "error"
 export type ShishaDisplayResult = { ok: true; data: ShishaDisplayData } | { ok: false; reason: ShishaDisplayFailure }
 
 type DeviceRow = { id: string; device_code: string; device_name: string | null; location_id: string | null; status: string }
@@ -109,6 +110,8 @@ export async function fetchShishaDisplayData(slug: string): Promise<ShishaDispla
     if (!(await isTenantModuleEnabled(supabase, tenantId, MODULE_KEYS.shisha, { defaultOn: false, requirePlan: false }))) {
       return { ok: false, reason: "shisha_off" }
     }
+    // The TV monitor is an add-on of Shisha (platform admin > Modules > Shisha monitor).
+    if (!(await isModuleEnabled(tenantId, "shisha_monitor"))) return { ok: false, reason: "monitor_off" }
 
     const [settingsRes, brandingRes, timingRes, currencyRes, devicesRes, stationsRes, productsRes, sessionsRes, brandingEntitled] =
       await Promise.all([

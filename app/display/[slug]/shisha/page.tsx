@@ -58,6 +58,8 @@ export default async function ShishaDisplayPage({ params }: PageProps) {
         notFound()
       case "shisha_off":
         return <Message title="Shisha isn't switched on" body="Switch the Shisha module on for your business, then reload this screen." />
+      case "monitor_off":
+        return <Message title="The Shisha monitor isn't switched on" body="Ask for the Shisha monitor add-on to be switched on for your business, then reload this screen." />
       case "screen_off":
         return <Message title="The shisha display is switched off" body="Turn it on in Shisha > TV display, then reload this screen." />
       default:

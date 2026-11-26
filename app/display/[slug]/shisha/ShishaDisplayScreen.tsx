@@ -307,6 +307,8 @@ export function ShishaDisplayScreen({ slug, initialData }: { slug: string; initi
               ? "The shisha display is switched off."
               : blocked === "shisha_off"
                 ? "Shisha isn't switched on."
+              : blocked === "monitor_off"
+                ? "The Shisha monitor isn't switched on."
                 : "This screen is no longer available."}
           </p>
         ) : (
