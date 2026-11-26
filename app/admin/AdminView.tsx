@@ -522,6 +522,14 @@ export function AdminView({
   // needs Passport). All of these are the effective, parent-checked states from page.tsx.
   const hasAnyModule =
     hasBookingOrQueue || shishaEnabled || eventsEnabled || ordersEnabled || staffEnabled || settingsModules?.on.wallet === true
+  // Add-ons that sit under a product (platform admin > Modules). Each is effective only while its product is on too
+  // (module_requires), so these are safe to trust. Missing flags = off (fails closed).
+  const addonOn = (key: string) => settingsModules?.on[key] === true
+  const stockTakeEnabled = ordersEnabled && addonOn("stock_take")
+  const barcodeEnabled = ordersEnabled && addonOn("barcode_labels")
+  const boxOfficeEnabled = eventsEnabled && addonOn("box_office")
+  const shishaMonitorEnabled = shishaEnabled && addonOn("shisha_monitor")
+  const shishaPosEnabled = shishaEnabled && addonOn("shisha_pos")
   const isTabVisible = (id: Tab): boolean => {
     switch (id) {
       case "today":
@@ -543,7 +551,7 @@ export function AdminView({
       case "eventsList":
         return eventsEnabled && eventsPermissions.eventsView
       case "eventsBoxOffice":
-        return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsIssue
+        return boxOfficeEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsIssue
       case "eventsGate":
         return eventsEnabled && eventsPermissions.eventsView && eventsPermissions.ticketsScan
       // VVIP: its own module switch (which needs Events, which needs Passport) + vvip.view +
@@ -888,6 +896,8 @@ export function AdminView({
               timezone={timezone}
               canOperate={staffPermissions.shishaOperate}
               canManage={staffPermissions.shishaManage}
+              monitorEnabled={shishaMonitorEnabled}
+              posEnabled={shishaPosEnabled}
               section={shishaSection}
               // Falls back to the Counter if an older ShishaManager still asks for the removed Requests page.
               onSectionChange={(next) => setTab(SECTION_SHISHA_TAB[next] ?? "shishaCounter")}
@@ -910,6 +920,7 @@ export function AdminView({
               section={eventsSection}
               onSectionChange={(next) => setTab(SECTION_EVENTS_TAB[next])}
               permissions={eventsPermissions}
+              boxOfficeEnabled={boxOfficeEnabled}
               onOpenSettings={
                 staffPermissions.settingsManage
                   ? () => {
@@ -953,6 +964,8 @@ export function AdminView({
               permissions={ordersPermissions}
               timezone={timezone}
               currency={initialTenantSettings?.currency ?? "ZAR"}
+              stockTakeEnabled={stockTakeEnabled}
+              barcodeEnabled={barcodeEnabled}
             />
           )}
           {ordersSection && isTabVisible(tab) && (!initialOrdersData || !ordersSettings) && (
