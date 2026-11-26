@@ -15,7 +15,18 @@ import { invalidateEffectiveCache } from "@/lib/tenant/effective-modules"
 // (plan_modules), where a tenant_modules row would do nothing. Keep in sync
 // with SWITCHABLE in ./page.tsx and with PRODUCT_KEYS / ADDON_KEYS in
 // lib/services/plans.ts.
-const SWITCHABLE_KEYS = ["booking", "queue", "shisha", "staff", "orders", "shifts", "payroll", "whatsapp", "wallet", "events", "vvip", "custom_domain", "kiosk", "display", "staff_clock_in"] as const
+const SWITCHABLE_KEYS = [
+  // products
+  "booking", "queue", "shisha", "staff", "orders", "wallet", "events",
+  // add-ons that sit under a product (see FAMILIES in ./page.tsx)
+  "stock_take", "barcode_labels", // under orders
+  "shifts", "payroll", "staff_clock_in", "whatsapp", // under staff
+  "box_office", "vvip", // under events
+  "kiosk", "display", // under booking / queue
+  "shisha_monitor", "shisha_pos", // under shisha
+  // standalone extras
+  "custom_domain",
+] as const
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

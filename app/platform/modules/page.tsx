@@ -1,8 +1,16 @@
 // app/platform/modules/page.tsx — per-shop module switches for the platform admin.
-// Switchable here: products (booking, queue, shisha, staff, orders, wallet, events), add-ons, and the
-// kiosk / public display / staff clock-in features.
-// Everything else is decided by the shop's plan and is shown read-only.
-// "On, hidden" = switched on but a module it needs is off (public.module_requires); see lib/tenant/effective-modules.ts.
+//
+// Modules are grouped into FAMILIES: a product with the add-ons that belong to it, each with its own switch.
+//   Product / Item Management   Stock take, Barcode / label printing
+//   Staff Management            Shifts, Payroll, Staff clock-in, WhatsApp staff notifications
+//   Event Management            Box office, VVIP tables & tabs
+//   Booking & Queue             Kiosk, TV display
+//   Shisha Lounge               Shisha monitor, Shisha mobile POS
+// Customer Passport (wallet) and Custom domain are standalone.
+// Everything else is decided by the shop's plan and is shown read-only at the bottom.
+//
+// An add-on is linked to its product in the database (public.module_requires). "On, hidden" = switched on but the
+// product it needs is off; switching the product back on brings it back. See lib/tenant/effective-modules.ts.
 //
 // LAYOUT: an overview of how many shops use each module, then a shop picker (left) next to the selected shop's
 // switches (right). The selected shop lives in the URL (?shop=<slug>) so a switch click keeps you on the same shop.
@@ -17,41 +25,66 @@ import { setStaffLimitAction, setTenantModuleAction } from "./actions"
 
 export const dynamic = "force-dynamic"
 
-type Group = "product" | "addon" | "feature"
-type Spec = { key: string; label: string; icon: string; blurb: string; hint?: string; defaultOn: boolean; planGated: boolean; group: Group }
+type Spec = {
+  key: string
+  label: string
+  icon: string
+  blurb: string
+  hint?: string
+  defaultOn: boolean
+  planGated: boolean
+  /** Registered and switchable, but the feature itself isn't built yet (a placeholder screen in the shop admin). */
+  soon?: boolean
+}
 
-/** What "no tenant_modules row" means, mirroring lib/services/plans.ts:
- *   booking, queue, shisha, orders, shifts, payroll, wallet, events, vvip, custom_domain
- *                  isProductEnabled      not plan-gated, default OFF (opt-in)
- *   kiosk          isKioskEnabled        plan must include it, default ON
- *   display        isTenantSwitchedOn    not plan-gated, default ON
- *   staff_clock_in isTenantSwitchedOn    not plan-gated, default ON
+/** What "no tenant_modules row" means, mirroring lib/services/plans.ts and the modules table:
+ *   booking, queue, shisha, orders, shifts, payroll, wallet, events, vvip, custom_domain, and the add-ons
+ *   stock_take, barcode_labels, box_office, shisha_monitor, shisha_pos
+ *                  not plan-gated, default OFF (opt-in)
+ *   kiosk          plan must include it, default ON
+ *   display        not plan-gated, default ON
+ *   staff_clock_in not plan-gated, default ON
  *
- * `group` only decides where a module is SHOWN on this page. Keep the keys in sync with SWITCHABLE_KEYS in ./actions.ts. */
-const SWITCHABLE: Spec[] = [
-  { key: "booking", label: "Booking", icon: "📅", blurb: "Customers book appointments by WhatsApp or online", defaultOn: false, planGated: false, group: "product" },
-  { key: "queue", label: "Queue", icon: "🚶", blurb: "Walk-in tickets and a live queue", defaultOn: false, planGated: false, group: "product" },
-  { key: "shisha", label: "Shisha", icon: "💨", blurb: "Sessions, coal refills and tracking", defaultOn: false, planGated: false, group: "product" },
-  { key: "staff", label: "Staff Management", icon: "👷", blurb: "Staff profiles and team management", hint: "R30 per staff, only when sold alone", defaultOn: false, planGated: false, group: "product" },
-  { key: "orders", label: "Order management", icon: "🛒", blurb: "Catalogue, vendors and WhatsApp ordering with a live order board", defaultOn: false, planGated: false, group: "product" },
-  { key: "wallet", label: "Customer Wallets", icon: "🪪", blurb: "A balance customers top up and spend", defaultOn: false, planGated: false, group: "product" },
-  { key: "events", label: "Events & ticketing", icon: "🎟️", blurb: "Events, ticket sales and QR gate check-in", defaultOn: false, planGated: false, group: "product" },
-  { key: "shifts", label: "Shifts", icon: "🗓️", blurb: "Rosters, swaps and approvals", defaultOn: false, planGated: false, group: "addon" },
-  { key: "payroll", label: "Payroll", icon: "💵", blurb: "Staff pay runs", defaultOn: false, planGated: false, group: "addon" },
-  { key: "whatsapp", label: "WhatsApp staff notifications", icon: "💬", blurb: "Alerts to staff on WhatsApp", defaultOn: false, planGated: false, group: "addon" },
-  { key: "vvip", label: "VVIP tables & tabs", icon: "🥂", blurb: "Reserved tables and customer tabs", defaultOn: false, planGated: false, group: "addon" },
-  { key: "custom_domain", label: "Custom domain", icon: "🌐", blurb: "Shop serves its pages on its own domain", defaultOn: false, planGated: false, group: "addon" },
-  { key: "kiosk", label: "Kiosk", icon: "🖥️", blurb: "Self-service kiosk", defaultOn: true, planGated: true, group: "feature" },
-  { key: "display", label: "Public display", icon: "📺", blurb: "Screen showing the queue to the room", defaultOn: true, planGated: false, group: "feature" },
-  { key: "staff_clock_in", label: "Staff clock-in", icon: "⏱️", blurb: "Staff profiles and PIN clock-in", defaultOn: true, planGated: false, group: "feature" },
+ * Keep the keys in sync with SWITCHABLE_KEYS in ./actions.ts and the migration that registers them. */
+const SPECS: Spec[] = [
+  // ── products ──
+  { key: "orders", label: "Product / Item Management", icon: "📦", blurb: "Products, catalogue, vendors and WhatsApp ordering with a live order board", defaultOn: false, planGated: false },
+  { key: "staff", label: "Staff Management", icon: "👷", blurb: "Staff profiles and team management", hint: "R30 per staff, only when sold alone", defaultOn: false, planGated: false },
+  { key: "events", label: "Event Management", icon: "🎟️", blurb: "Events, ticket sales and QR gate check-in", defaultOn: false, planGated: false },
+  { key: "booking", label: "Booking", icon: "📅", blurb: "Customers book appointments by WhatsApp or online", defaultOn: false, planGated: false },
+  { key: "queue", label: "Queue", icon: "🚶", blurb: "Walk-in tickets and a live queue", defaultOn: false, planGated: false },
+  { key: "shisha", label: "Shisha Lounge", icon: "💨", blurb: "Sessions, coal refills and tracking", defaultOn: false, planGated: false },
+  // ── add-ons ──
+  { key: "stock_take", label: "Stock take", icon: "📋", blurb: "Count stock by hand and apply the differences", defaultOn: false, planGated: false },
+  { key: "barcode_labels", label: "Barcode / label printing", icon: "🏷️", blurb: "Print barcodes and shelf labels for products", defaultOn: false, planGated: false, soon: true },
+  { key: "shifts", label: "Shifts", icon: "🗓️", blurb: "Rosters, swaps and approvals", defaultOn: false, planGated: false },
+  { key: "payroll", label: "Payroll", icon: "💵", blurb: "Staff pay runs", defaultOn: false, planGated: false },
+  { key: "box_office", label: "Box office", icon: "🎫", blurb: "Sell tickets at the door or counter", defaultOn: false, planGated: false },
+  { key: "vvip", label: "VVIP tables & tabs", icon: "🥂", blurb: "Reserved tables and customer tabs", defaultOn: false, planGated: false },
+  { key: "kiosk", label: "Kiosk", icon: "🖥️", blurb: "Self-service kiosk", defaultOn: true, planGated: true },
+  { key: "display", label: "TV display", icon: "📺", blurb: "Screen showing the queue to the room", defaultOn: true, planGated: false },
+  { key: "shisha_monitor", label: "Shisha monitor", icon: "📡", blurb: "Shisha session board for a TV in the lounge", defaultOn: false, planGated: false },
+  { key: "shisha_pos", label: "Shisha mobile POS", icon: "📱", blurb: "Take shisha orders and payments from a phone", defaultOn: false, planGated: false, soon: true },
+  // ── standalone ──
+  { key: "wallet", label: "Customer Passport", icon: "🪪", blurb: "A balance customers top up and spend (Events needs it)", defaultOn: false, planGated: false },
+  { key: "whatsapp", label: "WhatsApp staff notifications", icon: "💬", blurb: "Alerts to staff on WhatsApp", defaultOn: false, planGated: false },
+  { key: "custom_domain", label: "Custom domain", icon: "🌐", blurb: "Shop serves its pages on its own domain", defaultOn: false, planGated: false },
+  { key: "staff_clock_in", label: "Staff clock-in", icon: "⏱️", blurb: "Staff profiles and PIN clock-in", defaultOn: true, planGated: false },
 ]
-const SWITCHABLE_KEYS = new Set(SWITCHABLE.map((m) => m.key))
+const SPEC_BY_KEY = new Map(SPECS.map((s) => [s.key, s]))
+const SWITCHABLE_KEYS = new Set(SPECS.map((m) => m.key))
 
-const GROUPS: Array<{ id: Group; title: string; blurb: string; chip: string; bar: string }> = [
-  { id: "product", title: "Products", blurb: "What the shop runs", chip: "bg-stone-900 text-white", bar: "bg-stone-800" },
-  { id: "addon", title: "Add-ons", blurb: "Extras that build on a product", chip: "bg-indigo-600 text-white", bar: "bg-indigo-500" },
-  { id: "feature", title: "Features", blurb: "On by default", chip: "bg-sky-600 text-white", bar: "bg-sky-500" },
+type Family = { id: string; title: string; icon: string; blurb: string; products: string[]; addons: string[]; accent: string; bar: string }
+
+/** `products` are the main switches of the family, `addons` build on them. Order here is the order on screen. */
+const FAMILIES: Family[] = [
+  { id: "items", title: "Product / Item Management", icon: "📦", blurb: "Products, catalogue and orders", products: ["orders"], addons: ["stock_take", "barcode_labels"], accent: "bg-amber-500", bar: "bg-amber-500" },
+  { id: "staff", title: "Staff Management", icon: "👷", blurb: "Team, rosters, pay, clock-in and alerts", products: ["staff"], addons: ["shifts", "payroll", "staff_clock_in", "whatsapp"], accent: "bg-indigo-500", bar: "bg-indigo-500" },
+  { id: "events", title: "Event Management", icon: "🎟️", blurb: "Tickets, door sales and tables", products: ["events"], addons: ["box_office", "vvip"], accent: "bg-rose-500", bar: "bg-rose-500" },
+  { id: "bookqueue", title: "Booking & Queue", icon: "📅", blurb: "Appointments, walk-ins, kiosk and TV", products: ["booking", "queue"], addons: ["kiosk", "display"], accent: "bg-sky-500", bar: "bg-sky-500" },
+  { id: "shisha", title: "Shisha Lounge", icon: "💨", blurb: "Sessions, monitor and POS", products: ["shisha"], addons: ["shisha_monitor", "shisha_pos"], accent: "bg-emerald-500", bar: "bg-emerald-500" },
 ]
+const STANDALONE: string[] = ["wallet", "custom_domain"]
 
 type Tenant = { id: string; name: string; slug: string; status: string; plan: string; staff_limit: number | null }
 type Mod = { id: string; key: string; name: string }
@@ -97,7 +130,7 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
   )
 
   // Which modules each module needs ("Booking or Queue"), and each shop's effective state, from the database.
-  const labelOf = (key: string) => modules.find((m) => m.key === key)?.name ?? key
+  const labelOf = (key: string) => SPEC_BY_KEY.get(key)?.label ?? modules.find((m) => m.key === key)?.name ?? key
   const parentsOf = new Map<string, string[]>()
   for (const r of (requiresRes.data ?? []) as Array<{ module_key: string; requires_key: string }>) {
     parentsOf.set(r.module_key, [...(parentsOf.get(r.module_key) ?? []), r.requires_key])
@@ -124,7 +157,7 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
 
   // How many shops have each module effectively on (hidden ones don't count).
   const adoption = new Map<string, number>()
-  for (const spec of SWITCHABLE) {
+  for (const spec of SPECS) {
     adoption.set(spec.key, allTenants.filter((t) => stateOf(t, spec) === "on").length)
   }
 
@@ -139,15 +172,16 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
     p.set("shop", slug)
     return `/platform/modules?${p.toString()}`
   }
-  const specsIn = (g: Group) => SWITCHABLE.filter((s) => s.group === g)
-  const products = specsIn("product")
+  const specsOf = (keys: string[]) => keys.map((k) => SPEC_BY_KEY.get(k)).filter((s): s is Spec => Boolean(s))
+  const familyOn = (t: Tenant, f: Family) => f.products.some((k) => { const s = SPEC_BY_KEY.get(k); return s ? stateOf(t, s) === "on" : false })
+  const onCount = (t: Tenant) => SPECS.filter((s) => stateOf(t, s) === "on").length
 
   return (
     <main className="space-y-6">
       <PageHeader
         title="Modules & add-ons"
         count={allTenants.length}
-        description="Choose which products each shop runs, the add-ons that build on them, and how many staff it can have. The plan only sets the billing tier and the plan-only extras listed at the bottom."
+        description="Choose which products each shop runs and the add-ons that build on them, plus how many staff it can have. Add-ons sit under the product they belong to. The plan only sets the billing tier and the plan-only extras listed at the bottom."
         actions={
           <form method="get" className="flex items-center gap-2">
             <input
@@ -177,43 +211,28 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
         </p>
       )}
 
-      {/* ── Overview: how many shops use each module ─────────────────────────── */}
+      {/* ── Overview: how many shops use each module, family by family ───────── */}
       <section aria-label="Adoption across all shops" className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-stone-800">In use across {allTenants.length} shops</h2>
           <p className="text-xs text-stone-400">Shops with the module switched on and not hidden</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {GROUPS.map((g) => (
-            <div key={g.id} className={`${PLATFORM_CARD} p-4`}>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${g.chip}`}>{g.title}</span>
-                <span className="text-xs text-stone-400">{g.blurb}</span>
-              </div>
-              <ul className="space-y-2.5">
-                {specsIn(g.id).map((s) => {
-                  const n = adoption.get(s.key) ?? 0
-                  const pct = allTenants.length > 0 ? Math.round((n / allTenants.length) * 100) : 0
-                  return (
-                    <li key={s.key}>
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate text-stone-700">
-                          <span aria-hidden="true" className="mr-1.5">{s.icon}</span>
-                          {s.label.replace(/ \(.*\)$/, "")}
-                        </span>
-                        <span className="shrink-0 tabular-nums text-stone-500">
-                          <span className="font-semibold text-stone-900">{n}</span> / {allTenants.length}
-                        </span>
-                      </div>
-                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-100" role="presentation">
-                        <div className={`h-full rounded-full ${g.bar}`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {FAMILIES.map((f) => (
+            <div key={f.id} className={`${PLATFORM_CARD} p-4`}>
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-stone-800">
+                <span aria-hidden="true">{f.icon}</span>
+                {f.title}
+              </p>
+              <AdoptionList specs={specsOf(f.products)} adoption={adoption} total={allTenants.length} bar={f.bar} />
+              <p className="mb-1.5 mt-3 text-[10px] font-semibold uppercase tracking-wider text-stone-400">Add-ons</p>
+              <AdoptionList specs={specsOf(f.addons)} adoption={adoption} total={allTenants.length} bar="bg-stone-400" />
             </div>
           ))}
+          <div className={`${PLATFORM_CARD} p-4`}>
+            <p className="mb-3 text-sm font-semibold text-stone-800">Standalone</p>
+            <AdoptionList specs={specsOf(STANDALONE)} adoption={adoption} total={allTenants.length} bar="bg-stone-500" />
+          </div>
         </div>
       </section>
 
@@ -244,11 +263,10 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
                         </span>
                       </span>
                       <span className="mt-1.5 flex items-center gap-1" aria-hidden="true">
-                        {products.map((s) => {
-                          const st = stateOf(t, s)
-                          const dot =
-                            st === "on" ? "bg-emerald-500" : st === "blocked" ? "bg-amber-400" : active ? "bg-white/25" : "bg-stone-200"
-                          return <span key={s.key} title={`${s.label}: ${st === "on" ? "on" : st === "blocked" ? "on, hidden" : "off"}`} className={`h-1.5 w-4 rounded-full ${dot}`} />
+                        {FAMILIES.map((f) => {
+                          const on = familyOn(t, f)
+                          const dot = on ? "bg-emerald-500" : active ? "bg-white/25" : "bg-stone-200"
+                          return <span key={f.id} title={`${f.title}: ${on ? "on" : "off"}`} className={`h-1.5 w-4 rounded-full ${dot}`} />
                         })}
                       </span>
                     </Link>
@@ -296,44 +314,30 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
                 </header>
 
                 <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-stone-100 px-6 py-3 text-xs text-stone-500">
-                  <span className="flex flex-wrap gap-x-4 gap-y-1">
-                    {GROUPS.map((g) => {
-                      const on = specsIn(g.id).filter((s) => stateOf(selected, s) === "on").length
-                      return (
-                        <span key={g.id}>
-                          <span className="font-semibold tabular-nums text-stone-900">{on}</span> of {specsIn(g.id).length} {g.title.toLowerCase()} on
-                        </span>
-                      )
-                    })}
+                  <span>
+                    <span className="font-semibold tabular-nums text-stone-900">{onCount(selected)}</span> of {SPECS.length} modules on
                   </span>
                   <Legend />
                 </div>
               </div>
 
-              {GROUPS.map((g) => {
-                const big = g.id === "product"
-                return (
-                  <div key={g.id}>
-                    <div className="mb-3 flex items-baseline gap-3">
-                      <h3 className="text-sm font-semibold text-stone-800">{g.title}</h3>
-                      <p className="text-xs text-stone-400">{g.blurb}</p>
-                    </div>
-                    <ul className={big ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "grid gap-3 sm:grid-cols-2"}>
-                      {specsIn(g.id).map((spec) => (
-                        <li key={spec.key}>
-                          <ModuleCard
-                            tenantId={selected.id}
-                            spec={spec}
-                            state={stateOf(selected, spec)}
-                            needs={needsText(spec.key)}
-                            large={big}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )
-              })}
+              {FAMILIES.map((f) => (
+                <FamilyCard key={f.id} family={f} tenantId={selected.id} specs={SPEC_BY_KEY} stateOf={(s) => stateOf(selected, s)} needsText={needsText} />
+              ))}
+
+              <div className={`${PLATFORM_CARD} overflow-hidden`}>
+                <div className="border-b border-stone-100 px-5 py-3">
+                  <h3 className="text-sm font-semibold text-stone-800">Standalone</h3>
+                  <p className="text-xs text-stone-400">Not tied to one product</p>
+                </div>
+                <ul className="grid gap-3 p-4 sm:grid-cols-2">
+                  {specsOf(STANDALONE).map((spec) => (
+                    <li key={spec.key}>
+                      <ModuleRow tenantId={selected.id} spec={spec} state={stateOf(selected, spec)} needs={needsText(spec.key)} kind="addon" />
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </section>
           )}
         </div>
@@ -361,8 +365,97 @@ export default async function PlatformModules({ searchParams }: { searchParams: 
   )
 }
 
+/** Adoption bars for a list of modules (overview). */
+function AdoptionList({ specs, adoption, total, bar }: { specs: Spec[]; adoption: Map<string, number>; total: number; bar: string }) {
+  return (
+    <ul className="space-y-2.5">
+      {specs.map((s) => {
+        const n = adoption.get(s.key) ?? 0
+        const pct = total > 0 ? Math.round((n / total) * 100) : 0
+        return (
+          <li key={s.key}>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate text-stone-700">
+                <span aria-hidden="true" className="mr-1.5">{s.icon}</span>
+                {s.label}
+              </span>
+              <span className="shrink-0 tabular-nums text-stone-500">
+                <span className="font-semibold text-stone-900">{n}</span> / {total}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-100" role="presentation">
+              <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** One product family for the selected shop: the product switch(es) on top, its add-ons nested underneath. */
+function FamilyCard({
+  family,
+  tenantId,
+  specs,
+  stateOf,
+  needsText,
+}: {
+  family: Family
+  tenantId: string
+  specs: Map<string, Spec>
+  stateOf: (s: Spec) => State
+  needsText: (key: string) => string | null
+}) {
+  const products = family.products.map((k) => specs.get(k)).filter((s): s is Spec => Boolean(s))
+  const addons = family.addons.map((k) => specs.get(k)).filter((s): s is Spec => Boolean(s))
+  const productOn = products.some((p) => stateOf(p) === "on")
+  const addonsOn = addons.filter((a) => stateOf(a) === "on").length
+
+  return (
+    <div className={`${PLATFORM_CARD} overflow-hidden`}>
+      <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`h-8 w-1.5 shrink-0 rounded-full ${family.accent}`} aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold text-stone-800">{family.title}</h3>
+            <p className="text-xs text-stone-400">{family.blurb}</p>
+          </div>
+        </div>
+        <span className="shrink-0 text-xs text-stone-500">
+          <span className="font-semibold tabular-nums text-stone-900">{addonsOn}</span> of {addons.length} add-ons on
+        </span>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <ul className={products.length > 1 ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"}>
+          {products.map((spec) => (
+            <li key={spec.key}>
+              <ModuleRow tenantId={tenantId} spec={spec} state={stateOf(spec)} needs={needsText(spec.key)} kind="product" />
+            </li>
+          ))}
+        </ul>
+
+        <div>
+          <p className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-stone-400">
+            Add-ons
+            {!productOn && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-amber-800">Switch the product on first</span>}
+          </p>
+          <ul className="grid gap-3 border-l-2 border-stone-200 pl-4 sm:grid-cols-2">
+            {addons.map((spec) => (
+              <li key={spec.key}>
+                <ModuleRow tenantId={tenantId} spec={spec} state={stateOf(spec)} needs={needsText(spec.key)} kind="addon" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** One module for the selected shop: icon, name, what it is, its state and the switch. */
-function ModuleCard({ tenantId, spec, state, needs, large }: { tenantId: string; spec: Spec; state: State; needs: string | null; large: boolean }) {
+function ModuleRow({ tenantId, spec, state, needs, kind }: { tenantId: string; spec: Spec; state: State; needs: string | null; kind: "product" | "addon" }) {
   const tone =
     state === "on"
       ? "border-emerald-200 bg-emerald-50/60"
@@ -382,44 +475,28 @@ function ModuleCard({ tenantId, spec, state, needs, large }: { tenantId: string;
   const note =
     state === "blocked" ? (needs ?? "A required module is off") : state === "no_plan" || state === "missing" ? null : (spec.hint ?? needs)
   const canSwitch = state !== "no_plan" && state !== "missing"
+  const big = kind === "product"
 
   const labelCls = `font-semibold ${state === "on" || state === "blocked" ? "text-stone-900" : "text-stone-700"}`
-  const noteEl = note && <p className={`mt-1 text-xs ${state === "blocked" ? "text-amber-700" : "text-stone-400"}`}>{state === "blocked" ? `Hidden · ${note}` : note}</p>
-
-  // Add-ons and features: one compact row. Products get the bigger card below.
-  if (!large) {
-    return (
-      <div className={`flex h-full items-center gap-3 rounded-2xl border p-3 transition-colors ${tone}`}>
-        <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm ring-1 ring-stone-200">
-          {spec.icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className={`text-[13px] ${labelCls}`}>{spec.label}</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${pill.cls}`}>{pill.text}</span>
-          </p>
-          <p className="text-xs text-stone-500">{spec.blurb}</p>
-          {noteEl}
-        </div>
-        {canSwitch && <Switch tenantId={tenantId} moduleKey={spec.key} label={spec.label} state={state} />}
-      </div>
-    )
-  }
 
   return (
-    <div className={`flex h-full flex-col gap-3 rounded-2xl border p-4 transition-colors ${tone}`}>
-      <div className="flex items-start justify-between gap-3">
-        <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-2xl shadow-sm ring-1 ring-stone-200">
-          {spec.icon}
-        </span>
-        {canSwitch && <Switch tenantId={tenantId} moduleKey={spec.key} label={spec.label} state={state} />}
-      </div>
+    <div className={`flex h-full items-center gap-3 rounded-2xl border transition-colors ${big ? "p-4" : "p-3"} ${tone}`}>
+      <span
+        aria-hidden="true"
+        className={`flex shrink-0 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-stone-200 ${big ? "h-11 w-11 text-2xl" : "h-10 w-10 text-lg"}`}
+      >
+        {spec.icon}
+      </span>
       <div className="min-w-0 flex-1">
-        <p className={`text-sm ${labelCls}`}>{spec.label}</p>
-        <p className="mt-0.5 text-xs text-stone-500">{spec.blurb}</p>
-        {noteEl}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className={`${big ? "text-sm" : "text-[13px]"} ${labelCls}`}>{spec.label}</span>
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${pill.cls}`}>{pill.text}</span>
+          {spec.soon && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">In development</span>}
+        </p>
+        <p className="text-xs text-stone-500">{spec.blurb}</p>
+        {note && <p className={`mt-1 text-xs ${state === "blocked" ? "text-amber-700" : "text-stone-400"}`}>{state === "blocked" ? `Hidden · ${note}` : note}</p>}
       </div>
-      <span className={`self-start rounded-full px-2 py-0.5 text-[11px] font-medium ${pill.cls}`}>{pill.text}</span>
+      {canSwitch && <Switch tenantId={tenantId} moduleKey={spec.key} label={spec.label} state={state} />}
     </div>
   )
 }
@@ -452,7 +529,7 @@ function Legend() {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
       <span className="inline-flex items-center gap-1.5">{dot("bg-emerald-600")} On</span>
-      <span className="inline-flex items-center gap-1.5">{dot("bg-amber-500")} On, hidden (needs a parent module)</span>
+      <span className="inline-flex items-center gap-1.5">{dot("bg-amber-500")} On, hidden (needs its product)</span>
       <span className="inline-flex items-center gap-1.5">{dot("bg-stone-300")} Off</span>
     </div>
   )
