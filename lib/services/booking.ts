@@ -1485,10 +1485,17 @@ async function trySmartBooking(
     const [services, dateOptions] = await Promise.all([getBookableServices(tenantId), buildDateOptions(tenantId)])
     if (services.length === 0 || dateOptions.length === 0) return null
 
+    // How many services one booking may hold: "trim and beard" should become two services, not one.
+    const maxServices = await getMaxServicesPerBooking(tenantId)
+
+    // BUG FIX: this call used to omit tenantId (the parser takes tenantId first), so it threw on every
+    // message, trySmartBooking's catch swallowed it, and one-message booking silently never ran.
     const parsed = await extractBookingRequest(
+      tenantId,
       text,
       services.map((s) => ({ name: s.name, durationMinutes: s.durationMinutes })),
       dateOptions,
+      maxServices,
     )
     if (!parsed) return null
 
@@ -1502,12 +1509,16 @@ async function trySmartBooking(
     }
 
     // Without a recognised service there is nothing to pre-fill.
-    if (parsed.serviceIndex === null) return null
-    const service = services[parsed.serviceIndex]
+    if (parsed.serviceIndexes.length === 0) return null
+    const [primary, ...extras] = parsed.serviceIndexes.map((i) => services[i])
+    // One entry standing for the whole visit (names joined, minutes summed), exactly like the tap flow.
+    const service = combineServices([primary, ...extras])
 
     const data: BookingStateData = {
       services,
-      selectedService: service,
+      selectedService: primary,
+      ...(extras.length > 0 ? { extraServices: extras } : {}),
+      maxServices,
       dateOptions,
       ...(requestedStaff ? { requestedStaff } : {}),
     }
