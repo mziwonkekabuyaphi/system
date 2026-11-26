@@ -19,11 +19,11 @@
 import type { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { formatPassportMoney } from "@/lib/services/passport"
-import { sendOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
-import { loadEventTicketDelivery } from "@/lib/services/event-settings"
+import { sendOrderTicketQrs, sendTableBookingQr } from "@/lib/whatsapp/qr-generator"
+import { loadEventTicketDelivery, loadVvipPassSettings } from "@/lib/services/event-settings"
 import { buildTableConfirmation } from "@/lib/services/vvip-tables"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
-import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
+import { scheduleOrderTicketImages, scheduleTablePassImage } from "@/lib/whatsapp/ticket-image"
 import * as shishaMessages from "@/lib/services/messages/shisha"
 import { confirmOrderPaymentByAttempt } from "@/lib/services/orders/orders.flow-checkout"
 import {
@@ -409,6 +409,10 @@ async function notifyTable(db: Db, provider: CardProvider, tenantId: string, boo
     if (!phone) return
     const text = await buildTableConfirmation(db, tenantId, bookingId, "✅ *Payment received. Your table is booked!*", requestedTableId)
     await sendWhatsAppTextMessage(tenantId, phone, text)
+    // Plain QR now (unless the shop only sends the image); branded table pass image after the webhook has answered.
+    const pass = await loadVvipPassSettings(db, tenantId)
+    if (pass.sendQr || !pass.enabled) await sendTableBookingQr(db, tenantId, bookingId, phone)
+    scheduleTablePassImage(tenantId, bookingId, phone)
   } catch (error) {
     console.error(`[${provider.id}-webhook] table message failed (table is already booked)`, {
       tenantId,
