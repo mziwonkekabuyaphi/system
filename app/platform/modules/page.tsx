@@ -3,7 +3,7 @@
 // Modules are grouped into FAMILIES: a product with the add-ons that belong to it, each with its own switch.
 //   Product / Item Management   Stock take, Barcode / label printing
 //   Staff Management            Shifts, Payroll, Staff clock-in, WhatsApp staff notifications
-//   Event Management            Box office, VVIP tables & tabs
+//   Event Management            Box office, Tables and Tabs
 //   Booking & Queue             Kiosk, TV display
 //   Shisha Lounge               Shisha monitor, Shisha mobile POS
 // Customer Passport (wallet) and Custom domain are standalone.
@@ -60,7 +60,7 @@ const SPECS: Spec[] = [
   { key: "shifts", label: "Shifts", icon: "🗓️", blurb: "Rosters, swaps and approvals", defaultOn: false, planGated: false },
   { key: "payroll", label: "Payroll", icon: "💵", blurb: "Staff pay runs", defaultOn: false, planGated: false },
   { key: "box_office", label: "Box office", icon: "🎫", blurb: "Sell tickets at the door or counter", defaultOn: false, planGated: false },
-  { key: "vvip", label: "VVIP tables & tabs", icon: "🥂", blurb: "Reserved tables and customer tabs", defaultOn: false, planGated: false },
+  { key: "vvip", label: "Tables and Tabs", icon: "🥂", blurb: "Reserved tables and customer tabs", defaultOn: false, planGated: false },
   { key: "kiosk", label: "Kiosk", icon: "🖥️", blurb: "Self-service kiosk", defaultOn: true, planGated: true },
   { key: "display", label: "TV display", icon: "📺", blurb: "Screen showing the queue to the room", defaultOn: true, planGated: false },
   { key: "shisha_monitor", label: "Shisha monitor", icon: "📡", blurb: "Shisha session board for a TV in the lounge", defaultOn: false, planGated: false },
