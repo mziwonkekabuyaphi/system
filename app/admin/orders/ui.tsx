@@ -9,6 +9,8 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
+import { Toggle as SettingsToggle } from "../settings/ui"
+
 export const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ")
 
 export const inputCls =
@@ -35,41 +37,34 @@ export function Field({ label, hint, children, className }: { label: string; hin
   )
 }
 
+/**
+ * Same switch as every other admin page (Settings, Booking, Events...). It is the one from
+ * settings/ui.tsx, so the look, the On/Off word and the dark-theme glow only live in one place.
+ * Pass showState={false} for a bare switch with no On/Off word.
+ */
 export function Toggle({
   checked,
   onChange,
   label,
   disabled,
+  showState = true,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
   label: string
   disabled?: boolean
+  showState?: boolean
 }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={cx(
-        "relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-admin-accent/40",
-        checked ? "bg-admin-accent" : "bg-admin-text/20",
-      )}
-    >
-      <span className={cx("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", checked ? "left-[18px]" : "left-0.5")} />
-    </button>
-  )
+  return <SettingsToggle checked={checked} onChange={onChange} label={label} disabled={disabled} showState={showState} />
 }
 
+/** Same row look as the Settings toggle rows: bordered tile, title, hint, switch on the right. */
 export function ToggleRow({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (n: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
       <div>
-        <p className="text-sm text-admin-text">{label}</p>
-        {hint && <p className="text-xs text-admin-text/50">{hint}</p>}
+        <p className="text-sm font-medium text-ink">{label}</p>
+        {hint && <p className="text-xs text-ink-muted">{hint}</p>}
       </div>
       <Toggle checked={checked} onChange={onChange} label={label} disabled={disabled} />
     </div>
