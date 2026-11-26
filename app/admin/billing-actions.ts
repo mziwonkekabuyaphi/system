@@ -33,6 +33,7 @@
  */
 
 import { revalidatePath } from "next/cache"
+import { EVENT_ADDONS, ORDER_ADDONS, type AddonCharge } from "@/lib/services/addons"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantMember } from "@/lib/tenant/current-tenant-member"
 import {
@@ -40,7 +41,12 @@ import {
   getTenantPlan,
   getTenantPlanUsage,
   getTenantVisitBreakdown,
-  getEnabledProducts,
+  getBillableModules,
+  addonChargesFor,
+  staffBilledPerHead,
+  countOrdersInRange,
+  countTicketsInRange,
+  type BillableModules,
   isBookingQueuePlanKey,
   type Plan,
   type PlanUsage,
@@ -56,14 +62,14 @@ async function getTenantScopedClient() {
   return { supabase, tenantId, error: undefined as string | undefined }
 }
 
-export type InvoiceProduct = "booking_queue" | "shisha" | "staff"
+export type InvoiceProduct = "booking_queue" | "shisha" | "staff" | "orders" | "events"
 
 export interface TenantInvoice {
   id: string
   /** Which module this invoice bills. Older rows are all Booking & Queue. */
   product: InvoiceProduct
   /** Shisha invoices: { sessions, session_fee_cents, refills, refill_fee_cents }. null otherwise. */
-  detail: { staff?: number; fee_per_staff_cents?: number; sessions?: number; session_fee_cents?: number; refills?: number; refill_fee_cents?: number } | null
+  detail: { addons?: AddonCharge[]; addons_cents?: number; orders?: number; included_orders?: number; overage_orders?: number; usage_fee_cents?: number; tickets?: number; fee_per_ticket_cents?: number; staff?: number; fee_per_staff_cents?: number; sessions?: number; session_fee_cents?: number; refills?: number; refill_fee_cents?: number } | null
   periodStart: string
   periodEnd: string
   visitCount: number
@@ -138,11 +144,39 @@ export interface StaffBillingInfo {
   estimatedCents: number
 }
 
+export interface OrderBillingInfo {
+  monthlyFeeCents: number
+  includedOrders: number
+  perOrderCents: number
+  currency: string
+  /** Completed orders so far this month. */
+  ordersThisMonth: number
+  overageOrders: number
+  /** Add-ons switched on (stock take, barcode / label printing), each with its flat monthly fee. */
+  addons: AddonCharge[]
+  /** monthly fee + overage + add-ons, if the month ended now (staff are billed separately). */
+  estimatedCents: number
+}
+
+export interface EventBillingInfo {
+  perTicketCents: number
+  currency: string
+  ticketsThisMonth: number
+  /** Add-ons switched on (box office, VVIP tables & tabs), each with its flat monthly fee. */
+  addons: AddonCharge[]
+  /** tickets x fee + add-ons, if the month ended now (staff are billed separately). */
+  estimatedCents: number
+}
+
 export interface BillingSummary {
   /** Which modules are switched on for this shop (tenant_modules). Drives what the panel shows. */
-  products: { booking: boolean; queue: boolean; shisha: boolean; staff: boolean }
-  /** Staff Management billed on its own (R30 per active staff). null unless Staff is on AND the shop runs no Booking, Queue or Shisha (those include staff). */
+  products: BillableModules
+  /** Per-head staff bill. null when the shop runs Booking or Queue (staff are inside its plan), or runs no staff-bearing module. */
   staff: StaffBillingInfo | null
+  /** Order Management: monthly fee + included orders + per-order overage. null when Orders is off. */
+  orders: OrderBillingInfo | null
+  /** Event Management: a fee per ticket sold. null when Events is off. */
+  events: EventBillingInfo | null
   /** Shisha usage and rates. null whenever Shisha is switched off for the shop. */
   shisha: ShishaBillingInfo | null
   currentPlan: Plan
@@ -172,10 +206,10 @@ const toCents = (rands: unknown): number => Math.round(Number(rands) * 100) || 0
 async function loadStaffBilling(
   supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
   tenantId: string,
-  products: { booking: boolean; queue: boolean; shisha: boolean; staff: boolean },
+  products: BillableModules,
 ): Promise<StaffBillingInfo | null> {
-  // Staff is included with Booking, Queue and Shisha, so it is only a bill of its own when sold alone.
-  if (!products.staff || products.booking || products.queue || products.shisha) return null
+  // Booking & Queue include staff in their plan. Shisha, Orders, Events and standalone Staff pay per head.
+  if (!staffBilledPerHead(products)) return null
 
   const [ratesRes, countRes] = await Promise.all([
     supabase
@@ -191,6 +225,73 @@ async function loadStaffBilling(
   const perStaffCents = rate ? toCents(rate.fee_per_staff) : 0
   const activeStaff = countRes.count ?? 0
   return { perStaffCents, currency: rate?.currency ?? "ZAR", activeStaff, estimatedCents: perStaffCents * activeStaff }
+}
+
+/** First instant of the current UTC month, matching how Booking & Queue months work. */
+function thisMonthRangeUtc(): { from: string; to: string } {
+  const now = new Date()
+  return {
+    from: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(),
+    to: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
+  }
+}
+
+async function loadOrderBilling(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+  switchedOn: boolean,
+): Promise<OrderBillingInfo | null> {
+  if (!switchedOn) return null
+  const { from, to } = thisMonthRangeUtc()
+  const [ratesRes, ordersThisMonth] = await Promise.all([
+    supabase
+      .from("order_billing_rates")
+      .select("tenant_id, monthly_fee, included_orders, per_order_fee, currency")
+      .eq("is_active", true)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`),
+    countOrdersInRange(supabase, tenantId, from, to),
+  ])
+  const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; monthly_fee: number | string; included_orders: number; per_order_fee: number | string; currency: string }>
+  const rate = rates.find((r) => r.tenant_id === tenantId) ?? rates.find((r) => r.tenant_id === null)
+  const monthlyFeeCents = rate ? toCents(rate.monthly_fee) : 0
+  const perOrderCents = rate ? toCents(rate.per_order_fee) : 0
+  const includedOrders = rate?.included_orders ?? 0
+  const overageOrders = Math.max(ordersThisMonth - includedOrders, 0)
+  const addons = (await addonChargesFor(supabase, [tenantId], "orders", ORDER_ADDONS)).get(tenantId) ?? []
+  const addonsCents = addons.reduce((sum, a) => sum + a.feeCents, 0)
+  return {
+    monthlyFeeCents,
+    includedOrders,
+    perOrderCents,
+    currency: rate?.currency ?? "ZAR",
+    ordersThisMonth,
+    overageOrders,
+    addons,
+    estimatedCents: monthlyFeeCents + overageOrders * perOrderCents + addonsCents,
+  }
+}
+
+async function loadEventBilling(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  tenantId: string,
+  switchedOn: boolean,
+): Promise<EventBillingInfo | null> {
+  if (!switchedOn) return null
+  const { from, to } = thisMonthRangeUtc()
+  const [ratesRes, ticketsThisMonth] = await Promise.all([
+    supabase
+      .from("event_billing_rates")
+      .select("tenant_id, ticket_fee, currency")
+      .eq("is_active", true)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`),
+    countTicketsInRange(supabase, tenantId, from, to),
+  ])
+  const rates = (ratesRes.data ?? []) as Array<{ tenant_id: string | null; ticket_fee: number | string; currency: string }>
+  const rate = rates.find((r) => r.tenant_id === tenantId) ?? rates.find((r) => r.tenant_id === null)
+  const perTicketCents = rate ? toCents(rate.ticket_fee) : 0
+  const addons = (await addonChargesFor(supabase, [tenantId], "events", EVENT_ADDONS)).get(tenantId) ?? []
+  const addonsCents = addons.reduce((sum, a) => sum + a.feeCents, 0)
+  return { perTicketCents, currency: rate?.currency ?? "ZAR", ticketsThisMonth, addons, estimatedCents: perTicketCents * ticketsThisMonth + addonsCents }
 }
 
 async function loadShishaBilling(
@@ -252,7 +353,7 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
       getTenantVisitBreakdown(supabase, tenantId!),
       listPlans(supabase),
       supabase.from("tenants").select("status").eq("id", tenantId!).single(),
-      getEnabledProducts(supabase, tenantId!),
+      getBillableModules(supabase, tenantId!),
     ])
 
     // Real capabilities per plan for the comparison section -- straight
@@ -290,11 +391,11 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
       )
       .eq("tenant_id", tenantId)
       .order("period_start", { ascending: false })
-      .limit(24) // two products per month now
+      .limit(48) // up to five products per month now
 
     const invoices: TenantInvoice[] = (invoiceRows ?? []).map((row: any) => ({
       id: row.id,
-      product: (row.product === "shisha" || row.product === "staff" ? row.product : "booking_queue") as InvoiceProduct,
+      product: (["shisha", "staff", "orders", "events"].includes(row.product) ? row.product : "booking_queue") as InvoiceProduct,
       detail: row.detail ?? null,
       periodStart: row.period_start,
       periodEnd: row.period_end,
@@ -320,13 +421,19 @@ export async function getBillingSummary(): Promise<{ ok: true; data: BillingSumm
     const billingStatus = deriveBillingStatus(tenantRow.data?.status ?? "active", currentPlan.key, invoices, runsBookingQueue)
     const shisha = await loadShishaBilling(supabase, tenantId!, products.shisha)
     const staff = await loadStaffBilling(supabase, tenantId!, products)
+    const [orders, events] = await Promise.all([
+      loadOrderBilling(supabase, tenantId!, products.orders),
+      loadEventBilling(supabase, tenantId!, products.events),
+    ])
 
     return {
       ok: true,
       data: {
-        products: { booking: products.booking, queue: products.queue, shisha: products.shisha, staff: products.staff },
+        products,
         shisha,
         staff,
+        orders,
+        events,
         currentPlan,
         usage,
         visitBreakdown,
