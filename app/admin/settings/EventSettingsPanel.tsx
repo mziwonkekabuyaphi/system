@@ -16,13 +16,15 @@
 import { useEffect, useRef, useState, useTransition } from "react"
 
 import { BRAND_SELECTED, BRAND_TEXT } from "@/components/admin/brand"
-import type { EventSalesRules, EventTicketHeaderStyle, EventTicketSettings, VvipTableSettings } from "@/lib/services/event-settings"
+import type { EventSalesRules, EventTicketHeaderStyle, EventTicketSettings, VvipPassSettings, VvipTableSettings } from "@/lib/services/event-settings"
 
 import {
   getEventSettings,
   previewEventTicket,
+  previewTablePass,
   updateEventSalesRules,
   updateEventTicketSettings,
+  updateVvipPassSettings,
   updateVvipTableSettings,
   type EventSettingsConfig,
 } from "../events/event-settings-actions"
@@ -67,6 +69,7 @@ export function EventSettingsPanel() {
     <div className="space-y-4">
       <SalesRulesCard initial={config.rules} />
       <TablesCard initial={config.tables} />
+      <TablePassCard initial={config.pass} />
       <TicketCard config={config} />
     </div>
   )
@@ -203,6 +206,117 @@ function SalesRulesCard({ initial }: { initial: EventSalesRules }) {
         >
           <input type="number" min={0} max={10080} className={inputClass} value={stopMinutes} onChange={(e) => setStopMinutes(e.target.value)} />
         </FieldRow>
+      </div>
+    </SettingsCard>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// VVIP table pass (QR code + branded image after a table is booked)
+// ---------------------------------------------------------------------------
+
+function TablePassCard({ initial }: { initial: VvipPassSettings }) {
+  const [form, setForm] = useState<VvipPassSettings>(initial)
+  const [baseline, setBaseline] = useState<VvipPassSettings>(initial)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<Message>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const previewSeq = useRef(0)
+
+  useEffect(() => {
+    const seq = ++previewSeq.current
+    const timer = setTimeout(async () => {
+      setPreviewing(true)
+      const res = await previewTablePass(form)
+      if (seq !== previewSeq.current) return
+      setPreviewing(false)
+      if (res.success) {
+        setPreview(res.dataUri)
+        setPreviewError(null)
+      } else {
+        setPreviewError(res.error)
+      }
+    }, 700)
+    return () => clearTimeout(timer)
+  }, [form])
+
+  const dirty = JSON.stringify(form) !== JSON.stringify(baseline)
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const res = await updateVvipPassSettings(form)
+      if (res.success) {
+        setBaseline(form)
+        setMessage({ ok: true, text: "Saved." })
+      } else {
+        setMessage({ ok: false, text: res.error })
+      }
+    })
+  }
+
+  return (
+    <SettingsCard
+      title="VVIP table pass"
+      description="After a customer books a table on WhatsApp they get the text confirmation, plus a QR code and/or a branded table pass image. Staff scan the QR under VVIP > Table buyers. Colours, logo and header style follow the Event ticket card below."
+      footer={
+        <CardSaveRow
+          dirty={dirty}
+          isPending={isPending}
+          onSave={save}
+          onDiscard={() => {
+            setForm(baseline)
+            setMessage(null)
+          }}
+          message={message}
+        />
+      }
+    >
+      <div className="space-y-4">
+        <div className="space-y-3 rounded-lg border border-line bg-canvas p-3">
+          <p className="text-sm font-medium text-ink">What table buyers receive</p>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-ink">{form.enabled ? "Table pass image is on" : "Table pass image is off"}</p>
+              <p className="text-xs text-ink-muted">The branded pass with the table, event and QR code on it.</p>
+            </div>
+            <Toggle checked={form.enabled} disabled={isPending} onChange={(next) => setForm((f) => ({ ...f, enabled: next, sendQr: next ? f.sendQr : true }))} />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div>
+              <p className="text-sm font-medium text-ink">{form.sendQr ? "QR code is on" : "QR code is off"}</p>
+              <p className="text-xs text-ink-muted">A separate plain QR code message. Turn it off to send the pass image only.</p>
+            </div>
+            <Toggle checked={form.sendQr} disabled={isPending} onChange={(next) => setForm((f) => ({ ...f, sendQr: next, enabled: next ? f.enabled : true }))} />
+          </div>
+          <p className="text-xs text-ink-muted">At least one stays on, so customers always get something to show.</p>
+        </div>
+
+        <div className={`grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] ${form.enabled ? "" : "opacity-60"}`}>
+          <div className="space-y-4">
+            <FieldRow label="Pass label">
+              <input className={inputClass} maxLength={40} placeholder="Table Confirmed" value={form.eyebrow ?? ""} onChange={(e) => setForm((f) => ({ ...f, eyebrow: e.target.value || null }))} />
+            </FieldRow>
+            <FieldRow label="Footer message" hint="Shown under the QR code.">
+              <input className={inputClass} maxLength={120} placeholder="Show this QR code at the venue" value={form.footerText ?? ""} onChange={(e) => setForm((f) => ({ ...f, footerText: e.target.value || null }))} />
+            </FieldRow>
+          </div>
+          <div className="max-w-[280px] space-y-2 lg:sticky lg:top-4 lg:self-start">
+            <p className="text-sm font-medium text-stone-800">Preview</p>
+            <div className="flex min-h-[320px] items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
+              {preview ? (
+                // eslint-disable-next-line @next/next/no-img-element -- generated data URI
+                <img src={preview} alt="Table pass preview" className="w-full" />
+              ) : (
+                <span className="px-3 text-center text-xs text-stone-400">{previewing ? "Rendering…" : "Preview appears here"}</span>
+              )}
+            </div>
+            {previewError && <p className="text-xs text-red-600">{previewError}</p>}
+            <p className="text-xs text-stone-400">Sample table. Uses your saved Event ticket look.</p>
+          </div>
+        </div>
       </div>
     </SettingsCard>
   )
