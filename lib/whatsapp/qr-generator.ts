@@ -105,3 +105,36 @@ export async function sendOrderTicketQrs(supabase: SupabaseClient, tenantId: str
   }
   return sent
 }
+
+/**
+ * The plain QR code for one VVIP table booking (it holds vvip_bookings.qr_token). Never throws; null on any problem.
+ */
+export async function getTableBookingQr(supabase: SupabaseClient, tenantId: string, bookingId: string): Promise<OrderQr | null> {
+  try {
+    const { data } = await supabase
+      .from("vvip_bookings")
+      .select("reference, qr_token")
+      .eq("tenant_id", tenantId)
+      .eq("id", bookingId)
+      .maybeSingle()
+    const row = data as { reference?: string; qr_token?: string } | null
+    if (!row?.qr_token) return null
+    return { url: await generateTicketQrCode(tenantId, bookingId, row.qr_token), caption: `Table ${row.reference ?? ""}`.trim() }
+  } catch (err) {
+    console.error("[qr-generator] table QR failed", { tenantId, error: err instanceof Error ? err.message : String(err) })
+    return null
+  }
+}
+
+/** Sends the plain table QR on WhatsApp. Returns true when it went. */
+export async function sendTableBookingQr(supabase: SupabaseClient, tenantId: string, bookingId: string, phone: string): Promise<boolean> {
+  const qr = await getTableBookingQr(supabase, tenantId, bookingId)
+  if (!qr) return false
+  try {
+    await sendWhatsAppImageMessage(tenantId, phone, qr.url, qr.caption)
+    return true
+  } catch (err) {
+    console.error("[qr-generator] table QR send failed", { tenantId, error: err instanceof Error ? err.message : String(err) })
+    return false
+  }
+}

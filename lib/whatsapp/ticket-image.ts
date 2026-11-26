@@ -47,8 +47,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { cleanHex, type HeaderStyle, type ResolvedTicketStyle } from "@/lib/whatsapp/booking-ticket-render"
 import { renderEventTicketPng, type RenderableEventTicket } from "@/lib/whatsapp/event-ticket-render"
-import { loadEventTicketDelivery, ticketSettingsToRow, type EventTicketSettings } from "@/lib/services/event-settings"
-import { sendOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
+import { loadEventTicketDelivery, loadVvipPassSettings, ticketSettingsToRow, type EventTicketSettings, type VvipPassSettings } from "@/lib/services/event-settings"
+import { sendOrderTicketQrs, sendTableBookingQr } from "@/lib/whatsapp/qr-generator"
 
 const IMAGE_BUCKET = "ticket-images"
 const MAX_IMAGES_PER_ORDER = 10
@@ -479,6 +479,153 @@ export async function renderEventTicketPreview(tenantId: string, overrides: Even
     return await renderEventTicketPng(look.style, toRenderable(look, ctx, ticket, 0, "0731234567"))
   } catch (error) {
     console.error("[ticket-image] preview failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
+    return null
+  }
+}
+
+// ----------------------------------------------------------------------------
+// VVIP table pass (same engine and look as the event ticket; see Event settings > Table pass)
+// ----------------------------------------------------------------------------
+
+const DEFAULT_TABLE_EYEBROW = "Table Confirmed"
+const DEFAULT_TABLE_FOOTER = "Show this QR code at the venue"
+
+interface TablePassData {
+  packageName: string
+  tableLabel: string | null
+  seats: number | null
+  eventName: string
+  startTime: string
+  endTime: string | null
+  location: string | null
+  reference: string
+  pricePaid: number
+  customerName: string | null
+  qrToken: string
+}
+
+function tablePassRenderable(look: TenantTicketLook, d: TablePassData, pass: VvipPassSettings, phone: string): { style: ResolvedTicketStyle; renderable: RenderableEventTicket } {
+  const { timeZone, currency } = look
+  const start = formatTime(d.startTime, timeZone)
+  const end = d.endTime ? formatTime(d.endTime, timeZone) : ""
+  const seats = d.seats && d.seats > 0 ? `${d.seats} seat${d.seats === 1 ? "" : "s"}` : ""
+  const table = d.tableLabel ? `Table ${d.tableLabel}` : ""
+  return {
+    // Same look as the event ticket; only the two texts come from the table pass settings.
+    style: { ...look.style, eyebrow: pass.eyebrow?.trim() || DEFAULT_TABLE_EYEBROW, footerText: pass.footerText?.trim() || DEFAULT_TABLE_FOOTER },
+    renderable: {
+      eventName: d.eventName,
+      priceLabel: formatMoney(d.pricePaid, currency),
+      dateLabel: formatDate(d.startTime, timeZone),
+      timeLabel: start && end && end !== start ? `${start} - ${end}` : start,
+      location: d.location,
+      tierName: d.packageName,
+      entriesLabel: [table, seats].filter(Boolean).join(" · ") || null,
+      customerName: d.customerName,
+      phone: displayPhone(phone) || null,
+      ticketLabel: d.reference,
+      qrValue: d.qrToken,
+    },
+  }
+}
+
+async function loadTablePassData(supabase: SupabaseClient, tenantId: string, bookingId: string): Promise<TablePassData> {
+  const { data: b, error } = await supabase
+    .from("vvip_bookings")
+    .select("reference, package_id, table_id, customer_id, price_paid, qr_token")
+    .eq("tenant_id", tenantId)
+    .eq("id", bookingId)
+    .maybeSingle()
+  if (error || !b) throw error ?? new Error("table booking not found")
+  const row = b as { reference: string; package_id: string; table_id: string | null; customer_id: string | null; price_paid: number | string; qr_token: string | null }
+  if (!row.qr_token) throw new Error("booking has no qr_token")
+
+  const [pkgRes, tableRes, custRes] = await Promise.all([
+    supabase.from("vvip_packages").select("name, seats_per_table, event_id").eq("tenant_id", tenantId).eq("id", row.package_id).maybeSingle(),
+    row.table_id ? supabase.from("vvip_tables").select("label").eq("tenant_id", tenantId).eq("id", row.table_id).maybeSingle() : Promise.resolve({ data: null }),
+    row.customer_id ? supabase.from("tenant_customers").select("full_name").eq("tenant_id", tenantId).eq("id", row.customer_id).maybeSingle() : Promise.resolve({ data: null }),
+  ])
+  const pkg = pkgRes.data as { name: string; seats_per_table: number | null; event_id: string } | null
+  if (!pkg) throw new Error("package not found")
+  const { data: ev } = await supabase.from("events").select("name, start_time, end_time, location").eq("tenant_id", tenantId).eq("id", pkg.event_id).maybeSingle()
+  const event = ev as { name: string; start_time: string; end_time: string | null; location: string | null } | null
+  if (!event) throw new Error("event not found")
+
+  return {
+    packageName: pkg.name,
+    tableLabel: (tableRes.data as { label?: string } | null)?.label?.trim() || null,
+    seats: pkg.seats_per_table ? Number(pkg.seats_per_table) : null,
+    eventName: event.name,
+    startTime: event.start_time,
+    endTime: event.end_time,
+    location: event.location?.trim() || null,
+    reference: row.reference,
+    pricePaid: Number(row.price_paid) || 0,
+    customerName: ((custRes.data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null,
+    qrToken: row.qr_token,
+  }
+}
+
+/**
+ * Draws and sends the branded table pass AFTER the current request has finished (the plain QR is sent separately,
+ * see vvip-tables.ts / settle.ts). Does nothing when the shop switched the image off. If the image fails and the
+ * shop doesn't send the plain QR, the QR is sent instead. Never throws.
+ */
+export function scheduleTablePassImage(tenantId: string, bookingId: string, phone: string): void {
+  try {
+    after(async () => {
+      let qrCovered = true
+      const supabase = getSupabaseServerClient()
+      try {
+        if (!supabase) throw new Error("Supabase client unavailable")
+        const pass = await loadVvipPassSettings(supabase, tenantId)
+        qrCovered = pass.sendQr || !pass.enabled
+        if (!pass.enabled) return
+        const [look, data] = await Promise.all([resolveTenantLook(supabase, tenantId), loadTablePassData(supabase, tenantId, bookingId)])
+        const { style, renderable } = tablePassRenderable(look, data, pass, phone)
+        const url = await renderAndUpload(supabase, tenantId, bookingId, style, renderable)
+        await sendWhatsAppImageMessage(tenantId, phone, url, "See you there! 🍾")
+      } catch (err) {
+        console.error("[ticket-image] table pass failed", { tenantId, bookingId, error: err instanceof Error ? err.message : String(err) })
+        if (qrCovered) {
+          await sendWhatsAppTextMessage(tenantId, phone, "Sorry, we couldn't create your table pass image. Your QR code and reference above still work at the venue.").catch(() => {})
+        } else if (supabase) {
+          await sendWhatsAppTextMessage(tenantId, phone, "Sorry, we couldn't create your table pass image. Here is your QR code instead. Show it at the venue.").catch(() => {})
+          await sendTableBookingQr(supabase, tenantId, bookingId, phone).catch(() => false)
+        }
+      }
+    })
+  } catch (err) {
+    console.error("[ticket-image] could not schedule table pass", { tenantId, bookingId, error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+/** Sample table pass for the Event settings preview: unsaved texts, the shop's real name, logo and event look. */
+export async function renderTablePassPreview(tenantId: string, pass: VvipPassSettings): Promise<Buffer | null> {
+  try {
+    const supabase = getSupabaseServerClient()
+    if (!supabase) return null
+    const look = await resolveTenantLook(supabase, tenantId)
+    const start = new Date()
+    start.setDate(start.getDate() + 14)
+    start.setHours(19, 0, 0, 0)
+    const data: TablePassData = {
+      packageName: "Paradise Xperience",
+      tableLabel: "A3",
+      seats: 6,
+      eventName: "Summer Sessions Live",
+      startTime: start.toISOString(),
+      endTime: new Date(start.getTime() + 4 * 60 * 60_000).toISOString(),
+      location: "12 Main Road, Cape Town",
+      reference: "VIP-4K7Q2M",
+      pricePaid: 2500,
+      customerName: "Mziwonke KaBuyaphi",
+      qrToken: "preview-table-sample",
+    }
+    const { style, renderable } = tablePassRenderable(look, data, pass, "0731234567")
+    return await renderEventTicketPng(style, renderable)
+  } catch (error) {
+    console.error("[ticket-image] table pass preview failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
     return null
   }
 }
