@@ -35,6 +35,8 @@ const PURPOSE_LABELS: Record<string, string> = {
   concierge_reply: "Answering questions",
   booking_parser: "Reading booking requests",
   shisha_entry: "Reading shisha requests",
+  ticket_entry: "Reading ticket requests",
+  order_entry: "Reading order requests",
 }
 
 const BLOCKED_MESSAGES: Record<string, string> = {
