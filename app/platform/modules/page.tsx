@@ -49,7 +49,7 @@ type Spec = {
 const SPECS: Spec[] = [
   // ── products ──
   { key: "orders", label: "Product / Item Management", icon: "📦", blurb: "Products, catalogue, vendors and WhatsApp ordering with a live order board", defaultOn: false, planGated: false },
-  { key: "staff", label: "Staff Management", icon: "👷", blurb: "Staff profiles and team management", hint: "R30 per staff, only when sold alone", defaultOn: false, planGated: false },
+  { key: "staff", label: "Staff Management", icon: "👷", blurb: "Staff profiles and team management", hint: "Per staff, on every module except Booking & Queue", defaultOn: false, planGated: false },
   { key: "events", label: "Event Management", icon: "🎟️", blurb: "Events, ticket sales and QR gate check-in", defaultOn: false, planGated: false },
   { key: "booking", label: "Booking", icon: "📅", blurb: "Customers book appointments by WhatsApp or online", defaultOn: false, planGated: false },
   { key: "queue", label: "Queue", icon: "🚶", blurb: "Walk-in tickets and a live queue", defaultOn: false, planGated: false },
