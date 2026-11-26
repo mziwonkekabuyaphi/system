@@ -32,7 +32,9 @@ import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 import { formatPassportMoney } from "@/lib/services/passport"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
-import { loadVvipTableSettings } from "@/lib/services/event-settings"
+import { loadVvipPassSettings, loadVvipTableSettings } from "@/lib/services/event-settings"
+import { getTenantDisplayName, scheduleTablePassImage } from "@/lib/whatsapp/ticket-image"
+import { getTableBookingQr } from "@/lib/whatsapp/qr-generator"
 import { buildChoiceList, clip } from "@/lib/whatsapp/utils/choice-list"
 import { getEventPaymentOptions } from "@/lib/payments/event-checkout"
 import {
@@ -372,7 +374,7 @@ async function proceedToTablePayment(
   if (quote.price <= 0) {
     const res = await buyTableWithPassport({ supabase, tenantId, customerId, packageId, tableId, idempotencyKey: randomUUID() })
     if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
-    return await confirmedReply(supabase, tenantId, res.bookingId)
+    return await confirmedReply(supabase, tenantId, res.bookingId, customerId)
   }
 
   const options = await getEventPaymentOptions(supabase, tenantId, customerId, quote.price)
@@ -436,12 +438,13 @@ export async function buildTableConfirmation(
     payment_method: string
   }
 
-  const [pkgRes, tableRes, timeZone] = await Promise.all([
+  const [pkgRes, tableRes, timeZone, pass] = await Promise.all([
     supabase.from("vvip_packages").select("name, seats_per_table, event_id").eq("tenant_id", tenantId).eq("id", b.package_id).maybeSingle(),
     b.table_id
       ? supabase.from("vvip_tables").select("label").eq("tenant_id", tenantId).eq("id", b.table_id).maybeSingle()
       : Promise.resolve({ data: null }),
     getTenantTimezone(supabase, tenantId).catch(() => DEFAULT_TZ),
+    loadVvipPassSettings(supabase, tenantId),
   ])
   const pkg = pkgRes.data as { name: string; seats_per_table: number; event_id: string } | null
   const { data: eventData } = pkg
@@ -465,13 +468,31 @@ export async function buildTableConfirmation(
   lines.push(`🔖 Reference: *${b.reference}*`)
   if (paid > 0) lines.push(`💳 Paid: ${money(paid)}`)
   if (credit > 0) lines.push(`🥂 Bar tab: ${money(credit)} loaded and ready to use`)
-  lines.push("", "Show your reference at the venue and the team will take you to your table.")
+  lines.push("", "Show your QR code or reference at the venue and the team will take you to your table.")
+  if (pass.enabled) {
+    const shop = await getTenantDisplayName(supabase, tenantId)
+    lines.push(`⏳ *${shop}* is generating your table pass image. It will arrive here in about 30 seconds.${pass.sendQr ? " Your QR code already works." : " Your reference already works."}`)
+  }
   return lines.join("\n")
 }
 
-async function confirmedReply(supabase: SupabaseClient, tenantId: string, bookingId: string): Promise<ActionResult> {
+/** Confirmation text, then the plain QR (ActionResult.media) and, after the reply, the branded table pass image. */
+async function confirmedReply(supabase: SupabaseClient, tenantId: string, bookingId: string, customerId: string): Promise<ActionResult> {
   const text = await buildTableConfirmation(supabase, tenantId, bookingId)
-  return finish(text, ["Events", "Main Menu"])
+  let media: { url: string; caption?: string }[] = []
+  try {
+    const pass = await loadVvipPassSettings(supabase, tenantId)
+    const { data: cust } = await supabase.from("tenant_customers").select("phone").eq("tenant_id", tenantId).eq("id", customerId).maybeSingle()
+    const phone = (cust as { phone?: string } | null)?.phone
+    if (pass.sendQr || !pass.enabled) {
+      const qr = await getTableBookingQr(supabase, tenantId, bookingId)
+      if (qr) media = [qr]
+    }
+    if (phone) scheduleTablePassImage(tenantId, bookingId, phone)
+  } catch (err) {
+    console.error("[vvip-tables] table pass delivery failed (table is already booked)", err instanceof Error ? err.message : String(err))
+  }
+  return { ...finish(text, ["Events", "Main Menu"]), ...(media.length > 0 ? { media } : {}) }
 }
 
 /** The customer's upcoming tables, as lines for the "My tickets" reply. Never throws; [] when none. */
@@ -633,7 +654,7 @@ export async function handleTableState(args: {
           if (!buttons.includes("Passport")) return stay(state.state, data, "Passport isn't available for this table. Please choose another option.", buttons)
           const res = await buyTableWithPassport({ supabase, tenantId, customerId, packageId, tableId, idempotencyKey: nonce })
           if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
-          return await confirmedReply(supabase, tenantId, res.bookingId)
+          return await confirmedReply(supabase, tenantId, res.bookingId, customerId)
         }
 
         if (!buttons.includes(PAY_NOW_BUTTON)) return stay(state.state, data, "Online payment isn't available for this table. Please choose another option.", buttons)

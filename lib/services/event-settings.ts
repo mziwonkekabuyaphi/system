@@ -54,6 +54,23 @@ export interface VvipTableSettings {
 
 export const DEFAULT_VVIP_TABLE_SETTINGS: VvipTableSettings = { customersPickTable: false }
 
+/**
+ * What a customer is sent after booking a VVIP table (tenant_vvip_ticket_settings). The look (colours, logo,
+ * header style, what to show) follows Event settings > Ticket; only these switches and two texts live here.
+ */
+export interface VvipPassSettings {
+  /** The branded table pass image. */
+  enabled: boolean
+  /** The plain QR code message. At least one of `enabled` / `sendQr` must be on. */
+  sendQr: boolean
+  /** null = "Table Confirmed" */
+  eyebrow: string | null
+  /** null = "Show this QR code at the venue" */
+  footerText: string | null
+}
+
+export const DEFAULT_VVIP_PASS_SETTINGS: VvipPassSettings = { enabled: true, sendQr: true, eyebrow: null, footerText: null }
+
 export const MAX_EYEBROW = 40
 export const MAX_FOOTER = 120
 export const HEX = /^#[0-9a-fA-F]{6}$/
@@ -109,6 +126,28 @@ export function vvipTableSettingsFromRow(row: Row | null | undefined): VvipTable
 
 export function vvipTableSettingsToRow(s: VvipTableSettings) {
   return { customers_pick_table: s.customersPickTable === true }
+}
+
+export function vvipPassSettingsFromRow(row: Row | null | undefined): VvipPassSettings {
+  if (!row) return DEFAULT_VVIP_PASS_SETTINGS
+  const text = (k: string) => (typeof row[k] === "string" && (row[k] as string).trim() ? (row[k] as string).trim() : null)
+  return {
+    enabled: typeof row.enabled === "boolean" ? row.enabled : true,
+    sendQr: typeof row.send_qr === "boolean" ? row.send_qr : true,
+    eyebrow: text("eyebrow"),
+    footerText: text("footer_text"),
+  }
+}
+
+export function vvipPassSettingsToRow(s: VvipPassSettings) {
+  return { enabled: s.enabled, send_qr: s.sendQr, eyebrow: s.eyebrow?.trim() || null, footer_text: s.footerText?.trim() || null }
+}
+
+export function validateVvipPassSettings(s: VvipPassSettings): string | null {
+  if (!s.enabled && !s.sendQr) return "Keep at least one on: the table pass image or the QR code. Otherwise customers would get nothing to show at the venue."
+  if ((s.eyebrow ?? "").trim().length > MAX_EYEBROW) return `Pass label must be ${MAX_EYEBROW} characters or fewer.`
+  if ((s.footerText ?? "").trim().length > MAX_FOOTER) return `Footer text must be ${MAX_FOOTER} characters or fewer.`
+  return null
 }
 
 export function validateSalesRules(r: EventSalesRules): string | null {
@@ -198,6 +237,18 @@ export async function loadVvipTableSettings(supabase: SupabaseClient, tenantId: 
     return vvipTableSettingsFromRow(data as Row | null)
   } catch {
     return DEFAULT_VVIP_TABLE_SETTINGS
+  }
+}
+
+/** What a table buyer is sent. Defaults to both (also when no row exists, the table is missing or the read fails). */
+export async function loadVvipPassSettings(supabase: SupabaseClient, tenantId: string): Promise<VvipPassSettings> {
+  try {
+    const { data, error } = await supabase.from("tenant_vvip_ticket_settings").select("*").eq("tenant_id", tenantId).maybeSingle()
+    if (error) return DEFAULT_VVIP_PASS_SETTINGS
+    const v = vvipPassSettingsFromRow(data as Row | null)
+    return { ...v, sendQr: v.sendQr || !v.enabled }
+  } catch {
+    return DEFAULT_VVIP_PASS_SETTINGS
   }
 }
 
