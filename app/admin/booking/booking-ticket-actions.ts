@@ -226,7 +226,7 @@ export async function previewBookingTicket(input: AdminBookingTicketSettings): P
       {
         bookingId: "preview",
         bookingReference: "H456R",
-        customerName: "Thandi Mokoena",
+        customerName: "Mziwonke KaBuyaphi",
         customerPhone: "0731234567",
         serviceNames: ["Hair Cut", "Beard Trim"],
         totalPrice: 250,
