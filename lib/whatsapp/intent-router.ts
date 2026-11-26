@@ -1,7 +1,8 @@
 import { generateObject } from "ai"
+import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 
-import { withTenantAi } from "@/lib/ai/gateway"
+import { getAiModelName } from "@/lib/ai/openai"
 import { detectShopFaq } from "@/lib/ai/shop-faq"
 
 /**
@@ -362,6 +363,16 @@ const EVENT_PHRASES = new Set([
   "check my tickets",
   "buy tickets",
   "event tickets",
+  // VVIP tables: event-tickets.ts hands these to the table flow (vvip-tables.ts)
+  "tables",
+  "vip tables",
+  "vvip tables",
+  "book a table",
+  "book table",
+  "buy a table",
+  "buy table",
+  "vip",
+  "vvip",
 ])
 
 // Exact phrases for ordering from the shop's menu (and managing such an order). Exact on purpose.
@@ -626,12 +637,9 @@ where is my order
 repeat my last order
 
 events
-Customer wants to know what events are on, to BUY / book / get tickets for an
-event, or to see their own event tickets. A full sentence with details still
-counts ("2 VIP tickets for Saturday"). A question about prices of services, or
-about whether the shop hosts events, is "support". A walk-in queue ticket is
-NOT an event ticket; tickets for an event, party, show, VIP or general
-admission ARE.
+Customer wants to know what events are on, or to see their own event tickets.
+Only for these: a question about prices of services, or about whether the shop
+hosts events, is "support". A walk-in queue ticket is NOT an event ticket.
 
 Examples:
 
@@ -640,12 +648,6 @@ what events are on
 show me upcoming events
 
 my tickets
-
-book me 2 vip tickets
-
-I want 4 general tickets for the party on Saturday
-
-get me a ticket for tonight
 
 wallet
 Customer wants to see their Passport / wallet: their balance, their recent
@@ -700,12 +702,6 @@ walk-in
 appointment for Saturday
 
 reserve a slot
-
-book me a haircut tomorrow at 5
-
-book me trim and beard for tomorrow at 5pm
-
-can I get a fade on Friday morning
 
 status
 Customer wants to CHECK something they already have: their upcoming
@@ -1029,46 +1025,6 @@ Return:
 - confidence: 0..1 reflecting how certain you are.
 `;
 
-/** Which optional modules the shop runs. Missing/undefined = unknown, so the full prompt is used. */
-export interface IntentModules {
-  shisha?: boolean
-  wallet?: boolean
-  events?: boolean
-  orders?: boolean
-}
-
-/**
- * The base prompt plus a short, shop-specific footer: which optional intents this shop does NOT run
- * (so a request for them is "support", never a dead-end flow), and a reminder that a full natural
- * sentence with details ("book me trim and beard tomorrow at 5pm", "2 vip tickets", "2 castle lagers")
- * is classified by what the customer WANTS, not by how long the sentence is.
- */
-function buildSystemPrompt(modules?: IntentModules): string {
-  if (!modules) return SYSTEM_PROMPT
-
-  const off: string[] = []
-  if (modules.shisha === false) off.push("shisha")
-  if (modules.wallet === false) off.push("wallet")
-  if (modules.events === false) off.push("events")
-  if (modules.orders === false) off.push("order")
-
-  const lines = [
-    "",
-    "SHOP CONFIGURATION",
-    off.length > 0
-      ? `This shop does NOT run these intents: ${off.join(", ")}. Never return them. A customer asking for one of them gets "support".`
-      : "This shop runs every intent listed above.",
-    "",
-    "NATURAL SENTENCES",
-    "Customers often write one full sentence with all the details. Classify by what they WANT:",
-    '"book me trim and beard for tomorrow at 5pm" -> booking',
-    '"book me 2 vip tickets" -> events (only if events is available)',
-    '"2 castle lagers please" -> order (only if order is available)',
-    '"shisha for table 5, double apple" -> shisha (only if shisha is available)',
-  ]
-  return `${SYSTEM_PROMPT}\n${lines.join("\n")}`
-}
-
 /**
  * Builds the text we hand to the AI classifier, in priority order:
  *   1. message.text       (plain text messages)
@@ -1251,13 +1207,6 @@ export async function routeIntent(
   options?: {
     /** false = never call the model (shop has AI off, over the hourly cap, etc.). Default true. */
     allowAi?: boolean
-    /**
-     * Whose AI account pays for the call. REQUIRED for the model to run: the classifier goes through the
-     * tenant AI gateway (their own key / limit / usage), never a shared platform key.
-     */
-    tenantId?: string
-    /** Which optional modules this shop runs; tunes the prompt. Omit = generic prompt. */
-    modules?: IntentModules
   },
 ): Promise<RoutedIntent> {
   const text = buildClassificationText(message)
@@ -1328,13 +1277,7 @@ export async function routeIntent(
 
   // ── STEP 4: AI CLASSIFICATION ───────────────────────────────────
   // Catch-all for complex, non-obvious messages.
-  // No tenant = nobody to bill and no key to use: treat as "AI unavailable", exactly like AI off.
-  if (!options?.tenantId) {
-    return applyLowConfidenceFloor(buildAiFailureResult(context, "AI unavailable: no tenant"))
-  }
-  const tenantId = options.tenantId
-
-  const CLASSIFICATION_TIMEOUT_MS = 3500
+  const CLASSIFICATION_TIMEOUT_MS = 3000
 
   // A real abort (not Promise.race): a timed-out request is cancelled
   // instead of finishing and being billed in the background.
@@ -1344,20 +1287,15 @@ export async function routeIntent(
   try {
     console.log("[IntentRouter] AI fallback used for:", text)
 
-    // BUG FIX: this used to call the OpenAI SDK directly with the platform's env key, bypassing the
-    // tenant AI gateway. Shops on their own key (BYOK) therefore got no classification at all
-    // (every free-text message fell back to the greeting + menu). Now it uses the tenant's key,
-    // limit and usage ledger like every other AI call.
-    const object = await withTenantAi({ tenantId, purpose: "intent_classification" }, async (model, ctx) => {
-      const result = await generateObject({
-        model,
-        schema: intentSchema,
-        system: buildSystemPrompt(options.modules),
-        prompt: text,
-        ...ctx.tune({ temperature: 0, maxOutputTokens: 40 }),
-        abortSignal: controller.signal,
-      })
-      return { value: result.object, usage: result.usage }
+    const { object } = await generateObject({
+      // Optional cheaper model just for classification (six labels).
+      model: openai(process.env.OPENAI_CLASSIFIER_MODEL?.trim() || getAiModelName()),
+      schema: intentSchema,
+      system: SYSTEM_PROMPT,
+      prompt: text,
+      temperature: 0,
+      maxOutputTokens: 40, // AI SDK v4: use `maxTokens`
+      abortSignal: controller.signal,
     })
 
     const reconciled = reconcileAiResult(object, context, isContinuation)
@@ -1368,6 +1306,7 @@ export async function routeIntent(
       reconciled.intent,
       reconciled.reasoning,
     )
+
     return applyLowConfidenceFloor(reconciled)
   } catch (error) {
     console.log("[IntentRouter] AI classification failed:", error)
