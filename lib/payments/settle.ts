@@ -21,6 +21,7 @@ import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsap
 import { formatPassportMoney } from "@/lib/services/passport"
 import { sendOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { loadEventTicketDelivery } from "@/lib/services/event-settings"
+import { buildTableConfirmation } from "@/lib/services/vvip-tables"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 import { scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
 import * as shishaMessages from "@/lib/services/messages/shisha"
@@ -38,7 +39,7 @@ import type { CardProvider, NormalisedWebhook } from "./providers"
 type Db = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
 /** Messages the ticket function raises for rules the customer can't beat (not outages). */
-const BUSINESS_FAILURE = /Only \d+ left|price_changed|not on sale|has ended|Invalid ticket|Event not found|Customer not found/i
+const BUSINESS_FAILURE = /Only \d+ left|price_changed|not on sale|n't on sale|No tables left|Package not found|has ended|Invalid ticket|Event not found|Customer not found/i
 
 export async function recordProblem(db: Db, integrationId: string, message: string): Promise<void> {
   await db
@@ -125,6 +126,24 @@ export async function settleSucceeded(args: {
     await markSucceeded(db, payment.id as string, event.providerPaymentId)
     await notifyOrder(db, provider, tenantId, (order as { id: string }).id)
     return "tickets_issued"
+  }
+
+  if (payment.purpose === "vvip_booking") {
+    const { data: booking, error: fulfilError } = await db.rpc("vvip_fulfil_card_booking_whatsapp", {
+      p_payment_id: payment.id,
+      p_provider_reference: providerRef,
+    })
+    if (fulfilError) {
+      // The last table went (or the package/event closed) while the customer was paying: refund. Anything else is on us: retry.
+      if (BUSINESS_FAILURE.test(fulfilError.message ?? "")) {
+        return await refundAfterFailedFulfilment(db, provider, connection, payment, fulfilError.message ?? "", "table")
+      }
+      throw new Error(`vvip_fulfil_card_booking_whatsapp failed: ${fulfilError.message}`)
+    }
+    await markSucceeded(db, payment.id as string, event.providerPaymentId)
+    const bookingRow = Array.isArray(booking) ? booking[0] : booking
+    await notifyTable(db, provider, tenantId, (bookingRow as { id: string }).id, (payment.metadata as Record<string, unknown> | null)?.customer_id as string | undefined)
+    return "table_booked"
   }
 
   if (payment.purpose === "shisha_request") {
@@ -269,7 +288,7 @@ async function refundAfterFailedFulfilment(
   connection: StoredConnection,
   payment: { id: unknown; provider_checkout_id: unknown; metadata: unknown; purpose_id?: unknown },
   reason: string,
-  kind: "tickets" | "shisha" | "order" | "booking" = "tickets",
+  kind: "tickets" | "shisha" | "order" | "booking" | "table" = "tickets",
 ): Promise<string> {
   const paymentId = payment.id as string
   const checkoutId = payment.provider_checkout_id as string
@@ -305,6 +324,8 @@ async function refundAfterFailedFulfilment(
         ? `A shisha payment came in but the request could no longer be served, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
         : kind === "order"
         ? `An order payment came in but the order had already been cancelled, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
+        : kind === "table"
+        ? `A table payment came in but the table could no longer be booked, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
         : kind === "booking"
         ? `A booking payment came in after the held time had run out, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`
         : `A ticket payment came in but the tickets could not be issued, and it could not be refunded automatically. Please refund it in your ${provider.label} portal.`,
@@ -314,6 +335,10 @@ async function refundAfterFailedFulfilment(
   if (kind === "shisha") {
     await notifyShishaRefund(db, provider, connection.tenantId, payment.purpose_id as string | undefined, refunded)
     return refunded ? "refunded_shisha_request_closed" : "refund_needed_shisha_request_closed"
+  }
+  if (kind === "table") {
+    await notifyTableRefund(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
+    return refunded ? "refunded_table_unavailable" : "refund_needed_table_unavailable"
   }
   if (kind === "booking") {
     await notifyBookingRefund(db, provider, connection.tenantId, payment.metadata as Record<string, unknown>, refunded)
@@ -367,6 +392,38 @@ async function phoneForCustomer(db: Db, tenantId: string, customerId: string | u
   if (!customerId) return null
   const { data } = await db.from("tenant_customers").select("phone").eq("id", customerId).eq("tenant_id", tenantId).maybeSingle()
   return (data?.phone as string | undefined) ?? null
+}
+
+/** Best effort: the table is already booked whether or not this message goes. It is also under "My Tickets". */
+async function notifyTable(db: Db, provider: CardProvider, tenantId: string, bookingId: string, customerId: string | undefined) {
+  try {
+    const phone = await phoneForCustomer(db, tenantId, customerId)
+    if (!phone) return
+    const text = await buildTableConfirmation(db, tenantId, bookingId, "✅ *Payment received. Your table is booked!*")
+    await sendWhatsAppTextMessage(tenantId, phone, text)
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] table message failed (table is already booked)`, {
+      tenantId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+/** Best effort: tells the customer why their table payment is being refunded. */
+async function notifyTableRefund(db: Db, provider: CardProvider, tenantId: string, metadata: Record<string, unknown> | null, refunded: boolean) {
+  try {
+    const phone = await phoneForCustomer(db, tenantId, (metadata?.customer_id as string | undefined) ?? undefined)
+    if (!phone) return
+    await sendWhatsAppTextMessage(
+      tenantId,
+      phone,
+      refunded
+        ? "Sorry, the last table was taken while you were paying. Your payment has been refunded in full. It can take a few days to show on your statement."
+        : "Sorry, the last table was taken while you were paying. You will be refunded in full. The shop has been told and will sort it out with you.",
+    )
+  } catch (error) {
+    console.error(`[${provider.id}-webhook] table refund message failed`, { tenantId, error: error instanceof Error ? error.message : String(error) })
+  }
 }
 
 /** Best effort: the tickets already exist whether or not this message goes. They are also under "My Tickets". */
