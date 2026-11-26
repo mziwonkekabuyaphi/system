@@ -25,6 +25,8 @@ export function OrdersManager({
   permissions,
   timezone,
   currency,
+  stockTakeEnabled,
+  barcodeEnabled,
 }: {
   section: OrdersSection
   initialData: OrdersData
@@ -36,6 +38,9 @@ export function OrdersManager({
   permissions: OrdersPermissions
   timezone: string
   currency: string
+  /** Add-ons of Order management (Stock take, Barcode / label printing), from the module flags. */
+  stockTakeEnabled: boolean
+  barcodeEnabled: boolean
 }) {
   const [orders, setOrders] = useState(initialData.orders)
   const [products, setProducts] = useState(initialData.products)
@@ -69,6 +74,8 @@ export function OrdersManager({
           canManage={canManage}
           currency={currency}
           timezone={timezone}
+          stockTakeEnabled={stockTakeEnabled}
+          barcodeEnabled={barcodeEnabled}
         />
       )}
       {section === "catalogue" && (

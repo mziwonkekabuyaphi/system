@@ -20,6 +20,7 @@
 import { useMemo, useState } from "react"
 
 import { createProduct, deleteProduct, duplicateProduct, updateProduct, uploadProductImage } from "./actions"
+import { ComingSoonDialog } from "../ComingSoonDialog"
 import { StockTakeDrawer } from "./StockTakeDrawer"
 import { Drawer, EmptyState, Field, Pill, Stat, ToggleRow, Toggle, btn, cardCls, cx, inputCls, money, useNotice } from "./ui"
 import { PRODUCT_STATUSES, type AdminOrderVendor, type AdminProduct, type AdminProductCategory, type ProductInput, type ProductStatus } from "./types"
@@ -53,6 +54,8 @@ export function ProductsPanel({
   canManage,
   currency,
   timezone,
+  stockTakeEnabled,
+  barcodeEnabled,
 }: {
   products: AdminProduct[]
   onProductsChange: SetProducts
@@ -63,12 +66,16 @@ export function ProductsPanel({
   canManage: boolean
   currency: string
   timezone: string
+  /** Add-ons of Order management, switched per shop (platform admin > Modules). */
+  stockTakeEnabled: boolean
+  barcodeEnabled: boolean
 }) {
   const [query, setQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState<"" | "all" | ProductStatus>("")
   const [drawer, setDrawer] = useState<{ mode: "add" } | { mode: "edit"; id: string } | null>(null)
   const [stockTakeOpen, setStockTakeOpen] = useState(false)
+  const [labelsOpen, setLabelsOpen] = useState(false)
   const { show, node } = useNotice()
 
   const categoryName = useMemo(() => new Map(categories.map((c) => [c.id, c.label])), [categories])
@@ -134,11 +141,18 @@ export function ProductsPanel({
             </option>
           ))}
         </select>
-        <button type="button" className={cx(btn.ghost, "ml-auto")} onClick={() => setStockTakeOpen(true)}>
-          Stock take
-        </button>
+        {barcodeEnabled && (
+          <button type="button" className={cx(btn.ghost, "ml-auto")} onClick={() => setLabelsOpen(true)}>
+            Print labels
+          </button>
+        )}
+        {stockTakeEnabled && (
+          <button type="button" className={cx(btn.ghost, !barcodeEnabled && "ml-auto")} onClick={() => setStockTakeOpen(true)}>
+            Stock take
+          </button>
+        )}
         {canManage && (
-          <button type="button" className={btn.primary} onClick={() => setDrawer({ mode: "add" })}>
+          <button type="button" className={cx(btn.primary, !barcodeEnabled && !stockTakeEnabled && "ml-auto")} onClick={() => setDrawer({ mode: "add" })}>
             Add product
           </button>
         )}
@@ -314,7 +328,7 @@ export function ProductsPanel({
           onError={(m) => show(m, true)}
         />
       )}
-      {stockTakeOpen && (
+      {stockTakeEnabled && stockTakeOpen && (
         <StockTakeDrawer
           open
           onClose={() => setStockTakeOpen(false)}
@@ -322,6 +336,12 @@ export function ProductsPanel({
           canManage={canManage}
           onApplied={(stock) => onProductsChange((prev) => prev.map((p) => (p.id in stock ? { ...p, stockQuantity: stock[p.id] } : p)))}
         />
+      )}
+      {barcodeEnabled && (
+        <ComingSoonDialog open={labelsOpen} title="Barcode / label printing" onClose={() => setLabelsOpen(false)}>
+          <p>Print barcodes and shelf labels for your products straight from this list.</p>
+          <p className="text-ink-muted">This add-on is switched on for your business but isn&rsquo;t ready yet.</p>
+        </ComingSoonDialog>
       )}
       {node}
     </div>

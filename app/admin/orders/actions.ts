@@ -68,20 +68,26 @@ const VIEW = ["orders.view", "orders.operate", "orders.manage"] as PermissionKey
 const OPERATE = ["orders.operate", "orders.manage"] as PermissionKey[]
 const MANAGE = ["orders.manage"] as PermissionKey[]
 
-async function guard(anyOf: PermissionKey[]) {
+/** `addon` = an add-on module under Order management (e.g. "stock_take") that must also be on. */
+async function guard(anyOf: PermissionKey[], addon?: { key: string; name: string }) {
   const { tenantId, userId } = await requireTenantMember()
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new UserError("The server isn't configured.")
   const mods = await getEffectiveModules(tenantId)
   if (!mods.on("orders")) throw new UserError("Order management isn't switched on for this shop.")
+  if (addon && !mods.on(addon.key)) throw new UserError(`${addon.name} isn't switched on for this shop.`)
   const { granted } = await getTenantPermissions(anyOf)
   if (!anyOf.some((k) => granted.has(k))) throw new UserError("You don't have permission to do that.")
   return { supabase, tenantId, userId }
 }
 
-async function run<T>(anyOf: PermissionKey[], fn: (c: Awaited<ReturnType<typeof guard>>) => Promise<T>): Promise<ActionResult<T>> {
+async function run<T>(
+  anyOf: PermissionKey[],
+  fn: (c: Awaited<ReturnType<typeof guard>>) => Promise<T>,
+  addon?: { key: string; name: string },
+): Promise<ActionResult<T>> {
   try {
-    return { ok: true, data: await fn(await guard(anyOf)) }
+    return { ok: true, data: await fn(await guard(anyOf, addon)) }
   } catch (e) {
     // requireTenantMember() redirects by throwing; let Next handle that.
     if (e && typeof e === "object" && "digest" in e && String((e as { digest: unknown }).digest).startsWith("NEXT_REDIRECT")) throw e
@@ -865,6 +871,9 @@ function summarise(t: TakeRow, lines: Pick<LineRow, "counted_qty" | "applied_del
   }
 }
 
+/** Stock take is an add-on of Order management: platform admin > Modules > Stock take. */
+const STOCK_TAKE = { key: "stock_take", name: "Stock take" }
+
 const TAKE_COLUMNS = "id, name, notes, status, created_at, completed_at"
 
 export async function listStockTakes(): Promise<ActionResult<StockTakeSummary[]>> {
@@ -892,7 +901,7 @@ export async function listStockTakes(): Promise<ActionResult<StockTakeSummary[]>
       by.set(l.stock_take_id, arr)
     }
     return rows.map((r) => summarise(r, by.get(r.id) ?? []))
-  })
+  }, STOCK_TAKE)
 }
 
 export async function getStockTake(id: string): Promise<ActionResult<StockTakeDetail>> {
@@ -923,7 +932,7 @@ export async function getStockTake(id: string): Promise<ActionResult<StockTakeDe
           stockAfter: l.stock_after,
         })),
     }
-  })
+  }, STOCK_TAKE)
 }
 
 export async function startStockTake(name: string, notes?: string): Promise<ActionResult<{ id: string }>> {
@@ -937,7 +946,7 @@ export async function startStockTake(name: string, notes?: string): Promise<Acti
     if (r.outcome === "nothing_to_count") throw new UserError("No products have stock tracking switched on yet. Turn on \"Track inventory\" for the products you want to count.")
     if ((r.outcome === "ok" || r.outcome === "already_in_progress") && r.stock_take_id) return { id: r.stock_take_id }
     throw new UserError("Couldn't start the stock take. Try again.")
-  })
+  }, STOCK_TAKE)
 }
 
 export async function saveStockTakeCounts(id: string, counts: Array<{ productId: string; counted: number | null }>): Promise<ActionResult<{ saved: number }>> {
@@ -950,7 +959,7 @@ export async function saveStockTakeCounts(id: string, counts: Array<{ productId:
     if (r.outcome === "invalid_count") throw new UserError("Counts must be whole numbers from 0 upwards.")
     if (r.outcome === "not_in_progress") throw new UserError("This stock take is already finished.")
     throw new UserError("That stock take wasn't found.")
-  })
+  }, STOCK_TAKE)
 }
 
 export async function completeStockTake(id: string): Promise<ActionResult<StockTakeResult>> {
@@ -961,7 +970,7 @@ export async function completeStockTake(id: string): Promise<ActionResult<StockT
     if (r.outcome === "not_in_progress") throw new UserError("This stock take is already finished.")
     if (r.outcome !== "ok") throw new UserError("That stock take wasn't found.")
     return { counted: r.counted, adjusted: r.adjusted, unitsAdded: r.units_added, unitsRemoved: r.units_removed, stock: r.stock ?? {} }
-  })
+  }, STOCK_TAKE)
 }
 
 export async function cancelStockTake(id: string): Promise<ActionResult> {
@@ -975,5 +984,5 @@ export async function cancelStockTake(id: string): Promise<ActionResult> {
       .select("id")
     if (error) fail(error, "Cancel stock take")
     if (!data || data.length === 0) throw new UserError("This stock take is already finished.")
-  })
+  }, STOCK_TAKE)
 }
