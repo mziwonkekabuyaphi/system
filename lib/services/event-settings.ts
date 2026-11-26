@@ -46,6 +46,14 @@ export interface EventTicketSettings {
   showAddress: boolean
 }
 
+/** VVIP tables on WhatsApp (stored on tenant_event_settings, next to the sales rules). */
+export interface VvipTableSettings {
+  /** false = the customer is given the next free table (the default). true = they see the free tables and pick one. */
+  customersPickTable: boolean
+}
+
+export const DEFAULT_VVIP_TABLE_SETTINGS: VvipTableSettings = { customersPickTable: false }
+
 export const MAX_EYEBROW = 40
 export const MAX_FOOTER = 120
 export const HEX = /^#[0-9a-fA-F]{6}$/
@@ -93,6 +101,14 @@ export function salesRulesToRow(r: EventSalesRules) {
     max_per_customer: r.maxPerCustomer,
     stop_sales_minutes_before: r.stopSalesMinutesBefore,
   }
+}
+
+export function vvipTableSettingsFromRow(row: Row | null | undefined): VvipTableSettings {
+  return { customersPickTable: row?.customers_pick_table === true }
+}
+
+export function vvipTableSettingsToRow(s: VvipTableSettings) {
+  return { customers_pick_table: s.customersPickTable === true }
 }
 
 export function validateSalesRules(r: EventSalesRules): string | null {
@@ -171,6 +187,17 @@ export async function loadEventSalesRules(supabase: SupabaseClient, tenantId: st
     return salesRulesFromRow(data as Row | null)
   } catch {
     return DEFAULT_SALES_RULES
+  }
+}
+
+/** How a customer gets their VVIP table. Off (and on any read problem) = the next free table. */
+export async function loadVvipTableSettings(supabase: SupabaseClient, tenantId: string): Promise<VvipTableSettings> {
+  try {
+    // select("*") so a database without the customers_pick_table column yet still works (it reads as off).
+    const { data } = await supabase.from("tenant_event_settings").select("*").eq("tenant_id", tenantId).maybeSingle()
+    return vvipTableSettingsFromRow(data as Row | null)
+  } catch {
+    return DEFAULT_VVIP_TABLE_SETTINGS
   }
 }
 

@@ -11,14 +11,17 @@
  *   - Typing "tables" / "book a table" / "vip tables" starts here directly (see EVENT_PHRASES in intent-router.ts).
  *
  * STATES (all start with "events_" so event-tickets.ts / action-router.ts already route them):
- *   events_tbl_event -> events_tbl_package -> events_tbl_payment
- *   Tap-only, like tickets: event and package are WhatsApp lists (ids evt_tblevent: / evt_pkg:), payment is the
- *   Passport button or the Pay Now link.
+ *   events_tbl_event -> events_tbl_package -> [events_tbl_table] -> events_tbl_payment
+ *   Tap-only, like tickets: event, package and table are WhatsApp lists (ids evt_tblevent: / evt_pkg: / evt_tbl:),
+ *   payment is the Passport button or the Pay Now link.
+ *   events_tbl_table only appears when the tenant switched on "Customers choose their table" (Settings > Event
+ *   settings > VVIP tables) and the package has two or more free tables. Otherwise the customer is given the next free table.
  *
  * MONEY: Passport (or a free package) is one database call. Card: we only start the checkout; the signed webhook
  *   books the table after the payment is verified (settle.ts -> vvip_fulfil_card_booking_whatsapp), and refunds it
  *   if the last table went while the customer was paying.
- * The customer is given the next free table of the package; the booking reference is what the team looks up.
+ * The booking reference is what the team looks up. A card customer's picked table is kept with the payment: if someone
+ * else took it while they were paying, they get the next free table and the confirmation says so.
  */
 
 import { randomUUID } from "node:crypto"
@@ -29,13 +32,16 @@ import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 import { formatPassportMoney } from "@/lib/services/passport"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
+import { loadVvipTableSettings } from "@/lib/services/event-settings"
 import { buildChoiceList, clip } from "@/lib/whatsapp/utils/choice-list"
 import { getEventPaymentOptions } from "@/lib/payments/event-checkout"
 import {
   buyTableWithPassport,
+  loadFreeTables,
   loadTablePackages,
   quoteTablePurchase,
   startTableCardCheckout,
+  type FreeTable,
   type TablePackage,
   type TableQuote,
 } from "@/lib/payments/vvip-checkout"
@@ -46,12 +52,18 @@ import {
 
 export const TABLE_STATE_EVENT = "events_tbl_event"
 export const TABLE_STATE_PACKAGE = "events_tbl_package"
+export const TABLE_STATE_TABLE = "events_tbl_table"
 export const TABLE_STATE_PAYMENT = "events_tbl_payment"
 
 /** The "🍾 VVIP tables" row in an event's ticket list. */
 export const ID_TABLES = "evt_tables:"
 const ID_TABLE_EVENT = "evt_tblevent:"
 const ID_PACKAGE = "evt_pkg:"
+const ID_TABLE = "evt_tbl:"
+const ID_ANY_TABLE = "evt_tblany"
+const ID_MORE_TABLES = "evt_tblmore"
+/** Tables per page: 8 tables + "Any free table" + "More tables" = the 10 rows WhatsApp allows. */
+const TABLES_PER_PAGE = 8
 
 const PAY_NOW_BUTTON = "Pay Now"
 const MAX_ROWS = 10
@@ -228,14 +240,15 @@ async function readExtras(supabase: SupabaseClient, tenantId: string, packageId:
   }
 }
 
-function summaryLines(quote: TableQuote, extras: PackageExtras, timeZone: string, note?: string): string[] {
+function summaryLines(quote: TableQuote, extras: PackageExtras, timeZone: string, note?: string, tableLabel?: string | null): string[] {
   return [
     ...(note ? [note, ""] : []),
     "🧾 *Table summary*",
     `🍾 *${quote.packageName}*`,
     `🎪 ${quote.eventName}`,
     `📅 ${formatWhen(quote.eventStart, timeZone)}`,
-    ...(quote.seatsPerTable > 0 ? [`🪑 Seats ${quote.seatsPerTable} guests`] : []),
+    ...(tableLabel ? [`🪑 Table: *${tableLabel}*`] : []),
+    ...(quote.seatsPerTable > 0 ? [`👥 Seats ${quote.seatsPerTable} guests`] : []),
     ...(quote.tabCredit > 0 ? [`🥂 ${money(quote.tabCredit)} bar tab included`] : []),
     ...(extras.description ? [`ℹ️ ${clip(extras.description, 200)}`] : []),
     ...extras.benefits.slice(0, 6).map((b) => `✔️ ${clip(b, 100)}`),
@@ -251,8 +264,9 @@ async function cardCheckoutReply(
   customerId: string,
   quote: TableQuote,
   lines: string[],
+  tableId: string | null,
 ): Promise<ActionResult> {
-  const card = await startTableCardCheckout({ supabase, tenantId, customerId, quote })
+  const card = await startTableCardCheckout({ supabase, tenantId, customerId, quote, tableId })
   if (!card.ok) return finish(card.message, ["Events", "Main Menu"])
   const testNote = card.mode === "test" ? "\n\n_Test mode: no real money is charged._" : ""
   return finish(
@@ -266,6 +280,77 @@ async function cardCheckoutReply(
   )
 }
 
+/**
+ * Package tapped. If the tenant lets customers pick their table and two or more are free, show the table list;
+ * otherwise (the default) straight to payment with the next free table. Never blocks the sale: any problem
+ * reading the setting or the tables falls back to the default.
+ */
+async function afterPackagePicked(
+  supabase: SupabaseClient,
+  tenantId: string,
+  customerId: string,
+  packageId: string,
+  timeZone: string,
+): Promise<ActionResult> {
+  const settings = await loadVvipTableSettings(supabase, tenantId)
+  if (settings.customersPickTable) {
+    const picker = await pickTableReply(supabase, tenantId, customerId, packageId, 0)
+    if (picker) return picker
+  }
+  return await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, null)
+}
+
+/**
+ * The "choose your table" list (paged), or null when there is nothing to choose between (0 or 1 free table).
+ * A failed quote (sold out, event closed) is returned as the message to show.
+ */
+async function pickTableReply(
+  supabase: SupabaseClient,
+  tenantId: string,
+  customerId: string,
+  packageId: string,
+  page: number,
+  note?: string,
+): Promise<ActionResult | null> {
+  const q = await quoteTablePurchase(supabase, tenantId, customerId, packageId)
+  if (!q.ok) return finish(q.message, ["Events", "Main Menu"])
+  const free = await loadFreeTables(supabase, tenantId, packageId)
+  if (free.length < 2) return null
+
+  const pages = Math.ceil(free.length / TABLES_PER_PAGE)
+  const at = ((page % pages) + pages) % pages // "More tables" on the last page wraps back to the first
+  const shown = free.slice(at * TABLES_PER_PAGE, (at + 1) * TABLES_PER_PAGE)
+  const seats = q.quote.seatsPerTable > 0 ? `Seats ${q.quote.seatsPerTable}` : undefined
+
+  const body = [
+    ...(note ? [note, ""] : []),
+    "🪑 *Choose your table*",
+    `*${q.quote.packageName}* · ${q.quote.eventName}`,
+    `${free.length} table${free.length === 1 ? "" : "s"} free${pages > 1 ? ` (page ${at + 1} of ${pages})` : ""}`,
+    "",
+    "Tap the table you would like, or let us pick one.",
+  ].join("\n")
+
+  return {
+    ...stay(TABLE_STATE_TABLE, { packageId, page: at }, ""),
+    followUp: [
+      buildChoiceList(body, "Choose table", [
+        {
+          title: "Free tables",
+          rows: shown.map((t) => ({ id: `${ID_TABLE}${t.tableId}`, title: t.label, ...(seats ? { description: seats } : {}) })),
+        },
+        {
+          title: "Other",
+          rows: [
+            { id: ID_ANY_TABLE, title: "🎲 Any free table", description: "We pick one for you" },
+            ...(pages > 1 ? [{ id: ID_MORE_TABLES, title: "➡️ More tables", description: `Page ${(at + 1) % pages + 1} of ${pages}` }] : []),
+          ],
+        },
+      ]),
+    ],
+  }
+}
+
 /** Quote -> free table, the "how would you like to pay" screen, or straight to the card link. */
 async function proceedToTablePayment(
   supabase: SupabaseClient,
@@ -273,25 +358,28 @@ async function proceedToTablePayment(
   customerId: string,
   packageId: string,
   timeZone: string,
+  /** The table the customer picked (null = next free table). */
+  chosen: FreeTable | null,
   note?: string,
 ): Promise<ActionResult> {
   const q = await quoteTablePurchase(supabase, tenantId, customerId, packageId)
   if (!q.ok) return finish(q.message, ["Events", "Main Menu"])
   const quote = q.quote
   const extras = await readExtras(supabase, tenantId, packageId)
+  const tableId = chosen?.tableId ?? null
 
   // Free package: no payment step. The database books it directly.
   if (quote.price <= 0) {
-    const res = await buyTableWithPassport({ supabase, tenantId, customerId, packageId, idempotencyKey: randomUUID() })
+    const res = await buyTableWithPassport({ supabase, tenantId, customerId, packageId, tableId, idempotencyKey: randomUUID() })
     if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
     return await confirmedReply(supabase, tenantId, res.bookingId)
   }
 
   const options = await getEventPaymentOptions(supabase, tenantId, customerId, quote.price)
-  const lines = summaryLines(quote, extras, timeZone, note)
+  const lines = summaryLines(quote, extras, timeZone, note, chosen?.label)
 
   // Card is the only way to pay: summary + link straight away.
-  if (options.card && !options.passport.ok) return await cardCheckoutReply(supabase, tenantId, customerId, quote, lines)
+  if (options.card && !options.passport.ok) return await cardCheckoutReply(supabase, tenantId, customerId, quote, lines, tableId)
 
   const choices: string[] = []
   if (options.passport.ok) {
@@ -313,7 +401,7 @@ async function proceedToTablePayment(
   lines.push("", "How would you like to pay?")
   return stay(
     TABLE_STATE_PAYMENT,
-    { packageId, total: quote.price, nonce: randomUUID(), buttons },
+    { packageId, tableId, tableLabel: chosen?.label ?? null, total: quote.price, nonce: randomUUID(), buttons },
     lines.join("\n"),
     buttons,
   )
@@ -329,6 +417,8 @@ export async function buildTableConfirmation(
   tenantId: string,
   bookingId: string,
   headline = "✅ *Your table is booked!*",
+  /** The table the customer picked and paid for by card; if the booking got a different one, the text says why. */
+  requestedTableId?: string | null,
 ): Promise<string> {
   const { data: booking, error } = await supabase
     .from("vvip_bookings")
@@ -369,6 +459,9 @@ export async function buildTableConfirmation(
     if (event.location) lines.push(`📍 ${event.location}`)
   }
   if (label) lines.push(`🪑 Table: *${label}*${pkg?.seats_per_table ? ` (${pkg.seats_per_table} seats)` : ""}`)
+  if (requestedTableId && b.table_id && requestedTableId !== b.table_id) {
+    lines.push("ℹ️ The table you picked was taken just before your payment cleared, so we gave you the next free one.")
+  }
   lines.push(`🔖 Reference: *${b.reference}*`)
   if (paid > 0) lines.push(`💳 Paid: ${money(paid)}`)
   if (credit > 0) lines.push(`🥂 Bar tab: ${money(credit)} loaded and ready to use`)
@@ -473,11 +566,38 @@ export async function handleTableState(args: {
         const n = parseChoice(typed, ids.length)
         const packageId = tappedId(message, ID_PACKAGE) ?? (n !== null ? ids[n - 1] : null)
         if (!packageId) return stay(state.state, data, "Please pick a table from the list above (tap *Choose table*), or reply *cancel*.")
-        return await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone)
+        return await afterPackagePicked(supabase, tenantId, customerId, packageId, timeZone)
+      }
+
+      case TABLE_STATE_TABLE: {
+        const packageId = data.packageId as string
+        const page = Number(data.page) || 0
+
+        if (message.interactiveId === ID_MORE_TABLES) {
+          const next = await pickTableReply(supabase, tenantId, customerId, packageId, page + 1)
+          return next ?? (await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, null))
+        }
+        if (message.interactiveId === ID_ANY_TABLE || typed.toLowerCase() === "any") {
+          return await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, null)
+        }
+        const tableId = tappedId(message, ID_TABLE)
+        if (!tableId) {
+          return stay(state.state, data, "Please pick a table from the list above (tap *Choose table*), or reply *cancel*.")
+        }
+        // Re-read the free tables: someone may have taken it while this customer was looking.
+        const free = await loadFreeTables(supabase, tenantId, packageId)
+        const chosen = free.find((t) => t.tableId === tableId)
+        if (!chosen) {
+          const again = await pickTableReply(supabase, tenantId, customerId, packageId, page, "⚠️ That table was just taken. Please pick another.")
+          return again ?? (await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, null))
+        }
+        return await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, chosen)
       }
 
       case TABLE_STATE_PAYMENT: {
         const packageId = data.packageId as string
+        const tableId = (data.tableId as string | null | undefined) ?? null
+        const tableLabel = (data.tableLabel as string | null | undefined) ?? null
         const shownTotal = Number(data.total)
         const nonce = data.nonce as string
         const buttons = (data.buttons as string[] | undefined) ?? ["Cancel"]
@@ -492,19 +612,33 @@ export async function handleTableState(args: {
         const q = await quoteTablePurchase(supabase, tenantId, customerId, packageId)
         if (!q.ok) return finish(q.message, ["Events", "Main Menu"])
         if (Math.abs(q.quote.price - shownTotal) > 0.001) {
-          return await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, "⚠️ The price changed, so here is your updated order.")
+          return await proceedToTablePayment(
+            supabase,
+            tenantId,
+            customerId,
+            packageId,
+            timeZone,
+            tableId && tableLabel ? { tableId, label: tableLabel } : null,
+            "⚠️ The price changed, so here is your updated order.",
+          )
+        }
+
+        // A picked table must still be free right before money moves (Passport books exactly that table).
+        if (tableId && !(await loadFreeTables(supabase, tenantId, packageId)).some((t) => t.tableId === tableId)) {
+          const again = await pickTableReply(supabase, tenantId, customerId, packageId, 0, "⚠️ That table was just taken. Please pick another.")
+          return again ?? (await proceedToTablePayment(supabase, tenantId, customerId, packageId, timeZone, null))
         }
 
         if (wantsPassport) {
           if (!buttons.includes("Passport")) return stay(state.state, data, "Passport isn't available for this table. Please choose another option.", buttons)
-          const res = await buyTableWithPassport({ supabase, tenantId, customerId, packageId, idempotencyKey: nonce })
+          const res = await buyTableWithPassport({ supabase, tenantId, customerId, packageId, tableId, idempotencyKey: nonce })
           if (!res.ok) return finish(res.message, ["Events", "Main Menu"])
           return await confirmedReply(supabase, tenantId, res.bookingId)
         }
 
         if (!buttons.includes(PAY_NOW_BUTTON)) return stay(state.state, data, "Online payment isn't available for this table. Please choose another option.", buttons)
         const extras = await readExtras(supabase, tenantId, packageId)
-        return await cardCheckoutReply(supabase, tenantId, customerId, q.quote, summaryLines(q.quote, extras, timeZone))
+        return await cardCheckoutReply(supabase, tenantId, customerId, q.quote, summaryLines(q.quote, extras, timeZone, undefined, tableLabel), tableId)
       }
 
       default:
