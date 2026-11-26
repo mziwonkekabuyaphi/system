@@ -198,7 +198,7 @@ function TicketCard({ config }: { config: EventSettingsConfig }) {
   return (
     <SettingsCard
       title="Event ticket"
-      description="After a customer buys on WhatsApp they get a branded ticket image with a QR code, on top of the text confirmation."
+      description="After a customer buys on WhatsApp they get the text confirmation, plus a plain QR code and/or a branded ticket image. You choose which."
       footer={
         <CardSaveRow
           dirty={dirty}
@@ -213,12 +213,32 @@ function TicketCard({ config }: { config: EventSettingsConfig }) {
       }
     >
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
-          <div>
-            <p className="text-sm font-medium text-ink">{form.enabled ? "Ticket image is on" : "Ticket image is off"}</p>
-            <p className="text-xs text-ink-muted">Turn it off to send the text and a plain QR code only.</p>
+        <div className="space-y-3 rounded-lg border border-line bg-canvas p-3">
+          <p className="text-sm font-medium text-ink">What customers receive</p>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-ink">{form.enabled ? "Ticket image is on" : "Ticket image is off"}</p>
+              <p className="text-xs text-ink-muted">The branded ticket image. It has the QR code on it, so it works at the gate by itself.</p>
+            </div>
+            <Toggle
+              checked={form.enabled}
+              disabled={isPending}
+              // Never let both be off: turning one off while the other is off switches the other back on.
+              onChange={(next) => setForm((f) => ({ ...f, enabled: next, sendQr: next ? f.sendQr : true }))}
+            />
           </div>
-          <Toggle checked={form.enabled} disabled={isPending} onChange={(next) => set("enabled", next)} />
+          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div>
+              <p className="text-sm font-medium text-ink">{form.sendQr ? "QR code is on" : "QR code is off"}</p>
+              <p className="text-xs text-ink-muted">A separate plain QR code message for each ticket. Turn it off to send the ticket image only.</p>
+            </div>
+            <Toggle
+              checked={form.sendQr}
+              disabled={isPending}
+              onChange={(next) => setForm((f) => ({ ...f, sendQr: next, enabled: next ? f.enabled : true }))}
+            />
+          </div>
+          <p className="text-xs text-ink-muted">At least one stays on, so customers always get something to scan.</p>
         </div>
 
         <div className={`grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] ${form.enabled ? "" : "opacity-60"}`}>
