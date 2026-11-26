@@ -312,12 +312,15 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableEventTicket, qrDataU
             justifyContent: "center",
             padding: "0 0 22px",
             fontSize: 20,
-            color: "#94a3b8",
+            color: "#64748b",
             fontWeight: 600,
             // Continue the QR section's background so there is no white strip.
             background: "#fafbfd",
           },
-          children: "Powered by QLess",
+          children: [
+            { type: "span", props: { style: { display: "flex", marginRight: 8 }, children: "Powered by" } },
+            { type: "span", props: { style: { display: "flex", color: "#111827", fontWeight: 700 }, children: "ZozoApp" } },
+          ],
         },
       }
     : null
