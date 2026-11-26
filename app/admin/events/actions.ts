@@ -534,6 +534,8 @@ export async function loadPassportBalance(customerId: string): Promise<ActionRes
 export async function sellTickets(input: SellTicketsInput): Promise<ActionResult<SaleReceipt>> {
   const c = await scoped("tickets.issue")
   if (!c.ok) return c
+  // Box office is an add-on of Events (platform admin > Modules > Box office); scoped() above already proved Events is on.
+  if (!(await isModuleEnabled(c.tenantId, "box_office"))) return fail("Box office isn't switched on for your business.")
 
   const key = cleanKey(input.idempotencyKey)
   if (!key) return fail("Couldn't start the sale. Reload the page and try again.")

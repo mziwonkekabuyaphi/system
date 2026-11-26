@@ -48,6 +48,9 @@ export interface EventsManagerProps {
   /** Passport (the customer wallet) is on AND the caller can charge it (wallet.operate or
    *  wallet.manage), so Box office offers Passport as a way to pay. */
   canChargePassport: boolean
+  /** The Box office add-on is on (platform admin > Modules). Off hides the Sell shortcuts; the Box office page itself is
+   *  hidden from the sidebar by AdminView, and sellTickets re-checks the add-on server-side. */
+  boxOfficeEnabled: boolean
   /** Jumps to Settings > Event settings. Omitted when the caller can't open Settings, which hides the gear. */
   onOpenSettings?: () => void
 }
@@ -72,7 +75,7 @@ function totals(event: EventSummary) {
   return { capacity, sold, soldOut: capacity > 0 && sold >= capacity }
 }
 
-export function EventsManager({ section, onSectionChange, permissions, timezone, currency = "ZAR", canChargePassport, onOpenSettings }: EventsManagerProps) {
+export function EventsManager({ section, onSectionChange, permissions, timezone, currency = "ZAR", canChargePassport, boxOfficeEnabled, onOpenSettings }: EventsManagerProps) {
   const tz = safeTimezone(timezone)
   const [events, setEvents] = useState<EventSummary[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -256,6 +259,7 @@ export function EventsManager({ section, onSectionChange, permissions, timezone,
               onDelete={() => askRemove(selected)}
               onOpenGate={() => onSectionChange("gate")}
               onSell={() => onSectionChange("boxoffice")}
+              canSell={boxOfficeEnabled && permissions.ticketsIssue}
               onStatus={(status, done) => void changeStatus(selected, status, done)}
               onConfirm={setConfirm}
               flash={flash}
@@ -363,6 +367,7 @@ function EventDetails({
   onDelete,
   onOpenGate,
   onSell,
+  canSell,
   onStatus,
   onConfirm,
   flash,
@@ -376,6 +381,8 @@ function EventDetails({
   onDelete: () => void
   onOpenGate: () => void
   onSell: () => void
+  /** Box office add-on on AND the caller can issue tickets. */
+  canSell: boolean
   onStatus: (status: "draft" | "active" | "ended" | "cancelled", done: string) => void
   onConfirm: (c: { title: string; body: string; label: string; run: () => Promise<void> }) => void
   flash: (tone: "good" | "bad", text: string) => void
@@ -414,7 +421,7 @@ function EventDetails({
               <Icon name="pencil" /> Edit
             </button>
           )}
-          {live && permissions.ticketsIssue && (
+          {live && canSell && (
             <button type="button" className={BTN_GHOST} onClick={onSell}>
               <Icon name="ticket" /> Sell
             </button>
