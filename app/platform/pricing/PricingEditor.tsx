@@ -4,6 +4,7 @@
 import { useState, useTransition, type ReactNode } from "react"
 
 import { PLATFORM_CARD } from "@/components/platform/PageHeader"
+import { ADDON_UNIT_SUFFIX, EVENT_ADDONS, ORDER_ADDONS, type AddonSpec } from "@/lib/services/addons"
 import { updateAddonRates, updateBookingQueuePlan, updateEventRates, updateFreePlan, updateOrderRates, updateShishaRates, updateStaffRates } from "./actions"
 
 export type PlanRow = {
@@ -173,17 +174,17 @@ function StaffCard({ rates }: { rates: StaffRates }) {
 
 // ── Order Management ─────────────────────────────────────────────────────────
 
-/** Flat monthly fee per add-on. Only shops that have the add-on AND its parent module switched on pay it. */
-function AddonFields({ items, values, onChange }: { items: Array<{ key: keyof AddonRates; label: string; note?: string }>; values: AddonRates; onChange: (k: keyof AddonRates, v: string) => void }) {
+/** One price field per add-on, labelled with how it is charged (per month / per ticket / per table). */
+function AddonFields({ specs, values, onChange, blurb, notes = {} }: { specs: readonly AddonSpec[]; values: AddonRates; onChange: (k: keyof AddonRates, v: string) => void; blurb: string; notes?: Record<string, string> }) {
   return (
     <div className="space-y-3 border-t border-stone-100 pt-4">
       <div>
         <h4 className="text-xs font-semibold text-stone-700">Add-ons</h4>
-        <p className="text-[11px] text-stone-400">A flat monthly fee, charged only while the add-on and its module are both switched on. Set R0 to give an add-on away.</p>
+        <p className="text-[11px] text-stone-400">{blurb}</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {items.map((i) => (
-          <Field key={i.key} label={i.label} prefix="R" value={values[i.key]} onChange={(x) => onChange(i.key, x)} suffix="/ month" hint={i.note} />
+        {specs.map((i) => (
+          <Field key={i.key} label={i.label} prefix="R" value={values[i.key as keyof AddonRates]} onChange={(x) => onChange(i.key as keyof AddonRates, x)} suffix={ADDON_UNIT_SUFFIX[i.unit]} hint={notes[i.key]} />
         ))}
       </div>
     </div>
@@ -202,10 +203,9 @@ function OrderCard({ rates, addons }: { rates: OrderRates; addons: AddonRates })
         <Field label="Price per extra order" prefix="R" value={v.perOrderFee} onChange={(x) => setV({ ...v, perOrderFee: x })} suffix="/ order" hint="Charged once a shop passes its included orders." />
       </div>
       <AddonFields
-        items={[
-          { key: "stock_take", label: "Stock take" },
-          { key: "barcode_labels", label: "Barcode / label printing", note: "The feature is still a placeholder screen in the shop admin." },
-        ]}
+        specs={ORDER_ADDONS}
+        blurb="A flat monthly fee, charged only while the add-on and Order Management are both switched on. Set R0 to give an add-on away."
+        notes={{ barcode_labels: "The feature is still a placeholder screen in the shop admin." }}
         values={a}
         onChange={(k, x) => setA({ ...a, [k]: x })}
       />
@@ -237,14 +237,13 @@ function EventCard({ rates, addons }: { rates: EventRates; addons: AddonRates })
         <Field label="Fee per ticket sold" prefix="R" value={v.ticketFee} onChange={(x) => setV({ ticketFee: x })} suffix="per ticket" hint="Issued and used tickets. Cancelled and refunded tickets are free." />
       </div>
       <AddonFields
-        items={[
-          { key: "box_office", label: "Box office" },
-          { key: "vvip", label: "VVIP tables & tabs" },
-        ]}
+        specs={EVENT_ADDONS}
+        blurb="Charged on usage, on top of the fee per ticket above: Box office per ticket sold at the box office, Tables and Tabs per table booked. Set R0 to give one away."
+        notes={{ box_office: "Only tickets sold through the box office. Online tickets don't pay this.", vvip: "One booking = one table. Cancelled bookings are free." }}
         values={a}
         onChange={(k, x) => setA({ ...a, [k]: x })}
       />
-      <p className="text-[11px] text-stone-400">No monthly fee for Events itself. Staff are billed on top at the per-staff rate under Staff Management.</p>
+      <p className="text-[11px] text-stone-400">No monthly fee. Staff are billed on top at the per-staff rate under Staff Management.</p>
       <SaveBar
         busy={busy}
         msg={msg}
@@ -294,7 +293,7 @@ export function PricingEditor({ plans, staff, shisha, orders, events, addons }: 
         <OrderCard rates={orders} addons={addons} />
       </Section>
 
-      <Section title="Event Management" blurb="Pay-as-you-go: a fee for each ticket sold. Add-ons carry a monthly fee.">
+      <Section title="Event Management" blurb="Pay-as-you-go: a fee for each ticket sold, plus a fee per box-office ticket and per table booked. No monthly fee.">
         <EventCard rates={events} addons={addons} />
       </Section>
 

@@ -9,8 +9,10 @@
 //   Shisha           -> `shisha_billing_rates` global row (tenant_id null, money in RANDS).
 //   Order Management -> `order_billing_rates` global row: monthly fee + included orders + per-order rate (RANDS).
 //   Event Management -> `event_billing_rates` global row: fee per ticket sold (RANDS).
-//   Add-ons          -> `addon_billing_rates` global rows: flat monthly fee each (RANDS). Orders: stock_take,
-//                       barcode_labels. Events: box_office, vvip. Billed on the parent's invoice while on.
+//   Add-ons          -> `addon_billing_rates` global rows (RANDS; column is still called monthly_fee, the unit
+//                       comes from lib/services/addons.ts). Orders: stock_take, barcode_labels = per month.
+//                       Events: box_office = per box-office ticket, vvip (Tables and Tabs) = per table.
+//                       Billed on the parent's invoice.
 // Staff are billed per head on Shisha, Orders, Events and standalone Staff (the "staff" rate above); Booking &
 // Queue include staff in their plan, so they never pay the per-head rate on top.
 // Prices only affect FUTURE billing: invoices already issued keep the amount they were issued at, and shisha
@@ -255,7 +257,7 @@ export async function updateEventRates(input: { ticketFee: string }): Promise<R>
 }
 
 // ---------------------------------------------------------------------------
-// Add-ons (addon_billing_rates, platform default rows): a flat monthly fee each
+// Add-ons (addon_billing_rates, platform default rows): monthly, per ticket or per table
 // ---------------------------------------------------------------------------
 
 const ADDON_KEYS = ["stock_take", "barcode_labels", "box_office", "vvip"] as const
@@ -263,10 +265,10 @@ const ADDON_LABELS: Record<(typeof ADDON_KEYS)[number], string> = {
   stock_take: "Stock take",
   barcode_labels: "Barcode / label printing",
   box_office: "Box office",
-  vvip: "VVIP tables & tabs",
+  vvip: "Tables and Tabs",
 }
 
-/** Saves the monthly fee of the add-ons named in `fees` (any subset of the four). Unknown keys are refused. */
+/** Saves the rate (R per month / ticket / table, see lib/services/addons.ts) of the add-ons named in `fees` (any subset of the four). Unknown keys are refused. */
 export async function updateAddonRates(fees: Record<string, string>): Promise<R> {
   try {
     const supabase = await ctx()
