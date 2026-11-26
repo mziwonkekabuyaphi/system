@@ -68,7 +68,9 @@ export async function getEventSettings(): Promise<Result<{ config: EventSettings
     // Nothing saved yet: start from the look customers already get (the booking ticket's), so the
     // preview matches what is sent today. Its on/off switch is never copied.
     const ticketRow = ticketRes.data ?? bookingRes.data ?? null
-    const enabled = (ticketRes.data as { enabled?: boolean } | null)?.enabled ?? true
+    const ticketSaved = ticketRes.data as { enabled?: boolean; send_qr?: boolean } | null
+    const enabled = ticketSaved?.enabled ?? true
+    const sendQr = ticketSaved?.send_qr ?? true
 
     const brandHeader = HEX.test(brandingRes.data?.primary_color ?? "") ? brandingRes.data!.primary_color! : DEFAULT_HEADER
     const brandAccent = HEX.test(brandingRes.data?.secondary_color ?? "") ? brandingRes.data!.secondary_color! : DEFAULT_ACCENT
@@ -77,7 +79,7 @@ export async function getEventSettings(): Promise<Result<{ config: EventSettings
       success: true,
       config: {
         rules: salesRulesFromRow(rulesRes.data),
-        ticket: ticketSettingsFromRow(ticketRow, enabled),
+        ticket: ticketSettingsFromRow(ticketRow, enabled, sendQr),
         brandHeader,
         brandAccent,
       },
