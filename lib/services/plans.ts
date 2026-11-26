@@ -1073,15 +1073,28 @@ async function invoiceExists(supabase: SupabaseClient, tenantId: string, product
   return Boolean(data)
 }
 
-/** Add-on charges per shop for one parent module (Orders or Events). An add-on is charged only while the
- *  add-on AND the parent are switched on for an active shop; the shop's own rate beats the platform default.
- *  Returns only shops that owe something, so a missing entry means "no add-ons". Shared by the invoice run
- *  and the tenant Billing panel so the preview can never disagree with the invoice. */
+/** Usage (tickets / tables) behind an add-on in a period, for one shop. Counted in the database
+ *  (billing_box_office_tickets / billing_vvip_tables) so the invoice run and the panel agree. */
+async function addonUsage(supabase: SupabaseClient, tenantId: string, addon: AddonSpec, fromIso: string, toIso: string): Promise<number> {
+  const fn = addon.unit === "ticket" ? "billing_box_office_tickets" : "billing_vvip_tables"
+  const { data, error } = await supabase.rpc(fn, { p_tenant_id: tenantId, p_from: fromIso, p_to: toIso })
+  if (error) throw new Error(`Failed to count ${addon.label} usage: ${error.message}`)
+  return Number(data ?? 0)
+}
+
+/** Add-on charges per shop for one parent module (Orders or Events) over [fromIso, toIso).
+ *    month-unit add-ons : charged only while the add-on AND the parent are switched on for an active shop.
+ *    ticket / table add-ons : charged on usage in the period (rate x tickets or tables), even if switched
+ *      off since. While switched on they are listed even at zero usage so the shop sees the rate.
+ *  The shop's own rate beats the platform default. A shop with nothing to list gets no entry. Callers that
+ *  build an invoice drop lines with feeCents 0. Shared by the invoice run and the tenant Billing panel so
+ *  the preview can never disagree with the invoice. */
 export async function addonChargesFor(
   supabase: SupabaseClient,
   tenantIds: string[],
   parentKey: "orders" | "events",
   addons: readonly AddonSpec[],
+  range: { fromIso: string; toIso: string },
 ): Promise<Map<string, AddonCharge[]>> {
   const out = new Map<string, AddonCharge[]>()
   if (tenantIds.length === 0) return out
@@ -1111,16 +1124,25 @@ export async function addonChargesFor(
   const rates = (rateRows ?? []) as Array<{ tenant_id: string | null; module_key: string; monthly_fee: number | string }>
 
   for (const tenantId of tenantIds) {
-    const keys = on.get(tenantId)
-    if (!keys || !keys.has(parentKey)) continue
+    const keys = on.get(tenantId) ?? new Set<string>()
+    const parentOn = keys.has(parentKey)
     const charges: AddonCharge[] = []
     for (const addon of addons) {
-      if (!keys.has(addon.key)) continue
+      const addonOn = keys.has(addon.key)
       const rate =
         rates.find((r) => r.tenant_id === tenantId && r.module_key === addon.key) ??
         rates.find((r) => r.tenant_id === null && r.module_key === addon.key)
-      const feeCents = rate ? randsToCents(rate.monthly_fee) : 0
-      if (feeCents > 0) charges.push({ key: addon.key, label: addon.label, feeCents })
+      const rateCents = rate ? randsToCents(rate.monthly_fee) : 0
+
+      if (addon.unit === "month") {
+        if (!parentOn || !addonOn) continue
+        charges.push({ key: addon.key, label: addon.label, unit: "month", quantity: 1, rateCents, feeCents: rateCents })
+        continue
+      }
+
+      const quantity = await addonUsage(supabase, tenantId, addon, range.fromIso, range.toIso)
+      if (quantity === 0 && !(parentOn && addonOn)) continue
+      charges.push({ key: addon.key, label: addon.label, unit: addon.unit, quantity, rateCents, feeCents: quantity * rateCents })
     }
     if (charges.length > 0) out.set(tenantId, charges)
   }
@@ -1163,7 +1185,7 @@ async function generateOrderInvoices(supabase: SupabaseClient): Promise<Generate
   if (rateError) throw new Error(`Failed to load order rates: ${rateError.message}`)
   const rates = (rateRows ?? []) as Array<{ tenant_id: string | null; monthly_fee: number | string; included_orders: number; per_order_fee: number | string; currency: string }>
 
-  const addonsByTenant = await addonChargesFor(supabase, tenants, "orders", ORDER_ADDONS)
+  const addonsByTenant = await addonChargesFor(supabase, tenants, "orders", ORDER_ADDONS, { fromIso: start.toISOString(), toIso: end.toISOString() })
 
   const generated: GeneratedInvoice[] = []
   for (const tenantId of tenants) {
@@ -1176,7 +1198,7 @@ async function generateOrderInvoices(supabase: SupabaseClient): Promise<Generate
     const perOrderCents = randsToCents(rate.per_order_fee)
     const overage = Math.max(orders - rate.included_orders, 0)
     const usageCents = overage * perOrderCents
-    const addons = addonsByTenant.get(tenantId) ?? []
+    const addons = (addonsByTenant.get(tenantId) ?? []).filter((a) => a.feeCents > 0)
     const addonsCents = addons.reduce((sum, a) => sum + a.feeCents, 0)
     const totalCents = monthlyFeeCents + usageCents + addonsCents
     if (totalCents <= 0) continue
@@ -1212,7 +1234,7 @@ async function generateOrderInvoices(supabase: SupabaseClient): Promise<Generate
 }
 
 // ============================================================================
-// EVENT MANAGEMENT invoices: a fee per ticket sold + monthly fee per add-on switched on
+// EVENT MANAGEMENT invoices: a fee per ticket sold + per box-office ticket + per table booked
 // ----------------------------------------------------------------------------
 // Rates: event_billing_rates (shop row overrides the platform default). Tickets counted = issued or used
 // tickets created in the month (cancelled / refunded are free). Shops are invoiced for tickets sold even
@@ -1244,10 +1266,12 @@ async function generateEventInvoices(supabase: SupabaseClient): Promise<Generate
     for (const r of data ?? []) tenantSet.add((r as any).tenant_id as string)
     if ((data ?? []).length < SHISHA_PAGE_SIZE) break
   }
-  // Shops with Events on are invoiced too, even with no sales, because their add-ons (box office, VVIP) have a monthly fee.
-  for (const id of await modulesOnFor(supabase, "events")) tenantSet.add(id)
+  // Shops that booked a table this month are billed too, even with no ticket sales (tables are charged per table).
+  const { data: tableShops, error: tableShopsError } = await supabase.rpc("billing_vvip_tenants", { p_from: start.toISOString(), p_to: end.toISOString() })
+  if (tableShopsError) throw new Error(`Failed to load table bookings: ${tableShopsError.message}`)
+  for (const id of (tableShops ?? []) as string[]) tenantSet.add(id)
   const tenants = [...tenantSet]
-  const addonsByTenant = await addonChargesFor(supabase, tenants, "events", EVENT_ADDONS)
+  const addonsByTenant = await addonChargesFor(supabase, tenants, "events", EVENT_ADDONS, { fromIso: start.toISOString(), toIso: end.toISOString() })
 
   const generated: GeneratedInvoice[] = []
   for (const tenantId of tenants) {
@@ -1257,7 +1281,7 @@ async function generateEventInvoices(supabase: SupabaseClient): Promise<Generate
 
     const tickets = await countTicketsInRange(supabase, tenantId, start.toISOString(), end.toISOString())
     const feeCents = randsToCents(rate.ticket_fee)
-    const addons = addonsByTenant.get(tenantId) ?? []
+    const addons = (addonsByTenant.get(tenantId) ?? []).filter((a) => a.feeCents > 0)
     const addonsCents = addons.reduce((sum, a) => sum + a.feeCents, 0)
     const totalCents = tickets * feeCents + addonsCents
     if (totalCents <= 0) continue
@@ -1273,7 +1297,7 @@ async function generateEventInvoices(supabase: SupabaseClient): Promise<Generate
         rate_cents: feeCents,
         amount_cents: totalCents,
         currency: rate.currency ?? "ZAR",
-        base_fee_cents: addonsCents, // the flat part of an Events invoice is its add-ons
+        base_fee_cents: 0, // Events has no flat fee; its add-ons are itemised in detail.addons
         included_visits: null,
         overage_visits: 0,
         staff_count: 0,
@@ -1287,7 +1311,7 @@ async function generateEventInvoices(supabase: SupabaseClient): Promise<Generate
       console.error("[plans] Failed to create events invoice", { tenantId, periodStart, error: insertError })
       continue
     }
-    generated.push({ tenantId, product: "events", visitCount: tickets, amountCents: totalCents, baseFeeCents: addonsCents, extraStaffFeeCents: 0, overageVisits: 0 })
+    generated.push({ tenantId, product: "events", visitCount: tickets, amountCents: totalCents, baseFeeCents: 0, extraStaffFeeCents: 0, overageVisits: 0 })
   }
   return generated
 }
