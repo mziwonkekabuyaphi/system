@@ -142,7 +142,15 @@ export async function settleSucceeded(args: {
     }
     await markSucceeded(db, payment.id as string, event.providerPaymentId)
     const bookingRow = Array.isArray(booking) ? booking[0] : booking
-    await notifyTable(db, provider, tenantId, (bookingRow as { id: string }).id, (payment.metadata as Record<string, unknown> | null)?.customer_id as string | undefined)
+    const paymentMeta = (payment.metadata as Record<string, unknown> | null) ?? {}
+    await notifyTable(
+      db,
+      provider,
+      tenantId,
+      (bookingRow as { id: string }).id,
+      paymentMeta.customer_id as string | undefined,
+      (paymentMeta.table_id as string | undefined) ?? null,
+    )
     return "table_booked"
   }
 
@@ -395,11 +403,11 @@ async function phoneForCustomer(db: Db, tenantId: string, customerId: string | u
 }
 
 /** Best effort: the table is already booked whether or not this message goes. It is also under "My Tickets". */
-async function notifyTable(db: Db, provider: CardProvider, tenantId: string, bookingId: string, customerId: string | undefined) {
+async function notifyTable(db: Db, provider: CardProvider, tenantId: string, bookingId: string, customerId: string | undefined, requestedTableId: string | null) {
   try {
     const phone = await phoneForCustomer(db, tenantId, customerId)
     if (!phone) return
-    const text = await buildTableConfirmation(db, tenantId, bookingId, "✅ *Payment received. Your table is booked!*")
+    const text = await buildTableConfirmation(db, tenantId, bookingId, "✅ *Payment received. Your table is booked!*", requestedTableId)
     await sendWhatsAppTextMessage(tenantId, phone, text)
   } catch (error) {
     console.error(`[${provider.id}-webhook] table message failed (table is already booked)`, {

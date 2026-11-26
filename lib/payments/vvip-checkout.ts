@@ -17,7 +17,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { cardFailureMessage, getCardOption, startCardPayment } from "./card"
 
 /** Database messages that are written for customers; anything else becomes a generic apology. */
-const FRIENDLY_DB_MESSAGE = /No tables left|n't on sale|has ended|Passport|balance|Customer not found|not enabled|Package not found|Event not found/i
+const FRIENDLY_DB_MESSAGE = /No tables left|already booked|Table not found|n't on sale|has ended|Passport|balance|Customer not found|not enabled|Package not found|Event not found/i
 const GENERIC = "I couldn't complete that. Please try again in a moment."
 
 function friendly(message: string | undefined): string {
@@ -73,6 +73,27 @@ export async function loadTablePackages(supabase: SupabaseClient, tenantId: stri
       .filter((p) => p.tablesLeft > 0)
   } catch (error) {
     console.error("[vvip-checkout] packages lookup failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
+    return []
+  }
+}
+
+/** A table nobody holds right now, for the "pick your table" step. */
+export interface FreeTable {
+  tableId: string
+  label: string
+}
+
+/** Free tables of one package in the order the shop set them up. [] on any problem (the caller then falls back to "next free table"). */
+export async function loadFreeTables(supabase: SupabaseClient, tenantId: string, packageId: string): Promise<FreeTable[]> {
+  try {
+    const { data, error } = await supabase.rpc("vvip_free_tables_whatsapp", { p_tenant_id: tenantId, p_package_id: packageId })
+    if (error) {
+      console.error("[vvip-checkout] could not read free tables", { tenantId, error: error.message })
+      return []
+    }
+    return ((data ?? []) as Array<{ table_id: string; label: string }>).map((r) => ({ tableId: r.table_id, label: r.label }))
+  } catch (error) {
+    console.error("[vvip-checkout] free tables lookup failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
     return []
   }
 }
@@ -133,6 +154,8 @@ export async function buyTableWithPassport(args: {
   tenantId: string
   customerId: string
   packageId: string
+  /** The table the customer picked. Omit/null = the next free table of the package. */
+  tableId?: string | null
   /** Generated once per confirmation screen: a double tap returns the same booking instead of taking a second table. */
   idempotencyKey: string
 }): Promise<TablePurchaseResult> {
@@ -141,6 +164,7 @@ export async function buyTableWithPassport(args: {
     p_customer_id: args.customerId,
     p_package_id: args.packageId,
     p_idempotency_key: args.idempotencyKey,
+    p_table_id: args.tableId ?? null,
   })
   const row = Array.isArray(data) ? data[0] : data
   if (error || !row) {
@@ -161,6 +185,8 @@ export async function startTableCardCheckout(args: {
   tenantId: string
   customerId: string
   quote: TableQuote
+  /** The table the customer picked, kept with the payment. If it is taken before the payment clears they get the next free one. */
+  tableId?: string | null
 }): Promise<StartTableCardResult> {
   const { supabase, tenantId, customerId, quote } = args
 
@@ -180,6 +206,7 @@ export async function startTableCardCheckout(args: {
       customer_id: customerId,
       package_id: quote.packageId,
       event_id: quote.eventId,
+      ...(args.tableId ? { table_id: args.tableId } : {}),
     },
     idempotencyPrefix: "vvip",
   })
