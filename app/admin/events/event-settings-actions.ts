@@ -22,8 +22,11 @@ import {
   ticketSettingsToRow,
   validateSalesRules,
   validateTicketSettings,
+  vvipTableSettingsFromRow,
+  vvipTableSettingsToRow,
   type EventSalesRules,
   type EventTicketSettings,
+  type VvipTableSettings,
 } from "@/lib/services/event-settings"
 
 type Result<T = object> = ({ success: true } & T) | { success: false; error: string }
@@ -31,6 +34,8 @@ type ServerClient = NonNullable<ReturnType<typeof getSupabaseServerClient>>
 
 export interface EventSettingsConfig {
   rules: EventSalesRules
+  /** VVIP tables on WhatsApp: do customers pick their own table? */
+  tables: VvipTableSettings
   ticket: EventTicketSettings
   /** Brand colours the ticket falls back to, for the colour pickers. */
   brandHeader: string
@@ -79,6 +84,7 @@ export async function getEventSettings(): Promise<Result<{ config: EventSettings
       success: true,
       config: {
         rules: salesRulesFromRow(rulesRes.data),
+        tables: vvipTableSettingsFromRow(rulesRes.data),
         ticket: ticketSettingsFromRow(ticketRow, enabled, sendQr),
         brandHeader,
         brandAccent,
@@ -86,6 +92,31 @@ export async function getEventSettings(): Promise<Result<{ config: EventSettings
     }
   } catch (err) {
     console.error("[event-settings] load failed", err)
+    return { success: false, error: GENERIC }
+  }
+}
+
+/**
+ * VVIP tables: should customers pick their own table on WhatsApp? Saved on the same row as the sales rules; the
+ * upsert only names its own columns, so it never touches the rules (and saving the rules never touches this).
+ */
+export async function updateVvipTableSettings(input: VvipTableSettings): Promise<Result> {
+  try {
+    if (typeof input?.customersPickTable !== "boolean") return { success: false, error: "Invalid setting." }
+    const s = await scope()
+    if (!s.ok) return { success: false, error: s.error }
+
+    const { error } = await s.supabase
+      .from("tenant_event_settings")
+      .upsert({ tenant_id: s.tenantId, ...vvipTableSettingsToRow(input), updated_at: new Date().toISOString() }, { onConflict: "tenant_id" })
+    if (error) {
+      console.error("[event-settings] save table settings failed", error.message)
+      return { success: false, error: GENERIC }
+    }
+    revalidatePath("/admin")
+    return { success: true }
+  } catch (err) {
+    console.error("[event-settings] save table settings failed", err)
     return { success: false, error: GENERIC }
   }
 }
