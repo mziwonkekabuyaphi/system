@@ -31,10 +31,13 @@ import {
   type TenantInvoice,
   type PlanModuleInfo,
   type ShishaBillingInfo,
+  type OrderBillingInfo,
+  type EventBillingInfo,
   type StaffBillingInfo,
 } from "@/app/admin/billing-actions"
 import { calculateBilling, formatCents, formatCentsCompact, type BillingCalculation } from "@/lib/services/billing-calculator"
 import type { Plan, PlanUsage } from "@/lib/services/plans"
+import type { AddonCharge } from "@/lib/services/addons"
 
 const INK = "var(--color-ink)"
 const MUTED = "var(--color-ink-muted)"
@@ -186,6 +189,8 @@ export function BillingPanel() {
     products,
     shisha,
     staff,
+    orders,
+    events,
   } = summary
 
   // Each module is billed on its own. The plan (Free / Growth / Business) only prices Booking & Queue,
@@ -200,9 +205,11 @@ export function BillingPanel() {
         <ModulesOnlyHeader
           billingStatus={billingStatus}
           outstandingCents={outstandingCents}
-          currency={shisha?.currency ?? staff?.currency ?? "ZAR"}
+          currency={shisha?.currency ?? orders?.currency ?? events?.currency ?? staff?.currency ?? "ZAR"}
           shisha={shisha}
           staff={staff}
+          orders={orders}
+          events={events}
         />
       )}
 
@@ -223,7 +230,11 @@ export function BillingPanel() {
 
       {shisha && <ShishaSection shisha={shisha} />}
 
-      {staff && <StaffSection staff={staff} />}
+      {orders && <OrdersSection orders={orders} />}
+
+      {events && <EventsSection events={events} />}
+
+      {staff && <StaffSection staff={staff} products={products} />}
 
       {runsBookingQueue && (
         <PlanComparisonSection
@@ -235,11 +246,12 @@ export function BillingPanel() {
         />
       )}
 
-      {!runsBookingQueue && !shisha && !staff && (
+      {!runsBookingQueue && !shisha && !staff && !orders && !events && (
         <p className={`${NOTICE} text-ink-muted`}>
-          Nothing is billed right now. Analytics and Settings have no charge of their own, and Staff is included with
-          Booking, Queue and Shisha. Billing applies to Booking &amp; Queue (a monthly plan), Shisha (per session and
-          refill) and Staff Management on its own (per staff member) while they are switched on.
+          Nothing is billed right now. Analytics and Settings have no charge of their own. Billing applies to Booking
+          &amp; Queue (a monthly plan that includes staff), Order Management (a monthly fee plus extra orders), Event
+          Management (per ticket sold), Shisha (per session and refill) and Staff (per staff member, on every module
+          except Booking &amp; Queue) while they are switched on.
         </p>
       )}
 
@@ -340,23 +352,28 @@ function ModulesOnlyHeader({
   currency,
   shisha,
   staff,
+  orders,
+  events,
 }: {
   billingStatus: BillingStatus
   outstandingCents: number
   currency: string
   shisha: ShishaBillingInfo | null
   staff: StaffBillingInfo | null
+  orders: OrderBillingInfo | null
+  events: EventBillingInfo | null
 }) {
-  const billed = Boolean(shisha || staff)
-  const thisMonthCents = (shisha?.thisMonth.amountCents ?? 0) + (staff?.estimatedCents ?? 0)
+  const billed = Boolean(shisha || staff || orders || events)
+  const thisMonthCents =
+    (shisha?.thisMonth.amountCents ?? 0) + (staff?.estimatedCents ?? 0) + (orders?.estimatedCents ?? 0) + (events?.estimatedCents ?? 0)
   return (
     <div className="space-y-5">
       <PageHeader
         billingStatus={billingStatus}
         subtitle={
           billed
-            ? "Your modules are billed on usage, with no monthly plan fee."
-            : "Nothing is being billed while Booking, Queue and Shisha are all switched off."
+            ? "Your modules are billed on usage, plus a monthly fee for Order Management where it applies."
+            : "Nothing is being billed while all billable modules are switched off."
         }
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -420,8 +437,9 @@ function ShishaSection({ shisha }: { shisha: ShishaBillingInfo }) {
 // Staff Management — sold on its own, billed per active staff member
 // ============================================================================
 
-function StaffSection({ staff }: { staff: StaffBillingInfo }) {
+function StaffSection({ staff, products }: { staff: StaffBillingInfo; products: { shisha: boolean; orders: boolean; events: boolean } }) {
   const { currency, perStaffCents, activeStaff, estimatedCents } = staff
+  const alongside = [products.shisha && "Shisha", products.orders && "Order Management", products.events && "Event Management"].filter(Boolean)
   return (
     <section className={`${CARD} p-5`}>
       <div className="flex items-baseline justify-between">
@@ -430,12 +448,74 @@ function StaffSection({ staff }: { staff: StaffBillingInfo }) {
       </div>
       <p className="mt-1 text-sm text-ink-muted">
         {formatCents(perStaffCents, currency)} per active staff member per month. Counted on the last day of the month.
+        {alongside.length > 0 && ` Covers your team across ${alongside.join(", ")} — you are billed for each person once.`}
       </p>
       <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-3">
         <UsageStat label="Active staff today" value={activeStaff.toLocaleString("en-ZA")} />
         <UsageStat label="Rate per staff" value={formatCents(perStaffCents, currency)} />
         <UsageStat label="Bill if the month ended now" value={formatCents(estimatedCents, currency)} emphasize />
       </dl>
+    </section>
+  )
+}
+
+function OrdersSection({ orders }: { orders: OrderBillingInfo }) {
+  const { currency, monthlyFeeCents, includedOrders, perOrderCents, ordersThisMonth, overageOrders, estimatedCents } = orders
+  return (
+    <section className={`${CARD} p-5`}>
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Order Management</h3>
+        <span className="text-sm text-ink-muted">Monthly fee plus extra orders</span>
+      </div>
+      <p className="mt-1 text-sm text-ink-muted">
+        {formatCents(monthlyFeeCents, currency)} a month includes {includedOrders.toLocaleString("en-ZA")} completed orders. After that,{" "}
+        {formatCents(perOrderCents, currency)} per order. Staff are billed separately.
+      </p>
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-4">
+        <UsageStat label="Orders this month" value={`${ordersThisMonth.toLocaleString("en-ZA")} of ${includedOrders.toLocaleString("en-ZA")} included`} />
+        <UsageStat label="Extra orders" value={overageOrders.toLocaleString("en-ZA")} />
+        <UsageStat label="Monthly fee" value={formatCents(monthlyFeeCents, currency)} />
+        <div className="border-t border-line pt-3 sm:border-t-0 sm:pt-0">
+          <UsageStat label="This month so far" value={formatCents(estimatedCents, currency)} emphasize />
+        </div>
+      </dl>
+      <AddonLines addons={orders.addons} currency={currency} />
+    </section>
+  )
+}
+
+/** Itemised add-ons (flat monthly fee each) under a module card. Renders nothing when none are switched on. */
+function AddonLines({ addons, currency }: { addons: AddonCharge[]; currency: string }) {
+  if (addons.length === 0) return null
+  return (
+    <ul className="mt-3 divide-y divide-line rounded-lg border border-line text-sm">
+      {addons.map((a) => (
+        <li key={a.key} className="flex items-center justify-between px-4 py-2">
+          <span className="text-ink">{a.label} <span className="text-ink-muted">add-on</span></span>
+          <span className="font-medium text-ink">{formatCents(a.feeCents, currency)} / month</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function EventsSection({ events }: { events: EventBillingInfo }) {
+  const { currency, perTicketCents, ticketsThisMonth, estimatedCents } = events
+  return (
+    <section className={`${CARD} p-5`}>
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-[family-name:var(--font-admin-serif)] text-lg text-ink">Event Management</h3>
+        <span className="text-sm text-ink-muted">Billed monthly per ticket sold</span>
+      </div>
+      <p className="mt-1 text-sm text-ink-muted">
+        {formatCents(perTicketCents, currency)} per ticket sold. Cancelled and refunded tickets are not charged. Staff are billed separately.
+      </p>
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-line bg-canvas p-4 sm:grid-cols-3">
+        <UsageStat label="Tickets sold this month" value={ticketsThisMonth.toLocaleString("en-ZA")} />
+        <UsageStat label="Fee per ticket" value={formatCents(perTicketCents, currency)} />
+        <UsageStat label="This month so far" value={formatCents(estimatedCents, currency)} emphasize />
+      </dl>
+      <AddonLines addons={events.addons} currency={currency} />
     </section>
   )
 }
@@ -882,6 +962,21 @@ const INVOICE_STATUS_COLOR: Record<string, string> = {
   void: MUTED,
 }
 
+const INVOICE_PRODUCT_LABEL: Record<TenantInvoice["product"], string> = {
+  booking_queue: "Booking & Queue",
+  shisha: "Shisha",
+  staff: "Staff",
+  orders: "Order Management",
+  events: "Event Management",
+}
+const INVOICE_UNIT_LABEL: Record<TenantInvoice["product"], string> = {
+  booking_queue: "visits",
+  shisha: "sessions & refills",
+  staff: "staff",
+  orders: "orders",
+  events: "tickets",
+}
+
 function InvoiceHistorySection({
   invoices,
   expandedInvoiceId,
@@ -909,13 +1004,13 @@ function InvoiceHistorySection({
                   <p className="text-sm font-medium text-ink">
                     {periodLabel(inv.periodStart)}
                     <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-normal text-ink-muted">
-                      {inv.product === "shisha" ? "Shisha" : inv.product === "staff" ? "Staff" : "Booking & Queue"}
+                      {INVOICE_PRODUCT_LABEL[inv.product]}
                     </span>
                   </p>
                   <p className="text-xs text-ink-muted">
                     {inv.product === "staff"
                       ? `${inv.staffCount.toLocaleString("en-ZA")} staff`
-                      : `${inv.visitCount.toLocaleString("en-ZA")} ${inv.product === "shisha" ? "sessions & refills" : "visits"}`}
+                      : `${inv.visitCount.toLocaleString("en-ZA")} ${INVOICE_UNIT_LABEL[inv.product]}`}
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
@@ -949,7 +1044,33 @@ function InvoiceHistorySection({
                 </dl>
               )}
 
-              {expanded && inv.product !== "shisha" && inv.product !== "staff" && (
+              {expanded && inv.product === "orders" && (
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line bg-canvas px-4 py-3 text-sm sm:grid-cols-4">
+                  <UsageStat label="Monthly fee" value={formatCents(inv.baseFeeCents, inv.currency)} />
+                  <UsageStat label="Orders" value={inv.visitCount.toLocaleString("en-ZA")} />
+                  <UsageStat label="Included orders" value={(inv.includedVisits ?? 0).toLocaleString("en-ZA")} />
+                  <UsageStat label="Extra orders" value={`${inv.overageVisits.toLocaleString("en-ZA")} × ${formatCents(inv.rateCents, inv.currency)}`} />
+                  {(inv.detail?.addons ?? []).map((a) => (
+                    <UsageStat key={a.key} label={`${a.label} add-on`} value={formatCents(a.feeCents, inv.currency)} />
+                  ))}
+                  <div className="col-span-2 border-t border-line pt-2 sm:col-span-4">
+                    <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
+                  </div>
+                </dl>
+              )}
+
+              {expanded && inv.product === "events" && (
+                <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line bg-canvas px-4 py-3 text-sm sm:grid-cols-3">
+                  <UsageStat label="Tickets sold" value={inv.visitCount.toLocaleString("en-ZA")} />
+                  <UsageStat label="Fee per ticket" value={formatCents(inv.rateCents, inv.currency)} />
+                  {(inv.detail?.addons ?? []).map((a) => (
+                    <UsageStat key={a.key} label={`${a.label} add-on`} value={formatCents(a.feeCents, inv.currency)} />
+                  ))}
+                  <UsageStat label="Total" value={formatCents(inv.amountCents, inv.currency)} emphasize />
+                </dl>
+              )}
+
+              {expanded && inv.product === "booking_queue" && (
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line bg-canvas px-4 py-3 text-sm sm:grid-cols-4">
                   <UsageStat label="Base subscription" value={formatCents(inv.baseFeeCents, inv.currency)} />
                   <UsageStat label="Included visits" value={inv.includedVisits === null ? "No limit" : inv.includedVisits.toLocaleString("en-ZA")} />
