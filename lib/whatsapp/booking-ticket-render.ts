@@ -53,7 +53,7 @@ export interface ResolvedTicketStyle {
   showPhone: boolean
   showAddress: boolean
   showQr: boolean
-  /** Show a small "Powered by QLess" line (false for tenants who removed it). */
+  /** Show a small "Powered by ZozoApp" line (false for tenants who removed it). */
   showPoweredBy: boolean
 }
 
@@ -403,12 +403,15 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableTicket, qrDataUrl: s
             justifyContent: "center",
             padding: "0 0 22px",
             fontSize: 20,
-            color: "#94a3b8",
+            color: "#64748b",
             fontWeight: 600,
             // Continue the QR section's background so there is no white strip.
             background: showQrBg ? "#fafbfd" : "#ffffff",
           },
-          children: "Powered by QLess",
+          children: [
+            { type: "span", props: { style: { display: "flex", marginRight: 8 }, children: "Powered by" } },
+            { type: "span", props: { style: { display: "flex", color: "#111827", fontWeight: 700 }, children: "ZozoApp" } },
+          ],
         },
       }
     : null
