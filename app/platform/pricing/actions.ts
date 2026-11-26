@@ -7,6 +7,12 @@
 //                       and the public /pricing page, so all three update together.
 //   Staff Management -> `staff_billing_rates` global rows (tenant_id null, money in RANDS).
 //   Shisha           -> `shisha_billing_rates` global row (tenant_id null, money in RANDS).
+//   Order Management -> `order_billing_rates` global row: monthly fee + included orders + per-order rate (RANDS).
+//   Event Management -> `event_billing_rates` global row: fee per ticket sold (RANDS).
+//   Add-ons          -> `addon_billing_rates` global rows: flat monthly fee each (RANDS). Orders: stock_take,
+//                       barcode_labels. Events: box_office, vvip. Billed on the parent's invoice while on.
+// Staff are billed per head on Shisha, Orders, Events and standalone Staff (the "staff" rate above); Booking &
+// Queue include staff in their plan, so they never pay the per-head rate on top.
 // Prices only affect FUTURE billing: invoices already issued keep the amount they were issued at, and shisha
 // events already recorded keep the fee they were recorded with.
 "use server"
@@ -185,6 +191,105 @@ export async function updateShishaRates(input: { sessionFee: string; refillFee: 
         .from("shisha_billing_rates")
         .insert({ tenant_id: null, session_fee: sessionFee, refill_fee: refillFee, currency: "ZAR", is_active: true })
       if (insertError) return fail(insertError)
+    }
+
+    revalidateAll()
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+// ---------------------------------------------------------------------------
+// Order Management (order_billing_rates, platform default row)
+// ---------------------------------------------------------------------------
+
+export async function updateOrderRates(input: { monthlyFee: string; includedOrders: string; perOrderFee: string }): Promise<R> {
+  try {
+    const supabase = await ctx()
+    const monthlyFee = rands(input.monthlyFee, "Monthly fee")
+    const perOrderFee = rands(input.perOrderFee, "Fee per extra order")
+    const includedOrders = wholeNumber(input.includedOrders, "Orders included", 0, 10_000_000)
+
+    const { data, error } = await supabase
+      .from("order_billing_rates")
+      .update({ monthly_fee: monthlyFee, included_orders: includedOrders, per_order_fee: perOrderFee, is_active: true, updated_at: new Date().toISOString() })
+      .is("tenant_id", null)
+      .select("id")
+    if (error) return fail(error)
+    if (!data || data.length === 0) {
+      const { error: insertError } = await supabase
+        .from("order_billing_rates")
+        .insert({ tenant_id: null, monthly_fee: monthlyFee, included_orders: includedOrders, per_order_fee: perOrderFee, currency: "ZAR", is_active: true })
+      if (insertError) return fail(insertError)
+    }
+
+    revalidateAll()
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+// ---------------------------------------------------------------------------
+// Event Management (event_billing_rates, platform default row)
+// ---------------------------------------------------------------------------
+
+export async function updateEventRates(input: { ticketFee: string }): Promise<R> {
+  try {
+    const supabase = await ctx()
+    const ticketFee = rands(input.ticketFee, "Fee per ticket")
+
+    const { data, error } = await supabase
+      .from("event_billing_rates")
+      .update({ ticket_fee: ticketFee, is_active: true, updated_at: new Date().toISOString() })
+      .is("tenant_id", null)
+      .select("id")
+    if (error) return fail(error)
+    if (!data || data.length === 0) {
+      const { error: insertError } = await supabase
+        .from("event_billing_rates")
+        .insert({ tenant_id: null, ticket_fee: ticketFee, currency: "ZAR", is_active: true })
+      if (insertError) return fail(insertError)
+    }
+
+    revalidateAll()
+    return { success: true }
+  } catch (e) { return fail(e) }
+}
+
+// ---------------------------------------------------------------------------
+// Add-ons (addon_billing_rates, platform default rows): a flat monthly fee each
+// ---------------------------------------------------------------------------
+
+const ADDON_KEYS = ["stock_take", "barcode_labels", "box_office", "vvip"] as const
+const ADDON_LABELS: Record<(typeof ADDON_KEYS)[number], string> = {
+  stock_take: "Stock take",
+  barcode_labels: "Barcode / label printing",
+  box_office: "Box office",
+  vvip: "VVIP tables & tabs",
+}
+
+/** Saves the monthly fee of the add-ons named in `fees` (any subset of the four). Unknown keys are refused. */
+export async function updateAddonRates(fees: Record<string, string>): Promise<R> {
+  try {
+    const supabase = await ctx()
+    const entries = Object.entries(fees ?? {})
+    for (const [key] of entries) {
+      if (!(ADDON_KEYS as readonly string[]).includes(key)) return { success: false, error: "That add-on can't be priced here." }
+    }
+    const values = entries.map(([key, v]) => [key, rands(v, `${ADDON_LABELS[key as (typeof ADDON_KEYS)[number]]} fee`)] as const)
+
+    for (const [key, fee] of values) {
+      const { data, error } = await supabase
+        .from("addon_billing_rates")
+        .update({ monthly_fee: fee, is_active: true, updated_at: new Date().toISOString() })
+        .eq("module_key", key)
+        .is("tenant_id", null)
+        .select("id")
+      if (error) return fail(error)
+      if (!data || data.length === 0) {
+        const { error: insertError } = await supabase
+          .from("addon_billing_rates")
+          .insert({ tenant_id: null, module_key: key, monthly_fee: fee, currency: "ZAR", is_active: true })
+        if (insertError) return fail(insertError)
+      }
     }
 
     revalidateAll()

@@ -4,7 +4,7 @@
 import { useState, useTransition, type ReactNode } from "react"
 
 import { PLATFORM_CARD } from "@/components/platform/PageHeader"
-import { updateBookingQueuePlan, updateFreePlan, updateShishaRates, updateStaffRates } from "./actions"
+import { updateAddonRates, updateBookingQueuePlan, updateEventRates, updateFreePlan, updateOrderRates, updateShishaRates, updateStaffRates } from "./actions"
 
 export type PlanRow = {
   key: string
@@ -20,6 +20,9 @@ export type PlanRow = {
 }
 export type StaffRates = { staff: string; payroll: string; shifts: string }
 export type ShishaRates = { sessionFee: string; refillFee: string }
+export type OrderRates = { monthlyFee: string; includedOrders: string; perOrderFee: string }
+export type EventRates = { ticketFee: string }
+export type AddonRates = { stock_take: string; barcode_labels: string; box_office: string; vvip: string }
 
 type Msg = { ok: boolean; text: string } | null
 
@@ -158,12 +161,101 @@ function StaffCard({ rates }: { rates: StaffRates }) {
   return (
     <div className={`${PLATFORM_CARD} space-y-4 p-5`}>
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Staff Management" prefix="R" value={v.staff} onChange={(x) => setV({ ...v, staff: x })} suffix="per staff / month" hint="Billed when sold on its own. Included with Booking, Queue and Shisha." />
+        <Field label="Staff Management" prefix="R" value={v.staff} onChange={(x) => setV({ ...v, staff: x })} suffix="per staff / month" hint="Billed on Staff alone, Shisha, Orders and Events. Booking & Queue already include staff in their plan." />
         <Field label="Payroll add-on" prefix="R" value={v.payroll} onChange={(x) => setV({ ...v, payroll: x })} suffix="per staff / month" />
         <Field label="Shifts add-on" prefix="R" value={v.shifts} onChange={(x) => setV({ ...v, shifts: x })} suffix="per staff / month" />
       </div>
       <p className="text-[11px] text-stone-400">Today the monthly invoice run only bills the Staff Management fee. The Payroll and Shifts fees are saved here for when those get billed.</p>
       <SaveBar busy={busy} msg={msg} onSave={() => run(() => updateStaffRates(v))} />
+    </div>
+  )
+}
+
+// ── Order Management ─────────────────────────────────────────────────────────
+
+/** Flat monthly fee per add-on. Only shops that have the add-on AND its parent module switched on pay it. */
+function AddonFields({ items, values, onChange }: { items: Array<{ key: keyof AddonRates; label: string; note?: string }>; values: AddonRates; onChange: (k: keyof AddonRates, v: string) => void }) {
+  return (
+    <div className="space-y-3 border-t border-stone-100 pt-4">
+      <div>
+        <h4 className="text-xs font-semibold text-stone-700">Add-ons</h4>
+        <p className="text-[11px] text-stone-400">A flat monthly fee, charged only while the add-on and its module are both switched on. Set R0 to give an add-on away.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((i) => (
+          <Field key={i.key} label={i.label} prefix="R" value={values[i.key]} onChange={(x) => onChange(i.key, x)} suffix="/ month" hint={i.note} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function OrderCard({ rates, addons }: { rates: OrderRates; addons: AddonRates }) {
+  const [v, setV] = useState(rates)
+  const [a, setA] = useState(addons)
+  const { busy, msg, run } = useSave()
+  return (
+    <div className={`${PLATFORM_CARD} space-y-4 p-5`}>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Monthly fee" prefix="R" value={v.monthlyFee} onChange={(x) => setV({ ...v, monthlyFee: x })} suffix="/ month" />
+        <Field label="Orders included" value={v.includedOrders} onChange={(x) => setV({ ...v, includedOrders: x })} suffix="orders / month" hint="Completed or collected orders." />
+        <Field label="Price per extra order" prefix="R" value={v.perOrderFee} onChange={(x) => setV({ ...v, perOrderFee: x })} suffix="/ order" hint="Charged once a shop passes its included orders." />
+      </div>
+      <AddonFields
+        items={[
+          { key: "stock_take", label: "Stock take" },
+          { key: "barcode_labels", label: "Barcode / label printing", note: "The feature is still a placeholder screen in the shop admin." },
+        ]}
+        values={a}
+        onChange={(k, x) => setA({ ...a, [k]: x })}
+      />
+      <p className="text-[11px] text-stone-400">Staff are billed on top at the per-staff rate under Staff Management.</p>
+      <SaveBar
+        busy={busy}
+        msg={msg}
+        onSave={() =>
+          run(async () => {
+            const first = await updateOrderRates(v)
+            if (!first.success) return first
+            return updateAddonRates({ stock_take: a.stock_take, barcode_labels: a.barcode_labels })
+          })
+        }
+      />
+    </div>
+  )
+}
+
+// ── Event Management ─────────────────────────────────────────────────────────
+
+function EventCard({ rates, addons }: { rates: EventRates; addons: AddonRates }) {
+  const [v, setV] = useState(rates)
+  const [a, setA] = useState(addons)
+  const { busy, msg, run } = useSave()
+  return (
+    <div className={`${PLATFORM_CARD} space-y-4 p-5`}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Fee per ticket sold" prefix="R" value={v.ticketFee} onChange={(x) => setV({ ticketFee: x })} suffix="per ticket" hint="Issued and used tickets. Cancelled and refunded tickets are free." />
+      </div>
+      <AddonFields
+        items={[
+          { key: "box_office", label: "Box office" },
+          { key: "vvip", label: "VVIP tables & tabs" },
+        ]}
+        values={a}
+        onChange={(k, x) => setA({ ...a, [k]: x })}
+      />
+      <p className="text-[11px] text-stone-400">No monthly fee for Events itself. Staff are billed on top at the per-staff rate under Staff Management.</p>
+      <SaveBar
+        busy={busy}
+        msg={msg}
+        onSave={() =>
+          run(async () => {
+            const first = await updateEventRates(v)
+            if (!first.success) return first
+            return updateAddonRates({ box_office: a.box_office, vvip: a.vvip })
+          })
+        }
+      />
     </div>
   )
 }
@@ -185,7 +277,7 @@ function ShishaCard({ rates }: { rates: ShishaRates }) {
   )
 }
 
-export function PricingEditor({ plans, staff, shisha }: { plans: PlanRow[]; staff: StaffRates; shisha: ShishaRates }) {
+export function PricingEditor({ plans, staff, shisha, orders, events, addons }: { plans: PlanRow[]; staff: StaffRates; shisha: ShishaRates; orders: OrderRates; events: EventRates; addons: AddonRates }) {
   const free = plans.find((p) => p.key === "free")
   const paid = plans.filter((p) => p.key !== "free")
 
@@ -198,7 +290,15 @@ export function PricingEditor({ plans, staff, shisha }: { plans: PlanRow[]; staf
         {free && <FreePlanCard plan={free} />}
       </Section>
 
-      <Section title="Staff Management" blurb="Per active staff member, per month.">
+      <Section title="Order Management" blurb="A monthly fee that includes some orders, then a price per extra order. Add-ons are priced below.">
+        <OrderCard rates={orders} addons={addons} />
+      </Section>
+
+      <Section title="Event Management" blurb="Pay-as-you-go: a fee for each ticket sold. Add-ons carry a monthly fee.">
+        <EventCard rates={events} addons={addons} />
+      </Section>
+
+      <Section title="Staff Management" blurb="Per active staff member, per month. Applies to Staff on its own, Shisha, Orders and Events. Booking & Queue include staff in their plan instead.">
         <StaffCard rates={staff} />
       </Section>
 
