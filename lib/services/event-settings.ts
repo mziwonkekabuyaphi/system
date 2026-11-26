@@ -25,6 +25,11 @@ export interface EventSalesRules {
 export interface EventTicketSettings {
   /** Off = no ticket image on WhatsApp (the text confirmation and plain QR still go out). */
   enabled: boolean
+  /**
+   * Off = the separate plain QR code message is not sent (the ticket image still carries its own QR).
+   * At least one of `enabled` / `sendQr` must be on, see validateTicketSettings().
+   */
+  sendQr: boolean
   headerStyle: EventTicketHeaderStyle
   /** null = the tenant's brand primary colour */
   headerColor: string | null
@@ -53,6 +58,7 @@ export const DEFAULT_SALES_RULES: EventSalesRules = {
 
 export const DEFAULT_TICKET_SETTINGS: EventTicketSettings = {
   enabled: true,
+  sendQr: true,
   headerStyle: "gradient",
   headerColor: null,
   accentColor: null,
@@ -106,13 +112,14 @@ export function validateSalesRules(r: EventSalesRules): string | null {
 }
 
 /** `row` is the event row, or the booking ticket row used as the starting point. */
-export function ticketSettingsFromRow(row: Row | null | undefined, enabled = true): EventTicketSettings {
-  if (!row) return { ...DEFAULT_TICKET_SETTINGS, enabled }
+export function ticketSettingsFromRow(row: Row | null | undefined, enabled = true, sendQr = true): EventTicketSettings {
+  if (!row) return { ...DEFAULT_TICKET_SETTINGS, enabled, sendQr }
   const style = row.header_style
   const flag = (key: string, fallback: boolean) => (typeof row[key] === "boolean" ? (row[key] as boolean) : fallback)
   const text = (key: string) => (typeof row[key] === "string" && (row[key] as string).trim() ? (row[key] as string) : null)
   return {
     enabled,
+    sendQr,
     headerStyle: style === "solid" || style === "light" ? style : "gradient",
     headerColor: text("header_color"),
     accentColor: text("accent_color"),
@@ -129,6 +136,7 @@ export function ticketSettingsFromRow(row: Row | null | undefined, enabled = tru
 export function ticketSettingsToRow(s: EventTicketSettings) {
   return {
     enabled: s.enabled,
+    send_qr: s.sendQr,
     header_style: s.headerStyle,
     header_color: s.headerColor,
     accent_color: s.accentColor,
@@ -143,6 +151,7 @@ export function ticketSettingsToRow(s: EventTicketSettings) {
 }
 
 export function validateTicketSettings(s: EventTicketSettings): string | null {
+  if (!s.enabled && !s.sendQr) return "Keep at least one on: the ticket image or the QR code. Otherwise customers would get no ticket to scan."
   if (!["gradient", "solid", "light"].includes(s.headerStyle)) return "Choose a valid header style."
   if (s.headerColor && !HEX.test(s.headerColor)) return "Header colour must be a hex colour like #1F2937."
   if (s.accentColor && !HEX.test(s.accentColor)) return "Accent colour must be a hex colour like #F59E0B."
@@ -165,12 +174,28 @@ export async function loadEventSalesRules(supabase: SupabaseClient, tenantId: st
   }
 }
 
+export interface EventTicketDelivery {
+  /** Send the branded ticket image. */
+  image: boolean
+  /** Send the plain QR code message(s). Always true when the image is off, so a customer always gets something to scan. */
+  qr: boolean
+}
+
+/** What a customer is sent after buying. Defaults to both (also when no row exists or the read fails). */
+export async function loadEventTicketDelivery(supabase: SupabaseClient, tenantId: string): Promise<EventTicketDelivery> {
+  try {
+    // select("*") so a database that hasn't had the send_qr migration yet still works (it reads as on).
+    const { data } = await supabase.from("tenant_event_ticket_settings").select("*").eq("tenant_id", tenantId).maybeSingle()
+    const row = data as { enabled?: boolean; send_qr?: boolean } | null
+    const image = row?.enabled ?? true
+    const qr = row?.send_qr ?? true
+    return { image, qr: qr || !image }
+  } catch {
+    return { image: true, qr: true }
+  }
+}
+
 /** Whether the shop sends a ticket image at all. Default true (also when no row exists). */
 export async function loadEventTicketImageEnabled(supabase: SupabaseClient, tenantId: string): Promise<boolean> {
-  try {
-    const { data } = await supabase.from("tenant_event_ticket_settings").select("enabled").eq("tenant_id", tenantId).maybeSingle()
-    return (data as { enabled?: boolean } | null)?.enabled ?? true
-  } catch {
-    return true
-  }
+  return (await loadEventTicketDelivery(supabase, tenantId)).image
 }
