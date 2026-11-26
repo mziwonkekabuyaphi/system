@@ -473,7 +473,7 @@ export async function renderEventTicketPreview(tenantId: string, overrides: Even
       tierName: "General Admission",
       price: 150,
       quantity: 1,
-      customerName: "Thandi Mokoena",
+      customerName: "Mziwonke KaBuyaphi",
     }
     const ticket: TicketRow = { id: "preview", ticket_number: "E0042", qr_token: "preview-ticket-sample", entries_allowed: 1 }
     return await renderEventTicketPng(look.style, toRenderable(look, ctx, ticket, 0, "0731234567"))
