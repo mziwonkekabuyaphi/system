@@ -4,8 +4,9 @@
 // now removed) so it sits with the other settings pages. It is listed in SettingsManager's nav and
 // only appears while the `events` module is effective for the shop.
 //
-// Two cards, each saved on its own:
+// Three cards, each saved on its own:
 //   Sales rules -> how many tickets customers can buy on WhatsApp, and when selling stops
+//   VVIP tables -> whether customers pick their own table on WhatsApp
 //   Ticket      -> the WhatsApp ticket image (with a live preview of the unsaved values)
 // Events have no public page, so the ticket image on WhatsApp is what customers see.
 // Data and saving go through the same server actions as before (../events/event-settings-actions),
@@ -15,13 +16,14 @@
 import { useEffect, useRef, useState, useTransition } from "react"
 
 import { BRAND_SELECTED, BRAND_TEXT } from "@/components/admin/brand"
-import type { EventSalesRules, EventTicketHeaderStyle, EventTicketSettings } from "@/lib/services/event-settings"
+import type { EventSalesRules, EventTicketHeaderStyle, EventTicketSettings, VvipTableSettings } from "@/lib/services/event-settings"
 
 import {
   getEventSettings,
   previewEventTicket,
   updateEventSalesRules,
   updateEventTicketSettings,
+  updateVvipTableSettings,
   type EventSettingsConfig,
 } from "../events/event-settings-actions"
 import { CardSaveRow, ColorField, FieldRow, SettingsCard, Toggle, inputClass } from "./ui"
@@ -64,8 +66,69 @@ export function EventSettingsPanel() {
   return (
     <div className="space-y-4">
       <SalesRulesCard initial={config.rules} />
+      <TablesCard initial={config.tables} />
       <TicketCard config={config} />
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// VVIP tables
+// ---------------------------------------------------------------------------
+
+function TablesCard({ initial }: { initial: VvipTableSettings }) {
+  const [saved, setSaved] = useState(initial)
+  const [draft, setDraft] = useState(initial)
+  const [isPending, startTransition] = useTransition()
+  const [message, setMessage] = useState<Message>(null)
+  const dirty = draft.customersPickTable !== saved.customersPickTable
+
+  function save() {
+    setMessage(null)
+    startTransition(async () => {
+      const res = await updateVvipTableSettings(draft)
+      if (res.success) {
+        setSaved(draft)
+        setMessage({ ok: true, text: "Saved." })
+      } else {
+        setMessage({ ok: false, text: res.error })
+      }
+    })
+  }
+
+  return (
+    <SettingsCard
+      title="VVIP tables"
+      description="How customers book a table on WhatsApp. Tables and their prices are set up under VVIP."
+      footer={
+        <CardSaveRow
+          dirty={dirty}
+          isPending={isPending}
+          onSave={save}
+          onDiscard={() => {
+            setDraft(saved)
+            setMessage(null)
+          }}
+          message={message}
+        />
+      }
+    >
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
+        <div>
+          <p className="text-sm font-medium text-ink">{draft.customersPickTable ? "Customers choose their table" : "Table is assigned automatically"}</p>
+          <p className="text-xs text-ink-muted">
+            {draft.customersPickTable
+              ? "After picking a package the customer sees the free tables and taps the one they want. If it is taken while they pay by card, they get the next free table."
+              : "The customer is given the next free table of the package you set up, in the order you created them."}
+          </p>
+        </div>
+        <Toggle
+          checked={draft.customersPickTable}
+          disabled={isPending}
+          onChange={(next) => setDraft({ customersPickTable: next })}
+        />
+      </div>
+    </SettingsCard>
   )
 }
 
