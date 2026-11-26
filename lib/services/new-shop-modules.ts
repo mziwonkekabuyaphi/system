@@ -22,7 +22,7 @@ export const CREATABLE_MODULES: Array<{ key: NewShopModule; label: string; defau
   { key: "booking", label: "Booking", defaultOn: true },
   { key: "queue", label: "Queue", defaultOn: true },
   { key: "shisha", label: "Shisha", defaultOn: false },
-  { key: "staff", label: "Staff Management (R30 per staff, only if sold alone)", defaultOn: false },
+  { key: "staff", label: "Staff Management (per staff; billed on Staff alone, Shisha, Orders, Events)", defaultOn: false },
   { key: "shifts", label: "Shifts", defaultOn: false },
   { key: "payroll", label: "Payroll", defaultOn: false },
 ]
