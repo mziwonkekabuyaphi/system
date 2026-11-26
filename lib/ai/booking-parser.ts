@@ -32,7 +32,9 @@ export interface ParserDateOption {
 }
 
 export interface ParsedBookingRequest {
-  /** 0-based index into the services list passed in, or null. */
+  /** 0-based indexes into the services list passed in, in the order asked ("trim and beard" -> 2). Empty = none recognised. */
+  serviceIndexes: number[]
+  /** First of serviceIndexes (kept so older callers still work), or null. */
   serviceIndex: number | null
   /** One of the supplied dateOptions' `date`, or null. */
   date: string | null
@@ -45,7 +47,9 @@ export interface ParsedBookingRequest {
 const PARSE_TIMEOUT_MS = 3500
 
 const rawSchema = z.object({
-  serviceNumber: z.number().int().nullable().describe("1-based number of the matching service, or null"),
+  serviceNumbers: z
+    .array(z.number().int())
+    .describe("1-based numbers of EVERY service the customer asked for, in the order asked. Empty array if none."),
   date: z.string().nullable().describe("YYYY-MM-DD from the allowed dates, or null"),
   time: z.string().nullable().describe("24-hour HH:MM, or null"),
   wantsQueue: z.boolean().describe("true only if they clearly want the walk-in queue / to come now"),
@@ -90,11 +94,21 @@ export function hasBookingDetail(text: string): boolean {
  * Pure: clamps raw model output to what is actually allowed. Anything invalid
  * becomes null rather than throwing or being "fixed up".
  */
-export function validateParsed(raw: RawParse, serviceCount: number, dateOptions: ParserDateOption[]): ParsedBookingRequest {
-  const serviceIndex =
-    raw.serviceNumber !== null && Number.isInteger(raw.serviceNumber) && raw.serviceNumber >= 1 && raw.serviceNumber <= serviceCount
-      ? raw.serviceNumber - 1
-      : null
+export function validateParsed(
+  raw: RawParse,
+  serviceCount: number,
+  dateOptions: ParserDateOption[],
+  maxServices = 1,
+): ParsedBookingRequest {
+  // Keep only real, distinct service numbers, and never more than the shop lets one booking hold.
+  const serviceIndexes: number[] = []
+  for (const n of raw.serviceNumbers ?? []) {
+    if (!Number.isInteger(n) || n < 1 || n > serviceCount) continue
+    if (serviceIndexes.includes(n - 1)) continue
+    serviceIndexes.push(n - 1)
+    if (serviceIndexes.length >= Math.max(1, maxServices)) break
+  }
+  const serviceIndex = serviceIndexes.length > 0 ? serviceIndexes[0] : null
 
   const date = raw.date && dateOptions.some((d) => d.date === raw.date) ? raw.date : null
 
@@ -106,7 +120,7 @@ export function validateParsed(raw: RawParse, serviceCount: number, dateOptions:
     if (h >= 0 && h <= 23 && min >= 0 && min <= 59) time = `${String(h).padStart(2, "0")}:${m[2]}`
   }
 
-  return { serviceIndex, date, time, wantsQueue: raw.wantsQueue === true }
+  return { serviceIndexes, serviceIndex, date, time, wantsQueue: raw.wantsQueue === true }
 }
 
 /** Pure: the offered slot whose shop-local label equals the requested "HH:MM", else null. */
@@ -119,13 +133,13 @@ function weekdayOf(dateISO: string): string {
   return new Date(`${dateISO}T12:00:00.000Z`).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })
 }
 
-function buildPrompt(services: ParserService[], dateOptions: ParserDateOption[]): string {
+function buildPrompt(services: ParserService[], dateOptions: ParserDateOption[], maxServices: number): string {
   const serviceLines = services.map((s, i) => `${i + 1}. ${s.name}`).join("\n")
   const dateLines = dateOptions.map((d) => `${d.date} — ${weekdayOf(d.date)} (${d.label})`).join("\n")
   return `
 You extract booking details from ONE WhatsApp message sent to a salon / barbershop. The message may be in English, isiXhosa, isiZulu, Afrikaans, Sesotho, Setswana or another language, and may mix languages.
 
-SERVICES (answer with the number only if the customer clearly asks for one of these, otherwise null; match by meaning across languages, e.g. "ukusika iinwele"/"sika"/"haarsny" = haircut):
+SERVICES (list the number of EVERY service the customer clearly asks for, in the order they asked, otherwise an empty list; match by meaning across languages, e.g. "ukusika iinwele"/"sika"/"haarsny" = haircut). "trim and beard" or "trim beard" means TWO services if the list has a separate trim and a separate beard service; but if the list has ONE service that already covers both (for example "Trim & Beard"), return only that one. This shop allows at most ${maxServices} service${maxServices === 1 ? "" : "s"} per booking, so never list more than that:
 ${serviceLines}
 
 ALLOWED DATES (answer with the YYYY-MM-DD only; resolve words like today/tomorrow/Saturday/"kusasa"/"namhlanje"/"môre"/"vandag" against this list; null if not stated or not in the list):
@@ -148,6 +162,7 @@ export async function extractBookingRequest(
   text: string,
   services: ParserService[],
   dateOptions: ParserDateOption[],
+  maxServices = 1,
 ): Promise<ParsedBookingRequest | null> {
   if (services.length === 0 || dateOptions.length === 0) return null
 
@@ -160,7 +175,7 @@ export async function extractBookingRequest(
       const result = await generateObject({
         model,
         schema: rawSchema,
-        system: buildPrompt(services, dateOptions),
+        system: buildPrompt(services, dateOptions, maxServices),
         prompt: text.slice(0, 500),
         ...ctx.tune({ temperature: 0 }),
         abortSignal: controller.signal,
@@ -168,7 +183,7 @@ export async function extractBookingRequest(
       return { value: result.object, usage: result.usage }
     })
 
-    return validateParsed(object, services.length, dateOptions)
+    return validateParsed(object, services.length, dateOptions, maxServices)
   } catch (error) {
     console.error("[booking-parser] extraction failed, using normal flow:", error instanceof Error ? error.message : error)
     return null

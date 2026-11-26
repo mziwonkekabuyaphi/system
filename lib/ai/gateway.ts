@@ -26,7 +26,13 @@ import { getProvider } from "@/lib/ai/providers"
 import type { AiCallSettings } from "@/lib/ai/providers"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
-export type AiPurpose = "intent_classification" | "booking_parser" | "shisha_entry" | "concierge_reply"
+export type AiPurpose =
+  | "intent_classification"
+  | "booking_parser"
+  | "shisha_entry"
+  | "concierge_reply"
+  | "ticket_entry"
+  | "order_entry"
 export type AiKeySource = "byok" | "managed"
 
 export type AiBlockedReason =
@@ -160,7 +166,11 @@ function pickModelId(r: Resolved, purpose: AiPurpose): string {
   // BYOK: the tenant chose the model. Managed: the platform decides, exactly as before BYOK existed
   // (OPENAI_MODEL, and the optional cheaper OPENAI_CLASSIFIER_MODEL for the six-label classifier).
   if (r.keySource !== "managed" || r.provider !== "openai") return r.model
-  const cheap = purpose === "intent_classification" || purpose === "shisha_entry"
+  const cheap =
+    purpose === "intent_classification" ||
+    purpose === "shisha_entry" ||
+    purpose === "ticket_entry" ||
+    purpose === "order_entry"
   const override = cheap ? process.env.OPENAI_CLASSIFIER_MODEL?.trim() : undefined
   return override || process.env.OPENAI_MODEL?.trim() || r.model
 }
