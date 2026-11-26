@@ -18,7 +18,7 @@
  * exactly those two — see that file's header for the scope decision).
  */
 
-import { type RoutedIntent } from "@/lib/whatsapp/intent-router"
+import { type IntentModules, type RoutedIntent } from "@/lib/whatsapp/intent-router"
 import { type IncomingMessage } from "@/lib/whatsapp/parse-webhook"
 import { routeAction } from "@/lib/whatsapp/action-router"
 import type { ActionResult } from "@/lib/types/action"
@@ -31,6 +31,7 @@ import { REMINDER_TAP_PATTERN } from "@/lib/services/reminder-reply"
 import { DRIVER_ID_PREFIX } from "@/lib/services/orders/orders.drivers"
 import { WAITLIST_TAP_PATTERN } from "@/lib/services/waitlist-reply"
 import { isAiEnabledForTenant } from "@/lib/ai/settings"
+import { isModuleEnabled } from "@/lib/tenant/modules"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,17 @@ async function aiBudgetExceeded(tenantId: string, phone: string): Promise<boolea
     console.error("[reply] AI budget check failed, allowing AI", error)
     return false
   }
+}
+
+/** Which optional modules this shop runs, so the classifier only offers intents the shop actually has. */
+async function loadIntentModules(tenantId: string): Promise<IntentModules> {
+  const [shisha, wallet, events, orders] = await Promise.all([
+    isModuleEnabled(tenantId, "shisha"),
+    isModuleEnabled(tenantId, "wallet"),
+    isModuleEnabled(tenantId, "events"),
+    isModuleEnabled(tenantId, "orders"),
+  ])
+  return { shisha, wallet, events, orders }
 }
 
 const FALLBACK_REPLY: ActionResult = {
@@ -145,9 +157,11 @@ export async function processIncomingMessage(
       (await isAiEnabledForTenant(tenantId)) &&
       !(await aiBudgetExceeded(tenantId, message.from))
 
+    // tenantId lets the classifier run on THIS shop's AI account (own key / limit); modules tune its prompt.
+    const modules = allowAi ? await loadIntentModules(tenantId) : undefined
     const intent = skip
       ? SKIPPED
-      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi })
+      : await routeIntent(toIntentRouterMessage(message), undefined, { allowAi, tenantId, modules })
 
     // STEP 4: Route the message to the appropriate handler.
     const result = await routeAction(tenantId, intent, state, message)
