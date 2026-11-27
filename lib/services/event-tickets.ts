@@ -48,7 +48,7 @@ import { formatPassportMoney } from "@/lib/services/passport"
 import { getCardOption } from "@/lib/payments/card"
 import { generateTicketQrCode, getOrderTicketQrs } from "@/lib/whatsapp/qr-generator"
 import { getTenantDisplayName, scheduleOrderTicketImages } from "@/lib/whatsapp/ticket-image"
-import { loadEventSalesRules, loadEventTicketDelivery } from "@/lib/services/event-settings"
+import { loadEventSalesRules, loadEventTicketDelivery, loadTableNames } from "@/lib/services/event-settings"
 import { buildChoiceList, clip } from "@/lib/whatsapp/utils/choice-list"
 import {
   buyWithPassport,
@@ -344,12 +344,13 @@ async function buildMyTicketsReply(
   const delivery = await loadEventTicketDelivery(supabase, tenantId)
   // Upcoming VVIP tables of this customer (a table has a reference, not a QR; [] when none or VVIP is off).
   const tableLines = customerId ? await readMyTableLines(supabase, tenantId, customerId, timeZone) : []
+  const tablesTitle = tableLines.length > 0 ? (await loadTableNames(supabase, tenantId)).plural : "Tables"
 
   if (tickets.length === 0) {
     return {
       reply:
         tableLines.length > 0
-          ? ["🎟️ *My tickets*", "", "You don't have any upcoming tickets.", "", "🍾 *Your tables*", ...tableLines, "", "Show your reference at the venue."].join("\n")
+          ? ["🎟️ *My tickets*", "", "You don't have any upcoming tickets.", "", `🍾 *Your ${tablesTitle.toLowerCase()}*`, ...tableLines, "", "Show your QR code or reference at the venue."].join("\n")
           : ["🎟️ *My tickets*", "", "You don't have any upcoming tickets.", "", BUY_HELP].join("\n"),
       buttons: ["Events", "Main Menu"],
       nextState: null,
@@ -388,7 +389,7 @@ async function buildMyTicketsReply(
       blocks.join("\n\n") + more,
       "",
       delivery.qr ? "Show the QR code (or the ticket number) at the gate." : "Show your ticket image (or the ticket number) at the gate.",
-      ...(tableLines.length > 0 ? ["", "🍾 *Your tables*", ...tableLines, "", "Show your reference at the venue."] : []),
+      ...(tableLines.length > 0 ? ["", `🍾 *Your ${tablesTitle.toLowerCase()}*`, ...tableLines, "", "Show your QR code or reference at the venue."] : []),
     ].join("\n"),
     buttons: ["Events", "Main Menu"],
     nextState: null,
@@ -479,7 +480,7 @@ function beginTierStep(event: EventRow, tiers: TierRow[], timeZone: string, pack
     followUp: [
       buildChoiceList(`${header}\n\nWhich ticket would you like?`, "Choose ticket", [
         { title: "Tickets", rows: shown.map(tierRow) },
-        ...(tablesRow ? [{ title: "VVIP", rows: [tablesRow] }] : []),
+        ...(tablesRow ? [{ title: (packages.find((p) => p.eventId === event.id)?.names.plural ?? "Tables").slice(0, 24), rows: [tablesRow] }] : []),
         MY_TICKETS_ROW,
       ]),
     ],

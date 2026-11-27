@@ -50,9 +50,31 @@ export interface EventTicketSettings {
 export interface VvipTableSettings {
   /** false = the customer is given the next free table (the default). true = they see the free tables and pick one. */
   customersPickTable: boolean
+  /** The tenant's own word for one table, e.g. "Booth". null = "Table". */
+  tableName: string | null
+  /** ...and for several, e.g. "Booths". null = "Tables". */
+  tablesName: string | null
 }
 
-export const DEFAULT_VVIP_TABLE_SETTINGS: VvipTableSettings = { customersPickTable: false }
+export const DEFAULT_VVIP_TABLE_SETTINGS: VvipTableSettings = { customersPickTable: false, tableName: null, tablesName: null }
+
+export const MAX_TABLE_NAME = 20
+
+/** The words customers see. Always filled in. */
+export interface TableNames {
+  singular: string
+  plural: string
+}
+export const DEFAULT_TABLE_NAMES: TableNames = { singular: "Table", plural: "Tables" }
+
+export function tableNamesOf(s: Pick<VvipTableSettings, "tableName" | "tablesName"> | null | undefined): TableNames {
+  const one = s?.tableName?.trim() || ""
+  const many = s?.tablesName?.trim() || ""
+  return {
+    singular: one || (many ? many.replace(/s$/i, "") || DEFAULT_TABLE_NAMES.singular : DEFAULT_TABLE_NAMES.singular),
+    plural: many || (one ? `${one}s` : DEFAULT_TABLE_NAMES.plural),
+  }
+}
 
 /**
  * What a customer is sent after booking a VVIP table (tenant_vvip_ticket_settings). The look (colours, logo,
@@ -63,13 +85,39 @@ export interface VvipPassSettings {
   enabled: boolean
   /** The plain QR code message. At least one of `enabled` / `sendQr` must be on. */
   sendQr: boolean
-  /** null = "Table Confirmed" */
+  /** null = "<Table> Confirmed" */
   eyebrow: string | null
   /** null = "Show this QR code at the venue" */
   footerText: string | null
+  headerStyle: EventTicketHeaderStyle
+  /** null = the tenant's brand primary colour */
+  headerColor: string | null
+  /** null = the tenant's brand secondary colour */
+  accentColor: string | null
+  showLogo: boolean
+  showPrice: boolean
+  /** The bar tab that comes with the table. */
+  showTab: boolean
+  showReference: boolean
+  showPhone: boolean
+  showAddress: boolean
 }
 
-export const DEFAULT_VVIP_PASS_SETTINGS: VvipPassSettings = { enabled: true, sendQr: true, eyebrow: null, footerText: null }
+export const DEFAULT_VVIP_PASS_SETTINGS: VvipPassSettings = {
+  enabled: true,
+  sendQr: true,
+  eyebrow: null,
+  footerText: null,
+  headerStyle: "gradient",
+  headerColor: null,
+  accentColor: null,
+  showLogo: true,
+  showPrice: true,
+  showTab: true,
+  showReference: true,
+  showPhone: false,
+  showAddress: true,
+}
 
 export const MAX_EYEBROW = 40
 export const MAX_FOOTER = 120
@@ -121,30 +169,72 @@ export function salesRulesToRow(r: EventSalesRules) {
 }
 
 export function vvipTableSettingsFromRow(row: Row | null | undefined): VvipTableSettings {
-  return { customersPickTable: row?.customers_pick_table === true }
+  const name = (k: string) => (typeof row?.[k] === "string" && (row[k] as string).trim() ? (row[k] as string).trim() : null)
+  return { customersPickTable: row?.customers_pick_table === true, tableName: name("table_name"), tablesName: name("tables_name") }
 }
 
 export function vvipTableSettingsToRow(s: VvipTableSettings) {
-  return { customers_pick_table: s.customersPickTable === true }
+  return {
+    customers_pick_table: s.customersPickTable === true,
+    table_name: s.tableName?.trim() || null,
+    tables_name: s.tablesName?.trim() || null,
+  }
+}
+
+export function validateVvipTableSettings(s: VvipTableSettings): string | null {
+  if (typeof s.customersPickTable !== "boolean") return "Invalid setting."
+  if ((s.tableName ?? "").trim().length > MAX_TABLE_NAME || (s.tablesName ?? "").trim().length > MAX_TABLE_NAME) {
+    return `Names must be ${MAX_TABLE_NAME} characters or fewer.`
+  }
+  return null
 }
 
 export function vvipPassSettingsFromRow(row: Row | null | undefined): VvipPassSettings {
   if (!row) return DEFAULT_VVIP_PASS_SETTINGS
+  const d = DEFAULT_VVIP_PASS_SETTINGS
   const text = (k: string) => (typeof row[k] === "string" && (row[k] as string).trim() ? (row[k] as string).trim() : null)
+  const flag = (k: string, fallback: boolean) => (typeof row[k] === "boolean" ? (row[k] as boolean) : fallback)
+  const style = row.header_style
   return {
-    enabled: typeof row.enabled === "boolean" ? row.enabled : true,
-    sendQr: typeof row.send_qr === "boolean" ? row.send_qr : true,
+    enabled: flag("enabled", d.enabled),
+    sendQr: flag("send_qr", d.sendQr),
     eyebrow: text("eyebrow"),
     footerText: text("footer_text"),
+    headerStyle: style === "solid" || style === "light" ? style : "gradient",
+    headerColor: text("header_color"),
+    accentColor: text("accent_color"),
+    showLogo: flag("show_logo", d.showLogo),
+    showPrice: flag("show_price", d.showPrice),
+    showTab: flag("show_tab", d.showTab),
+    showReference: flag("show_reference", d.showReference),
+    showPhone: flag("show_phone", d.showPhone),
+    showAddress: flag("show_address", d.showAddress),
   }
 }
 
 export function vvipPassSettingsToRow(s: VvipPassSettings) {
-  return { enabled: s.enabled, send_qr: s.sendQr, eyebrow: s.eyebrow?.trim() || null, footer_text: s.footerText?.trim() || null }
+  return {
+    enabled: s.enabled,
+    send_qr: s.sendQr,
+    eyebrow: s.eyebrow?.trim() || null,
+    footer_text: s.footerText?.trim() || null,
+    header_style: s.headerStyle,
+    header_color: s.headerColor,
+    accent_color: s.accentColor,
+    show_logo: s.showLogo,
+    show_price: s.showPrice,
+    show_tab: s.showTab,
+    show_reference: s.showReference,
+    show_phone: s.showPhone,
+    show_address: s.showAddress,
+  }
 }
 
 export function validateVvipPassSettings(s: VvipPassSettings): string | null {
-  if (!s.enabled && !s.sendQr) return "Keep at least one on: the table pass image or the QR code. Otherwise customers would get nothing to show at the venue."
+  if (!s.enabled && !s.sendQr) return "Keep at least one on: the pass image or the QR code. Otherwise customers would get nothing to show at the venue."
+  if (!["gradient", "solid", "light"].includes(s.headerStyle)) return "Choose a valid header style."
+  if (s.headerColor && !HEX.test(s.headerColor)) return "Header colour must be a hex colour like #1F2937."
+  if (s.accentColor && !HEX.test(s.accentColor)) return "Accent colour must be a hex colour like #F59E0B."
   if ((s.eyebrow ?? "").trim().length > MAX_EYEBROW) return `Pass label must be ${MAX_EYEBROW} characters or fewer.`
   if ((s.footerText ?? "").trim().length > MAX_FOOTER) return `Footer text must be ${MAX_FOOTER} characters or fewer.`
   return null
@@ -238,6 +328,11 @@ export async function loadVvipTableSettings(supabase: SupabaseClient, tenantId: 
   } catch {
     return DEFAULT_VVIP_TABLE_SETTINGS
   }
+}
+
+/** The tenant's words for a table. Never throws; defaults to Table / Tables. */
+export async function loadTableNames(supabase: SupabaseClient, tenantId: string): Promise<TableNames> {
+  return tableNamesOf(await loadVvipTableSettings(supabase, tenantId))
 }
 
 /** What a table buyer is sent. Defaults to both (also when no row exists, the table is missing or the read fails). */

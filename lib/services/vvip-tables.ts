@@ -32,7 +32,7 @@ import type { ActionResult } from "@/lib/types/action"
 import type { ConversationState } from "@/lib/services/state"
 import { formatPassportMoney } from "@/lib/services/passport"
 import { getTenantTimezone } from "@/lib/services/shared/tenant-scheduling"
-import { loadVvipPassSettings, loadVvipTableSettings } from "@/lib/services/event-settings"
+import { loadTableNames, loadVvipPassSettings, loadVvipTableSettings, tableNamesOf, type TableNames } from "@/lib/services/event-settings"
 import { getTenantDisplayName, scheduleTablePassImage } from "@/lib/whatsapp/ticket-image"
 import { getTableBookingQr } from "@/lib/whatsapp/qr-generator"
 import { buildChoiceList, clip } from "@/lib/whatsapp/utils/choice-list"
@@ -142,17 +142,18 @@ export function tablesRowFor(eventId: string, packages: TablePackage[]) {
   const left = mine.reduce((sum, p) => sum + p.tablesLeft, 0)
   return {
     id: `${ID_TABLES}${eventId}`,
-    title: "🍾 VVIP tables",
-    description: `${cheapest > 0 ? `From ${money(cheapest)}` : "Free"} · ${left} table${left === 1 ? "" : "s"} left`,
+    title: clip(`🍾 ${mine[0].names.plural}`, 24),
+    description: `${cheapest > 0 ? `From ${money(cheapest)}` : "Free"} · ${left} left`,
   }
 }
 
 /** The package list for one event. `packages` = this event's packages (already filtered to tables left). */
 export function packageStep(packages: TablePackage[], timeZone: string): ActionResult {
   const event = packages[0]
+  const names = event.names
   const shown = packages.slice(0, MAX_ROWS)
   const header = [
-    `🍾 *VVIP tables*`,
+    `🍾 *${names.plural}*`,
     `*${event.eventName}*`,
     `📅 ${formatWhen(event.eventStart, timeZone)}`,
     ...(event.eventLocation ? [`📍 ${event.eventLocation}`] : []),
@@ -165,16 +166,16 @@ export function packageStep(packages: TablePackage[], timeZone: string): ActionR
     return `• *${p.name}*: ${parts.join(" · ")}`
   })
   // A WhatsApp list body is at most 1024 characters: if many packages push past it, fall back to the header only.
-  let body = `${header}\n\n${lines.join("\n")}\n\nWhich table would you like?`
-  if (body.length > 1000) body = `${header}\n\nWhich table would you like?`
+  let body = `${header}\n\n${lines.join("\n")}\n\nWhich ${names.singular.toLowerCase()} would you like?`
+  if (body.length > 1000) body = `${header}\n\nWhich ${names.singular.toLowerCase()} would you like?`
 
   return {
     // Empty main reply on purpose: send-action-result.ts skips it, so the header lives in the list body.
     ...stay(TABLE_STATE_PACKAGE, { eventId: event.eventId, packageIds: shown.map((p) => p.packageId) }, ""),
     followUp: [
-      buildChoiceList(body, "Choose table", [
+      buildChoiceList(body, clip(`Choose ${names.singular.toLowerCase()}`, 20), [
         {
-          title: "Tables",
+          title: clip(names.plural, 24),
           rows: shown.map((p) => {
             const price = priceLabel(p.price)
             return {
@@ -195,8 +196,9 @@ export function packageStep(packages: TablePackage[], timeZone: string): ActionR
  */
 export async function beginTables(supabase: SupabaseClient, tenantId: string, timeZone: string): Promise<ActionResult> {
   const packages = await loadTablePackages(supabase, tenantId)
+  const names = packages[0]?.names ?? (await loadTableNames(supabase, tenantId))
   if (packages.length === 0) {
-    return finish("🍾 *VVIP tables*\n\nThere are no tables on sale right now. Check back soon!", ["Events", "Main Menu"])
+    return finish(`🍾 *${names.plural}*\n\nThere is nothing on sale right now. Check back soon!`, ["Events", "Main Menu"])
   }
   const byEvent = groupByEvent(packages)
   if (byEvent.size === 1) return packageStep([...byEvent.values()][0], timeZone)
@@ -205,7 +207,7 @@ export async function beginTables(supabase: SupabaseClient, tenantId: string, ti
   return {
     ...stay(TABLE_STATE_EVENT, { eventIds: events.map((list) => list[0].eventId) }, ""),
     followUp: [
-      buildChoiceList("🍾 *VVIP tables*\n\nWhich event would you like a table for?", "Choose event", [
+      buildChoiceList(`🍾 *${names.plural}*\n\nWhich event would you like a ${names.singular.toLowerCase()} for?`, "Choose event", [
         {
           title: "Events",
           rows: events.map((list) => ({
@@ -242,14 +244,14 @@ async function readExtras(supabase: SupabaseClient, tenantId: string, packageId:
   }
 }
 
-function summaryLines(quote: TableQuote, extras: PackageExtras, timeZone: string, note?: string, tableLabel?: string | null): string[] {
+function summaryLines(quote: TableQuote, extras: PackageExtras, timeZone: string, note?: string, tableLabel?: string | null, names: TableNames = tableNamesOf(null)): string[] {
   return [
     ...(note ? [note, ""] : []),
-    "🧾 *Table summary*",
+    `🧾 *${names.singular} summary*`,
     `🍾 *${quote.packageName}*`,
     `🎪 ${quote.eventName}`,
     `📅 ${formatWhen(quote.eventStart, timeZone)}`,
-    ...(tableLabel ? [`🪑 Table: *${tableLabel}*`] : []),
+    ...(tableLabel ? [`🪑 ${names.singular}: *${tableLabel}*`] : []),
     ...(quote.seatsPerTable > 0 ? [`👥 Seats ${quote.seatsPerTable} guests`] : []),
     ...(quote.tabCredit > 0 ? [`🥂 ${money(quote.tabCredit)} bar tab included`] : []),
     ...(extras.description ? [`ℹ️ ${clip(extras.description, 200)}`] : []),
@@ -270,6 +272,7 @@ async function cardCheckoutReply(
 ): Promise<ActionResult> {
   const card = await startTableCardCheckout({ supabase, tenantId, customerId, quote, tableId })
   if (!card.ok) return finish(card.message, ["Events", "Main Menu"])
+  const names = await loadTableNames(supabase, tenantId)
   const testNote = card.mode === "test" ? "\n\n_Test mode: no real money is charged._" : ""
   return finish(
     [
@@ -277,7 +280,7 @@ async function cardCheckoutReply(
       "💳 Tap the link to pay securely:",
       card.url,
       "",
-      "Your table is booked and confirmed here as soon as the payment goes through.",
+      `Your ${names.singular.toLowerCase()} is booked and confirmed here as soon as the payment goes through.`,
     ].join("\n") + testNote,
   )
 }
@@ -323,29 +326,32 @@ async function pickTableReply(
   const at = ((page % pages) + pages) % pages // "More tables" on the last page wraps back to the first
   const shown = free.slice(at * TABLES_PER_PAGE, (at + 1) * TABLES_PER_PAGE)
   const seats = q.quote.seatsPerTable > 0 ? `Seats ${q.quote.seatsPerTable}` : undefined
+  const names = await loadTableNames(supabase, tenantId)
+  const one = names.singular.toLowerCase()
+  const many = names.plural.toLowerCase()
 
   const body = [
     ...(note ? [note, ""] : []),
-    "🪑 *Choose your table*",
+    `🪑 *Choose your ${one}*`,
     `*${q.quote.packageName}* · ${q.quote.eventName}`,
-    `${free.length} table${free.length === 1 ? "" : "s"} free${pages > 1 ? ` (page ${at + 1} of ${pages})` : ""}`,
+    `${free.length} ${free.length === 1 ? one : many} free${pages > 1 ? ` (page ${at + 1} of ${pages})` : ""}`,
     "",
-    "Tap the table you would like, or let us pick one.",
+    `Tap the ${one} you would like, or let us pick one.`,
   ].join("\n")
 
   return {
     ...stay(TABLE_STATE_TABLE, { packageId, page: at }, ""),
     followUp: [
-      buildChoiceList(body, "Choose table", [
+      buildChoiceList(body, clip(`Choose ${one}`, 20), [
         {
-          title: "Free tables",
+          title: clip(`Free ${many}`, 24),
           rows: shown.map((t) => ({ id: `${ID_TABLE}${t.tableId}`, title: t.label, ...(seats ? { description: seats } : {}) })),
         },
         {
           title: "Other",
           rows: [
-            { id: ID_ANY_TABLE, title: "🎲 Any free table", description: "We pick one for you" },
-            ...(pages > 1 ? [{ id: ID_MORE_TABLES, title: "➡️ More tables", description: `Page ${(at + 1) % pages + 1} of ${pages}` }] : []),
+            { id: ID_ANY_TABLE, title: clip(`🎲 Any free ${one}`, 24), description: "We pick one for you" },
+            ...(pages > 1 ? [{ id: ID_MORE_TABLES, title: clip(`➡️ More ${many}`, 24), description: `Page ${(at + 1) % pages + 1} of ${pages}` }] : []),
           ],
         },
       ]),
@@ -378,7 +384,7 @@ async function proceedToTablePayment(
   }
 
   const options = await getEventPaymentOptions(supabase, tenantId, customerId, quote.price)
-  const lines = summaryLines(quote, extras, timeZone, note, chosen?.label)
+  const lines = summaryLines(quote, extras, timeZone, note, chosen?.label, await loadTableNames(supabase, tenantId))
 
   // Card is the only way to pay: summary + link straight away.
   if (options.card && !options.passport.ok) return await cardCheckoutReply(supabase, tenantId, customerId, quote, lines, tableId)
@@ -418,7 +424,7 @@ export async function buildTableConfirmation(
   supabase: SupabaseClient,
   tenantId: string,
   bookingId: string,
-  headline = "✅ *Your table is booked!*",
+  headline?: string,
   /** The table the customer picked and paid for by card; if the booking got a different one, the text says why. */
   requestedTableId?: string | null,
 ): Promise<string> {
@@ -455,15 +461,16 @@ export async function buildTableConfirmation(
 
   const paid = Number(b.price_paid) || 0
   const credit = Number(b.tab_credit_issued) || 0
-  const lines = [headline, ""]
+  const names = await loadTableNames(supabase, tenantId)
+  const lines = [headline ?? `✅ *Your ${names.singular.toLowerCase()} is booked!*`, ""]
   if (pkg) lines.push(`🍾 *${pkg.name}*`)
   if (event) {
     lines.push(`🎪 ${event.name}`, `📅 ${formatWhen(event.start_time, timeZone)}`)
     if (event.location) lines.push(`📍 ${event.location}`)
   }
-  if (label) lines.push(`🪑 Table: *${label}*${pkg?.seats_per_table ? ` (${pkg.seats_per_table} seats)` : ""}`)
+  if (label) lines.push(`🪑 ${names.singular}: *${label}*${pkg?.seats_per_table ? ` (${pkg.seats_per_table} seats)` : ""}`)
   if (requestedTableId && b.table_id && requestedTableId !== b.table_id) {
-    lines.push("ℹ️ The table you picked was taken just before your payment cleared, so we gave you the next free one.")
+    lines.push(`ℹ️ The ${names.singular.toLowerCase()} you picked was taken just before your payment cleared, so we gave you the next free one.`)
   }
   lines.push(`🔖 Reference: *${b.reference}*`)
   if (paid > 0) lines.push(`💳 Paid: ${money(paid)}`)
@@ -659,7 +666,7 @@ export async function handleTableState(args: {
 
         if (!buttons.includes(PAY_NOW_BUTTON)) return stay(state.state, data, "Online payment isn't available for this table. Please choose another option.", buttons)
         const extras = await readExtras(supabase, tenantId, packageId)
-        return await cardCheckoutReply(supabase, tenantId, customerId, q.quote, summaryLines(q.quote, extras, timeZone, undefined, tableLabel), tableId)
+        return await cardCheckoutReply(supabase, tenantId, customerId, q.quote, summaryLines(q.quote, extras, timeZone, undefined, tableLabel, await loadTableNames(supabase, tenantId)), tableId)
       }
 
       default:
