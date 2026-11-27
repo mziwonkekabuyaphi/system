@@ -30,12 +30,19 @@ import QRCode from "qrcode"
 import fs from "fs"
 import path from "path"
 
+import { renderBookingTicketPngClassic } from "@/lib/whatsapp/booking-ticket-render-classic"
+
 const FONT_DIR = path.join(process.cwd(), "lib/whatsapp/fonts")
 
 export type HeaderStyle = "gradient" | "solid" | "light"
 
+/** Which of the two designs a ticket is drawn in. Anything but "modern" is the classic (original) design. */
+export type TicketLayout = "classic" | "modern"
+
 /** Everything about HOW the ticket looks and which rows it shows. */
 export interface ResolvedTicketStyle {
+  /** Design of the ticket. Missing = classic. */
+  layout?: TicketLayout
   /** Shop name shown next to the logo. */
   shopName: string
   /** Small uppercase line above the service name, e.g. "Yap Your Booking". */
@@ -284,6 +291,7 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableTicket, qrDataUrl: s
  * wide so it stays sharp when WhatsApp compresses it).
  */
 export async function renderBookingTicketPng(style: ResolvedTicketStyle, ticket: RenderableTicket): Promise<Buffer> {
+  if (style.layout !== "modern") return renderBookingTicketPngClassic(style, ticket)
   const qrDataUrl = style.showQr
     ? await QRCode.toDataURL(ticket.qrValue, { errorCorrectionLevel: "M", margin: 1, width: 800 })
     : null

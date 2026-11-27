@@ -197,6 +197,7 @@ interface TenantTicketLook {
 }
 
 interface TicketSettingsRow {
+  layout?: string | null
   eyebrow?: string | null
   header_style?: string | null
   header_color?: string | null
@@ -260,6 +261,7 @@ async function resolveTenantLook(
     shopName: str(branding?.display_name) || str(settings?.brand_name) || str(tenantRow?.name) || "Your event",
     eyebrow: str(cfg.eyebrow) || DEFAULT_EYEBROW,
     footerText: str(cfg.footer_text) || null,
+    layout: cfg.layout === "modern" ? "modern" : "classic",
     headerStyle: asHeaderStyle(cfg.header_style),
     headerColor: cleanHex(cfg.header_color, cleanHex(str(branding?.primary_color), DEFAULT_HEADER)),
     accentColor: cleanHex(cfg.accent_color, cleanHex(str(branding?.secondary_color), DEFAULT_ACCENT)),
@@ -510,6 +512,7 @@ interface TablePassData {
 const passLookRow = (pass: VvipPassSettings): TicketSettingsRow => {
   const r = vvipPassSettingsToRow(pass)
   return {
+    layout: r.layout,
     header_style: r.header_style,
     header_color: r.header_color,
     accent_color: r.accent_color,
@@ -535,7 +538,7 @@ function tablePassRenderable(
     style: {
       ...look.style,
       eyebrow: pass.eyebrow?.trim() || `${word} Confirmed`,
-      footerText: pass.footerText?.trim() || null,
+      footerText: pass.footerText?.trim() || "Show this QR code at the venue",
     },
     renderable: {
       tableWord: word,

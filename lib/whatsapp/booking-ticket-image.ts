@@ -66,6 +66,8 @@ export interface BookingTicketInput {
 /** Row shape of tenant_booking_ticket_settings (all columns optional here). */
 export interface TicketSettingsRow {
   enabled?: boolean | null
+  /** "classic" (original design) or "modern". */
+  layout?: string | null
   header_style?: string | null
   header_color?: string | null
   accent_color?: string | null
@@ -222,6 +224,7 @@ async function resolveTenantTicket(
   const showLogo = cfg.show_logo ?? true
 
   const style: ResolvedTicketStyle = {
+    layout: cfg.layout === "modern" ? "modern" : "classic",
     shopName:
       branding?.display_name?.trim() || settings?.brand_name?.trim() || tenantRes.data?.name?.trim() || "Your booking",
     eyebrow: cfg.eyebrow?.trim() || branding?.ticket_booking_eyebrow?.trim() || "Booking Confirmed",

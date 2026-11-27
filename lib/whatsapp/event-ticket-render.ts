@@ -22,6 +22,9 @@ import fs from "fs"
 import path from "path"
 
 import { readableOn, type ResolvedTicketStyle } from "@/lib/whatsapp/booking-ticket-render"
+import { renderEventTicketPngClassic } from "@/lib/whatsapp/event-ticket-render-classic"
+
+/** Event ticket layouts: "modern" is drawn here; anything else is the classic (original) design. */
 
 const FONT_DIR = path.join(process.cwd(), "lib/whatsapp/fonts")
 
@@ -232,6 +235,7 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableEventTicket, qrDataU
  * like the other tickets, so they are all the same size).
  */
 export async function renderEventTicketPng(style: ResolvedTicketStyle, ticket: RenderableEventTicket): Promise<Buffer> {
+  if (style.layout !== "modern") return renderEventTicketPngClassic(style, ticket)
   const qrDataUrl = await QRCode.toDataURL(ticket.qrValue, { errorCorrectionLevel: "M", margin: 1, width: 800 })
   const tree = buildTree(style, ticket, qrDataUrl)
 

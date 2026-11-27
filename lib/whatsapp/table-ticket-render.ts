@@ -17,6 +17,7 @@ import fs from "fs"
 import path from "path"
 
 import { readableOn, type ResolvedTicketStyle } from "@/lib/whatsapp/booking-ticket-render"
+import { renderEventTicketPngClassic } from "@/lib/whatsapp/event-ticket-render-classic"
 
 const FONT_DIR = path.join(process.cwd(), "lib/whatsapp/fonts")
 
@@ -207,6 +208,22 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableTablePass, qrDataUrl
 
 /** Renders the table pass to a PNG (880px layout, rasterised at 1320px wide like the other tickets). */
 export async function renderTablePassPng(style: ResolvedTicketStyle, pass: RenderableTablePass): Promise<Buffer> {
+  // Classic: the original ticket design (header, details list, QR), filled with the table's details.
+  if (style.layout === "classic") {
+    return renderEventTicketPngClassic(style, {
+      eventName: pass.eventName,
+      priceLabel: pass.paidLabel,
+      dateLabel: pass.dateLabel,
+      timeLabel: pass.timeLabel,
+      location: pass.location,
+      tierName: pass.packageName,
+      entriesLabel: [pass.tableLabel ? `${pass.tableWord} ${pass.tableLabel}` : null, pass.seatsLabel].filter(Boolean).join(" · ") || null,
+      customerName: pass.customerName,
+      phone: pass.phone,
+      ticketLabel: pass.reference,
+      qrValue: pass.qrValue,
+    })
+  }
   const qrDataUrl = await QRCode.toDataURL(pass.qrValue, { errorCorrectionLevel: "M", margin: 1, width: 800 })
   const tree = buildTree(style, pass, qrDataUrl)
   const svg = await satori(tree as unknown as Parameters<typeof satori>[0], { width: 880, fonts: loadFonts() })
