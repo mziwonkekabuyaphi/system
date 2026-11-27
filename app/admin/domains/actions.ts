@@ -26,6 +26,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
 import { isModuleEnabled } from "@/lib/tenant/modules"
 import { isPlatformHostname } from "@/lib/domains/custom-domain-routing"
+import { isSitesHostname } from "@/lib/domains/sites-domain"
 import { challengeFullName, challengeHost, challengeValue, checkOwnershipTxt } from "./dns"
 import {
   addProjectDomain,
@@ -203,6 +204,7 @@ export async function claimDomain(input: string): Promise<ActionResult<DomainVie
   if (!domain || domain.length > 253 || !HOSTNAME_RE.test(domain)) {
     return fail("Enter a valid domain, like book.yourshop.com")
   }
+  if (isSitesHostname(domain)) return fail("That is our free site address. Use a domain you own.")
   if (isPlatformHostname(domain)) return fail("That address belongs to us or to a hosting provider. Use a domain you own.")
 
   const db = await createSessionClient()
