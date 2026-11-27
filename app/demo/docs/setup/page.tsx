@@ -169,6 +169,23 @@ const STEPS: Array<{
       "Writing promotional wording. Keep each message plain and about the visit itself, or Meta re-labels it “Marketing”, which costs more. If a wording is rejected, the reason is shown under the message: edit it and submit it again. Also, don’t switch off the “It’s their turn” message unless you tell customers another way.",
   },
   {
+    title: "Make the assistant smarter with your own AI (optional, Business plan)",
+    text: (
+      <>
+        Add your own Claude (Anthropic) or OpenAI key so the assistant understands normal sentences. You pay your AI
+        provider directly. See <a href="/demo/docs/ai">Your own AI</a>.
+      </>
+    ),
+    items: [
+      "Paste your key, choose a model and switch Enable AI on.",
+      "Set a monthly limit in rand so a busy month can’t surprise you.",
+      "With the AI off or paused, customers get the standard menu.",
+    ],
+    where: "Settings, on the WhatsApp messages page (the AI card).",
+    check: "A test message written as a normal sentence gets a sensible reply, and the card shows the request in this month’s usage.",
+    mistake: "Pasting a key that has no credit or no access to the chosen model. The card will say your provider rejected it: replace the key or pick another model.",
+  },
+  {
     title: "Set up the kiosk",
     text: "Open your shop’s kiosk link on a tablet. Choose whether it offers bookings, the queue or both, rename the buttons and screens, and pick which details to ask for: name, surname, phone, email or one custom question.",
     items: [
@@ -237,6 +254,39 @@ const STEPS: Array<{
     ),
   },
   {
+    title: "Take payments or deposits (optional, Business plan)",
+    text: (
+      <>
+        If you want customers to pay when they book, connect a card provider, then choose full payment, a deposit or
+        pay-after-service. See <a href="/demo/docs/payments">Payments &amp; deposits</a>.
+      </>
+    ),
+    items: [
+      "Connect Yoco, Ozow, PayFast, Paystack or Peach Payments. The money goes straight to your own account.",
+      "Set the payment rules, deadline and refund policy for Bookings and Orders.",
+      "Switch on “Customers pay when they book” in Booking rules.",
+    ],
+    where: "Settings, on the Payments page, then Booking rules.",
+    check: "A test booking in test mode shows a payment link, and confirms once you pay it.",
+    mistake: "Going live without a test payment. Start in test mode, pay once, then switch the provider to live.",
+  },
+  {
+    title: "Use your own web address (optional, Business plan)",
+    text: (
+      <>
+        Show your booking page, kiosk and waiting-area screen on an address like book.yourshop.com. See{" "}
+        <a href="/demo/docs/domain">Your own domain</a>.
+      </>
+    ),
+    items: [
+      "Add the ownership record, then the connect record, at the company that manages your domain.",
+      "You can connect up to 3 domains and choose a main address.",
+    ],
+    where: "Settings, on the Custom domain page.",
+    check: "The card says the domain is live, and your address opens your booking page.",
+    mistake: "Adding the record in the wrong place. Add it where the domain’s DNS is managed, then press Check now.",
+  },
+  {
     title: "Test, then go live",
     text: "Run through one real visit of each type before you announce it.",
     items: [
@@ -268,6 +318,14 @@ const CHECKLIST: Array<{ title: string; items: string[] }> = [
       "Booking window, minimum notice and cancellation cut-off match how you really work.",
       "The cancellation window is shorter than the reminder time.",
       "Ticket prefix is set, and the maximum queue size is what you want (or empty).",
+    ],
+  },
+  {
+    title: "Payments and domain (if you use them)",
+    items: [
+      "Your card provider is connected, and a test payment in test mode confirmed a booking.",
+      "The payment rules, deadline and refund policy match how you work.",
+      "Your own domain shows as live, if you connected one.",
     ],
   },
   {
@@ -307,7 +365,7 @@ export default function SetupPage() {
       <nav aria-label="On this page">
         <ul className={styles.jump}>
           <li><a href="#before">Before you start</a></li>
-          <li><a href="#steps">The 13 steps</a></li>
+          <li><a href="#steps">The 16 steps</a></li>
           <li><a href="#go-live">Go-live checklist</a></li>
           <li><a href="#after">After you go live</a></li>
         </ul>
@@ -326,7 +384,7 @@ export default function SetupPage() {
       </div>
 
       <div id="steps" className={styles.block}>
-        <h2>The 13 steps</h2>
+        <h2>The 16 steps</h2>
         <p>Each step says what to do, where to find it, how to check it worked and what people most often get wrong.</p>
         <ol className={styles.steps}>
           {STEPS.map((s) => (
