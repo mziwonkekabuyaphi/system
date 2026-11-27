@@ -47,7 +47,8 @@ import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { cleanHex, type HeaderStyle, type ResolvedTicketStyle } from "@/lib/whatsapp/booking-ticket-render"
 import { renderEventTicketPng, type RenderableEventTicket } from "@/lib/whatsapp/event-ticket-render"
-import { loadEventTicketDelivery, loadVvipPassSettings, ticketSettingsToRow, type EventTicketSettings, type VvipPassSettings } from "@/lib/services/event-settings"
+import { renderTablePassPng, type RenderableTablePass } from "@/lib/whatsapp/table-ticket-render"
+import { loadEventTicketDelivery, loadTableNames, loadVvipPassSettings, tableNamesOf, ticketSettingsToRow, vvipPassSettingsToRow, type EventTicketSettings, type VvipPassSettings } from "@/lib/services/event-settings"
 import { sendOrderTicketQrs, sendTableBookingQr } from "@/lib/whatsapp/qr-generator"
 
 const IMAGE_BUCKET = "ticket-images"
@@ -214,6 +215,8 @@ async function resolveTenantLook(
   tenantId: string,
   /** Unsaved form values from the admin preview. Replaces the stored look. */
   overrides?: EventTicketSettings,
+  /** The table pass has its OWN look: when given, this row is used and the event / booking rows are ignored. */
+  ownRow?: TicketSettingsRow,
 ): Promise<TenantTicketLook> {
   let tenantRow = null as { name?: string | null } | null
   let branding = null as Record<string, string | boolean | null> | null
@@ -248,6 +251,7 @@ async function resolveTenantLook(
     cfg = ticketSettingsToRow(overrides)
     enabled = overrides.enabled
   }
+  if (ownRow) cfg = ownRow
 
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
   const showLogo = cfg.show_logo ?? true
@@ -484,11 +488,8 @@ export async function renderEventTicketPreview(tenantId: string, overrides: Even
 }
 
 // ----------------------------------------------------------------------------
-// VVIP table pass (same engine and look as the event ticket; see Event settings > Table pass)
+// Table pass (its own settings: Event settings > Table pass; its own layout: table-ticket-render.ts)
 // ----------------------------------------------------------------------------
-
-const DEFAULT_TABLE_EYEBROW = "Table Confirmed"
-const DEFAULT_TABLE_FOOTER = "Show this QR code at the venue"
 
 interface TablePassData {
   packageName: string
@@ -500,30 +501,56 @@ interface TablePassData {
   location: string | null
   reference: string
   pricePaid: number
+  tabCredit: number
   customerName: string | null
   qrToken: string
 }
 
-function tablePassRenderable(look: TenantTicketLook, d: TablePassData, pass: VvipPassSettings, phone: string): { style: ResolvedTicketStyle; renderable: RenderableEventTicket } {
+/** The pass's own look as the row shape resolveTenantLook understands (so it never borrows the event ticket's look). */
+const passLookRow = (pass: VvipPassSettings): TicketSettingsRow => {
+  const r = vvipPassSettingsToRow(pass)
+  return {
+    header_style: r.header_style,
+    header_color: r.header_color,
+    accent_color: r.accent_color,
+    show_logo: r.show_logo,
+    show_price: r.show_price,
+    show_reference: r.show_reference,
+    show_phone: r.show_phone,
+    show_address: r.show_address,
+  }
+}
+
+function tablePassRenderable(
+  look: TenantTicketLook,
+  d: TablePassData,
+  pass: VvipPassSettings,
+  phone: string,
+  word: string,
+): { style: ResolvedTicketStyle; renderable: RenderableTablePass } {
   const { timeZone, currency } = look
   const start = formatTime(d.startTime, timeZone)
   const end = d.endTime ? formatTime(d.endTime, timeZone) : ""
-  const seats = d.seats && d.seats > 0 ? `${d.seats} seat${d.seats === 1 ? "" : "s"}` : ""
-  const table = d.tableLabel ? `Table ${d.tableLabel}` : ""
   return {
-    // Same look as the event ticket; only the two texts come from the table pass settings.
-    style: { ...look.style, eyebrow: pass.eyebrow?.trim() || DEFAULT_TABLE_EYEBROW, footerText: pass.footerText?.trim() || DEFAULT_TABLE_FOOTER },
+    style: {
+      ...look.style,
+      eyebrow: pass.eyebrow?.trim() || `${word} Confirmed`,
+      footerText: pass.footerText?.trim() || null,
+    },
     renderable: {
+      tableWord: word,
+      tableLabel: d.tableLabel,
+      packageName: d.packageName,
       eventName: d.eventName,
-      priceLabel: formatMoney(d.pricePaid, currency),
       dateLabel: formatDate(d.startTime, timeZone),
       timeLabel: start && end && end !== start ? `${start} - ${end}` : start,
       location: d.location,
-      tierName: d.packageName,
-      entriesLabel: [table, seats].filter(Boolean).join(" · ") || null,
+      seatsLabel: d.seats && d.seats > 0 ? `${d.seats} seat${d.seats === 1 ? "" : "s"}` : null,
       customerName: d.customerName,
       phone: displayPhone(phone) || null,
-      ticketLabel: d.reference,
+      reference: d.reference,
+      paidLabel: formatMoney(d.pricePaid, currency),
+      tabLabel: pass.showTab && d.tabCredit > 0 ? formatMoney(d.tabCredit, currency) : null,
       qrValue: d.qrToken,
     },
   }
@@ -532,12 +559,20 @@ function tablePassRenderable(look: TenantTicketLook, d: TablePassData, pass: Vvi
 async function loadTablePassData(supabase: SupabaseClient, tenantId: string, bookingId: string): Promise<TablePassData> {
   const { data: b, error } = await supabase
     .from("vvip_bookings")
-    .select("reference, package_id, table_id, customer_id, price_paid, qr_token")
+    .select("reference, package_id, table_id, customer_id, price_paid, tab_credit_issued, qr_token")
     .eq("tenant_id", tenantId)
     .eq("id", bookingId)
     .maybeSingle()
   if (error || !b) throw error ?? new Error("table booking not found")
-  const row = b as { reference: string; package_id: string; table_id: string | null; customer_id: string | null; price_paid: number | string; qr_token: string | null }
+  const row = b as {
+    reference: string
+    package_id: string
+    table_id: string | null
+    customer_id: string | null
+    price_paid: number | string
+    tab_credit_issued: number | string
+    qr_token: string | null
+  }
   if (!row.qr_token) throw new Error("booking has no qr_token")
 
   const [pkgRes, tableRes, custRes] = await Promise.all([
@@ -561,9 +596,17 @@ async function loadTablePassData(supabase: SupabaseClient, tenantId: string, boo
     location: event.location?.trim() || null,
     reference: row.reference,
     pricePaid: Number(row.price_paid) || 0,
+    tabCredit: Number(row.tab_credit_issued) || 0,
     customerName: ((custRes.data as { full_name?: string | null } | null)?.full_name ?? "").trim() || null,
     qrToken: row.qr_token,
   }
+}
+
+async function uploadTablePass(supabase: SupabaseClient, tenantId: string, bookingId: string, png: Buffer): Promise<string> {
+  const path = `${tenantId}/table-${bookingId}.png`
+  const { error } = await supabase.storage.from(IMAGE_BUCKET).upload(path, png, { contentType: "image/png", upsert: true, cacheControl: "300" })
+  if (error) throw error
+  return `${supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl}?v=${Date.now()}`
 }
 
 /**
@@ -581,16 +624,20 @@ export function scheduleTablePassImage(tenantId: string, bookingId: string, phon
         const pass = await loadVvipPassSettings(supabase, tenantId)
         qrCovered = pass.sendQr || !pass.enabled
         if (!pass.enabled) return
-        const [look, data] = await Promise.all([resolveTenantLook(supabase, tenantId), loadTablePassData(supabase, tenantId, bookingId)])
-        const { style, renderable } = tablePassRenderable(look, data, pass, phone)
-        const url = await renderAndUpload(supabase, tenantId, bookingId, style, renderable)
+        const [look, data, names] = await Promise.all([
+          resolveTenantLook(supabase, tenantId, undefined, passLookRow(pass)),
+          loadTablePassData(supabase, tenantId, bookingId),
+          loadTableNames(supabase, tenantId),
+        ])
+        const { style, renderable } = tablePassRenderable(look, data, pass, phone, names.singular)
+        const url = await uploadTablePass(supabase, tenantId, bookingId, await renderTablePassPng(style, renderable))
         await sendWhatsAppImageMessage(tenantId, phone, url, "See you there! 🍾")
       } catch (err) {
         console.error("[ticket-image] table pass failed", { tenantId, bookingId, error: err instanceof Error ? err.message : String(err) })
         if (qrCovered) {
-          await sendWhatsAppTextMessage(tenantId, phone, "Sorry, we couldn't create your table pass image. Your QR code and reference above still work at the venue.").catch(() => {})
+          await sendWhatsAppTextMessage(tenantId, phone, "Sorry, we couldn't create your pass image. Your QR code and reference above still work at the venue.").catch(() => {})
         } else if (supabase) {
-          await sendWhatsAppTextMessage(tenantId, phone, "Sorry, we couldn't create your table pass image. Here is your QR code instead. Show it at the venue.").catch(() => {})
+          await sendWhatsAppTextMessage(tenantId, phone, "Sorry, we couldn't create your pass image. Here is your QR code instead. Show it at the venue.").catch(() => {})
           await sendTableBookingQr(supabase, tenantId, bookingId, phone).catch(() => false)
         }
       }
@@ -600,12 +647,13 @@ export function scheduleTablePassImage(tenantId: string, bookingId: string, phon
   }
 }
 
-/** Sample table pass for the Event settings preview: unsaved texts, the shop's real name, logo and event look. */
-export async function renderTablePassPreview(tenantId: string, pass: VvipPassSettings): Promise<Buffer | null> {
+/** Sample pass for the Event settings preview: the UNSAVED pass settings and names, the shop's real name and logo. */
+export async function renderTablePassPreview(tenantId: string, pass: VvipPassSettings, names?: { tableName: string | null; tablesName: string | null }): Promise<Buffer | null> {
   try {
     const supabase = getSupabaseServerClient()
     if (!supabase) return null
-    const look = await resolveTenantLook(supabase, tenantId)
+    const word = names ? tableNamesOf(names).singular : (await loadTableNames(supabase, tenantId)).singular
+    const look = await resolveTenantLook(supabase, tenantId, undefined, passLookRow(pass))
     const start = new Date()
     start.setDate(start.getDate() + 14)
     start.setHours(19, 0, 0, 0)
@@ -619,11 +667,12 @@ export async function renderTablePassPreview(tenantId: string, pass: VvipPassSet
       location: "12 Main Road, Cape Town",
       reference: "VIP-4K7Q2M",
       pricePaid: 2500,
+      tabCredit: 500,
       customerName: "Mziwonke KaBuyaphi",
       qrToken: "preview-table-sample",
     }
-    const { style, renderable } = tablePassRenderable(look, data, pass, "0731234567")
-    return await renderEventTicketPng(style, renderable)
+    const { style, renderable } = tablePassRenderable(look, data, pass, "0731234567", word)
+    return await renderTablePassPng(style, renderable)
   } catch (error) {
     console.error("[ticket-image] table pass preview failed", { tenantId, error: error instanceof Error ? error.message : String(error) })
     return null
