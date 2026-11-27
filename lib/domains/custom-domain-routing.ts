@@ -58,7 +58,7 @@ export type CustomDomainRoute =
   | { kind: "not-found" }
 
 /** Public pages that exist per shop, as /{page}/[slug]. */
-const SLUG_PAGES = new Set(["web", "kiosk", "display", "clock", "scan"])
+const SLUG_PAGES = new Set(["web", "kiosk", "display", "clock", "scan", "site"])
 /** Shared routes that don't belong to one shop. */
 const PASS_PREFIXES = new Set(["api", "pay", "refer"])
 const PASS_FILES = new Set(["robots.txt", "sitemap.xml", "manifest.webmanifest", "manifest.json"])
@@ -68,7 +68,8 @@ const PLATFORM_PREFIXES = new Set(["admin", "platform", "login", "signup", "auth
 /**
  * Decide what a request on a shop's custom domain should show.
  *
- *   /                -> /web/{slug}         customer page
+ *   /                -> /site/{slug}        the shop's website, or the customer page when it has none
+ *   /web             -> /web/{slug}         customer page
  *   /kiosk           -> /kiosk/{slug}
  *   /display         -> /display/{slug}
  *   /display/shisha  -> /display/{slug}/shisha
@@ -79,7 +80,9 @@ const PLATFORM_PREFIXES = new Set(["admin", "platform", "login", "signup", "auth
  */
 export function routeCustomDomainPath(pathname: string, slug: string): CustomDomainRoute {
   const clean = pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "") || "/"
-  if (clean === "/") return { kind: "rewrite", pathname: `/web/${encodeURIComponent(slug)}` }
+  // The home page is the shop's website (ZozoWeb). /site/[slug] shows the customer page (same as /web) when the shop has no
+  // published website, so a shop without ZozoWeb behaves exactly as before.
+  if (clean === "/") return { kind: "rewrite", pathname: `/site/${encodeURIComponent(slug)}` }
 
   const parts = clean.split("/").filter(Boolean)
   const first = parts[0].toLowerCase()

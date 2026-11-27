@@ -17,16 +17,13 @@ function page(status: number, title: string, body: string, extra?: Record<string
   })
 }
 
-const notFound = () => page(404, "This address isn’t set up yet", "The business that owns this address hasn’t finished connecting it. Please check the link and try again.")
-const unavailable = () => page(503, "Temporarily unavailable", "We couldn’t load this page just now. Please try again in a moment.", { "retry-after": "5" })
+export const notFoundPage = () => page(404, "This address isn’t set up yet", "The business that owns this address hasn’t finished connecting it. Please check the link and try again.")
+export const unavailablePage = () => page(503, "Temporarily unavailable", "We couldn’t load this page just now. Please try again in a moment.", { "retry-after": "5" })
 
-export async function handleCustomDomain(request: NextRequest, host: string): Promise<NextResponse> {
-  const resolved = await resolveCustomDomain(host)
-  if (!resolved.ok) return unavailable()
-  if (!resolved.slug) return notFound()
-
+/** Route a request for ONE shop's public pages (the slug is ours, never the visitor's). Shared with the free-subdomain handler. */
+export function serveForSlug(request: NextRequest, slug: string): NextResponse {
   const { pathname, search } = request.nextUrl
-  const route = routeCustomDomainPath(pathname, resolved.slug)
+  const route = routeCustomDomainPath(pathname, slug)
 
   switch (route.kind) {
     case "pass":
@@ -38,10 +35,17 @@ export async function handleCustomDomain(request: NextRequest, host: string): Pr
     }
     case "platform": {
       const origin = platformOrigin()
-      if (!origin) return notFound()
+      if (!origin) return notFoundPage()
       return NextResponse.redirect(`${origin}${pathname}${search}`, 308)
     }
     default:
-      return notFound()
+      return notFoundPage()
   }
+}
+
+export async function handleCustomDomain(request: NextRequest, host: string): Promise<NextResponse> {
+  const resolved = await resolveCustomDomain(host)
+  if (!resolved.ok) return unavailablePage()
+  if (!resolved.slug) return notFoundPage()
+  return serveForSlug(request, resolved.slug)
 }
