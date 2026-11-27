@@ -74,7 +74,7 @@ const STEPS: Array<{ title: string; text: string }> = [
   },
   {
     title: "A booking or queue spot is confirmed on the spot",
-    text: "No back-and-forth. On WhatsApp they get a reference and a time. At the kiosk they get a printed ticket with their number, place in line and estimated wait, or a booking reference slip if they booked.",
+    text: "No back-and-forth. On WhatsApp they get a reference and a time. At the kiosk they get a printed ticket with their number, place in line and estimated wait, or a booking reference slip if they booked. If you ask for payment, they get a card payment link (a QR code on the kiosk) and the booking confirms once they have paid.",
   },
   {
     title: "You see it land on your dashboard, live",
@@ -175,6 +175,74 @@ const FEATURES: Array<{ title: string; text: string; icon: ReactNode; isNew?: bo
       <>
         <path d="M12.4 3H5.8A1.8 1.8 0 0 0 4 4.8v6.6c0 .48.19.93.53 1.27l8.4 8.4a1.8 1.8 0 0 0 2.54 0l6.6-6.6a1.8 1.8 0 0 0 0-2.54l-8.4-8.4A1.8 1.8 0 0 0 12.4 3Z" />
         <circle cx="8.4" cy="8.4" r="1.3" />
+      </>
+    ),
+  },
+  {
+    title: "Payments and deposits",
+    text: "Business plan. Optional. Ask customers to pay in full or put down a deposit to hold their time, or take payment after the service. You set the deadline and the refund policy, and unpaid bookings release their slot. Connect Yoco, Ozow, PayFast, Paystack or Peach Payments, and the money goes straight to your own account.",
+    isNew: true,
+    icon: (
+      <>
+        <rect x="3" y="6" width="18" height="12" rx="2" />
+        <path d="M3 10h18M7 15h3" />
+      </>
+    ),
+  },
+  {
+    title: "Booking rules you control",
+    text: "Minimum notice, how far ahead people can book, cancel and reschedule cut-offs, limits per customer, repeat appointments, and an optional approval step where you confirm each booking yourself.",
+    isNew: true,
+    icon: (
+      <>
+        <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+        <circle cx="16" cy="7" r="2" />
+        <circle cx="8" cy="17" r="2" />
+      </>
+    ),
+  },
+  {
+    title: "Queue rules you control",
+    text: "Auto-call the next customer, set a maximum queue size, warn people a few places before their turn, let them leave or check their place, show an estimated wait, and choose whether walk-ins join on WhatsApp, the kiosk or both.",
+    isNew: true,
+    icon: (
+      <>
+        <path d="M4 6h16M4 12h10M4 18h6" />
+        <path d="M17 14l3 3-3 3" />
+      </>
+    ),
+  },
+  {
+    title: "Your own web address",
+    text: "Business plan. Put your booking page, kiosk and waiting-area screen on your own domain, like book.yourshop.com. Type the address, add the records we show you, and we check them and connect it for you.",
+    isNew: true,
+    icon: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18M12 3c2.6 2.7 3.8 5.7 3.8 9s-1.2 6.3-3.8 9c-2.6-2.7-3.8-5.7-3.8-9S9.4 5.7 12 3Z" />
+      </>
+    ),
+  },
+  {
+    title: "Your own WhatsApp number",
+    text: "Connect your own business number from Settings through Meta’s official sign-in pop-up. The number is yours, and Meta bills you directly for the WhatsApp messages.",
+    isNew: true,
+    icon: <path d="M20.5 11.5a8 8 0 0 1-11.9 6.98L4 19.5l1.1-3.9A8 8 0 1 1 20.5 11.5Z M9.5 9.5c.3 1.6 1.6 3 3.2 3.6" />,
+  },
+  {
+    title: "Light or dark dashboard",
+    text: "Switch the whole dashboard to a dark look that is easier on the eyes in a dim shop, and pick a light or dark theme for the waiting-area screen too.",
+    isNew: true,
+    icon: <path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" />,
+  },
+  {
+    title: "Bring your own AI",
+    text: "Business plan. Add your own Claude (Anthropic) or OpenAI key and your WhatsApp assistant understands normal sentences. Set a monthly limit in rand and see what it uses. You pay your AI provider directly, and with the AI off or paused customers get the standard menu.",
+    isNew: true,
+    icon: (
+      <>
+        <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8L12 3Z" />
+        <path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15Z" />
       </>
     ),
   },
