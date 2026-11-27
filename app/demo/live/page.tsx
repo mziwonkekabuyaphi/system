@@ -9,6 +9,8 @@ import { IndustryProvider, IndustryPicker } from "../IndustryContext";
 import { DashboardDemo } from "../DashboardDemo";
 import { DisplayDemo } from "../DisplayDemo";
 import { SetupDemo } from "../SetupDemo";
+import { PaymentDemo } from "../PaymentDemo";
+import { AiKeyDemo } from "../AiKeyDemo";
 import { KioskPrinter } from "../KioskPrinter";
 import { HeroRotator } from "../HeroRotator";
 import hero from "../liveHero.module.css";
@@ -72,7 +74,8 @@ export default function DemoLivePage() {
               <h3>WhatsApp</h3>
               <p>
                 Customers message the number they already have saved, at any hour. The AI books, reschedules and
-                cancels, answers &ldquo;are you open?&rdquo;, and hands over to you with one tap.
+                cancels, answers &ldquo;are you open?&rdquo;, and hands over to you with one tap. Add your own Claude or
+                OpenAI key to make it smarter.
               </p>
               <a className={styles.channelLink} href="#demo">
                 See a customer book on WhatsApp
@@ -124,6 +127,37 @@ export default function DemoLivePage() {
         </div>
       </section>
 
+      <section id="payments">
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Business plan: take payment or a deposit</p>
+          <div className={styles.sectionHead}>
+            <h2>Hold the time with a deposit, so a booking is a real booking.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            Connect a card provider (Yoco, Ozow, PayFast, Paystack or Peach Payments) and decide when customers pay: in
+            full, a deposit, or after the service. Set the deadline and your refund policy, and add an approval step
+            if you want to confirm each booking yourself. The money goes straight to your own account. Try the rules below.
+          </p>
+          <PaymentDemo />
+        </div>
+      </section>
+
+      <section id="ai" className={styles.flow}>
+        <div className={styles.wrapWide}>
+          <p className={styles.sectionLabel}>Business plan: make your WhatsApp assistant smarter</p>
+          <div className={styles.sectionHead}>
+            <h2>Bring your own AI. Add a Claude or OpenAI key and your assistant understands real sentences.</h2>
+          </div>
+          <p className={styles.sectionIntro}>
+            Add your own API key from Claude (Anthropic) or OpenAI in your dashboard, switch the AI on and set a monthly
+            spending limit in rand. Customers can then write the way they talk, and the assistant answers questions and
+            reads booking requests. You pay your AI provider directly, you see what it used, and when the AI is off or
+            paused at your limit, customers simply get the standard menu.
+          </p>
+          <AiKeyDemo />
+        </div>
+      </section>
+
       <section id="kiosk">
         <div className={styles.wrapWide}>
           <p className={styles.sectionLabel}>Channel two: the self-serve kiosk</p>
@@ -154,7 +188,7 @@ export default function DemoLivePage() {
             Open one link on any TV browser and leave it. No login, no app, no one to operate it. It shows your menu,
             today&rsquo;s bookings and the live queue, and keeps itself up to date. You decide what it shows: pick rotating
             slides or a live board, switch screens on and off, choose which details appear next to each name, and reword
-            every heading. Customer phone numbers are always masked.
+            every heading. Customer phone numbers are always masked. Choose a light or dark screen to suit your waiting area, and try both below.
           </p>
           <IndustryPicker />
           <DisplayDemo />
