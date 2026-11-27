@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // Photo uploads (event banners, ZozoWeb site photos) are allowed up to 3 MB, but Server Actions
+  // refuse request bodies over 1 MB unless told otherwise.
+  experimental: {
+    serverActions: { bodySizeLimit: "4mb" },
+  },
+
   // @resvg/resvg-js is a native Node addon (.node binary). Turbopack can't
   // bundle those, so keep it external: Node loads it at runtime and Vercel
   // ships the right platform binary with the function.
