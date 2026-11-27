@@ -69,14 +69,14 @@ export function EventSettingsPanel() {
     <div className="space-y-4">
       <SalesRulesCard initial={config.rules} />
       <TablesCard initial={config.tables} />
-      <TablePassCard initial={config.pass} />
+      <TablePassCard config={config} />
       <TicketCard config={config} />
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// VVIP tables
+// Tables (the add-on: premium tables with a bar tab)
 // ---------------------------------------------------------------------------
 
 function TablesCard({ initial }: { initial: VvipTableSettings }) {
@@ -84,7 +84,8 @@ function TablesCard({ initial }: { initial: VvipTableSettings }) {
   const [draft, setDraft] = useState(initial)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<Message>(null)
-  const dirty = draft.customersPickTable !== saved.customersPickTable
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
+  const word = (draft.tableName ?? "").trim() || "Table"
 
   function save() {
     setMessage(null)
@@ -101,8 +102,8 @@ function TablesCard({ initial }: { initial: VvipTableSettings }) {
 
   return (
     <SettingsCard
-      title="VVIP tables"
-      description="How customers book a table on WhatsApp. Tables and their prices are set up under VVIP."
+      title="Tables"
+      description="How customers book a table on WhatsApp. Tables and their prices are set up in the tables section of the admin."
       footer={
         <CardSaveRow
           dirty={dirty}
@@ -116,20 +117,39 @@ function TablesCard({ initial }: { initial: VvipTableSettings }) {
         />
       }
     >
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
-        <div>
-          <p className="text-sm font-medium text-ink">{draft.customersPickTable ? "Customers choose their table" : "Table is assigned automatically"}</p>
-          <p className="text-xs text-ink-muted">
-            {draft.customersPickTable
-              ? "After picking a package the customer sees the free tables and taps the one they want. If it is taken while they pay by card, they get the next free table."
-              : "The customer is given the next free table of the package you set up, in the order you created them."}
-          </p>
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FieldRow label="Name for one" hint="What customers see, e.g. Table, Booth, Cabana.">
+            <input
+              className={inputClass}
+              maxLength={20}
+              placeholder="Table"
+              value={draft.tableName ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, tableName: e.target.value || null }))}
+            />
+          </FieldRow>
+          <FieldRow label="Name for several" hint="e.g. Tables, Booths, Cabanas.">
+            <input
+              className={inputClass}
+              maxLength={20}
+              placeholder="Tables"
+              value={draft.tablesName ?? ""}
+              onChange={(e) => setDraft((d) => ({ ...d, tablesName: e.target.value || null }))}
+            />
+          </FieldRow>
         </div>
-        <Toggle
-          checked={draft.customersPickTable}
-          disabled={isPending}
-          onChange={(next) => setDraft({ customersPickTable: next })}
-        />
+
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas p-3">
+          <div>
+            <p className="text-sm font-medium text-ink">{draft.customersPickTable ? `Customers choose their ${word.toLowerCase()}` : `${word} is assigned automatically`}</p>
+            <p className="text-xs text-ink-muted">
+              {draft.customersPickTable
+                ? `After picking a package the customer sees the free ones and taps the one they want. If it is taken while they pay by card, they get the next free one.`
+                : `The customer is given the next free one of the package you set up, in the order you created them.`}
+            </p>
+          </div>
+          <Toggle checked={draft.customersPickTable} disabled={isPending} onChange={(next) => setDraft((d) => ({ ...d, customersPickTable: next }))} />
+        </div>
       </div>
     </SettingsCard>
   )
@@ -212,24 +232,34 @@ function SalesRulesCard({ initial }: { initial: EventSalesRules }) {
 }
 
 // ---------------------------------------------------------------------------
-// VVIP table pass (QR code + branded image after a table is booked)
+// Table pass (QR code + branded image after a table is booked; its own settings and layout)
 // ---------------------------------------------------------------------------
 
-function TablePassCard({ initial }: { initial: VvipPassSettings }) {
-  const [form, setForm] = useState<VvipPassSettings>(initial)
-  const [baseline, setBaseline] = useState<VvipPassSettings>(initial)
+const PASS_FIELD_TOGGLES: Array<{ key: "showLogo" | "showPrice" | "showTab" | "showAddress" | "showReference" | "showPhone"; label: string; hint: string }> = [
+  { key: "showLogo", label: "Logo", hint: "Your logo in the header." },
+  { key: "showPrice", label: "Amount paid", hint: "What the customer paid." },
+  { key: "showTab", label: "Bar tab", hint: "The bar tab that comes with the table." },
+  { key: "showAddress", label: "Venue address", hint: "Where the event is." },
+  { key: "showReference", label: "Reference", hint: "The booking reference, e.g. VIP-4K7Q2M." },
+  { key: "showPhone", label: "Customer phone", hint: "Off by default." },
+]
+
+function TablePassCard({ config }: { config: EventSettingsConfig }) {
+  const [form, setForm] = useState<VvipPassSettings>(config.pass)
+  const [baseline, setBaseline] = useState<VvipPassSettings>(config.pass)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<Message>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const previewSeq = useRef(0)
+  const word = config.tables.tableName?.trim() || "Table"
 
   useEffect(() => {
     const seq = ++previewSeq.current
     const timer = setTimeout(async () => {
       setPreviewing(true)
-      const res = await previewTablePass(form)
+      const res = await previewTablePass(form, { tableName: config.tables.tableName, tablesName: config.tables.tablesName })
       if (seq !== previewSeq.current) return
       setPreviewing(false)
       if (res.success) {
@@ -240,8 +270,10 @@ function TablePassCard({ initial }: { initial: VvipPassSettings }) {
       }
     }, 700)
     return () => clearTimeout(timer)
-  }, [form])
+  }, [form, config.tables.tableName, config.tables.tablesName])
 
+  const set = <K extends keyof VvipPassSettings>(key: K, value: VvipPassSettings[K]) => setForm((f) => ({ ...f, [key]: value }))
+  const customColours = form.headerColor != null || form.accentColor != null
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline)
 
   function save() {
@@ -259,8 +291,8 @@ function TablePassCard({ initial }: { initial: VvipPassSettings }) {
 
   return (
     <SettingsCard
-      title="VVIP table pass"
-      description="After a customer books a table on WhatsApp they get the text confirmation, plus a QR code and/or a branded table pass image. Staff scan the QR under VVIP > Table buyers. Colours, logo and header style follow the Event ticket card below."
+      title={`${word} pass`}
+      description={`After a customer books a ${word.toLowerCase()} on WhatsApp they get the text confirmation, plus a QR code and/or a branded pass image. These settings are separate from the event ticket. Staff scan the QR in the buyers list.`}
       footer={
         <CardSaveRow
           dirty={dirty}
@@ -276,11 +308,11 @@ function TablePassCard({ initial }: { initial: VvipPassSettings }) {
     >
       <div className="space-y-4">
         <div className="space-y-3 rounded-lg border border-line bg-canvas p-3">
-          <p className="text-sm font-medium text-ink">What table buyers receive</p>
+          <p className="text-sm font-medium text-ink">What customers receive</p>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-ink">{form.enabled ? "Table pass image is on" : "Table pass image is off"}</p>
-              <p className="text-xs text-ink-muted">The branded pass with the table, event and QR code on it.</p>
+              <p className="text-sm font-medium text-ink">{form.enabled ? "Pass image is on" : "Pass image is off"}</p>
+              <p className="text-xs text-ink-muted">The branded pass with the {word.toLowerCase()}, event and QR code on it.</p>
             </div>
             <Toggle checked={form.enabled} disabled={isPending} onChange={(next) => setForm((f) => ({ ...f, enabled: next, sendQr: next ? f.sendQr : true }))} />
           </div>
@@ -296,13 +328,69 @@ function TablePassCard({ initial }: { initial: VvipPassSettings }) {
 
         <div className={`grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] ${form.enabled ? "" : "opacity-60"}`}>
           <div className="space-y-4">
+            <FieldRow label="Header style">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {HEADER_STYLES.map((option) => {
+                  const selected = form.headerStyle === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => set("headerStyle", option.value)}
+                      aria-pressed={selected}
+                      className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors ${
+                        selected ? `${BRAND_SELECTED} bg-card` : "border-stone-300 bg-stone-50 hover:bg-stone-100"
+                      }`}
+                    >
+                      <span className={`text-sm font-semibold ${selected ? BRAND_TEXT : "text-stone-800"}`}>{option.title}</span>
+                      <span className="text-xs text-stone-500">{option.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </FieldRow>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-stone-800">Custom pass colours</p>
+                  <p className="text-sm text-stone-500">Off uses your brand colours from Branding.</p>
+                </div>
+                <Toggle
+                  checked={customColours}
+                  onChange={(next) => setForm((f) => ({ ...f, headerColor: next ? config.brandHeader : null, accentColor: next ? config.brandAccent : null }))}
+                />
+              </div>
+              {customColours && (
+                <div className="grid grid-cols-2 gap-3">
+                  <ColorField label="Header" value={form.headerColor ?? config.brandHeader} onChange={(hex) => set("headerColor", hex)} />
+                  <ColorField label="Accent" value={form.accentColor ?? config.brandAccent} onChange={(hex) => set("accentColor", hex)} />
+                </div>
+              )}
+            </div>
+
             <FieldRow label="Pass label">
-              <input className={inputClass} maxLength={40} placeholder="Table Confirmed" value={form.eyebrow ?? ""} onChange={(e) => setForm((f) => ({ ...f, eyebrow: e.target.value || null }))} />
+              <input className={inputClass} maxLength={40} placeholder={`${word} Confirmed`} value={form.eyebrow ?? ""} onChange={(e) => set("eyebrow", e.target.value || null)} />
             </FieldRow>
             <FieldRow label="Footer message" hint="Shown under the QR code.">
-              <input className={inputClass} maxLength={120} placeholder="Show this QR code at the venue" value={form.footerText ?? ""} onChange={(e) => setForm((f) => ({ ...f, footerText: e.target.value || null }))} />
+              <input className={inputClass} maxLength={120} placeholder="Show this QR code at the venue" value={form.footerText ?? ""} onChange={(e) => set("footerText", e.target.value || null)} />
             </FieldRow>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-stone-800">What the pass shows</p>
+              {PASS_FIELD_TOGGLES.map((f) => (
+                <div key={f.key} className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-stone-800">{f.label}</p>
+                    <p className="text-xs text-stone-500">{f.hint}</p>
+                  </div>
+                  <Toggle checked={form[f.key]} onChange={(next) => set(f.key, next)} />
+                </div>
+              ))}
+              <p className="text-xs text-stone-400">The {word.toLowerCase()} label, package, event, date, time, guest name and QR code are always shown.</p>
+            </div>
           </div>
+
           <div className="max-w-[280px] space-y-2 lg:sticky lg:top-4 lg:self-start">
             <p className="text-sm font-medium text-stone-800">Preview</p>
             <div className="flex min-h-[320px] items-center justify-center overflow-hidden rounded-xl border border-stone-200 bg-stone-50">
@@ -313,8 +401,9 @@ function TablePassCard({ initial }: { initial: VvipPassSettings }) {
                 <span className="px-3 text-center text-xs text-stone-400">{previewing ? "Rendering…" : "Preview appears here"}</span>
               )}
             </div>
+            {previewing && preview && <p className="text-xs text-stone-400">Updating…</p>}
             {previewError && <p className="text-xs text-red-600">{previewError}</p>}
-            <p className="text-xs text-stone-400">Sample table. Uses your saved Event ticket look.</p>
+            <p className="text-xs text-stone-400">Sample booking. Shows your saved logo and name. Save the names above to see them here.</p>
           </div>
         </div>
       </div>
