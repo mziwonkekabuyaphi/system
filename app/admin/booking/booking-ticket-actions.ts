@@ -23,8 +23,12 @@ import { renderBookingTicketForTenant, type TicketSettingsRow } from "@/lib/what
 
 export type TicketHeaderStyle = "gradient" | "solid" | "light"
 
+export type TicketLayout = "classic" | "modern"
+
 export interface AdminBookingTicketSettings {
   enabled: boolean
+  /** Design of the ticket: the original (classic) or the new one (modern). */
+  layout: TicketLayout
   headerStyle: TicketHeaderStyle
   /** null = use the tenant's brand primary colour */
   headerColor: string | null
@@ -61,6 +65,7 @@ const DEFAULT_ACCENT = "#f59e0b"
 
 const DEFAULTS: AdminBookingTicketSettings = {
   enabled: true,
+  layout: "classic",
   headerStyle: "gradient",
   headerColor: null,
   accentColor: null,
@@ -88,6 +93,7 @@ function fromRow(row: Record<string, unknown> | null): AdminBookingTicketSetting
   const style = row.header_style
   return {
     enabled: (row.enabled as boolean | null) ?? DEFAULTS.enabled,
+    layout: row.layout === "modern" ? "modern" : "classic",
     headerStyle: style === "solid" || style === "light" ? style : "gradient",
     headerColor: (row.header_color as string | null) ?? null,
     accentColor: (row.accent_color as string | null) ?? null,
@@ -106,6 +112,7 @@ function fromRow(row: Record<string, unknown> | null): AdminBookingTicketSetting
 function toRow(s: AdminBookingTicketSettings): TicketSettingsRow {
   return {
     enabled: s.enabled,
+    layout: s.layout,
     header_style: s.headerStyle,
     header_color: s.headerColor,
     accent_color: s.accentColor,
@@ -122,6 +129,7 @@ function toRow(s: AdminBookingTicketSettings): TicketSettingsRow {
 }
 
 function validate(s: AdminBookingTicketSettings): string | null {
+  if (s.layout !== "classic" && s.layout !== "modern") return "Choose a valid ticket design."
   if (!["gradient", "solid", "light"].includes(s.headerStyle)) return "Choose a valid header style."
   if (s.headerColor && !HEX.test(s.headerColor)) return "Header colour must be a hex colour like #1F2937."
   if (s.accentColor && !HEX.test(s.accentColor)) return "Accent colour must be a hex colour like #F59E0B."

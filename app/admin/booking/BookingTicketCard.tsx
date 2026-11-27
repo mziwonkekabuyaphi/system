@@ -12,6 +12,7 @@ import {
   type TicketHeaderStyle,
 } from "./booking-ticket-actions"
 import { BRAND_SELECTED, BRAND_TEXT } from "@/components/admin/brand"
+import { LayoutPicker } from "../settings/LayoutPicker"
 import { ColorField, FieldRow, SaveRow, Toggle, inputClass, secondaryButtonClass } from "../settings/ui"
 
 const HEADER_STYLES: Array<{ value: TicketHeaderStyle; title: string; description: string }> = [
@@ -136,6 +137,10 @@ export function BookingTicketCard() {
 
       <div className={`mt-4 grid gap-4 ${locked || !form.enabled ? "pointer-events-none opacity-50" : ""}`}>
         <div className="space-y-4">
+          <FieldRow label="Ticket design" hint="Pick a design, then edit it below. The preview updates as you go.">
+            <LayoutPicker kind="booking" value={form.layout} onChange={(next) => setForm({ ...form, layout: next })} disabled={locked} />
+          </FieldRow>
+
           <FieldRow label="Header style">
             <div className="grid gap-2 sm:grid-cols-3">
               {HEADER_STYLES.map((option) => {
