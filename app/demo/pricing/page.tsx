@@ -124,7 +124,8 @@ export default async function PricingPage() {
   const choose: string[] = plans.map((plan, i) => {
     const previous = i > 0 ? plans[i - 1] : null
     if (!previous) return `Just you, and you want to try it out: ${plan.name}.`
-    const features = joinList(plan.newFeatures.map((f) => f.name))
+    const extras = plan.key === "business" ? ["card payments and deposits", "your own domain", "your own AI key", "a landing page for your business"] : []
+    const features = joinList([...plan.newFeatures.map((f) => f.name), ...extras])
     const upTo = plan.staffLimit !== null ? `up to ${plan.staffLimit} people` : "any number of people"
     const moreThan = previous.staffLimit !== null ? `, or more than ${previous.staffLimit} staff` : ""
     return i === plans.length - 1
@@ -303,6 +304,10 @@ export default async function PricingPage() {
                 <Faq
                   q="Can I use my own WhatsApp number?"
                   a="Yes. In your admin, open WhatsApp settings and connect your own WhatsApp number. Meta charges its own WhatsApp messaging fees for that number, and you pay Meta directly. Those fees are separate from your ZozoQueue plan and never appear on your ZozoQueue invoice."
+                />
+                <Faq
+                  q="Which plan has card payments, my own domain, my own AI and a landing page?"
+                  a="The Business plan. It lets you take payments or deposits from customers (Yoco, Ozow, PayFast, Paystack or Peach Payments, paid straight to your own account), put your booking page on your own domain, and add your own Claude or OpenAI key to make the WhatsApp assistant smarter. It also includes a landing page for your business. You pay your payment and AI providers directly."
                 />
                 <Faq
                   q="How do I upgrade?"
