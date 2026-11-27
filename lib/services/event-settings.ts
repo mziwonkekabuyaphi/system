@@ -13,6 +13,11 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 export type EventTicketHeaderStyle = "gradient" | "solid" | "light"
 
+/** The two designs a ticket can be drawn in. */
+export type TicketLayout = "classic" | "modern"
+export const TICKET_LAYOUTS: readonly TicketLayout[] = ["classic", "modern"]
+const asLayout = (v: unknown, fallback: TicketLayout): TicketLayout => (v === "classic" || v === "modern" ? v : fallback)
+
 export interface EventSalesRules {
   /** 1-10. */
   maxPerPurchase: number
@@ -30,6 +35,8 @@ export interface EventTicketSettings {
    * At least one of `enabled` / `sendQr` must be on, see validateTicketSettings().
    */
   sendQr: boolean
+  /** Which design the ticket is drawn in. */
+  layout: TicketLayout
   headerStyle: EventTicketHeaderStyle
   /** null = the tenant's brand primary colour */
   headerColor: string | null
@@ -85,6 +92,8 @@ export interface VvipPassSettings {
   enabled: boolean
   /** The plain QR code message. At least one of `enabled` / `sendQr` must be on. */
   sendQr: boolean
+  /** Which design the pass is drawn in. */
+  layout: TicketLayout
   /** null = "<Table> Confirmed" */
   eyebrow: string | null
   /** null = "Show this QR code at the venue" */
@@ -106,6 +115,7 @@ export interface VvipPassSettings {
 export const DEFAULT_VVIP_PASS_SETTINGS: VvipPassSettings = {
   enabled: true,
   sendQr: true,
+  layout: "modern",
   eyebrow: null,
   footerText: null,
   headerStyle: "gradient",
@@ -132,6 +142,7 @@ export const DEFAULT_SALES_RULES: EventSalesRules = {
 export const DEFAULT_TICKET_SETTINGS: EventTicketSettings = {
   enabled: true,
   sendQr: true,
+  layout: "classic",
   headerStyle: "gradient",
   headerColor: null,
   accentColor: null,
@@ -198,6 +209,7 @@ export function vvipPassSettingsFromRow(row: Row | null | undefined): VvipPassSe
   return {
     enabled: flag("enabled", d.enabled),
     sendQr: flag("send_qr", d.sendQr),
+    layout: asLayout(row.layout, d.layout),
     eyebrow: text("eyebrow"),
     footerText: text("footer_text"),
     headerStyle: style === "solid" || style === "light" ? style : "gradient",
@@ -216,6 +228,7 @@ export function vvipPassSettingsToRow(s: VvipPassSettings) {
   return {
     enabled: s.enabled,
     send_qr: s.sendQr,
+    layout: s.layout,
     eyebrow: s.eyebrow?.trim() || null,
     footer_text: s.footerText?.trim() || null,
     header_style: s.headerStyle,
@@ -232,6 +245,7 @@ export function vvipPassSettingsToRow(s: VvipPassSettings) {
 
 export function validateVvipPassSettings(s: VvipPassSettings): string | null {
   if (!s.enabled && !s.sendQr) return "Keep at least one on: the pass image or the QR code. Otherwise customers would get nothing to show at the venue."
+  if (!TICKET_LAYOUTS.includes(s.layout)) return "Choose a valid pass design."
   if (!["gradient", "solid", "light"].includes(s.headerStyle)) return "Choose a valid header style."
   if (s.headerColor && !HEX.test(s.headerColor)) return "Header colour must be a hex colour like #1F2937."
   if (s.accentColor && !HEX.test(s.accentColor)) return "Accent colour must be a hex colour like #F59E0B."
@@ -265,6 +279,7 @@ export function ticketSettingsFromRow(row: Row | null | undefined, enabled = tru
   return {
     enabled,
     sendQr,
+    layout: asLayout(row.layout, DEFAULT_TICKET_SETTINGS.layout),
     headerStyle: style === "solid" || style === "light" ? style : "gradient",
     headerColor: text("header_color"),
     accentColor: text("accent_color"),
@@ -282,6 +297,7 @@ export function ticketSettingsToRow(s: EventTicketSettings) {
   return {
     enabled: s.enabled,
     send_qr: s.sendQr,
+    layout: s.layout,
     header_style: s.headerStyle,
     header_color: s.headerColor,
     accent_color: s.accentColor,
@@ -297,6 +313,7 @@ export function ticketSettingsToRow(s: EventTicketSettings) {
 
 export function validateTicketSettings(s: EventTicketSettings): string | null {
   if (!s.enabled && !s.sendQr) return "Keep at least one on: the ticket image or the QR code. Otherwise customers would get no ticket to scan."
+  if (!TICKET_LAYOUTS.includes(s.layout)) return "Choose a valid ticket design."
   if (!["gradient", "solid", "light"].includes(s.headerStyle)) return "Choose a valid header style."
   if (s.headerColor && !HEX.test(s.headerColor)) return "Header colour must be a hex colour like #1F2937."
   if (s.accentColor && !HEX.test(s.accentColor)) return "Accent colour must be a hex colour like #F59E0B."
