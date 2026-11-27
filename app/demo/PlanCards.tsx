@@ -17,6 +17,15 @@ const TAGLINES: Record<string, string> = {
   business: "Growth, fully under your own name",
 }
 
+/**
+ * Features that belong to a plan but are not (yet) modules in the database, so they can't come from
+ * plan_modules. Shown after that plan's database features. If you later add them as modules, delete the
+ * matching line here (a name that already appears in the plan's features is skipped).
+ */
+const PLAN_EXTRAS: Record<string, string[]> = {
+  business: ["Card payments and deposits", "Your own domain", "Your own AI (Claude or OpenAI key)", "A landing page for your business"],
+}
+
 /** The middle plan gets the highlighted card style the landing page already uses. */
 const FEATURED_PLAN_KEY = "growth"
 
@@ -40,6 +49,11 @@ export function PlanCards({ plans }: { plans: PublicPlan[] }) {
               {plan.newFeatures.map((feature) => (
                 <li key={feature.key}>{feature.name}</li>
               ))}
+              {(PLAN_EXTRAS[plan.key] ?? [])
+                .filter((name) => !plan.features.some((f) => f.name.toLowerCase() === name.toLowerCase()))
+                .map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
             </ul>
           </div>
         )

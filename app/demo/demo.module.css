@@ -2334,3 +2334,32 @@
   box-shadow: inset 0 0 0 1.5px #2a2c33;
 }
 .tablet .tabletScreen { border-radius: 18px; }
+
+
+/* ---------- Dashboard demo: dark theme toggle ---------- */
+
+.dashThemeRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
+.dashThemeRow .dashFine { margin: 0; }
+
+.dashDark { background: #15110d; color: #f1ece3; box-shadow: 0 30px 70px -22px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.12); }
+.dashDark .dashChrome { background: #0f0c09; border-bottom-color: #2c2620; }
+.dashDark .dashDots i { background: #3a3228; }
+.dashDark .dashUrl { color: #a79f90; }
+.dashDark .dashSide { background: #0b0907; }
+.dashDark .dashMain { background: #1a1510; }
+.dashDark .dashLabel, .dashDark .dashMuted, .dashDark .dashTime { color: #a79f90; }
+.dashDark .dashRow .dashMono:last-child { color: #a79f90; }
+.dashDark .dashStat, .dashDark .dashRow, .dashDark .dashConvo, .dashDark .dashThread, .dashDark .dashChart { background: #221c16; border-color: #332b23; }
+.dashDark .dashConvoActive { background: #2c2418; border-color: var(--qless-amber-dim); }
+.dashDark .dashMsgs { background: #14100c; }
+.dashDark .msgIn { background: #2a231b; color: #f1ece3; }
+.dashDark .msgAi { background: #1f3b2a; color: #e6f5ea; }
+.dashDark .msgYou { background: #4a3718; color: #fdebc8; }
+.dashDark .dashSysNote { background: rgba(255, 255, 255, 0.08); color: #c9c1b2; }
+.dashDark .dashTakeover { border-color: #3a3228; color: #f1ece3; }
+.dashDark .dashCell { border-color: #332b23; }
+.dashDark .dashBarFill { background: #3b4a66; }
+.dashDark .dashBarTop { background: var(--qless-amber); }
+.dashDark .dashTable { background: #221c16; border-color: #332b23; }
+.dashDark .dashTable th, .dashDark .dashTable td { color: #f1ece3; border-color: #332b23; }
+.dashDark .dashTable th { color: #a79f90; }

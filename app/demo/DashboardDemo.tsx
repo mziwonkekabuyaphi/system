@@ -427,6 +427,7 @@ export function DashboardDemo({
     return services && services.length > 0 && at >= 0 ? services[at % services.length] : service
   }
   const [view, setView] = useState<DashView>(compact ? "queue" : initialView)
+  const [dark, setDark] = useState(false)
   const [step, setStep] = useState(0)
   const [q, setQ] = useState<QueueState>(initialQueue)
   const [onScreen, setOnScreen] = useState(false)
@@ -453,7 +454,7 @@ export function DashboardDemo({
   const current = VIEWS.find((v) => v.id === view) ?? VIEWS[0]
 
   const window_ = (
-    <div className={styles.dashWindow} aria-hidden={compact || undefined}>
+    <div className={dark && !compact ? `${styles.dashWindow} ${styles.dashDark}` : styles.dashWindow} aria-hidden={compact || undefined}>
       <div className={styles.dashChrome}>
         <span className={styles.dashDots}>
           <i />
@@ -515,6 +516,17 @@ export function DashboardDemo({
             ))}
           </div>
           <p className={styles.dashCaption}>{current.caption}</p>
+          <div className={styles.dashThemeRow}>
+            <button
+              type="button"
+              className={dark ? `${styles.demoTab} ${styles.demoTabActive}` : styles.demoTab}
+              aria-pressed={dark}
+              onClick={() => setDark((d) => !d)}
+            >
+              {dark ? "Dark dashboard: on" : "Try the dark dashboard"}
+            </button>
+            <span className={styles.dashFine}>Switch the whole dashboard to a dark look from your branding settings.</span>
+          </div>
           <p className={styles.dashFine}>An example dashboard. Names, numbers and times are made up.</p>
         </div>
         {window_}

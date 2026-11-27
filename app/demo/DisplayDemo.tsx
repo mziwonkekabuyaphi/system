@@ -562,6 +562,10 @@ export function DisplayDemo() {
   return (
     <div ref={rootRef} className={styles.dLayout}>
       <div className={styles.tv}>
+        <div className={styles.dQuickTheme} role="group" aria-label="Screen theme">
+          <button type="button" aria-pressed={theme === "light"} onClick={() => setTheme("light")}>Light screen</button>
+          <button type="button" aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>Dark screen</button>
+        </div>
         <div
           className={theme === "light" ? `${styles.dScreen} ${styles.dLight}` : styles.dScreen}
           style={vars}

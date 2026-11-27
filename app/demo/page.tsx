@@ -130,7 +130,7 @@ const FIT: Array<{ who: string; text: string }> = [
   },
   {
     who: "Beauty & nail studios",
-    text: "A gel set takes longer than a brow tint. The assistant only offers times that fit the treatment, and a full Saturday goes on the waitlist.",
+    text: "A gel set takes longer than a brow tint. The assistant only offers times that fit the treatment, a deposit can hold the slot, and a full Saturday goes on the waitlist.",
   },
   {
     who: "Clinics & aesthetic practices",
@@ -292,6 +292,7 @@ export default async function DemoPage() {
                 <li>A walk-in queue on paper, a diary for appointments, never checked against each other</li>
                 <li>Double-bookings because two staff members took the same slot</li>
                 <li>A full day means a lost customer</li>
+                <li>No-shows, because nothing held the booking</li>
               </ul>
             </div>
             <div className={`${styles.splitCol} ${styles.solution}`}>
@@ -301,6 +302,7 @@ export default async function DemoPage() {
                 <li>Bookings and the walk-in queue sit on one live board, fed by WhatsApp and the kiosk</li>
                 <li>A staff member can’t be booked twice for the same time</li>
                 <li>A full day becomes a waitlist, and a cancellation fills itself</li>
+                <li>Deposits hold the time, so no-shows cost you less</li>
               </ul>
             </div>
           </div>
@@ -367,9 +369,10 @@ export default async function DemoPage() {
           </div>
           <div className={styles.faqList}>
             <Faq q="Do I need a new WhatsApp number?">
-              You use a WhatsApp number that belongs to your business, connected through Meta&rsquo;s official Cloud API.
-              If your number is currently used in the regular WhatsApp app, we&rsquo;ll walk you through your options
-              before anything changes.
+              You use a WhatsApp number that belongs to your business, connected from your dashboard through Meta&rsquo;s
+              official Cloud API. Meta bills you directly for the messages. A number that is currently used in the regular
+              WhatsApp app can&rsquo;t simply be switched over, so talk to us first and we&rsquo;ll walk you through your
+              options before anything changes.
             </Faq>
             <Faq q="Do my customers need WhatsApp to use ZozoQueue?">
               No. The kiosk works with just a name and a phone number. If your shop has WhatsApp connected, the kiosk
@@ -395,6 +398,39 @@ export default async function DemoPage() {
             <Faq q="What happens when a day is fully booked?">
               The customer can ask to be told if a time opens up. When someone cancels, the people on that day&rsquo;s
               waitlist are messaged in the order they joined, and they book the slot themselves in WhatsApp.
+            </Faq>
+            <Faq q="Can I take a deposit or payment when customers book?">
+              Yes, on the Business plan, if you want to. Connect a card provider (Yoco, Ozow, PayFast, Paystack or Peach Payments), then choose
+              whether customers pay in full, put down a deposit, or pay after the service. You set the payment deadline
+              and a refund policy. Their time is held while they pay and released if they don&rsquo;t, and the money goes
+              straight to your own account.
+            </Faq>
+            <Faq q="Can I approve bookings myself before they are confirmed?">
+              Yes. Switch on approval and each new booking is held as a request. The customer is told it is being
+              reviewed, and you approve or decline it from the Appointments screen. You can also set minimum notice, how far
+              ahead people can book, cancellation and rescheduling cut-offs, and limits per customer.
+            </Faq>
+            <Faq q="Do I get a website or landing page for my business?">
+              Yes, on the Business plan you also get a landing page for your business, so customers have somewhere
+              of your own to find you online. Pair it with your own domain, like book.yourshop.com.
+            </Faq>
+            <Faq q="Can I use my own web address?">
+              Yes, on the Business plan. Connect a domain like book.yourshop.com from Settings. You add the DNS records we show you, we check
+              them, and your booking page, kiosk and waiting-area screen appear on your own address. You can connect up to
+              three.
+            </Faq>
+            <Faq q="Can I use my own AI account?">
+              Yes, on the Business plan. Add your own API key from Claude (Anthropic) or OpenAI in your dashboard, switch the AI on and set a
+              monthly spending limit. You pay your AI provider directly, you can see what it used, and if the AI is off or
+              paused at your limit, customers get the standard menu instead.
+            </Faq>
+            <Faq q="Who pays for the WhatsApp messages?">
+              You do. You connect your own WhatsApp business number through Meta&rsquo;s sign-in pop-up, and Meta bills you
+              directly for the messages. Which plans include WhatsApp is on the <a href={PRICING_URL}>pricing page</a>.
+            </Faq>
+            <Faq q="Does ZozoQueue have a dark mode?">
+              Yes. Switch the whole dashboard to a dark look from the branding settings, and choose a light or dark theme for
+              the waiting-area screen.
             </Faq>
             <Faq q="Can customers cancel or move a booking themselves?">
               Yes, on WhatsApp, up to the cancellation cut-off you set. Inside the cut-off they&rsquo;re told politely that

@@ -149,3 +149,18 @@
   .tapped, .ready, .bTap { animation: none; }
   .bar { display: none; }
 }
+
+/* ---------- Payments, domain and theme scenes ---------- */
+
+.addr { padding: 0.55em 0.9em; border-radius: 999px; background: #f1eee6; border: 1px solid #e8e3d6; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--qless-navy, #14325c); }
+
+.themeBox { display: grid; grid-template-columns: 22% 1fr; gap: 0.6em; width: 100%; min-height: 11em; padding: 0.6em; border-radius: 0.8em; border: 1px solid #e8e3d6; }
+.themeSide { border-radius: 0.5em; }
+.themeMain { display: flex; flex-direction: column; gap: 0.4em; }
+.themeRow { display: grid; grid-template-columns: 3.2em 1fr auto; gap: 0.6em; align-items: center; padding: 0.55em 0.7em; border-radius: 0.5em; font-size: 0.9em; }
+.themeLight { background: #faf8f5; color: #1c1917; }
+.themeLight .themeSide { background: #14325c; }
+.themeLight .themeRow { background: #ffffff; border: 1px solid #e8e3d6; }
+.themeDark { background: #15110d; color: #f5f1ea; border-color: #2c2620; }
+.themeDark .themeSide { background: #0d0a07; }
+.themeDark .themeRow { background: #221c16; border: 1px solid #332b23; }

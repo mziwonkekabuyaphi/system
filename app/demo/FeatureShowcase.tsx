@@ -7,9 +7,10 @@
 // scene; otherwise it advances by itself while on screen, pauses on hover / focus, and never
 // auto-plays for visitors who prefer reduced motion.
 //
-// The scenes follow the order of FEATURES in page.tsx (nine, at the time of writing):
+// The scenes follow the order of FEATURES in page.tsx (sixteen, at the time of writing):
 //   1 WhatsApp AI  2 kiosk  3 bookings that can't clash  4 live queue  5 waitlist
 //   6 branded ticket  7 staff & payroll  8 business hours  9 your brand
+//   10 payments  11 booking rules  12 queue rules  13 own domain  14 own WhatsApp number  15 light/dark dashboard  16 bring your own AI
 // If you add, remove or reorder a feature there, update SCENES below to match.
 //
 // It reuses the building blocks and stage styles from HowItWorks (smartphone, bubbles, panes,
@@ -289,7 +290,195 @@ function SceneBrand() {
   )
 }
 
-const SCENES = [SceneAI, SceneKiosk, SceneClash, SceneQueue, SceneWaitlist, SceneTicket, ScenePayroll, SceneHours, SceneBrand]
+function ScenePayments() {
+  return (
+    <>
+      <Pane cap="The customer pays to hold their time…">
+        <Phone>
+          <Bubble me d={0.2}>Book me a haircut Saturday 10:30</Bubble>
+          <Bubble d={0.9}>{"Done! Pay your R150 deposit to confirm 10:30. Your time is held for you."}</Bubble>
+          <span className={`${m.chips} ${m.seq}`} style={delay(1.5)}>
+            <span className={m.chip}>Pay now</span>
+          </span>
+          <Bubble d={2.2}>{"Payment received. You’re booked for Saturday at 10:30."}</Bubble>
+        </Phone>
+      </Pane>
+      <Pane cap="…under rules you set, for bookings and orders.">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Payment rules · Bookings</span>
+          {[
+            ["When they pay", "Deposit"],
+            ["Deposit", "50% of the total"],
+            ["Pay within", "2 hours"],
+            ["Refund policy", "Partial refund"],
+          ].map(([k, v], i) => (
+            <span key={k} className={`${f.pay} ${m.seq}`} style={delay(0.3 + i * 0.35)}><span>{k}</span><b>{v}</b></span>
+          ))}
+          <span className={`${f.result} ${f.resNo} ${m.seq}`} style={delay(1.9)}>Not paid in time? The slot is released.</span>
+        </div>
+      </Pane>
+    </>
+  )
+}
+
+function SceneRules() {
+  return (
+    <>
+      <Pane cap="Decide who can book, when, and how often.">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Booking rules</span>
+          <Li d={0.3}>Minimum notice and how far ahead</Li>
+          <Li d={0.7}>Cancel and reschedule cut-offs</Li>
+          <Li d={1.1}>Limits per customer</Li>
+          <Li d={1.5}>Repeat appointments you set up</Li>
+          <Li d={1.9}>Approve each booking first (optional)</Li>
+        </div>
+      </Pane>
+      <Pane cap="Switch on approval and you confirm each request.">
+        <Phone>
+          <Bubble me d={0.2}>Book me Friday 14:00</Bubble>
+          <Bubble d={0.9}>{"Thanks! Your request is with the shop and your time is held while they review it."}</Bubble>
+          <span className={`${f.result} ${f.resOk} ${m.seq}`} style={delay(1.8)}>✓ Approved by the shop</span>
+        </Phone>
+      </Pane>
+    </>
+  )
+}
+
+function SceneQueueRules() {
+  return (
+    <>
+      <Pane cap="Choose how the walk-in line behaves.">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Queue rules</span>
+          <Li d={0.3}>Auto-call the next customer</Li>
+          <Li d={0.7}>Heads-up a few people before their turn</Li>
+          <Li d={1.1}>Maximum queue size</Li>
+          <Li d={1.5}>Let customers leave or check their place</Li>
+          <Li d={1.9}>Show an estimated wait</Li>
+        </div>
+      </Pane>
+      <Pane cap="Walk-ins can join on WhatsApp, the kiosk, or both.">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Where walk-ins can join</span>
+          {[
+            ["WhatsApp", "On"],
+            ["Kiosk", "On"],
+          ].map(([k, v], i) => (
+            <span key={k} className={`${f.pay} ${m.seq}`} style={delay(0.3 + i * 0.4)}><span>{k}</span><b>{v}</b></span>
+          ))}
+          <span className={`${f.result} ${f.resOk} ${m.seq}`} style={delay(1.3)}>Bookings are set separately</span>
+        </div>
+      </Pane>
+    </>
+  )
+}
+
+function SceneDomain() {
+  return (
+    <>
+      <Pane cap="Type your domain, add the records we show you…">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Connect your own domain</span>
+          <span className={`${f.pay} ${m.seq}`} style={delay(0.3)}><span>Address</span><b>book.mzansicuts.co.za</b></span>
+          <Li d={0.8}>Add the DNS records at your registrar</Li>
+          <Li d={1.3}>We check them for you</Li>
+          <Li d={1.8}>Connected</Li>
+        </div>
+      </Pane>
+      <Pane cap="…and customers see your address, not ours.">
+        <div className={`${m.card} ${f.duel}`}>
+          <span className={m.cardTitle}>Booking page</span>
+          <span className={f.addr}>book.mzansicuts.co.za</span>
+          <span className={`${f.result} ${f.resOk} ${m.seq}`} style={delay(0.8)}>✓ Live on your own address</span>
+        </div>
+      </Pane>
+    </>
+  )
+}
+
+function SceneWhatsApp() {
+  return (
+    <>
+      <Pane cap="Connect your own number from Settings.">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Connect WhatsApp</span>
+          <Li d={0.3}>Sign in with Meta in a pop-up</Li>
+          <Li d={0.8}>Choose the number to use</Li>
+          <Li d={1.3}>Your number is connected</Li>
+          <span className={`${f.result} ${f.resOk} ${m.seq}`} style={delay(1.9)}>Connected</span>
+        </div>
+      </Pane>
+      <Pane cap="Meta bills you directly for the messages.">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Who pays for what</span>
+          {[
+            ["WhatsApp number", "Yours"],
+            ["Meta message charges", "Billed to you by Meta"],
+            ["Customer chats", "On your number"],
+          ].map(([k, v], i) => (
+            <span key={k} className={`${f.pay} ${m.seq}`} style={delay(0.3 + i * 0.4)}><span>{k}</span><b>{v}</b></span>
+          ))}
+        </div>
+      </Pane>
+    </>
+  )
+}
+
+function ThemeBox({ dark }: { dark?: boolean }) {
+  return (
+    <div className={`${f.themeBox} ${dark ? f.themeDark : f.themeLight}`}>
+      <span className={f.themeSide} aria-hidden="true" />
+      <span className={f.themeMain}>
+        <span className={f.themeRow}><b>B014</b><span>Sipho M.</span><span>Now serving</span></span>
+        <span className={f.themeRow}><b>B015</b><span>Naledi P.</span><span>Next up</span></span>
+        <span className={f.themeRow}><b>B016</b><span>Jaco V.</span><span>Waiting</span></span>
+      </span>
+    </div>
+  )
+}
+
+function SceneTheme() {
+  return (
+    <>
+      <Pane cap="A light dashboard for bright shops…">
+        <ThemeBox />
+      </Pane>
+      <Pane cap="…or a dark one that’s easier on the eyes.">
+        <ThemeBox dark />
+      </Pane>
+    </>
+  )
+}
+
+function SceneAiKey() {
+  return (
+    <>
+      <Pane cap="Add your own Claude or OpenAI key…">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Settings · AI</span>
+          <Li d={0.3}>Choose Claude or OpenAI</Li>
+          <Li d={0.7}>Paste your API key (saved encrypted)</Li>
+          <Li d={1.1}>Switch the AI on</Li>
+          <span className={`${f.pay} ${m.seq}`} style={delay(1.6)}><span>Monthly limit</span><b>R250.00</b></span>
+        </div>
+      </Pane>
+      <Pane cap="…and your assistant understands normal sentences.">
+        <Phone>
+          <Bubble me d={0.2}>Any space Saturday morning? Open late on weekdays?</Bubble>
+          <Bubble d={1.0}>{"Saturday we have 09:00, 09:30 and 10:30 free. On weekdays we close at 18:00. Want me to book one?"}</Bubble>
+          <span className={`${m.chips} ${m.seq}`} style={delay(1.7)}>
+            <span className={m.chip}>09:00</span>
+            <span className={m.chip}>09:30</span>
+            <span className={m.chip}>10:30</span>
+          </span>
+        </Phone>
+      </Pane>
+    </>
+  )
+}
+
+const SCENES = [SceneAI, SceneKiosk, SceneClash, SceneQueue, SceneWaitlist, SceneTicket, ScenePayroll, SceneHours, SceneBrand, ScenePayments, SceneRules, SceneQueueRules, SceneDomain, SceneWhatsApp, SceneTheme, SceneAiKey]
 
 // ---------------------------------------------------------------------------
 // The section body
