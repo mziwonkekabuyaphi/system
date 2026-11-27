@@ -24,6 +24,7 @@ import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
 import { DomainPanel } from "./settings/DomainPanel"
+import { WebsitePanel } from "./settings/WebsitePanel"
 import { PaymentsPanel } from "./payments/PaymentsPanel"
 import { PassportSettingsPanel } from "./settings/PassportSettingsPanel"
 import { ShishaSettingsPanel } from "./settings/ShishaSettingsPanel"
@@ -34,7 +35,7 @@ import { EventSettingsPanel } from "./settings/EventSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-export type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp"
+export type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "website"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -61,6 +62,13 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <path d="M3 9h18" />
       <path d="M4 9v11h16V9" />
       <path d="M9 20v-6h6v6" />
+    </RailIcon>
+  ),
+  website: (p) => (
+    <RailIcon {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
     </RailIcon>
   ),
   "private-label": (p) => (
@@ -236,6 +244,13 @@ const SETTINGS_NAV: Array<{
         title: "Shisha settings",
         description: "Session length, refill warning and whether a station is required.",
         anyOf: ["shisha"],
+      },
+      {
+        id: "website",
+        label: "Website",
+        title: "Website",
+        description: "Your public landing page: words, sections and publishing.",
+        anyOf: ["web"],
       },
       {
         id: "passport",
@@ -575,6 +590,7 @@ export function SettingsManager({
       )}
       {activePage.id === "events" && <EventSettingsPanel />}
       {activePage.id === "shisha" && <ShishaSettingsPanel canManage={shishaManage} />}
+      {activePage.id === "website" && <WebsitePanel />}
       {activePage.id === "passport" && <PassportSettingsPanel canManage={passportManage} />}
       {activePage.id === "orders" &&
         (ordersSettings && onOrdersSettingsSaved ? (
