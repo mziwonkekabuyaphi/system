@@ -14,6 +14,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { loadTableNames, type TableNames } from "@/lib/services/event-settings"
 import { cardFailureMessage, getCardOption, startCardPayment } from "./card"
 
 /** Database messages that are written for customers; anything else becomes a generic apology. */
@@ -41,6 +42,8 @@ export interface TablePackage {
   seatsPerTable: number
   benefits: string[]
   tablesLeft: number
+  /** The tenant's own words for a table (Event settings > Tables). */
+  names: TableNames
 }
 
 /**
@@ -55,8 +58,10 @@ export async function loadTablePackages(supabase: SupabaseClient, tenantId: stri
       console.error("[vvip-checkout] could not read packages", { tenantId, error: error.message })
       return []
     }
+    const names = await loadTableNames(supabase, tenantId)
     return ((data ?? []) as Record<string, unknown>[])
       .map((r) => ({
+        names,
         packageId: r.package_id as string,
         eventId: r.event_id as string,
         eventName: r.event_name as string,

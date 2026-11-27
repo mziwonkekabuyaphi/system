@@ -20,7 +20,7 @@ import type { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/lib/whatsapp/send-message"
 import { formatPassportMoney } from "@/lib/services/passport"
 import { sendOrderTicketQrs, sendTableBookingQr } from "@/lib/whatsapp/qr-generator"
-import { loadEventTicketDelivery, loadVvipPassSettings } from "@/lib/services/event-settings"
+import { loadEventTicketDelivery, loadTableNames, loadVvipPassSettings } from "@/lib/services/event-settings"
 import { buildTableConfirmation } from "@/lib/services/vvip-tables"
 import { buildOrderConfirmation } from "@/lib/services/event-tickets"
 import { scheduleOrderTicketImages, scheduleTablePassImage } from "@/lib/whatsapp/ticket-image"
@@ -407,7 +407,7 @@ async function notifyTable(db: Db, provider: CardProvider, tenantId: string, boo
   try {
     const phone = await phoneForCustomer(db, tenantId, customerId)
     if (!phone) return
-    const text = await buildTableConfirmation(db, tenantId, bookingId, "✅ *Payment received. Your table is booked!*", requestedTableId)
+    const text = await buildTableConfirmation(db, tenantId, bookingId, `✅ *Payment received. Your ${(await loadTableNames(db, tenantId)).singular.toLowerCase()} is booked!*`, requestedTableId)
     await sendWhatsAppTextMessage(tenantId, phone, text)
     // Plain QR now (unless the shop only sends the image); branded table pass image after the webhook has answered.
     const pass = await loadVvipPassSettings(db, tenantId)
