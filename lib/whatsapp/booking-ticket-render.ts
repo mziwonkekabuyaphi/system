@@ -8,6 +8,9 @@
  * booking-ticket-image.ts is what loads a tenant's branding/config, formats the
  * dates and uploads the result.
  *
+ * LAYOUT: "appointment pass". The TIME is the hero (huge, on the brand colour), the service sits on a card that
+ * overlaps the hero, and below it the details sit beside the QR code. Event tickets and table passes use a different layout.
+ *
  * This is the multi-tenant, white-label successor to the old ticket-image-
  * generator.ts / vvip-image-generator.ts. Same engine (satori -> resvg, no
  * native canvas bindings, so it works on Vercel), same layout language and the
@@ -120,71 +123,13 @@ function shade(hex: string, amount: number): string {
   return `#${out.map((c) => c.toString(16).padStart(2, "0")).join("")}`
 }
 
-// ----------------------------------------------------------------------------
-// Icons (satori can't load icon fonts, so these are plain SVG paths)
-// ----------------------------------------------------------------------------
-
-const ICON_PATHS = {
-  calendar: "M3 4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4zM3 9h18M8 2v4M16 2v4",
-  clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
-  pin: "M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
-  phone:
-    "M6.6 10.8a13 13 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.24 9 9 0 0 0 2.8.45 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 9 9 0 0 0 .45 2.8 1 1 0 0 1-.24 1z",
-  ticket: "M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
-  user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
-  timer: "M10 2h4M12 14l3-3M12 22a8 8 0 1 0 0-16 8 8 0 0 0 0 16z",
-} as const
-
-type IconKind = keyof typeof ICON_PATHS
-
 // satori nodes are plain { type, props } objects, so this file needs no JSX/.tsx.
 type Node = { type: string; props: Record<string, unknown> }
 
-function icon(kind: IconKind, color: string, size = 30): Node {
-  return {
-    type: "svg",
-    props: {
-      viewBox: "0 0 24 24",
-      width: size,
-      height: size,
-      style: { display: "flex" },
-      children: {
-        type: "path",
-        props: {
-          d: ICON_PATHS[kind],
-          fill: "none",
-          stroke: color,
-          strokeWidth: 1.8,
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-        },
-      },
-    },
-  }
-}
-
-function detailRow(kind: IconKind, label: string, color: string): Node {
-  return {
-    type: "div",
-    props: {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 18,
-        fontSize: 30,
-        fontWeight: 700,
-        color: "#475569",
-        padding: "14px 0",
-        borderBottom: "1px dashed #e5e9f0",
-        width: "100%",
-      },
-      children: [
-        { type: "div", props: { style: { display: "flex", width: 34 }, children: icon(kind, color, 30) } },
-        { type: "div", props: { style: { display: "flex", flex: 1 }, children: label } },
-      ],
-    },
-  }
-}
+const div = (style: Record<string, unknown>, children?: unknown): Node => ({
+  type: "div",
+  props: { style: { display: "flex", ...style }, ...(children === undefined ? {} : { children }) },
+})
 
 // ----------------------------------------------------------------------------
 // Fonts (read once per warm instance)
@@ -208,252 +153,130 @@ function loadFonts(): Parameters<typeof satori>[1]["fonts"] {
 // Layout
 // ----------------------------------------------------------------------------
 
+/** "12:30 - 13:15" -> { start: "12:30", end: "13:15" }; a single time or another shape -> end null / null. */
+function timeParts(label: string): { start: string; end: string | null } | null {
+  const m = /^(\d{1,2}:\d{2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?$/.exec(label.trim())
+  return m ? { start: m[1], end: m[2] ?? null } : null
+}
+
+function field(label: string, value: string): Node {
+  return div({ flexDirection: "column", paddingBottom: 18 }, [
+    div({ fontSize: 19, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 2.5 }, label),
+    div({ fontSize: 31, fontWeight: 700, color: "#1e293b", marginTop: 4, lineHeight: 1.15 }, value),
+  ])
+}
+
 function buildTree(style: ResolvedTicketStyle, t: RenderableTicket, qrDataUrl: string | null): Node {
   const light = style.headerStyle === "light"
-  const headerBg =
+  const heroBg =
     style.headerStyle === "gradient"
-      ? `linear-gradient(135deg, ${style.headerColor} 0%, ${shade(style.headerColor, -0.35)} 100%)`
+      ? `linear-gradient(160deg, ${shade(style.headerColor, 0.08)} 0%, ${style.headerColor} 45%, ${shade(style.headerColor, -0.45)} 100%)`
       : light
         ? "#ffffff"
         : style.headerColor
-  // Text on the header: brand colour on a light header, auto-contrast otherwise.
-  const onHeader = light ? style.headerColor : readableOn(style.headerColor)
-  const onHeaderSoft = light ? "#64748b" : onHeader
+  const onHero = light ? style.headerColor : readableOn(style.headerColor)
   const accentText = readableOn(style.accentColor)
-  const iconColor = style.headerColor
+  const ring = light ? style.headerColor : onHero
 
-  const serviceFont = t.serviceName.length > 40 ? 34 : t.serviceName.length > 26 ? 42 : 50
+  const time = timeParts(t.timeLabel)
+  const bigTime = time?.start ?? t.timeLabel
+  const timeFont = time ? 190 : t.timeLabel.length > 14 ? 60 : 84
 
-  const brandRow: Node = {
-    type: "div",
-    props: {
-      style: { display: "flex", alignItems: "center", gap: 20, marginBottom: 24 },
-      children: [
-        style.showLogo && style.logoDataUri
-          ? {
-              type: "img",
-              props: {
-                src: style.logoDataUri,
-                width: 110,
-                height: 110,
-                style: { display: "flex", borderRadius: 18, objectFit: "contain" },
-              },
-            }
+  // Soft decorative rings (depth, not content).
+  const deco: Node[] = [
+    div({ position: "absolute", right: -120, top: -120, width: 360, height: 360, borderRadius: 180, border: `36px solid ${ring}`, opacity: 0.07 }),
+    div({ position: "absolute", right: 40, top: 150, width: 150, height: 150, borderRadius: 75, background: style.accentColor, opacity: 0.2 }),
+    div({ position: "absolute", left: -90, bottom: -110, width: 260, height: 260, borderRadius: 130, border: `28px solid ${ring}`, opacity: 0.06 }),
+  ]
+
+  const brandRow = div({ alignItems: "center", gap: 20 }, [
+    style.showLogo && style.logoDataUri
+      ? { type: "img", props: { src: style.logoDataUri, width: 84, height: 84, style: { display: "flex", borderRadius: 16, objectFit: "contain" } } }
+      : null,
+    div({ flex: 1, fontSize: 38, fontWeight: 800, color: onHero }, style.shopName),
+  ].filter(Boolean))
+
+  const eyebrowPill = div(
+    { alignSelf: "flex-start", marginTop: 30, padding: "8px 24px", borderRadius: 999, border: `2px solid ${ring}`, fontSize: 22, fontWeight: 700, color: onHero, textTransform: "uppercase", letterSpacing: 3 },
+    style.eyebrow,
+  )
+
+  const untilLine = [time?.end ? `until ${time.end}` : null, style.showDuration && t.durationLabel ? t.durationLabel : null].filter(Boolean).join("  ·  ")
+
+  const hero = div(
+    { position: "relative", flexDirection: "column", padding: "40px 44px 100px", background: heroBg, overflow: "hidden" },
+    [
+      ...deco,
+      brandRow,
+      eyebrowPill,
+      div({ fontFamily: "Playfair", fontSize: timeFont, fontWeight: 800, color: onHero, lineHeight: 1, marginTop: 26, letterSpacing: -2 }, bigTime),
+      untilLine ? div({ fontSize: 30, fontWeight: 700, color: onHero, opacity: 0.85, marginTop: 40 }, untilLine) : null,
+      div(
+        { alignSelf: "flex-start", marginTop: 26, padding: "12px 30px", borderRadius: 999, background: style.accentColor, color: accentText, fontSize: 30, fontWeight: 800 },
+        t.dateLabel,
+      ),
+    ].filter(Boolean),
+  )
+
+  // Service card overlapping the hero.
+  const serviceFont = t.serviceName.length > 44 ? 32 : t.serviceName.length > 28 ? 38 : 46
+  const price = style.showPrice && t.priceLabel
+  const serviceCard = div(
+    { margin: "-64px 36px 0", background: "#ffffff", borderRadius: 30, boxShadow: "0 18px 40px -12px rgba(15,23,42,0.35)", overflow: "hidden" },
+    [
+      div({ width: 14, background: style.accentColor }),
+      div({ flex: 1, alignItems: "center", gap: 24, padding: "26px 30px" }, [
+        div({ flexDirection: "column", flex: 1 }, [
+          div({ fontSize: 19, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 2.5 }, "Service"),
+          div({ fontFamily: "Playfair", fontSize: serviceFont, fontWeight: 800, color: "#0f172a", marginTop: 6, lineHeight: 1.1 }, t.serviceName),
+        ]),
+        price
+          ? div({ flexDirection: "column", alignItems: "flex-end" }, [
+              div({ fontSize: 44, fontWeight: 800, color: "#0f172a" }, t.priceLabel),
+              t.balanceLabel ? div({ fontSize: 20, fontWeight: 700, color: "#64748b", marginTop: 4 }, `Balance due: ${t.balanceLabel}`) : null,
+            ].filter(Boolean))
           : null,
-        {
-          type: "div",
-          props: {
-            style: { display: "flex", flex: 1, fontSize: 44, fontWeight: 800, color: onHeader, letterSpacing: 0.5 },
-            children: style.shopName,
-          },
-        },
-      ].filter(Boolean),
-    },
-  }
+      ].filter(Boolean)),
+    ],
+  )
 
-  const header: Node = {
-    type: "div",
-    props: {
-      style: { display: "flex", flexDirection: "column", padding: "38px 44px 32px", background: headerBg },
-      children: [
-        brandRow,
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              fontSize: 28,
-              fontWeight: 700,
-              color: onHeaderSoft,
-              opacity: light ? 1 : 0.85,
-              textTransform: "uppercase",
-              letterSpacing: 3,
-            },
-            children: style.eyebrow,
-          },
-        },
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              fontFamily: "Playfair",
-              fontSize: serviceFont,
-              fontWeight: 800,
-              color: onHeader,
-              marginTop: 10,
-            },
-            children: t.serviceName,
-          },
-        },
-        style.showPrice && t.priceLabel
-          ? {
-              type: "div",
-              props: {
-                style: { display: "flex", fontSize: 30, fontWeight: 700, color: onHeader, marginTop: 14, opacity: 0.95 },
-                children: t.priceLabel,
-              },
-            }
-          : null,
-        style.showPrice && t.balanceLabel
-          ? {
-              type: "div",
-              props: {
-                style: { display: "flex", fontSize: 26, fontWeight: 700, color: onHeader, marginTop: 8, opacity: 0.9 },
-                children: `Balance due at appointment: ${t.balanceLabel}`,
-              },
-            }
-          : null,
-      ].filter(Boolean),
-    },
-  }
+  // Details beside the QR.
+  const fields: Node[] = []
+  if (t.customerName) fields.push(field("Guest", t.customerName))
+  if (style.showAddress && t.address) fields.push(field("Where", t.address))
+  if (style.showPhone && t.phone) fields.push(field("Phone", t.phone))
+  if (style.showReference) fields.push(field("Reference", t.reference))
 
-  const rows: Node[] = [detailRow("calendar", t.dateLabel, iconColor), detailRow("clock", t.timeLabel, iconColor)]
-  if (style.showDuration && t.durationLabel) rows.push(detailRow("timer", t.durationLabel, iconColor))
-  if (t.customerName) rows.push(detailRow("user", t.customerName, iconColor))
-  if (style.showAddress && t.address) rows.push(detailRow("pin", t.address, iconColor))
-  if (style.showPhone && t.phone) rows.push(detailRow("phone", t.phone, iconColor))
-  if (style.showReference) rows.push(detailRow("ticket", `Ref ${t.reference}`, iconColor))
-
-  const qrSection: Node | null =
+  const qrBox: Node | null =
     style.showQr && qrDataUrl
-      ? {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              padding: "30px 44px 34px",
-              background: "#fafbfd",
-              borderTop: "1px solid #eef2f8",
-              marginTop: 24,
-            },
-            children: [
-              {
-                type: "div",
-                props: {
-                  style: {
-                    display: "flex",
-                    background: "#ffffff",
-                    padding: 16,
-                    borderRadius: 28,
-                    boxShadow: "0 12px 28px rgba(0,0,0,0.12)",
-                  },
-                  children: { type: "img", props: { src: qrDataUrl, width: 440, height: 440 } },
-                },
-              },
-              style.footerText
-                ? {
-                    type: "div",
-                    props: {
-                      style: {
-                        display: "flex",
-                        marginTop: 26,
-                        padding: "12px 30px",
-                        borderRadius: 999,
-                        background: style.accentColor,
-                        color: accentText,
-                        fontSize: 26,
-                        fontWeight: 700,
-                        letterSpacing: 0.5,
-                      },
-                      children: style.footerText,
-                    },
-                  }
-                : null,
-            ].filter(Boolean),
-          },
-        }
+      ? div(
+          { flexDirection: "column", alignItems: "center", alignSelf: "flex-start", padding: 14, borderRadius: 28, background: "#ffffff", border: `4px solid ${style.accentColor}` },
+          { type: "img", props: { src: qrDataUrl, width: 290, height: 290 } },
+        )
       : null
 
-  // Without a QR, the footer text still deserves a spot.
-  const footerOnly: Node | null =
-    !qrSection && style.footerText
-      ? {
-          type: "div",
-          props: {
-            style: { display: "flex", justifyContent: "center", padding: "26px 44px 34px" },
-            children: {
-              type: "div",
-              props: {
-                style: {
-                  display: "flex",
-                  padding: "12px 30px",
-                  borderRadius: 999,
-                  background: style.accentColor,
-                  color: accentText,
-                  fontSize: 26,
-                  fontWeight: 700,
-                },
-                children: style.footerText,
-              },
-            },
-          },
-        }
-      : null
+  const body = div({ gap: 36, padding: "34px 44px 8px", alignItems: "flex-start" }, [
+    fields.length > 0 ? div({ flexDirection: "column", flex: 1, paddingTop: 4 }, fields) : div({ flex: 1 }),
+    qrBox,
+  ].filter(Boolean))
 
-  const showQrBg = Boolean(qrSection)
-  const poweredBy: Node | null = style.showPoweredBy
-    ? {
-        type: "div",
-        props: {
-          style: {
-            display: "flex",
-            justifyContent: "center",
-            padding: "0 0 22px",
-            fontSize: 20,
-            color: "#64748b",
-            fontWeight: 600,
-            // Continue the QR section's background so there is no white strip.
-            background: showQrBg ? "#fafbfd" : "#ffffff",
-          },
-          children: [
-            { type: "span", props: { style: { display: "flex", marginRight: 8 }, children: "Powered by" } },
-            { type: "span", props: { style: { display: "flex", color: "#111827", fontWeight: 700 }, children: "ZozoApp" } },
-          ],
-        },
-      }
+  const footer = style.footerText
+    ? div({ margin: "6px 44px 0", padding: "16px 30px", borderRadius: 22, background: style.accentColor, color: accentText, fontSize: 26, fontWeight: 700, justifyContent: "center", textAlign: "center" }, style.footerText)
     : null
 
-  const card: Node = {
-    type: "div",
-    props: {
-      style: {
-        width: 800,
-        display: "flex",
-        flexDirection: "column",
-        background: "#ffffff",
-        fontFamily: "Inter",
-        borderRadius: 36,
-        overflow: "hidden",
-        boxShadow: "0 30px 60px -20px rgba(0,0,0,0.28)",
-      },
-      children: [
-        header,
-        // Accent stripe between header and body.
-        { type: "div", props: { style: { display: "flex", height: 10, background: style.accentColor } } },
-        {
-          type: "div",
-          props: {
-            style: { display: "flex", flexDirection: "column", padding: "22px 44px 0", background: "#ffffff" },
-            children: rows,
-          },
-        },
-        qrSection,
-        footerOnly,
-        poweredBy ?? { type: "div", props: { style: { display: "flex", height: qrSection || footerOnly ? 0 : 24 } } },
-      ].filter(Boolean),
-    },
-  }
+  const poweredBy = style.showPoweredBy
+    ? div({ justifyContent: "center", padding: "22px 0 22px", fontSize: 20, color: "#64748b", fontWeight: 600 }, [
+        { type: "span", props: { style: { display: "flex", marginRight: 8 }, children: "Powered by" } },
+        { type: "span", props: { style: { display: "flex", color: "#111827", fontWeight: 700 }, children: "ZozoApp" } },
+      ])
+    : div({ height: 24 })
 
-  return {
-    type: "div",
-    props: {
-      style: { width: 880, display: "flex", flexDirection: "column", background: "#f4f6fa", padding: 40 },
-      children: card,
-    },
-  }
+  const card = div(
+    { width: 800, flexDirection: "column", background: "#ffffff", fontFamily: "Inter", borderRadius: 36, overflow: "hidden", boxShadow: "0 30px 60px -20px rgba(0,0,0,0.28)" },
+    [hero, serviceCard, body, footer, poweredBy].filter(Boolean),
+  )
+
+  return div({ width: 880, flexDirection: "column", background: "#f4f6fa", padding: 40 }, card)
 }
 
 /**
