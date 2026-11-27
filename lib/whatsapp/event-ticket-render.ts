@@ -2,9 +2,10 @@
 /**
  * Event Ticket Card — PURE renderer
  * ---------------------------------
- * Same engine, fonts, canvas (880px, rasterised at 1320px), card width, QR size and look as the
- * booking ticket (booking-ticket-render.ts). Only the rows are event specific. Like that file it
- * does no database / Storage / network work: everything is passed in, already formatted.
+ * Layout: compact branded header, a calendar-style DATE block next to the event name and ticket type,
+ * info tiles (time / where), chips (price, admits), a perforated tear line, then the QR code with the
+ * guest and ticket number. Same engine, fonts and canvas (880px, rasterised at 1320px) as the other tickets.
+ * Like them it does no database / Storage / network work: everything is passed in, already formatted.
  * ticket-image.ts loads the tenant's branding, formats the event and uploads the result.
  *
  * Fonts: reuses the SAME .woff files the booking ticket already ships in lib/whatsapp/fonts/
@@ -63,73 +64,13 @@ function shade(hex: string, amount: number): string {
   return `#${out.map((c) => c.toString(16).padStart(2, "0")).join("")}`
 }
 
-// ----------------------------------------------------------------------------
-// Icons (plain SVG paths: satori can't load icon fonts)
-// ----------------------------------------------------------------------------
-
-const ICON_PATHS = {
-  calendar: "M3 4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4zM3 9h18M8 2v4M16 2v4",
-  clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
-  pin: "M12 22s7-7.58 7-12A7 7 0 0 0 5 10c0 4.42 7 12 7 12zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
-  phone:
-    "M6.6 10.8a13 13 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.24 9 9 0 0 0 2.8.45 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 9 9 0 0 0 .45 2.8 1 1 0 0 1-.24 1z",
-  ticket: "M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
-  user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
-  users:
-    "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
-  hash: "M4 9h16M4 15h16M10 3L8 21M16 3l-2 18",
-} as const
-
-type IconKind = keyof typeof ICON_PATHS
-
 // satori nodes are plain { type, props } objects, so this file needs no JSX/.tsx.
 type Node = { type: string; props: Record<string, unknown> }
 
-function icon(kind: IconKind, color: string, size = 30): Node {
-  return {
-    type: "svg",
-    props: {
-      viewBox: "0 0 24 24",
-      width: size,
-      height: size,
-      style: { display: "flex" },
-      children: {
-        type: "path",
-        props: {
-          d: ICON_PATHS[kind],
-          fill: "none",
-          stroke: color,
-          strokeWidth: 1.8,
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-        },
-      },
-    },
-  }
-}
-
-function detailRow(kind: IconKind, label: string, color: string): Node {
-  return {
-    type: "div",
-    props: {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 18,
-        fontSize: 30,
-        fontWeight: 700,
-        color: "#475569",
-        padding: "14px 0",
-        borderBottom: "1px dashed #e5e9f0",
-        width: "100%",
-      },
-      children: [
-        { type: "div", props: { style: { display: "flex", width: 34 }, children: icon(kind, color, 30) } },
-        { type: "div", props: { style: { display: "flex", flex: 1 }, children: label } },
-      ],
-    },
-  }
-}
+const div = (style: Record<string, unknown>, children?: unknown): Node => ({
+  type: "div",
+  props: { style: { display: "flex", ...style }, ...(children === undefined ? {} : { children }) },
+})
 
 // ----------------------------------------------------------------------------
 // Fonts (read once per warm instance; the same files the booking ticket uses)
@@ -150,11 +91,34 @@ function loadFonts(): Parameters<typeof satori>[1]["fonts"] {
 }
 
 // ----------------------------------------------------------------------------
-// Layout (mirrors booking-ticket-render.ts buildTree)
+// Layout
 // ----------------------------------------------------------------------------
 
 /** Under the QR code when the shop hasn't set its own footer line. */
 const DEFAULT_FOOTER = "Show this QR code at the gate"
+
+function tile(label: string, value: string, flex = 1): Node {
+  return div(
+    { flexDirection: "column", flex, background: "#f8fafc", border: "1px solid #e8edf4", borderRadius: 22, padding: "18px 24px" },
+    [
+      div({ fontSize: 20, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 2.5 }, label),
+      div({ fontSize: 32, fontWeight: 700, color: "#1e293b", marginTop: 6 }, value),
+    ],
+  )
+}
+
+function chip(label: string, value: string, bg: string, fg: string): Node {
+  return div({ alignItems: "center", gap: 12, background: bg, borderRadius: 999, padding: "12px 26px" }, [
+    div({ fontSize: 22, fontWeight: 700, color: fg, opacity: 0.8, textTransform: "uppercase", letterSpacing: 1.5 }, label),
+    div({ fontSize: 30, fontWeight: 800, color: fg }, value),
+  ])
+}
+
+/** "Sat, 17 Oct 2026" -> { dow: "SAT", day: "17", month: "OCT" }; null when the label has another shape. */
+function dateParts(label: string): { dow: string; day: string; month: string } | null {
+  const m = /^([A-Za-z]{3,9}),?\s+(\d{1,2})\s+([A-Za-z]{3,9})/.exec(label.trim())
+  return m ? { dow: m[1].slice(0, 3).toUpperCase(), day: m[2], month: m[3].slice(0, 3).toUpperCase() } : null
+}
 
 function buildTree(style: ResolvedTicketStyle, t: RenderableEventTicket, qrDataUrl: string): Node {
   const light = style.headerStyle === "light"
@@ -165,208 +129,107 @@ function buildTree(style: ResolvedTicketStyle, t: RenderableEventTicket, qrDataU
         ? "#ffffff"
         : style.headerColor
   const onHeader = light ? style.headerColor : readableOn(style.headerColor)
-  const onHeaderSoft = light ? "#64748b" : onHeader
   const accentText = readableOn(style.accentColor)
-  const iconColor = style.headerColor
+  const canvasBg = "#f4f6fa"
+
+  const header = div(
+    { alignItems: "center", gap: 22, padding: "30px 44px", background: headerBg, borderBottom: light ? "1px solid #eef2f8" : "none" },
+    [
+      style.showLogo && style.logoDataUri
+        ? { type: "img", props: { src: style.logoDataUri, width: 84, height: 84, style: { display: "flex", borderRadius: 16, objectFit: "contain" } } }
+        : null,
+      div({ flexDirection: "column", flex: 1 }, [
+        div({ fontSize: 38, fontWeight: 800, color: onHeader }, style.shopName),
+        div({ fontSize: 22, fontWeight: 700, color: onHeader, opacity: 0.85, textTransform: "uppercase", letterSpacing: 3, marginTop: 4 }, style.eyebrow),
+      ]),
+    ].filter(Boolean),
+  )
+
+  // Calendar-style date block (falls back to a big "ADMIT" mark when the date label has another shape).
+  const parts = dateParts(t.dateLabel)
+  const dateBlock = div(
+    {
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      width: 210,
+      height: 230,
+      borderRadius: 40,
+      background: `linear-gradient(145deg, ${style.accentColor} 0%, ${shade(style.accentColor, -0.22)} 100%)`,
+      color: accentText,
+    },
+    parts
+      ? [
+          div({ fontSize: 26, fontWeight: 800, textTransform: "uppercase", letterSpacing: 5, opacity: 0.85 }, parts.dow),
+          div({ fontFamily: "Playfair", fontSize: 112, fontWeight: 800, lineHeight: 1 }, parts.day),
+          div({ fontSize: 30, fontWeight: 800, textTransform: "uppercase", letterSpacing: 6, opacity: 0.9 }, parts.month),
+        ]
+      : [div({ fontFamily: "Playfair", fontSize: 54, fontWeight: 800 }, "ADMIT")],
+  )
 
   const nameFont = t.eventName.length > 40 ? 34 : t.eventName.length > 26 ? 42 : 50
+  const tierPill = div(
+    { alignSelf: "flex-start", marginTop: 16, padding: "8px 22px", borderRadius: 999, border: `3px solid ${style.accentColor}`, fontSize: 26, fontWeight: 800, color: "#0f172a", textTransform: "uppercase", letterSpacing: 2 },
+    t.tierName,
+  )
+  const hero = div({ alignItems: "center", gap: 32, padding: "36px 44px 8px" }, [
+    dateBlock,
+    div({ flexDirection: "column", flex: 1 }, [
+      div({ fontFamily: "Playfair", fontSize: nameFont, fontWeight: 800, color: "#0f172a", lineHeight: 1.1 }, t.eventName),
+      tierPill,
+    ]),
+  ])
 
-  const brandRow: Node = {
-    type: "div",
-    props: {
-      style: { display: "flex", alignItems: "center", gap: 20, marginBottom: 24 },
-      children: [
-        style.showLogo && style.logoDataUri
-          ? {
-              type: "img",
-              props: {
-                src: style.logoDataUri,
-                width: 110,
-                height: 110,
-                style: { display: "flex", borderRadius: 18, objectFit: "contain" },
-              },
-            }
-          : null,
-        {
-          type: "div",
-          props: {
-            style: { display: "flex", flex: 1, fontSize: 44, fontWeight: 800, color: onHeader, letterSpacing: 0.5 },
-            children: style.shopName,
-          },
-        },
-      ].filter(Boolean),
-    },
-  }
+  const info: Node[] = []
+  if (t.timeLabel) info.push(div({ gap: 16 }, [tile("Time", t.timeLabel), ...(parts ? [] : [tile("Date", t.dateLabel)])]))
+  else if (!parts) info.push(div({ gap: 16 }, [tile("Date", t.dateLabel)]))
+  if (style.showAddress && t.location) info.push(div({ gap: 16 }, [tile("Where", t.location)]))
 
-  const header: Node = {
-    type: "div",
-    props: {
-      style: { display: "flex", flexDirection: "column", padding: "38px 44px 32px", background: headerBg },
-      children: [
-        brandRow,
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              fontSize: 28,
-              fontWeight: 700,
-              color: onHeaderSoft,
-              opacity: light ? 1 : 0.85,
-              textTransform: "uppercase",
-              letterSpacing: 3,
-            },
-            children: style.eyebrow,
-          },
-        },
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              fontFamily: "Playfair",
-              fontSize: nameFont,
-              fontWeight: 800,
-              color: onHeader,
-              marginTop: 10,
-            },
-            children: t.eventName,
-          },
-        },
-        style.showPrice && t.priceLabel
-          ? {
-              type: "div",
-              props: {
-                style: { display: "flex", fontSize: 30, fontWeight: 700, color: onHeader, marginTop: 14, opacity: 0.95 },
-                children: t.priceLabel,
-              },
-            }
-          : null,
-      ].filter(Boolean),
-    },
-  }
+  const chips: Node[] = []
+  if (style.showPrice && t.priceLabel) chips.push(chip("Price", t.priceLabel, "#f1f5f9", "#0f172a"))
+  if (t.entriesLabel) chips.push(chip("Entry", t.entriesLabel, style.accentColor, accentText))
+  const body = div({ flexDirection: "column", gap: 16, padding: "20px 44px 8px" }, [...info, chips.length > 0 ? div({ gap: 14, flexWrap: "wrap" }, chips) : null].filter(Boolean))
 
-  const rows: Node[] = [detailRow("calendar", t.dateLabel, iconColor)]
-  if (t.timeLabel) rows.push(detailRow("clock", t.timeLabel, iconColor))
-  if (style.showAddress && t.location) rows.push(detailRow("pin", t.location, iconColor))
-  rows.push(detailRow("ticket", t.tierName, iconColor))
-  if (t.entriesLabel) rows.push(detailRow("users", t.entriesLabel, iconColor))
-  if (t.customerName) rows.push(detailRow("user", t.customerName, iconColor))
-  if (style.showPhone && t.phone) rows.push(detailRow("phone", t.phone, iconColor))
-  if (style.showReference) rows.push(detailRow("hash", t.ticketLabel, iconColor))
+  // Tear line with the two half-circle notches.
+  const tear = div({ position: "relative", height: 44, alignItems: "center", marginTop: 14 }, [
+    div({ position: "absolute", left: -22, top: 0, width: 44, height: 44, borderRadius: 22, background: canvasBg }),
+    div({ position: "absolute", right: -22, top: 0, width: 44, height: 44, borderRadius: 22, background: canvasBg }),
+    div({ flex: 1, margin: "0 40px", borderTop: "3px dashed #d7dee9" }),
+  ])
+
+  const who: Node[] = []
+  if (t.customerName) who.push(div({ fontSize: 34, fontWeight: 800, color: "#0f172a" }, t.customerName))
+  const sub = [style.showReference ? t.ticketLabel : null, style.showPhone ? t.phone : null].filter(Boolean).join("  ·  ")
+  if (sub) who.push(div({ fontSize: 26, fontWeight: 700, color: "#64748b", letterSpacing: 1 }, sub))
 
   // The QR is the entry pass, so unlike the booking ticket it is always drawn (style.showQr is ignored).
-  const qrSection: Node = {
-    type: "div",
-    props: {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        padding: "30px 44px 34px",
-        background: "#fafbfd",
-        borderTop: "1px solid #eef2f8",
-        marginTop: 24,
-      },
-      children: [
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              background: "#ffffff",
-              padding: 16,
-              borderRadius: 28,
-              boxShadow: "0 12px 28px rgba(0,0,0,0.12)",
-            },
-            children: { type: "img", props: { src: qrDataUrl, width: 440, height: 440 } },
-          },
-        },
-        {
-          type: "div",
-          props: {
-            style: {
-              display: "flex",
-              marginTop: 26,
-              padding: "12px 30px",
-              borderRadius: 999,
-              background: style.accentColor,
-              color: accentText,
-              fontSize: 26,
-              fontWeight: 700,
-              letterSpacing: 0.5,
-            },
-            children: style.footerText || DEFAULT_FOOTER,
-          },
-        },
-      ],
-    },
-  }
+  const qrSection = div({ flexDirection: "column", alignItems: "center", padding: "14px 44px 30px", background: "#ffffff" }, [
+    div({ background: "#ffffff", padding: 14, borderRadius: 26, border: "2px solid #e8edf4" }, { type: "img", props: { src: qrDataUrl, width: 400, height: 400 } }),
+    who.length > 0 ? div({ flexDirection: "column", alignItems: "center", gap: 6, marginTop: 24 }, who) : null,
+    div(
+      { marginTop: 22, padding: "12px 30px", borderRadius: 999, background: style.accentColor, color: accentText, fontSize: 25, fontWeight: 700, letterSpacing: 0.5 },
+      style.footerText || DEFAULT_FOOTER,
+    ),
+  ].filter(Boolean))
 
   const poweredBy: Node | null = style.showPoweredBy
-    ? {
-        type: "div",
-        props: {
-          style: {
-            display: "flex",
-            justifyContent: "center",
-            padding: "0 0 22px",
-            fontSize: 20,
-            color: "#64748b",
-            fontWeight: 600,
-            // Continue the QR section's background so there is no white strip.
-            background: "#fafbfd",
-          },
-          children: [
-            { type: "span", props: { style: { display: "flex", marginRight: 8 }, children: "Powered by" } },
-            { type: "span", props: { style: { display: "flex", color: "#111827", fontWeight: 700 }, children: "ZozoApp" } },
-          ],
-        },
-      }
+    ? div({ justifyContent: "center", padding: "0 0 22px", fontSize: 20, color: "#64748b", fontWeight: 600, background: "#ffffff" }, [
+        { type: "span", props: { style: { display: "flex", marginRight: 8 }, children: "Powered by" } },
+        { type: "span", props: { style: { display: "flex", color: "#111827", fontWeight: 700 }, children: "ZozoApp" } },
+      ])
     : null
 
-  const card: Node = {
-    type: "div",
-    props: {
-      style: {
-        width: 800,
-        display: "flex",
-        flexDirection: "column",
-        background: "#ffffff",
-        fontFamily: "Inter",
-        borderRadius: 36,
-        overflow: "hidden",
-        boxShadow: "0 30px 60px -20px rgba(0,0,0,0.28)",
-      },
-      children: [
-        header,
-        // Accent stripe between header and body.
-        { type: "div", props: { style: { display: "flex", height: 10, background: style.accentColor } } },
-        {
-          type: "div",
-          props: {
-            style: { display: "flex", flexDirection: "column", padding: "22px 44px 0", background: "#ffffff" },
-            children: rows,
-          },
-        },
-        qrSection,
-        poweredBy,
-      ].filter(Boolean),
-    },
-  }
+  const card = div(
+    { width: 800, flexDirection: "column", background: "#ffffff", fontFamily: "Inter", borderRadius: 36, overflow: "hidden", boxShadow: "0 30px 60px -20px rgba(0,0,0,0.28)" },
+    [header, div({ height: 10, background: style.accentColor }), hero, body, tear, qrSection, poweredBy].filter(Boolean),
+  )
 
-  return {
-    type: "div",
-    props: {
-      style: { width: 880, display: "flex", flexDirection: "column", background: "#f4f6fa", padding: 40 },
-      children: card,
-    },
-  }
+  return div({ width: 880, flexDirection: "column", background: canvasBg, padding: 40 }, card)
 }
 
 /**
  * Renders the event ticket card to a PNG buffer (880px layout, rasterised at 1320px wide, exactly
- * like the booking ticket, so the two are the same size).
+ * like the other tickets, so they are all the same size).
  */
 export async function renderEventTicketPng(style: ResolvedTicketStyle, ticket: RenderableEventTicket): Promise<Buffer> {
   const qrDataUrl = await QRCode.toDataURL(ticket.qrValue, { errorCorrectionLevel: "M", margin: 1, width: 800 })
