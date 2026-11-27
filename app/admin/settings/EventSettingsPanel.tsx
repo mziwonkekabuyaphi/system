@@ -13,6 +13,7 @@
 // which re-check events.manage and the module switch on every call.
 "use client"
 
+import { LayoutPicker } from "./LayoutPicker"
 import { useEffect, useRef, useState, useTransition } from "react"
 
 import { BRAND_SELECTED, BRAND_TEXT } from "@/components/admin/brand"
@@ -328,6 +329,10 @@ function TablePassCard({ config }: { config: EventSettingsConfig }) {
 
         <div className={`grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] ${form.enabled ? "" : "opacity-60"}`}>
           <div className="space-y-4">
+            <FieldRow label="Pass design" hint="Pick a design, then edit it below. The preview updates as you go.">
+              <LayoutPicker kind="table" value={form.layout} onChange={(next) => set("layout", next)} />
+            </FieldRow>
+
             <FieldRow label="Header style">
               <div className="grid gap-2 sm:grid-cols-3">
                 {HEADER_STYLES.map((option) => {
@@ -509,6 +514,10 @@ function TicketCard({ config }: { config: EventSettingsConfig }) {
 
         <div className={`grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px] ${form.enabled ? "" : "opacity-60"}`}>
           <div className="space-y-4">
+            <FieldRow label="Ticket design" hint="Pick a design, then edit it below. The preview updates as you go.">
+              <LayoutPicker kind="event" value={form.layout} onChange={(next) => set("layout", next)} />
+            </FieldRow>
+
             <FieldRow label="Header style">
               <div className="grid gap-2 sm:grid-cols-3">
                 {HEADER_STYLES.map((option) => {
