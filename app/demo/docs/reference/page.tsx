@@ -28,6 +28,16 @@ const BOOKING_SETTINGS = [
   ["Require a service to book", "Off means the kiosk and WhatsApp skip the service step and go straight to the date.", "On or off", "On"],
   ["Default duration", "Slot length when services are switched off (5–480 min).", "5 to 480 minutes", "30 min"],
   ["Reminders", "Send a WhatsApp reminder before the appointment (30–1440 min ahead).", "On or off, then 30 to 1440 minutes", "On, 120 min"],
+  ["Allow same-day bookings", "Off means customers can only book from tomorrow. You can still add same-day appointments yourself.", "On or off", "On"],
+  ["Customers can cancel", "Off means customers can’t cancel on WhatsApp and are asked to contact the shop.", "On or off", "On"],
+  ["Customers can reschedule", "Off means customers can’t move a booking on WhatsApp.", "On or off", "On"],
+  ["Rescheduling deadline", "Minutes before the start that a booking can still be moved. Empty uses the cancellation cut-off.", "0 or more minutes, or empty", "Same as cancellation cut-off"],
+  ["Upcoming bookings per customer", "How many upcoming bookings one customer can hold at once (1–20).", "1 to 20", "Set in Booking rules"],
+  ["Bookings per customer per day", "Cap on bookings one customer can make for a day (1–20). Empty means no limit.", "1 to 20, or empty", "No limit"],
+  ["Require approval", "New bookings are held as requests until you approve or decline them.", "On or off", "Off"],
+  ["Allow recurring appointments", "Adds a Repeat option when you create an appointment. Customers can’t set up repeats themselves.", "On or off", "Off"],
+  ["Customers pay when they book", "Customers get a card payment link and the booking confirms once paid. Needs a connected card provider.", "On or off", "Off"],
+  ["Print a ticket at the kiosk", "Print a slip when a customer books on the kiosk.", "On or off", "Set in Booking rules"],
 ];
 
 const QUEUE_SETTINGS = [
@@ -39,6 +49,10 @@ const QUEUE_SETTINGS = [
   ["Services per entry", "How many services one walk-in can pick (1–5).", "1 to 5", "1"],
   ["Default service time", "Estimated minutes when no service is picked.", "1 or more minutes", "15 min"],
   ["Ticket prefix", "1–4 characters shown before the number. Numbers restart each day.", "1 to 4 characters", "Q"],
+  ["Allow customers to leave the queue", "Customers can remove themselves from the walk-in queue.", "On or off", "On"],
+  ["Allow customers to check their position", "Customers can ask where they are in line.", "On or off", "On"],
+  ["Show estimated waiting time", "Include the estimated wait in what customers see.", "On or off", "On"],
+  ["Print a ticket at the kiosk", "Print a queue ticket when a walk-in joins on the kiosk.", "On or off", "Set in Queue rules"],
 ];
 
 /** How each booking setting behaves, beyond the one-line description in the table. */
@@ -54,6 +68,8 @@ const BOOKING_NOTES = [
   "Choose a staff member works on WhatsApp, for example “book with Sipho”. The customer is only offered times that person is free, and is told if they aren’t available. They are never given a different person than the one they asked for. Rescheduling and the kiosk still assign staff automatically.",
   "Require a service to book, when off, makes every appointment use the Default duration, because there is no service to look up a length from. Bookings made this way show as “No service” in Today and Bookings. It is separate from the queue’s own “Require a service” switch.",
   "Reminders go out within about 5 minutes of the time you set. Examples: 120 is 2 hours before, 1440 is the day before. Bookings made inside that window don’t get a reminder, because the customer has only just heard about them. A customer who messaged you on WhatsApp in the last 24 hours gets it as a normal message. Everyone else only gets it if they agreed to WhatsApp updates and your reminder wording is approved by Meta.",
+  "Payment: when “Customers pay when they book” is on, the customer’s time is held while they pay and released if they don’t. Choose full payment, a deposit and a refund policy under Settings → Payments. See Payments & deposits.",
+  "Require approval holds each new booking as a request. The customer is told it is being reviewed, and their time stays held. If payment is required too, they pay first and you approve afterwards.",
 ];
 
 const QUEUE_NOTES = [
