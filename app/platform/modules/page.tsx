@@ -64,6 +64,7 @@ const SPECS: Spec[] = [
   { key: "kiosk", label: "Kiosk", icon: "🖥️", blurb: "Self-service kiosk", defaultOn: true, planGated: true },
   { key: "display", label: "TV display", icon: "📺", blurb: "Screen showing the queue to the room", defaultOn: true, planGated: false },
   { key: "shisha_monitor", label: "Shisha monitor", icon: "📡", blurb: "Shisha session board for a TV in the lounge", defaultOn: false, planGated: false },
+  { key: "web", label: "ZozoWeb website", icon: "🌍", blurb: "Public landing page (Shisha, Events or Booking template) built from live data", defaultOn: false, planGated: false },
   { key: "shisha_pos", label: "Shisha mobile POS", icon: "📱", blurb: "Take shisha orders and payments from a phone", defaultOn: false, planGated: false, soon: true },
   // ── standalone ──
   { key: "wallet", label: "Customer Passport", icon: "🪪", blurb: "A balance customers top up and spend (Events needs it)", defaultOn: false, planGated: false },
@@ -84,7 +85,7 @@ const FAMILIES: Family[] = [
   { id: "bookqueue", title: "Booking & Queue", icon: "📅", blurb: "Appointments, walk-ins, kiosk and TV", products: ["booking", "queue"], addons: ["kiosk", "display"], accent: "bg-sky-500", bar: "bg-sky-500" },
   { id: "shisha", title: "Shisha Lounge", icon: "💨", blurb: "Sessions, monitor and POS", products: ["shisha"], addons: ["shisha_monitor", "shisha_pos"], accent: "bg-emerald-500", bar: "bg-emerald-500" },
 ]
-const STANDALONE: string[] = ["wallet", "custom_domain"]
+const STANDALONE: string[] = ["wallet", "custom_domain", "web"]
 
 type Tenant = { id: string; name: string; slug: string; status: string; plan: string; staff_limit: number | null }
 type Mod = { id: string; key: string; name: string }

@@ -26,6 +26,7 @@ const SWITCHABLE_KEYS = [
   "shisha_monitor", "shisha_pos", // under shisha
   // standalone extras
   "custom_domain",
+  "web", // ZozoWeb: tenant website (standalone; templates read shisha, events or booking data)
 ] as const
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
