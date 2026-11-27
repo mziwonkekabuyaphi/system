@@ -23,6 +23,7 @@ import {
   validateSalesRules,
   validateTicketSettings,
   validateVvipPassSettings,
+  validateVvipTableSettings,
   vvipPassSettingsFromRow,
   vvipPassSettingsToRow,
   vvipTableSettingsFromRow,
@@ -111,7 +112,8 @@ export async function getEventSettings(): Promise<Result<{ config: EventSettings
  */
 export async function updateVvipTableSettings(input: VvipTableSettings): Promise<Result> {
   try {
-    if (typeof input?.customersPickTable !== "boolean") return { success: false, error: "Invalid setting." }
+    const invalid = validateVvipTableSettings(input ?? ({} as VvipTableSettings))
+    if (invalid) return { success: false, error: invalid }
     const s = await scope()
     if (!s.ok) return { success: false, error: s.error }
 
@@ -191,7 +193,7 @@ export async function previewEventTicket(input: EventTicketSettings): Promise<Re
   }
 }
 
-/** Table pass: image / QR switches and the two texts. The look follows the Ticket card above. */
+/** Table pass: its own switches, texts and look (separate from the event ticket). */
 export async function updateVvipPassSettings(input: VvipPassSettings): Promise<Result> {
   try {
     const invalid = validateVvipPassSettings(input)
@@ -215,13 +217,13 @@ export async function updateVvipPassSettings(input: VvipPassSettings): Promise<R
 }
 
 /** Renders a sample table pass from the UNSAVED form values. */
-export async function previewTablePass(input: VvipPassSettings): Promise<Result<{ dataUri: string }>> {
+export async function previewTablePass(input: VvipPassSettings, names?: { tableName: string | null; tablesName: string | null }): Promise<Result<{ dataUri: string }>> {
   try {
-    const invalid = input.enabled || input.sendQr ? validateVvipPassSettings({ ...input, enabled: true }) : null
+    const invalid = validateVvipPassSettings({ ...input, enabled: true })
     if (invalid) return { success: false, error: invalid }
     const s = await scope()
     if (!s.ok) return { success: false, error: s.error }
-    const png = await renderTablePassPreview(s.tenantId, input)
+    const png = await renderTablePassPreview(s.tenantId, input, names)
     if (!png) return { success: false, error: "Could not render preview." }
     return { success: true, dataUri: `data:image/png;base64,${png.toString("base64")}` }
   } catch (err) {
