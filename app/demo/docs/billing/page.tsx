@@ -219,7 +219,7 @@ export default function BillingPage() {
         <p>Plans &amp; Billing also shows one overall status, worked out from your plan and your latest invoice.</p>
         <Table head={["Status", "Meaning"]} rows={BILLING_STATUS} />
         <p className={styles.note}>
-          There is no card payment inside ZozoQueue yet, so invoices are settled with you directly. Staff are counted on
+          There is no card payment for your ZozoQueue plan invoices yet, so they are settled with you directly. (Card payments from your own customers are separate: see Payments & deposits.) Staff are counted on
           the day the invoice is created, so the staff you have active then are the staff you are billed for.
         </p>
       </div>
