@@ -213,6 +213,8 @@ export const MODULE_KEYS = {
   shisha: "shisha",
   shifts: "shifts",
   wallet: "wallet",
+  /** Run more than one branch (tenant_locations). Included in the Business plan via plan_modules. */
+  locations: "locations",
 } as const
 
 export type ModuleKey = (typeof MODULE_KEYS)[keyof typeof MODULE_KEYS]
