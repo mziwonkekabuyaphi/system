@@ -16,7 +16,6 @@ import { revalidatePath } from "next/cache"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { isModuleEnabled } from "@/lib/tenant/modules"
 import { requireTenantPermission } from "@/lib/tenant/require-tenant-permission"
-import { freeSiteHost } from "@/lib/domains/sites-domain"
 import { TEMPLATES, isTemplate, sanitizeContent, type SiteContent, type SiteTemplate } from "@/lib/site/types"
 
 type Fail = { ok: false; error: string }
@@ -40,8 +39,6 @@ async function scoped(): Promise<Scope> {
 
 export interface WebsiteState {
   slug: string
-  /** The free address (https://slug.<sites domain>), or null when ZozoWeb's domain isn't configured. */
-  freeAddress: string | null
   /** Template being edited. */
   template: SiteTemplate
   /** Templates this shop can use: the module each one reads must be switched on. */
@@ -72,7 +69,6 @@ async function readState(s: Extract<Scope, { ok: true }>): Promise<WebsiteState>
   const published = isPublished ? sanitizeContent(data?.published, s.name, liveTemplate) : null
   return {
     slug: s.slug,
-    freeAddress: freeSiteHost(s.slug) ? `https://${freeSiteHost(s.slug)}` : null,
     template,
     availableTemplates: available,
     draft,
@@ -128,6 +124,7 @@ export async function publishWebsite(input: unknown, templateInput: unknown): Pr
     return fail(GENERIC)
   }
   revalidatePath(`/site/${s.slug}`)
+  await cleanUnusedImages(s, content)
   return { ok: true, state: await readState(s) }
 }
 
@@ -147,36 +144,133 @@ export async function unpublishWebsite(): Promise<{ ok: true; state: WebsiteStat
 }
 
 // ---------------------------------------------------------------------------
-// Photos. The owner picks a file; we check it, store it in the public "site-assets" bucket under
-// {tenant_id}/..., and hand back its https URL, which then goes through sanitizeContent like any other.
+// Photos. The browser never gets storage access: the upload runs here on the service role, only after
+// the owner's permission + module are checked, and always under {tenant_id}/ so shops can't touch each
+// other's files. The bucket (site-images) has no write policies at all. Unused photos are cleaned up on Publish.
 // ---------------------------------------------------------------------------
 
+const BUCKET = "site-images"
 const MAX_BYTES = 3 * 1024 * 1024
+const MAX_FILES_PER_TENANT = 40
 const TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }
-
-function looksLike(type: string, b: Uint8Array): boolean {
-  if (type === "image/png") return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
-  if (type === "image/jpeg") return b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff
-  // WEBP: "RIFF" .... "WEBP"
-  return b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
-}
 
 export async function uploadSiteImage(formData: FormData): Promise<{ ok: true; url: string } | Fail> {
   const s = await scoped()
   if (!s.ok) return s
+
   const file = formData.get("file")
-  if (!(file instanceof File)) return fail("Choose a photo first.")
+  if (!(file instanceof File) || file.size === 0) return fail("Choose a photo to upload.")
   const ext = TYPES[file.type]
-  if (!ext) return fail("Use a PNG, JPG or WEBP photo.")
-  if (file.size > MAX_BYTES) return fail("That photo is over 3 MB. Please use a smaller one.")
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  if (bytes.length < 12 || !looksLike(file.type, bytes)) return fail("That file doesn't look like a real photo.")
+  if (!ext) return fail("Use a PNG, JPG or WebP photo.")
+  if (file.size > MAX_BYTES) return fail("Each photo must be under 3 MB.")
+
+  const { data: existing } = await s.db.storage.from(BUCKET).list(s.tenantId, { limit: MAX_FILES_PER_TENANT + 1 })
+  if ((existing?.length ?? 0) >= MAX_FILES_PER_TENANT) return fail("You've reached the photo limit. Remove some you no longer use first.")
 
   const path = `${s.tenantId}/${crypto.randomUUID()}.${ext}`
-  const { error } = await s.db.storage.from("site-assets").upload(path, bytes, { contentType: file.type, upsert: false })
+  const { error } = await s.db.storage.from(BUCKET).upload(path, file, { contentType: file.type, upsert: false })
   if (error) {
     console.error("[website] photo upload failed", error.message)
     return fail(GENERIC)
   }
-  return { ok: true, url: s.db.storage.from("site-assets").getPublicUrl(path).data.publicUrl }
+  return { ok: true, url: s.db.storage.from(BUCKET).getPublicUrl(path).data.publicUrl }
+}
+
+/**
+ * After a Publish: delete this shop's uploaded photos that nothing uses any more. A photo is only
+ * deleted once it is older than an hour and is in neither the published page nor the draft, so a
+ * photo removed in the editor never breaks the live site, and one just uploaded in another tab is safe.
+ */
+async function cleanUnusedImages(s: Extract<Scope, { ok: true }>, used: SiteContent): Promise<void> {
+  try {
+    const keep = new Set([used.heroImageUrl, ...used.gallery].filter(Boolean).map((u) => decodeURIComponent(u.split("?")[0]).split(`/${BUCKET}/`)[1]))
+    const { data: files } = await s.db.storage.from(BUCKET).list(s.tenantId, { limit: 200 })
+    const cutoff = Date.now() - 3_600_000
+    const stale = (files ?? [])
+      .filter((f) => f.name && !keep.has(`${s.tenantId}/${f.name}`) && Date.parse(f.created_at ?? "") < cutoff)
+      .map((f) => `${s.tenantId}/${f.name}`)
+    if (stale.length > 0) await s.db.storage.from(BUCKET).remove(stale)
+  } catch (e) {
+    console.error("[website] photo cleanup failed", e)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Write my website for me". Returns a SUGGESTION only: nothing is saved or published. The editor puts it
+// in the three text boxes and the owner decides. The shop's facts come from the database (by the signed-in
+// membership's tenant id), never from the browser; the owner's notes are passed to the model as data.
+// ---------------------------------------------------------------------------
+
+const lastCopyAt = new Map<string, number>()
+const COPY_COOLDOWN_MS = 8_000
+
+const AI_BLOCKED: Record<string, string> = {
+  not_configured: "AI isn't set up for your business yet. Turn it on in Settings > AI.",
+  disabled: "AI is switched off for your business. Turn it on in Settings > AI.",
+  no_key: "Add your AI key in Settings > AI first.",
+  key_invalid: "Your AI key was rejected. Check it in Settings > AI.",
+  budget_exceeded: "This month's AI limit has been reached.",
+  tenant_inactive: "AI isn't available for your business right now.",
+}
+
+export async function generateWebsiteCopy(input: {
+  template: unknown
+  tone: unknown
+  language: unknown
+  notes: unknown
+}): Promise<{ ok: true; copy: WebsiteCopy } | Fail> {
+  const s = await scoped()
+  if (!s.ok) return s
+
+  const template = await checkedTemplate(s, input.template)
+  if (typeof template !== "string") return template
+  const tone: CopyTone = COPY_TONES.find((t) => t === input.tone) ?? "friendly"
+  const language: CopyLanguage = COPY_LANGUAGES.find((l) => l === input.language) ?? "English"
+  const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 300) : ""
+
+  const now = Date.now()
+  if (now - (lastCopyAt.get(s.tenantId) ?? 0) < COPY_COOLDOWN_MS) return fail("Give it a few seconds, then try again.")
+  lastCopyAt.set(s.tenantId, now)
+
+  const site = await loadSiteFacts(s.tenantId, template)
+  if (!site) return fail(GENERIC)
+
+  try {
+    return { ok: true, copy: await writeWebsiteCopy(site, { tone, language, notes }) }
+  } catch (error) {
+    if (error instanceof AiUnavailableError) return fail(AI_BLOCKED[error.reason] ?? "AI isn't available right now.")
+    console.error("[website] write copy failed", error instanceof Error ? error.message : "unknown error")
+    return fail("We couldn't write it just now. Please try again in a moment.")
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Visit stats (read only). Counters are written by /api/site/event; the shop is checked here by the
+// signed-in membership, so an owner can only ever read their own shop's numbers.
+// ---------------------------------------------------------------------------
+
+export interface WebsiteStats {
+  /** Oldest first, one entry per day for the last 30 days (UTC days), zeros filled in. */
+  days: { day: string; views: number; whatsappTaps: number }[]
+}
+
+export async function getWebsiteStats(): Promise<{ ok: true; stats: WebsiteStats } | Fail> {
+  const s = await scoped()
+  if (!s.ok) return s
+  const today = new Date()
+  const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29))
+  const fromKey = from.toISOString().slice(0, 10)
+
+  const { data, error } = await s.db.from("site_stats_daily").select("day, views, whatsapp_taps").eq("tenant_id", s.tenantId).gte("day", fromKey)
+  if (error) {
+    console.error("[website] stats read failed", error.message)
+    return fail(GENERIC)
+  }
+  const byDay = new Map((data ?? []).map((r) => [String(r.day), r]))
+  const days = Array.from({ length: 30 }, (_, i) => {
+    const key = new Date(from.getTime() + i * 86_400_000).toISOString().slice(0, 10)
+    const row = byDay.get(key)
+    return { day: key, views: Number(row?.views) || 0, whatsappTaps: Number(row?.whatsapp_taps) || 0 }
+  })
+  return { ok: true, stats: { days } }
 }
