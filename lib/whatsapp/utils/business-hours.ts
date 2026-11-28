@@ -17,6 +17,7 @@
  */
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
+import { getLocationTimezone } from "@/lib/services/shared/locations"
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
@@ -91,12 +92,15 @@ function describeNextOpening(rows: HoursRow[], timeZone: string, now: Date): str
  * Closed right now? If so, a gentle note: when we open again, that the
  * walk-in queue waits for opening time, and that booking is still open.
  */
-export async function getOpenStatus(tenantId: string, now: Date = new Date()): Promise<OpenStatus> {
+export async function getOpenStatus(tenantId: string, now: Date = new Date(), locationId?: string): Promise<OpenStatus> {
   try {
     const supabase = getSupabaseServerClient()
     if (!supabase) return OPEN_OR_UNKNOWN
 
-    const { data: isOpen, error } = await supabase.rpc("is_tenant_open_now", { p_tenant_id: tenantId })
+    const { data: isOpen, error } = await supabase.rpc("is_tenant_open_now", {
+      p_tenant_id: tenantId,
+      ...(locationId ? { p_location_id: locationId } : {}),
+    })
     if (error) {
       console.error("[business-hours] is_tenant_open_now failed, treating as open", { tenantId, error })
       return OPEN_OR_UNKNOWN
@@ -105,14 +109,25 @@ export async function getOpenStatus(tenantId: string, now: Date = new Date()): P
 
     let nextOpening: string | null = null
     try {
-      const [{ data: rows }, { data: settings }] = await Promise.all([
+      const [{ data: tenantRows }, { data: settings }, locationRowsResult, locationTimezone] = await Promise.all([
         supabase
           .from("business_hours")
           .select("day_of_week, is_closed, open_time, close_time")
           .eq("tenant_id", tenantId),
         supabase.from("tenant_settings").select("timezone").eq("tenant_id", tenantId).maybeSingle(),
+        locationId
+          ? supabase
+              .from("location_business_hours")
+              .select("day_of_week, is_closed, open_time, close_time")
+              .eq("tenant_id", tenantId)
+              .eq("location_id", locationId)
+          : Promise.resolve({ data: null }),
+        locationId ? getLocationTimezone(supabase, tenantId, locationId) : Promise.resolve(null),
       ])
-      nextOpening = describeNextOpening((rows ?? []) as HoursRow[], settings?.timezone || "UTC", now)
+      // A location with any hours of its own is governed by them alone; otherwise the tenant's apply.
+      const locationRows = locationRowsResult.data ?? []
+      const rows = locationRows.length > 0 ? locationRows : (tenantRows ?? [])
+      nextOpening = describeNextOpening(rows as HoursRow[], locationTimezone || settings?.timezone || "UTC", now)
     } catch (error) {
       console.error("[business-hours] could not work out the next opening", { tenantId, error })
     }
