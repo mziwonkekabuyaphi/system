@@ -65,11 +65,20 @@ export async function loadDisplayContext(
 export async function loadQueueEntries(
   supabase: ServerClient,
   tenantId: string,
-  { timezone, ticketPrefix }: { timezone: string; ticketPrefix: string },
+  {
+    timezone,
+    ticketPrefix,
+    locationId,
+  }: {
+    timezone: string
+    ticketPrefix: string
+    /** Only this location's queue. Omit for every location ("All locations"), as before. */
+    locationId?: string
+  },
 ): Promise<AdminQueueEntry[]> {
   const dayStart = startOfDayUtc(dateKeyInTz(new Date(), timezone), timezone).toISOString()
 
-  const { data, error } = await supabase
+  let queueQuery = supabase
     .from("queue_entries")
     .select(
       `id, status, joined_at, called_at, completed_at, source, ticket_number, booking_id, service_id,
@@ -79,8 +88,8 @@ export async function loadQueueEntries(
     )
     .eq("tenant_id", tenantId)
     .or(`status.in.(waiting,called),and(status.eq.done,completed_at.gte.${dayStart})`)
-    .order("joined_at", { ascending: true })
-    .limit(500)
+  if (locationId) queueQuery = queueQuery.eq("location_id", locationId)
+  const { data, error } = await queueQuery.order("joined_at", { ascending: true }).limit(500)
 
   if (error) throw new Error(`Failed to load queue: ${error.message}`)
 
@@ -125,7 +134,7 @@ export async function loadQueueEntries(
   // than taking the whole queue screen down.
   let simulation = new Map<string, QueueSimulationEntry>()
   try {
-    simulation = await getQueueSimulation(tenantId)
+    simulation = await getQueueSimulation(tenantId, locationId)
   } catch (err) {
     console.error("[admin] getQueueSimulation failed — falling back to joined_at order", { tenantId, err })
   }
