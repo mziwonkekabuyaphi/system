@@ -23,6 +23,7 @@ export const TOC = [
   { id: "pieces", label: "The pieces", href: `${DOCS_HOME}/pieces`, blurb: "WhatsApp assistant, kiosk, waiting-area screen, dashboard and clock-in." },
   { id: "setup", label: "Set up, step by step", href: `${DOCS_HOME}/setup`, blurb: "From sign-up to your first live customer." },
   { id: "reference", label: "Settings reference", href: `${DOCS_HOME}/reference`, blurb: "Every booking and queue setting, with its default." },
+  { id: "website", label: "Your landing page", href: `${DOCS_HOME}/website`, blurb: "A Booking and Queue landing page for your shop, on the Business plan." },
   { id: "payments", label: "Payments & deposits", href: `${DOCS_HOME}/payments`, blurb: "Take payment or a deposit when customers book, with a deadline and refund policy." },
   { id: "ai", label: "Your own AI", href: `${DOCS_HOME}/ai`, blurb: "Add your own Claude or OpenAI key to make the WhatsApp assistant smarter." },
   { id: "domain", label: "Your own domain", href: `${DOCS_HOME}/domain`, blurb: "Show your booking page on your own web address." },
