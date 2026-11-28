@@ -41,6 +41,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { getLocationTimezone } from "./locations"
 
 // ============================================================================
 // Timezone conversion (Intl-based, no dependency)
@@ -132,7 +133,26 @@ export function isWithinAdvanceWindow(dateISO: string, todayISO: string, maxAdva
 // ZAR prices) rather than an arbitrary UTC guess.
 const DEFAULT_TIMEZONE = "Africa/Johannesburg"
 
-export async function getTenantTimezone(supabase: SupabaseClient, tenantId: string): Promise<string> {
+/**
+ * The IANA timezone for this tenant — or, when `locationId` is given and that
+ * location has its own timezone set (tenant_locations.timezone), the location's.
+ * A location with no timezone of its own (the normal case) falls back to the
+ * tenant's, so passing a location never changes anything for a single-site shop.
+ *
+ * NOTE: business hours (getBusinessHoursForDate) and booking_settings
+ * (getBookingSettings) are still tenant-wide here; per-location overrides for
+ * those arrive in Phase 3 together with their tables.
+ */
+export async function getTenantTimezone(
+  supabase: SupabaseClient,
+  tenantId: string,
+  locationId?: string | null,
+): Promise<string> {
+  if (locationId) {
+    const own = await getLocationTimezone(supabase, tenantId, locationId)
+    if (own) return own
+  }
+
   const { data, error } = await supabase
     .from("tenant_settings")
     .select("timezone")
@@ -154,6 +174,21 @@ export interface DayHours {
 }
 
 /**
+ * The same rule the database uses (effective_hours): a location that has ANY
+ * hours rows of its own is governed by them alone, and a day it has no row for
+ * is CLOSED. No rows at all means "inherit the tenant's hours" (returns null).
+ */
+export function hoursFromLocationRows(
+  rows: Array<{ day_of_week: number; is_closed: boolean; open_time: string | null; close_time: string | null }>,
+  dayOfWeek: number,
+): DayHours | null {
+  if (rows.length === 0) return null
+  const row = rows.find((r) => r.day_of_week === dayOfWeek)
+  if (!row) return { isClosed: true, openTime: null, closeTime: null }
+  return { isClosed: row.is_closed, openTime: row.open_time, closeTime: row.close_time }
+}
+
+/**
  * Resolves this tenant's configured hours for the weekday of `dateISO`
  * (already a tenant-local calendar date — see callers). No row for that
  * day_of_week is treated as CLOSED, not "open all day" — same fail-closed
@@ -165,8 +200,21 @@ export async function getBusinessHoursForDate(
   supabase: SupabaseClient,
   tenantId: string,
   dateISO: string,
+  /** With a location: its own hours when it has any (location_business_hours), else the tenant's. */
+  locationId?: string | null,
 ): Promise<DayHours> {
   const dayOfWeek = dayOfWeekForDateString(dateISO)
+
+  if (locationId) {
+    const { data: own, error: ownError } = await supabase
+      .from("location_business_hours")
+      .select("day_of_week, is_closed, open_time, close_time")
+      .eq("tenant_id", tenantId)
+      .eq("location_id", locationId)
+    if (ownError) throw new Error(`Failed to load location business hours: ${ownError.message}`)
+    const fromLocation = hoursFromLocationRows(own ?? [], dayOfWeek)
+    if (fromLocation) return fromLocation
+  }
 
   const { data, error } = await supabase
     .from("business_hours")
