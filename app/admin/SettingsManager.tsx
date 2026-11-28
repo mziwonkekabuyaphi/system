@@ -23,6 +23,7 @@ import { ClockPanel } from "./settings/ClockPanels"
 import { EmployerDetailsPanel } from "./settings/EmployerPanels"
 import { DisplayPanel } from "./settings/DisplayPanels"
 import { KioskPanel } from "./settings/KioskPanels"
+import { LocationsPanel } from "./settings/LocationsPanel"
 import { DomainPanel } from "./settings/DomainPanel"
 import { WebsitePanel } from "./settings/WebsitePanel"
 import { PaymentsPanel } from "./payments/PaymentsPanel"
@@ -35,7 +36,7 @@ import { EventSettingsPanel } from "./settings/EventSettingsPanel"
 import { SettingsPageHeader, SettingsStatTile } from "./settings/ui"
 import type { ModuleFlags } from "@/lib/tenant/effective-modules"
 
-export type SubTab = "general" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "website"
+export type SubTab = "general" | "locations" | "services" | "kiosk" | "display" | "private-label" | "staff" | "payments" | "shisha" | "passport" | "orders" | "events" | "whatsapp" | "website"
 
 // Small line icons for the collapsed settings rail (same style as the main sidebar's).
 function RailIcon({ children, ...props }: SVGProps<SVGSVGElement> & { children: ReactNode }) {
@@ -62,6 +63,12 @@ const SETTINGS_ICONS: Record<SubTab, (props: SVGProps<SVGSVGElement>) => ReactEl
       <path d="M3 9h18" />
       <path d="M4 9v11h16V9" />
       <path d="M9 20v-6h6v6" />
+    </RailIcon>
+  ),
+  locations: (p) => (
+    <RailIcon {...p}>
+      <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" />
+      <circle cx="12" cy="10" r="2.4" />
     </RailIcon>
   ),
   website: (p) => (
@@ -180,6 +187,14 @@ const SETTINGS_NAV: Array<{
         label: "Shop details",
         title: "Shop details",
         description: "Your contact details, timezone and opening hours.",
+      },
+      {
+        // Shared by every shop: a shop on one location sees its single branch (and an upgrade note);
+        // adding branches needs the Business plan, checked on the server (locations-actions.ts + a DB trigger).
+        id: "locations",
+        label: "Locations",
+        title: "Locations",
+        description: "Your branches: add a location, choose who works there, set its opening hours and get its kiosk and TV links.",
       },
       {
         id: "private-label",
@@ -550,6 +565,7 @@ export function SettingsManager({
           </div>
         </div>
       )}
+      {activePage.id === "locations" && <LocationsPanel tenantSlug={tenantSlug} />}
       {activePage.id === "services" && <ServicesManager initialServices={initialServices} />}
       {activePage.id === "kiosk" && (
         <KioskPanel

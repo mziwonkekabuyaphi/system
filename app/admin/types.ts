@@ -606,6 +606,32 @@ export interface AdminBusinessHour {
 /** The shop's opening hours: one entry per weekday that has a row. */
 export type AdminBusinessHours = AdminBusinessHour[]
 
+/** One branch of the shop (tenant_locations), as the Settings > Locations page sees it. */
+export interface AdminLocation {
+  id: string
+  name: string
+  /** Fixed once created: it is in the branch's kiosk and TV links (?loc=<slug>). */
+  slug: string
+  address: string | null
+  phone: string | null
+  /** IANA timezone override. null = the shop's timezone. */
+  timezone: string | null
+  isDefault: boolean
+  /** false = archived (hidden from customers and staff; history is kept). */
+  archived: boolean
+  /** Staff assigned to this branch (staff_locations). Only they can take its bookings. */
+  staffIds: string[]
+  /** This branch's own opening hours. null = it follows the shop's opening hours. */
+  hours: AdminBusinessHours | null
+}
+
+/** A staff member as offered in the "who works here" picker. */
+export interface AdminLocationStaff {
+  id: string
+  name: string
+  active: boolean
+}
+
 /** message_settings, one row per tenant. WhatsApp copy used by the booking
  *  and queue notify flows (incl. notify_queue_entry() in Postgres); a null
  *  template means the sending code falls back to its hardcoded default. */
