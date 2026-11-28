@@ -94,6 +94,8 @@ interface EligibleBookingRow {
   tenant_id: string
   customer_id: string
   service_id: string
+  /** Carried onto the queue entry so a promoted booking joins ITS location's queue. */
+  location_id: string | null
 }
 
 interface PromotionSummary {
@@ -143,7 +145,7 @@ async function promoteEligibleBookings(): Promise<PromotionSummary> {
     // the lookback bound.
     const { data: bookingRows, error: bookingsError } = await supabase
       .from("bookings")
-      .select("id, tenant_id, customer_id, service_id")
+      .select("id, tenant_id, customer_id, service_id, location_id")
       .eq("tenant_id", tenant.tenant_id)
       .eq("status", "confirmed")
       .gte("start_time", lookbackCutoffISO)
@@ -184,6 +186,8 @@ async function promoteEligibleBookings(): Promise<PromotionSummary> {
           tenant_id: b.tenant_id,
           customer_id: b.customer_id,
           service_id: b.service_id,
+          // null falls through to the database default (the tenant's default location).
+          location_id: b.location_id,
           booking_id: b.id,
           source: "booking",
           status: "waiting",
