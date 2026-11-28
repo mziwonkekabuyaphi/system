@@ -16,6 +16,7 @@ import { notFound } from "next/navigation"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { isProductEnabled } from "@/lib/services/plans"
+import { resolveScreenLocation } from "@/lib/services/shared/locations"
 
 import { fetchDisplayData } from "./actions"
 import { DisplayScreen } from "./DisplayScreen"
@@ -24,7 +25,7 @@ import { DisplayScreen } from "./DisplayScreen"
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-type PageProps = { params: Promise<{ slug: string }> }
+type PageProps = { params: Promise<{ slug: string }>; searchParams: Promise<{ loc?: string | string[] }> }
 
 export const metadata: Metadata = {
   title: "Display",
@@ -101,8 +102,10 @@ function Message({ title, body }: { title: string; body: string }) {
   )
 }
 
-export default async function DisplayPage({ params }: PageProps) {
+export default async function DisplayPage({ params, searchParams }: PageProps) {
   const { slug } = await params
+  const { loc } = await searchParams
+  const requestedLocation = Array.isArray(loc) ? loc[0] : loc
 
   const enabled = await isDisplayEnabled(slug)
   if (!enabled) {
@@ -120,11 +123,25 @@ export default async function DisplayPage({ params }: PageProps) {
     return <Message title="This display isn't available" body="This screen isn't set up for this shop." />
   }
 
-  const result = await fetchDisplayData(slug)
+  // Which branch is this screen for? /display/[slug]?loc=<location-slug>. With no ?loc= a single-location
+  // shop is unchanged; a multi-location shop gets its default location (a screen must never mix branches).
+  // A ?loc= that isn't a live location of this shop is refused rather than guessed at.
+  const supabase = getSupabaseServerClient()
+  const { data: tenantRow } = supabase
+    ? await supabase.from("tenants").select("id").eq("slug", slug).eq("status", "active").maybeSingle()
+    : { data: null }
+  if (!tenantRow) notFound()
+  const screen = await resolveScreenLocation(supabase!, tenantRow.id as string, requestedLocation)
+  if (screen.kind === "unknown") {
+    return <Message title="This location isn't available" body="Check the link for this screen and reload it." />
+  }
+  const locationId = screen.kind === "location" ? screen.location.id : undefined
+
+  const result = await fetchDisplayData(slug, locationId)
 
   if (!result.ok) {
     return <Message title="Couldn't load the display" body="Please check the connection and reload this screen." />
   }
 
-  return <DisplayScreen slug={slug} initialData={result.data} />
+  return <DisplayScreen slug={slug} locationId={locationId} initialData={result.data} />
 }

@@ -322,10 +322,20 @@ const BOOKINGS_WINDOW_HOURS = 12
 const BOOKINGS_LIMIT = 8
 const QUEUE_LIMIT = 12
 
-export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * `locationId` (optional): show only that location's bookings and queue — a
+ * screen in one branch must not list the other branch's customers. Omit it and
+ * the board shows the whole tenant, exactly as before locations existed. It is
+ * only ever used to narrow queries that are already scoped to the tenant, and a
+ * malformed value is refused rather than guessed at.
+ */
+export async function fetchDisplayData(slug: string, locationId?: string): Promise<DisplayResult> {
   try {
     const supabase = getSupabaseServerClient()
     if (!supabase) throw new Error("Supabase server client is unavailable")
+    if (locationId && !UUID_PATTERN.test(locationId)) throw new Error("Invalid location")
 
     const tenantId = await resolveActiveTenantId(slug)
 
@@ -372,6 +382,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         .eq("status", "confirmed")
         .gte("start_time", now.toISOString())
         .lte("start_time", bookingsWindowEnd.toISOString())
+        .match(locationId ? { location_id: locationId } : {})
         .order("start_time", { ascending: true })
         .limit(BOOKINGS_LIMIT),
       supabase
@@ -383,6 +394,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
         )
         .eq("tenant_id", tenantId)
         .in("status", ["waiting", "called"])
+        .match(locationId ? { location_id: locationId } : {})
         .order("joined_at", { ascending: true })
         .limit(queueOn ? QUEUE_LIMIT : 0),
       // Same table the kiosk's own ticket formatting reads from
@@ -391,7 +403,7 @@ export async function fetchDisplayData(slug: string): Promise<DisplayResult> {
       // above since it's a different table (queue_settings, not
       // queue_entries) and this tenant-wide value doesn't repeat per row.
       supabase.from("queue_settings").select("ticket_number_prefix, default_service_duration_minutes").eq("tenant_id", tenantId).maybeSingle(),
-      getBookableServices(tenantId),
+      getBookableServices(tenantId, locationId),
     ])
 
     if (brandingResult.error) throw new Error(`Failed to load branding: ${brandingResult.error.message}`)

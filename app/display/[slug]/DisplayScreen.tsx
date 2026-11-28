@@ -177,7 +177,7 @@ function BrandLogo({
   )
 }
 
-export function DisplayScreen({ slug, initialData }: { slug: string; initialData: DisplayData }) {
+export function DisplayScreen({ slug, locationId, initialData }: { slug: string; locationId?: string; initialData: DisplayData }) {
   const [data, setData] = useState<DisplayData>(initialData)
   // "welcome" is a one-time phase for this tab's lifetime -- once it flips
   // to "rotation" it never goes back, even if the poll below brings in
@@ -194,7 +194,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
   useEffect(() => {
     const id = setInterval(async () => {
       try {
-        const result = await fetchDisplayData(slug)
+        const result = await fetchDisplayData(slug, locationId)
         // On failure, keep showing the last known-good data rather than
         // blanking an unattended screen over a transient network hiccup.
         if (result.ok) setData(result.data)
@@ -204,7 +204,7 @@ export function DisplayScreen({ slug, initialData }: { slug: string; initialData
       }
     }, pollMs)
     return () => clearInterval(id)
-  }, [slug, pollMs])
+  }, [slug, locationId, pollMs])
 
   const settings = data.settings
 
