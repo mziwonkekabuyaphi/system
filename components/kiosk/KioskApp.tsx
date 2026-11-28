@@ -211,6 +211,8 @@ type Ticket = KioskBookingTicket | KioskQueueTicket
 
 interface KioskAppProps {
   slug: string
+  /** The branch this kiosk is pinned to (page's ?loc=). Omitted = the whole shop / default, exactly as before. */
+  locationId?: string
   branding: KioskBranding
   initialServices: CatalogService[]
   // From queue_settings.require_service_selection (resolved server-side in
@@ -320,6 +322,7 @@ function PoweredByFooter() {
 
 export function KioskApp({
   slug,
+  locationId,
   branding,
   initialServices,
   requireServiceSelection,
@@ -473,7 +476,7 @@ export function KioskApp({
     setError(null)
     setStep("date")
     setBusy(true)
-    const result = await fetchKioskDateOptions(slug)
+    const result = await fetchKioskDateOptions(slug, locationId)
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
@@ -533,7 +536,7 @@ export function KioskApp({
     }
 
     setBusy(true)
-    const result = await fetchKioskDateOptions(slug)
+    const result = await fetchKioskDateOptions(slug, locationId)
     setBusy(false)
     if (!result.ok) {
       setError(result.error)
@@ -570,6 +573,7 @@ export function KioskApp({
       chosen[0]?.id ?? null,
       option.date,
       chosen.slice(1).map((s) => s.id),
+      locationId,
     )
     setBusy(false)
     if (!result.ok) {
@@ -628,6 +632,7 @@ export function KioskApp({
         return
       }
       const result = await submitKioskBooking(slug, {
+        locationId,
         serviceId: selectedServices[0]?.id ?? null,
         extraServiceIds: selectedServices.slice(1).map((s) => s.id),
         dateISO: selectedDate.date,
@@ -653,6 +658,7 @@ export function KioskApp({
     }
 
     const result = await submitKioskQueueJoin(slug, {
+      locationId,
       serviceId: selectedServices[0]?.id ?? null,
       extraServiceIds: selectedServices.slice(1).map((s) => s.id),
       ...details,
