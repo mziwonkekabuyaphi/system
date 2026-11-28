@@ -28,7 +28,7 @@ const NOTES = [
 const QA = [
   ["Do I need to buy a domain?", "Yes, you need one you control. If you don’t have one, your shop keeps its standard ZozoQueue address."],
   ["Is it hard to set up?", "You add one or two records in your domain’s DNS settings. We show exactly what to type, and check it for you."],
-  ["Which pages show on my address?", "Your booking page, kiosk and waiting-area screen."],
+  ["Which pages show on my address?", "Your booking page, kiosk and waiting-area screen. If you have published a landing page, the home page of your address shows it."],
 ];
 
 function Faq({ q, children }: { q: string; children: ReactNode }) {
@@ -51,7 +51,7 @@ export default function DomainPage() {
       <div className={styles.block}>
         <h1>Your own domain</h1>
         <p>
-          Included in the Business plan. Put your booking page, kiosk and waiting-area screen on your own address, like book.yourshop.com, so customers
+          Included in the Business plan. Put your booking page, kiosk and waiting-area screen on your own address (and, on the Business plan, your landing page), like book.yourshop.com, so customers
           see your name, not ours.
         </p>
       </div>
