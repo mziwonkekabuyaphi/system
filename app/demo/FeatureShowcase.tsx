@@ -7,10 +7,10 @@
 // scene; otherwise it advances by itself while on screen, pauses on hover / focus, and never
 // auto-plays for visitors who prefer reduced motion.
 //
-// The scenes follow the order of FEATURES in page.tsx (sixteen, at the time of writing):
+// The scenes follow the order of FEATURES in page.tsx (seventeen, at the time of writing):
 //   1 WhatsApp AI  2 kiosk  3 bookings that can't clash  4 live queue  5 waitlist
 //   6 branded ticket  7 staff & payroll  8 business hours  9 your brand
-//   10 payments  11 booking rules  12 queue rules  13 own domain  14 own WhatsApp number  15 light/dark dashboard  16 bring your own AI
+//   10 payments  11 booking rules  12 queue rules  13 own domain  14 own WhatsApp number  15 light/dark dashboard  16 bring your own AI  17 landing page
 // If you add, remove or reorder a feature there, update SCENES below to match.
 //
 // It reuses the building blocks and stage styles from HowItWorks (smartphone, bubbles, panes,
@@ -478,7 +478,38 @@ function SceneAiKey() {
   )
 }
 
-const SCENES = [SceneAI, SceneKiosk, SceneClash, SceneQueue, SceneWaitlist, SceneTicket, ScenePayroll, SceneHours, SceneBrand, ScenePayments, SceneRules, SceneQueueRules, SceneDomain, SceneWhatsApp, SceneTheme, SceneAiKey]
+function SceneLanding() {
+  return (
+    <>
+      <Pane cap="Pick the template, add your words and photos…">
+        <div className={m.card}>
+          <span className={m.cardTitle}>Settings · Website</span>
+          <Li d={0.3}>Template: Booking &amp; Queue</Li>
+          <Li d={0.7}>Headline, photos and WhatsApp number</Li>
+          <Li d={1.1}>Preview it, then Publish</Li>
+          <span className={`${f.result} ${f.resOk} ${m.seq}`} style={delay(1.7)}>✓ Published</span>
+        </div>
+      </Pane>
+      <Pane cap="…and customers get a page of your own.">
+        <div className={`${m.card} ${f.duel}`}>
+          <span className={m.cardTitle}>Mzido’s Barbershop</span>
+          {[
+            ["Haircut · 30 min", "R150"],
+            ["Beard trim · 20 min", "R80"],
+          ].map(([k, v], i) => (
+            <span key={k} className={`${f.pay} ${m.seq}`} style={delay(0.3 + i * 0.35)}><span>{k}</span><b>{v}</b></span>
+          ))}
+          <span className={`${m.chips} ${m.seq}`} style={delay(1.1)}>
+            <span className={m.chip}>Book now</span>
+            <span className={m.chip}>Join the queue</span>
+          </span>
+        </div>
+      </Pane>
+    </>
+  )
+}
+
+const SCENES = [SceneAI, SceneKiosk, SceneClash, SceneQueue, SceneWaitlist, SceneTicket, ScenePayroll, SceneHours, SceneBrand, ScenePayments, SceneRules, SceneQueueRules, SceneDomain, SceneWhatsApp, SceneTheme, SceneAiKey, SceneLanding]
 
 // ---------------------------------------------------------------------------
 // The section body

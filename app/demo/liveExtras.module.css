@@ -58,3 +58,25 @@
 .status { padding: 5px 12px; border-radius: 999px; background: #eee9dc; color: var(--qless-ink-soft); font-size: 12.5px; font-weight: 700; text-align: center; }
 .status[data-on="true"] { background: #dcf5e3; color: #137a3a; }
 .fine { max-width: 40ch; font-size: 12.5px; line-height: 1.4; color: var(--qless-ink-soft); text-align: center; }
+
+/* landing page demo */
+.swatch { display: inline-block; width: 12px; height: 12px; margin-right: 8px; border-radius: 50%; vertical-align: -1px; }
+.browser { width: 100%; max-width: 420px; overflow: hidden; border: 1px solid var(--qless-line); border-radius: 14px; background: #ffffff; box-shadow: 0 24px 50px -24px rgba(11, 22, 40, 0.45); }
+.browserBar { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: #f1eee6; border-bottom: 1px solid #e3ded2; }
+.browserDots { display: flex; gap: 5px; }
+.browserDots i { display: block; width: 9px; height: 9px; border-radius: 50%; background: #d6d0c2; }
+.browserUrl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-family: var(--qless-font-mono); font-size: 11.5px; color: #6b6558; }
+.browserState { font-size: 11.5px; font-weight: 700; color: #8a4b08; }
+.browserState[data-live="true"] { color: #137a3a; }
+.site { display: flex; flex-direction: column; gap: 10px; padding: 18px 18px 20px; background: #fbf7f2; color: #2a1f1a; text-align: left; }
+.siteName { font-size: 15px; font-weight: 700; }
+.siteKicker { font-size: 10.5px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #8a6a55; }
+.siteHead { font-size: 26px; font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
+.siteBtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.siteBtn { padding: 8px 16px; border-radius: 10px; color: #2a1f1a; font-size: 13.5px; font-weight: 700; }
+.siteBtnGhost { border: 2px solid; background: transparent; }
+.siteList { display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e8d5c4; border-radius: 12px; background: #ffffff; }
+.siteRow { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; border-top: 1px solid #efe2d5; font-size: 14px; }
+.siteRow:first-child { border-top: 0; }
+.siteRow small { margin-left: 6px; font-size: 12px; color: #7a675a; }
+.siteWa { align-self: flex-start; padding: 8px 16px; border-radius: 10px; background: #25d366; color: #0b3d1e; font-size: 13.5px; font-weight: 700; }

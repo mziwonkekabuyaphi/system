@@ -411,8 +411,10 @@ export default async function DemoPage() {
               ahead people can book, cancellation and rescheduling cut-offs, and limits per customer.
             </Faq>
             <Faq q="Do I get a website or landing page for my business?">
-              Yes, on the Business plan you also get a landing page for your business, so customers have somewhere
-              of your own to find you online. Pair it with your own domain, like book.yourshop.com.
+              Yes. Every Business plan shop gets a Booking and Queue landing page. It shows your headline, photos, services
+              with prices and opening hours, and has Book now and Join the queue buttons that open your real booking page.
+              You preview it, publish it when you are happy, and it goes live on a free address or on your own domain.
+              The services, prices and hours come from your own setup, so the page can&rsquo;t go out of date.
             </Faq>
             <Faq q="Can I use my own web address?">
               Yes, on the Business plan. Connect a domain like book.yourshop.com from Settings. You add the DNS records we show you, we check

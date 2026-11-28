@@ -23,7 +23,7 @@ const TAGLINES: Record<string, string> = {
  * matching line here (a name that already appears in the plan's features is skipped).
  */
 const PLAN_EXTRAS: Record<string, string[]> = {
-  business: ["Card payments and deposits", "Your own domain", "Your own AI (Claude or OpenAI key)", "A landing page for your business"],
+  business: ["Card payments and deposits", "Your own domain", "Your own AI (Claude or OpenAI key)"],
 }
 
 /** The middle plan gets the highlighted card style the landing page already uses. */
