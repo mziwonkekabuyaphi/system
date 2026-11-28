@@ -87,6 +87,7 @@ import { Manrope } from "next/font/google"
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices } from "@/lib/services/shared/services-catalog"
+import { resolveScreenLocation } from "@/lib/services/shared/locations"
 import { getEnabledProducts, isKioskEnabled, shouldShowPoweredBy, tenantHasModule, MODULE_KEYS } from "@/lib/services/plans"
 import { KioskApp } from "@/components/kiosk/KioskApp"
 import { detailsFieldsFrom, type KioskDetailsFields } from "@/lib/kiosk/detailsFields"
@@ -252,6 +253,8 @@ type KioskLoadResult =
       kioskEnabled: true
       services: Awaited<ReturnType<typeof getBookableServices>>
       queueBehavior: KioskQueueBehavior
+      /** The branch this kiosk is pinned to (?loc=, or the default when the shop has several); undefined = whole shop. */
+      locationId?: string
     }
   | { tenant: TenantRow; branding: KioskBranding; kioskEnabled: false; services: []; queueBehavior: KioskQueueBehavior }
 
@@ -283,7 +286,7 @@ function resolveRegistrationType(value: string | null | undefined): KioskRegistr
   return DEFAULT_REGISTRATION_TYPE
 }
 
-async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
+async function loadKioskData(slug: string, requestedLocation?: string): Promise<KioskLoadResult | null> {
   const supabase = getSupabaseServerClient()
   if (!supabase) throw new Error("Supabase server client is unavailable")
 
@@ -418,17 +421,32 @@ async function loadKioskData(slug: string): Promise<KioskLoadResult | null> {
     return { tenant, branding: resolvedBranding, kioskEnabled: false, services: [], queueBehavior }
   }
 
-  const services = await getBookableServices(tenant.id)
+  // Which branch is this kiosk for? /kiosk/[slug]?loc=<location-slug>. No ?loc= on a single-location shop is
+  // unchanged; on a multi-location shop it is the default branch. A ?loc= that is not a live location of this
+  // shop is refused (404) rather than guessed at.
+  const screen = await resolveScreenLocation(supabase, tenant.id, requestedLocation)
+  if (screen.kind === "unknown") return null
+  const locationId = screen.kind === "location" ? screen.location.id : undefined
 
-  return { tenant, branding: resolvedBranding, kioskEnabled: true, services, queueBehavior }
+  const services = await getBookableServices(tenant.id, locationId)
+
+  return { tenant, branding: resolvedBranding, kioskEnabled: true, services, queueBehavior, locationId }
 }
 
-export default async function KioskPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function KioskPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ loc?: string | string[] }>
+}) {
   const { slug } = await params
-  const data = await loadKioskData(slug)
+  const { loc } = await searchParams
+  const data = await loadKioskData(slug, Array.isArray(loc) ? loc[0] : loc)
   if (!data) notFound()
 
   const { tenant, branding, kioskEnabled, services, queueBehavior } = data
+  const locationId = data.kioskEnabled ? data.locationId : undefined
 
   if (!kioskEnabled) {
     return (
@@ -458,6 +476,7 @@ export default async function KioskPage({ params }: { params: Promise<{ slug: st
     <div className={manrope.className}>
       <KioskApp
         slug={tenant.slug}
+        locationId={locationId}
         branding={kioskBranding}
         initialServices={services}
         requireServiceSelection={requireServiceSelection}

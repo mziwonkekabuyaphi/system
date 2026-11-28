@@ -48,6 +48,7 @@
 
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
+import { LOCATION_NOT_AVAILABLE } from "@/lib/services/shared/locations"
 import {
   buildDateOptions,
   getAvailableSlots,
@@ -112,7 +113,17 @@ async function resolveKioskTenantId(slug: string): Promise<string> {
 }
 
 function kioskErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message === KIOSK_UNAVAILABLE ? KIOSK_UNAVAILABLE_MESSAGE : fallback
+  if (error instanceof Error && error.message === KIOSK_UNAVAILABLE) return KIOSK_UNAVAILABLE_MESSAGE
+  if (error instanceof Error && error.message === LOCATION_NOT_AVAILABLE) return "This location isn't taking customers right now."
+  return fallback
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** The location this kiosk screen is pinned to, as sent by the page. Anything that is not a UUID counts as "none";
+ *  a real id is still checked against the tenant (assertLocationUsable) before anything is written. */
+function cleanLocationId(value: unknown): string | undefined {
+  return typeof value === "string" && UUID_PATTERN.test(value) ? value : undefined
 }
 
 // ---- Multi-service helpers ---------------------------------------------------
@@ -310,10 +321,10 @@ async function saveCheckinDetails(
 // READS
 // ============================================================================
 
-export async function fetchKioskServices(slug: string): Promise<KioskActionResult<CatalogService[]>> {
+export async function fetchKioskServices(slug: string, locationId?: string): Promise<KioskActionResult<CatalogService[]>> {
   try {
     const tenantId = await resolveKioskTenantId(slug)
-    const services = await getBookableServices(tenantId)
+    const services = await getBookableServices(tenantId, cleanLocationId(locationId))
     return { ok: true, data: services }
   } catch (error) {
     console.error("[kiosk] fetchKioskServices failed", { slug, error })
@@ -321,10 +332,13 @@ export async function fetchKioskServices(slug: string): Promise<KioskActionResul
   }
 }
 
-export async function fetchKioskDateOptions(slug: string): Promise<KioskActionResult<Array<{ date: string; label: string }>>> {
+export async function fetchKioskDateOptions(
+  slug: string,
+  locationId?: string,
+): Promise<KioskActionResult<Array<{ date: string; label: string }>>> {
   try {
     const tenantId = await resolveKioskTenantId(slug)
-    return { ok: true, data: await buildDateOptions(tenantId) }
+    return { ok: true, data: await buildDateOptions(tenantId, { locationId: cleanLocationId(locationId) }) }
   } catch (error) {
     console.error("[kiosk] fetchKioskDateOptions failed", { slug, error })
     return { ok: false, error: kioskErrorMessage(error, "Something went wrong. Please try again.") }
@@ -339,9 +353,12 @@ export async function fetchKioskTimeSlots(
   // Optional 2nd, 3rd... services (multi-service bookings). Omitted = one
   // service, exactly as before.
   extraServiceIds?: string[],
+  // The branch this kiosk is pinned to. Omitted = the whole shop, as before.
+  locationId?: string,
 ): Promise<KioskActionResult<BookingSlot[]>> {
   try {
     const tenantId = await resolveKioskTenantId(slug)
+    const location = cleanLocationId(locationId)
 
     // No service: the booking is the shop's default appointment length. The setting is read
     // here every time, never taken from the client, so a shop that still requires a service
@@ -349,10 +366,10 @@ export async function fetchKioskTimeSlots(
     if (!serviceId) {
       const mode = await getBookingServiceMode(tenantId)
       if (mode.requireService) return { ok: false, error: "Please choose a service." }
-      return { ok: true, data: await getAvailableSlots(tenantId, dateISO, mode.defaultDurationMinutes) }
+      return { ok: true, data: await getAvailableSlots(tenantId, dateISO, mode.defaultDurationMinutes, undefined, undefined, false, false, location) }
     }
 
-    const services = await getBookableServices(tenantId)
+    const services = await getBookableServices(tenantId, location)
     const service = services.find((s) => s.id === serviceId)
     if (!service) return { ok: false, error: "That service isn't available anymore." }
 
@@ -366,7 +383,7 @@ export async function fetchKioskTimeSlots(
     }
     const totalMinutes = service.durationMinutes + resolved.extras.reduce((sum, s) => sum + s.durationMinutes, 0)
 
-    const slots = await getAvailableSlots(tenantId, dateISO, totalMinutes)
+    const slots = await getAvailableSlots(tenantId, dateISO, totalMinutes, undefined, undefined, false, false, location)
     return { ok: true, data: slots }
   } catch (error) {
     console.error("[kiosk] fetchKioskTimeSlots failed", { slug, serviceId, extraServiceIds, dateISO, error })
@@ -393,6 +410,8 @@ export interface KioskBookingInput {
   /** Only used when the shop asks for them (Settings > Kiosk > Details screen); re-checked server-side. */
   email?: string
   customAnswer?: string
+  /** The branch this kiosk is pinned to (from the page's ?loc=). Omitted = the shop's default, as before. */
+  locationId?: string
 }
 
 export interface KioskBookingTicket {
@@ -439,8 +458,9 @@ export async function submitKioskBooking(
     // on: createBooking re-reads the setting and throws BOOKING_SERVICE_REQUIRED otherwise.
     let service: CatalogService | null = null
     let extraServices: CatalogService[] = []
+    const location = cleanLocationId(input.locationId)
     if (input.serviceId) {
-      const services = await getBookableServices(tenantId)
+      const services = await getBookableServices(tenantId, location)
       service = services.find((s) => s.id === input.serviceId) ?? null
       if (!service) return { ok: false, error: "That service isn't available anymore." }
 
@@ -461,6 +481,7 @@ export async function submitKioskBooking(
       // A shop that requires payment gets a held slot + card link instead of an instant booking.
       payment: "auto",
       channel: "kiosk",
+      locationId: location,
     })
 
     // WhatsApp asks for the name AFTER confirming, since the phone is
@@ -670,6 +691,8 @@ export interface KioskQueueInput {
   /** Only used when the shop asks for them; re-checked server-side. */
   email?: string
   customAnswer?: string
+  /** The branch this kiosk is pinned to (from the page's ?loc=). Omitted = the shop's default, as before. */
+  locationId?: string
 }
 
 export interface KioskQueueTicket {
@@ -692,7 +715,8 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
     if (!details.ok) return { ok: false, error: details.error }
     const name = details.name
     const requireServiceSetting = await resolveRequireServiceSelection(tenantId)
-    const catalog = await getBookableServices(tenantId)
+    const location = cleanLocationId(input.locationId)
+    const catalog = await getBookableServices(tenantId, location)
     const services = Array.isArray(catalog) ? catalog : []
 
     // A shop with no services can't require one: there would be nothing to
@@ -724,6 +748,7 @@ export async function submitKioskQueueJoin(slug: string, input: KioskQueueInput)
       service,
       extraServices,
       phone: input.phone,
+      locationId: location,
     })
     if (name) await updateCustomer(tenantId, input.phone, { name })
 
