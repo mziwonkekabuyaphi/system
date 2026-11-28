@@ -4,13 +4,12 @@
 // (public visitors have no session; same trust model as /kiosk and /web). The slug is resolved to a
 // tenant here and every query after that is filtered by that tenant's id.
 //
-// loadPublishedSite: what visitors see. Only when the tenant is active, the "web" module is on and the
-//   owner has published; otherwise null and the page falls back to the old /web page.
-// loadDraftSite: the same thing built from the DRAFT, for the owner's preview (caller checks permission).
-// Only the chosen template's data is loaded (shisha: menu + areas; events: events + packages;
-// booking: services + hours; orders: catalogue, delivery areas, order options + hours).
+// A site is only shown when: the tenant is active, the "web" module is on, and the owner has
+// published. Otherwise this returns null and the page falls back to the old /web page.
+// Only the PUBLISHED template's data is loaded (shisha: menu + areas; events: events + packages).
 
 import { safeTimezone } from "@/app/admin/tz"
+import { freeSiteHost } from "@/lib/domains/sites-domain"
 import { getSupabaseServerClient } from "@/lib/supabase/admin"
 import { isModuleEnabled } from "@/lib/tenant/modules"
 import { DEFAULT_ACCENT, isTemplate, sanitizeContent, type SiteContent, type SiteTemplate } from "./types"
@@ -37,13 +36,11 @@ export interface SitePackage {
   eventName: string | null
 }
 
-export interface SiteService { id: string; name: string; price: number; durationMinutes: number }
-
 export interface SiteCatalogueGroup {
   key: string
   label: string
   ageRestricted: boolean
-  items: { id: string; name: string; description: string | null; price: number; imageUrl: string | null }[]
+  items: { id: string; name: string; description: string | null; price: number }[]
 }
 export interface SiteDeliveryArea { id: string; name: string; fee: number; freeOver: number | null }
 export interface SiteOrderInfo {
@@ -65,8 +62,6 @@ export interface PublishedSite {
   name: string
   logoUrl: string | null
   accent: string
-  /** The shop paid to hide "Powered by". */
-  removePoweredBy: boolean
   currency: string
   timezone: string
   content: SiteContent
@@ -85,6 +80,8 @@ export interface PublishedSite {
   /** booking: which buttons to show (a product must be on for its button). */
   canBook: boolean
   canQueue: boolean
+  /** The one address search engines should index: the shop's own domain if it has one, else its free address. */
+  canonicalHost: string | null
   /** orders: live catalogue grouped by category (active, available, in stock). */
   catalogue: SiteCatalogueGroup[]
   /** orders: active delivery areas with fees, only when delivery is on. */
@@ -191,26 +188,11 @@ function groupHours(rows: Row[]): { label: string; value: string }[] {
   return out
 }
 
-async function loadBooking(db: Db, tenantId: string) {
-  const [services, hours, canBook, canQueue] = await Promise.all([
-    db.from("services").select("id, name, price, duration_minutes").eq("tenant_id", tenantId).eq("active", true).order("name", { ascending: true }),
-    db.from("business_hours").select("day_of_week, is_closed, open_time, close_time").eq("tenant_id", tenantId),
-    isModuleEnabled(tenantId, "booking"),
-    isModuleEnabled(tenantId, "queue"),
-  ])
-  return {
-    services: ((services.data ?? []) as Row[]).map((r) => ({ id: String(r.id), name: String(r.name), price: Number(r.price) || 0, durationMinutes: Number(r.duration_minutes) || 0 })),
-    businessHours: groupHours((hours.data ?? []) as Row[]),
-    canBook,
-    canQueue,
-  }
-}
-
 async function loadOrders(db: Db, tenantId: string) {
   const [products, cats, settings, areas, hours] = await Promise.all([
-    db.from("products").select("id, name, short_description, description, image_url, price, category_id, track_inventory, stock_quantity")
+    db.from("products").select("id, name, short_description, description, price, category, track_inventory, stock_quantity")
       .eq("tenant_id", tenantId).eq("status", "active").eq("is_available", true).order("name", { ascending: true }).limit(300),
-    db.from("product_categories").select("id, key, label, age_restricted, sort_order").eq("tenant_id", tenantId).eq("is_active", true).order("sort_order", { ascending: true }),
+    db.from("product_categories").select("key, label, age_restricted, sort_order").eq("tenant_id", tenantId).eq("is_active", true).order("sort_order", { ascending: true }),
     db.from("order_settings").select("collection_enabled, delivery_enabled, dine_in_enabled, collection_instructions, prep_time_minutes, delivery_time_minutes, min_order_value").eq("tenant_id", tenantId).maybeSingle(),
     db.from("order_delivery_areas").select("id, name, fee, free_over").eq("tenant_id", tenantId).eq("is_active", true).order("sort_order", { ascending: true }).order("name", { ascending: true }),
     db.from("business_hours").select("day_of_week, is_closed, open_time, close_time").eq("tenant_id", tenantId),
@@ -218,20 +200,17 @@ async function loadOrders(db: Db, tenantId: string) {
 
   const inStock = (p: Row) => !p.track_inventory || Number(p.stock_quantity) > 0
   const groups = new Map<string, SiteCatalogueGroup>()
-  const keyById = new Map<string, string>()
   for (const c of (cats.data ?? []) as Row[]) {
-    keyById.set(String(c.id), String(c.key))
     groups.set(String(c.key), { key: String(c.key), label: String(c.label), ageRestricted: Boolean(c.age_restricted), items: [] })
   }
   for (const p of ((products.data ?? []) as Row[]).filter(inStock)) {
-    const key: string = (p.category_id ? keyById.get(String(p.category_id)) : undefined) ?? "other"
-    if (!groups.has(key)) groups.set(key, { key, label: "Other", ageRestricted: false, items: [] })
+    const key = p.category ? String(p.category) : "other"
+    if (!groups.has(key)) groups.set(key, { key, label: key === "other" ? "Other" : key, ageRestricted: false, items: [] })
     groups.get(key)!.items.push({
       id: String(p.id),
       name: String(p.name),
       description: ((p.short_description ?? p.description) as string | null) || null,
       price: Number(p.price) || 0,
-      imageUrl: typeof p.image_url === "string" && p.image_url.startsWith("https://") ? p.image_url : null,
     })
   }
 
@@ -257,30 +236,48 @@ async function loadOrders(db: Db, tenantId: string) {
   }
 }
 
-type TenantRow = { id: string; name: string; slug: string }
+async function loadBooking(db: Db, tenantId: string) {
+  const [services, hours, canBook, canQueue] = await Promise.all([
+    db.from("services").select("id, name, price, duration_minutes").eq("tenant_id", tenantId).eq("active", true).order("name", { ascending: true }),
+    db.from("business_hours").select("day_of_week, is_closed, open_time, close_time").eq("tenant_id", tenantId),
+    isModuleEnabled(tenantId, "booking"),
+    isModuleEnabled(tenantId, "queue"),
+  ])
+  return {
+    services: ((services.data ?? []) as Row[]).map((r) => ({ id: String(r.id), name: String(r.name), price: Number(r.price) || 0, durationMinutes: Number(r.duration_minutes) || 0 })),
+    businessHours: groupHours((hours.data ?? []) as Row[]),
+    canBook,
+    canQueue,
+  }
+}
 
-async function buildSite(db: Db, tenant: TenantRow, template: SiteTemplate, rawContent: unknown): Promise<PublishedSite> {
+type TenantRef = { id: string; name: string; slug: string }
+
+/** Everything a template needs, for a known tenant, template and content. Shared by the live page and the draft preview. */
+async function buildSite(db: Db, tenant: TenantRef, template: SiteTemplate, rawContent: unknown): Promise<PublishedSite> {
   const tenantId = tenant.id
   const [brandingRes, settingsRes] = await Promise.all([
-    db.from("tenant_branding").select("display_name, logo_url, primary_color, remove_powered_by").eq("tenant_id", tenantId).maybeSingle(),
+    db.from("tenant_branding").select("display_name, logo_url, primary_color").eq("tenant_id", tenantId).maybeSingle(),
     db.from("tenant_settings").select("currency, timezone").eq("tenant_id", tenantId).maybeSingle(),
   ])
 
   const name = (brandingRes.data?.display_name as string | null)?.trim() || tenant.name
   const primary = brandingRes.data?.primary_color as string | null
-
-  const [shisha, ev, booking, orders] = await Promise.all([
-    template === "shisha" ? loadShisha(db, tenantId) : { menu: [], areas: [] },
+  const shisha = template === "shisha" ? await loadShisha(db, tenantId) : { menu: [], areas: [] }
+  const ev =
     template === "events"
-      ? isModuleEnabled(tenantId, "vvip").then((v) => loadEvents(db, tenantId, v))
-      : { events: [] as SiteEvent[], packages: [] as SitePackage[] },
+      ? await loadEvents(db, tenantId, await isModuleEnabled(tenantId, "vvip"))
+      : { events: [] as SiteEvent[], packages: [] as SitePackage[] }
+
+  const booking =
     template === "booking"
-      ? loadBooking(db, tenantId)
-      : { services: [] as SiteService[], businessHours: [] as { label: string; value: string }[], canBook: false, canQueue: false },
+      ? await loadBooking(db, tenantId)
+      : { services: [] as SiteService[], businessHours: [] as { label: string; value: string }[], canBook: false, canQueue: false }
+
+  const orders =
     template === "orders"
-      ? loadOrders(db, tenantId)
-      : { catalogue: [] as SiteCatalogueGroup[], deliveryAreas: [] as SiteDeliveryArea[], orderInfo: null as SiteOrderInfo | null, businessHours: [] as { label: string; value: string }[] },
-  ])
+      ? await loadOrders(db, tenantId)
+      : { catalogue: [] as SiteCatalogueGroup[], deliveryAreas: [] as SiteDeliveryArea[], orderInfo: null as SiteOrderInfo | null }
 
   return {
     template,
@@ -289,51 +286,77 @@ async function buildSite(db: Db, tenant: TenantRow, template: SiteTemplate, rawC
     name,
     logoUrl: (brandingRes.data?.logo_url as string | null) ?? null,
     accent: primary && HEX.test(primary) ? primary : DEFAULT_ACCENT,
-    removePoweredBy: brandingRes.data?.remove_powered_by === true,
     currency: (settingsRes.data?.currency as string | null) || "ZAR",
     timezone: safeTimezone(settingsRes.data?.timezone as string | null),
     content: sanitizeContent(rawContent, name, template),
+    canonicalHost: null,
     ...shisha,
     ...ev,
+    businessHours: [],
     ...booking,
     ...orders,
-    businessHours: template === "orders" ? orders.businessHours : booking.businessHours,
   }
 }
 
-async function activeTenantBySlug(db: Db, slug: string): Promise<TenantRow | null> {
-  const { data } = await db.from("tenants").select("id, name, slug").eq("slug", slug).eq("status", "active").maybeSingle()
-  return data ? { id: data.id as string, name: data.name as string, slug: data.slug as string } : null
+/** Own active primary domain (when the Custom domain module is on), else the free address, else null. */
+async function canonicalHostFor(db: Db, tenantId: string, slug: string): Promise<string | null> {
+  if (await isModuleEnabled(tenantId, "custom_domain")) {
+    const { data } = await db.from("tenant_domains").select("domain").eq("tenant_id", tenantId).eq("status", "active").eq("is_primary", true).maybeSingle()
+    if (data?.domain) return String(data.domain)
+  }
+  return freeSiteHost(slug)
 }
 
 export async function loadPublishedSite(slug: string): Promise<PublishedSite | null> {
   const db = getSupabaseServerClient()
   if (!db || !slug) return null
 
-  const tenant = await activeTenantBySlug(db, slug)
+  const { data: tenant } = await db.from("tenants").select("id, name, slug").eq("slug", slug).eq("status", "active").maybeSingle()
   if (!tenant) return null
-  if (!(await isModuleEnabled(tenant.id, "web"))) return null
+  const tenantId = tenant.id as string
+
+  if (!(await isModuleEnabled(tenantId, "web"))) return null
 
   const { data: site } = await db
     .from("tenant_sites")
     .select("published, is_published, template, published_template")
-    .eq("tenant_id", tenant.id)
+    .eq("tenant_id", tenantId)
     .maybeSingle()
   if (!site?.is_published || !site.published) return null
   const template: SiteTemplate = isTemplate(site.published_template) ? site.published_template : isTemplate(site.template) ? site.template : "shisha"
-  return buildSite(db, tenant, template, site.published)
+
+  const built = await buildSite(db, { id: tenantId, name: tenant.name as string, slug: tenant.slug as string }, template, site.published)
+  return { ...built, canonicalHost: await canonicalHostFor(db, tenantId, built.slug) }
 }
 
-/** The owner's draft, rendered like the live site. Null when there is no draft yet. */
-export async function loadDraftSite(slug: string): Promise<PublishedSite | null> {
+/**
+ * The owner's saved DRAFT, built exactly like the live page (same template, same live data) so the
+ * preview can't differ from what Publish will show. Called only from the permission-checked preview
+ * page, with the tenant id taken from the signed-in membership. Null when no draft has been saved.
+ */
+export async function loadDraftSite(tenantId: string): Promise<PublishedSite | null> {
   const db = getSupabaseServerClient()
-  if (!db || !slug) return null
+  if (!db || !tenantId) return null
 
-  const tenant = await activeTenantBySlug(db, slug)
+  const { data: tenant } = await db.from("tenants").select("id, name, slug").eq("id", tenantId).maybeSingle()
   if (!tenant) return null
-  if (!(await isModuleEnabled(tenant.id, "web"))) return null
+  if (!(await isModuleEnabled(tenantId, "web"))) return null
 
-  const { data: site } = await db.from("tenant_sites").select("draft, template").eq("tenant_id", tenant.id).maybeSingle()
+  const { data: site } = await db.from("tenant_sites").select("draft, template").eq("tenant_id", tenantId).maybeSingle()
   if (!site || !isTemplate(site.template)) return null
-  return buildSite(db, tenant, site.template, site.draft)
+
+  return buildSite(db, { id: tenantId, name: tenant.name as string, slug: tenant.slug as string }, site.template, site.draft)
+}
+
+/**
+ * The shop's live facts (name, menu / services / events / catalogue names) for a template, with default
+ * text. Used to brief the "Write my website for me" button so the copy is about what the shop really sells.
+ * Called only from the permission-checked action, with the tenant id from the signed-in membership.
+ */
+export async function loadSiteFacts(tenantId: string, template: SiteTemplate): Promise<PublishedSite | null> {
+  const db = getSupabaseServerClient()
+  if (!db || !tenantId) return null
+  const { data: tenant } = await db.from("tenants").select("id, name, slug").eq("id", tenantId).maybeSingle()
+  if (!tenant) return null
+  return buildSite(db, { id: tenantId, name: tenant.name as string, slug: tenant.slug as string }, template, {})
 }
