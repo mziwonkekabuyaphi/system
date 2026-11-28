@@ -92,6 +92,7 @@ import type { ConversationState } from "@/lib/services/state"
 
 import { ensureCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
+import { assertLocationUsable, getStaffIdsForLocation } from "@/lib/services/shared/locations"
 import { getBookingSettings, getTenantTimezone, todayInTimezone, type QueuePriorityMode } from "@/lib/services/shared/tenant-scheduling"
 import { startOfTenantDay } from "@/lib/services/shared/queue-day"
 import { assertProductEnabled, assertWithinVisitLimit, isProductEnabled, PLAN_VISIT_LIMIT_REACHED } from "@/lib/services/plans"
@@ -211,10 +212,13 @@ function getQueueData(state: ConversationState): QueueStateData {
  * hears "we're closed" BEFORE picking a service; the trigger on queue_entries
  * is still the real gate and joinQueue() handles its error below.
  */
-async function isShopClosedNow(tenantId: string): Promise<boolean> {
+async function isShopClosedNow(tenantId: string, locationId?: string): Promise<boolean> {
   try {
     const supabase = getClientOrThrow()
-    const { data, error } = await supabase.rpc("is_tenant_open_now", { p_tenant_id: tenantId })
+    const { data, error } = await supabase.rpc("is_tenant_open_now", {
+      p_tenant_id: tenantId,
+      ...(locationId ? { p_location_id: locationId } : {}),
+    })
     if (error) {
       console.error("[queue] is_tenant_open_now failed, not blocking", { tenantId, error })
       return false
@@ -376,7 +380,7 @@ async function readMaxServicesPerQueueEntry(supabase: SupabaseClient, tenantId: 
  * means no limit. Fails open on a read error because the database trigger
  * enforce_max_queue_size is the authoritative check.
  */
-async function assertQueueNotFull(supabase: SupabaseClient, tenantId: string): Promise<void> {
+async function assertQueueNotFull(supabase: SupabaseClient, tenantId: string, locationId?: string): Promise<void> {
   const { data: settings, error } = await supabase
     .from("queue_settings")
     .select("max_queue_size")
@@ -388,14 +392,31 @@ async function assertQueueNotFull(supabase: SupabaseClient, tenantId: string): P
     return
   }
 
-  const max = settings?.max_queue_size
+  // A location's own limit (location_queue_settings) wins over the tenant's, same as the database trigger.
+  let max: number | null | undefined = settings?.max_queue_size
+  if (locationId) {
+    const { data: own, error: ownError } = await supabase
+      .from("location_queue_settings")
+      .select("max_queue_size")
+      .eq("tenant_id", tenantId)
+      .eq("location_id", locationId)
+      .maybeSingle()
+    if (ownError) {
+      console.error("[queue] Failed to load the location's max_queue_size, deferring to the database check", { tenantId, error: ownError.message })
+      return
+    }
+    if (own?.max_queue_size !== null && own?.max_queue_size !== undefined) max = own.max_queue_size
+  }
   if (max === null || max === undefined) return
 
-  const { count, error: countError } = await supabase
+  // With a location, only that location's line counts toward the limit (each branch has its own queue).
+  let countQuery = supabase
     .from("queue_entries")
     .select("id", { count: "exact", head: true })
     .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
+  if (locationId) countQuery = countQuery.eq("location_id", locationId)
+  const { count, error: countError } = await countQuery
 
   if (countError) {
     console.error("[queue] Failed to count the queue, deferring to the database check", { tenantId, error: countError.message })
@@ -485,12 +506,31 @@ async function sumServiceMinutesByParent(
   return totals
 }
 
-async function getActiveStaffCount(supabase: SupabaseClient, tenantId: string): Promise<number> {
+/**
+ * How many active staff serve the queue. With `locationId`, only those assigned
+ * to that location (staff_locations) — a branch's wait time must not count the
+ * other branch's staff as servers. Without it, everyone, exactly as before.
+ */
+async function getActiveStaffCount(supabase: SupabaseClient, tenantId: string, locationId?: string): Promise<number> {
+  if (!locationId) {
+    const { count, error } = await supabase
+      .from("staff")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("active", true)
+
+    if (error) throw new Error(`Failed to load staff count: ${error.message}`)
+    return count ?? 0
+  }
+
+  const here = await getStaffIdsForLocation(supabase, tenantId, locationId)
+  if (here.length === 0) return 0
   const { count, error } = await supabase
     .from("staff")
     .select("id", { count: "exact", head: true })
     .eq("tenant_id", tenantId)
     .eq("active", true)
+    .in("id", here)
 
   if (error) throw new Error(`Failed to load staff count: ${error.message}`)
   return count ?? 0
@@ -504,13 +544,17 @@ async function loadSimEntries(
    *  it are leftovers from a previous day (the stale-queue sweep cancels
    *  them nightly) and must never count towards today's wait estimate. */
   todayStartIso: string,
+  /** Only this location's line. Omit for the whole tenant, as before locations existed. */
+  locationId?: string,
 ): Promise<SimEntry[]> {
-  const { data, error } = await supabase
+  let entriesQuery = supabase
     .from("queue_entries")
     .select("id, status, joined_at, called_at, booking_id, services!queue_entries_service_id_fkey ( duration_minutes )")
     .eq("tenant_id", tenantId)
     .in("status", ["waiting", "called"])
     .gte("joined_at", todayStartIso)
+  if (locationId) entriesQuery = entriesQuery.eq("location_id", locationId)
+  const { data, error } = await entriesQuery
 
   if (error) throw new Error(`Failed to load queue entries: ${error.message}`)
 
@@ -650,25 +694,29 @@ function buildProcessingOrder(
 
 /**
  * The single source of truth for "where does everyone currently stand in
- * the queue" — called entries plus waiting entries, tenant-wide. Called
+ * the queue" — called entries plus waiting entries, tenant-wide (or, with
+ * `locationId`, that one location's line, served by that location's staff). Called
  * by joinQueue() right after a new entry is inserted (to answer "what's
  * MY position"), and importable directly by the admin dashboard to show
  * the same numbers for the whole visible queue.
  */
-export async function getQueueSimulation(tenantId: string): Promise<Map<string, QueueSimulationEntry>> {
+export async function getQueueSimulation(tenantId: string, locationId?: string): Promise<Map<string, QueueSimulationEntry>> {
   const supabase = getClientOrThrow()
 
   // Resolved once up front so loadSimEntries can use it for every
   // service_id = null row in a single pass, rather than each row
   // re-querying queue_settings.
   const defaultDurationMinutes = await getDefaultServiceDurationMinutes(supabase, tenantId)
-  const todayStartIso = startOfTenantDay(await getTenantTimezone(supabase, tenantId)).toISOString()
+  const todayStartIso = startOfTenantDay(await getTenantTimezone(supabase, tenantId, locationId)).toISOString()
+
+  let statusQuery = supabase.from("queue_entries").select("id, status").eq("tenant_id", tenantId).in("status", ["waiting", "called"])
+  if (locationId) statusQuery = statusQuery.eq("location_id", locationId)
 
   const [entries, staffCount, bookingSettings, statusRowsResult] = await Promise.all([
-    loadSimEntries(supabase, tenantId, defaultDurationMinutes, todayStartIso),
-    getActiveStaffCount(supabase, tenantId),
+    loadSimEntries(supabase, tenantId, defaultDurationMinutes, todayStartIso, locationId),
+    getActiveStaffCount(supabase, tenantId, locationId),
     getBookingSettings(supabase, tenantId),
-    supabase.from("queue_entries").select("id, status").eq("tenant_id", tenantId).in("status", ["waiting", "called"]),
+    statusQuery,
   ])
 
   if (statusRowsResult.error) {
@@ -743,6 +791,10 @@ export interface JoinQueueParams {
   extraServices?: CatalogService[]
   /** Raw or normalized — ensureCustomer() normalizes internally. */
   phone: string
+  /** The location whose queue is being joined. Must be a usable location of the tenant (else
+   *  LOCATION_NOT_AVAILABLE). Omit it and the database puts the entry in the tenant's default location;
+   *  the position and wait are then worked out tenant-wide, exactly as before locations existed. */
+  locationId?: string
 }
 
 export interface JoinQueueResult {
@@ -817,10 +869,12 @@ export interface JoinQueueResult {
  * leaving promoted bookings ticket-less.
  */
 export async function joinQueue(tenantId: string, params: JoinQueueParams): Promise<JoinQueueResult> {
-  const { service, extraServices = [], phone } = params
+  const { service, extraServices = [], phone, locationId } = params
   const supabase = getClientOrThrow()
   // Queue is a per-shop switch (tenant_modules); a shop without it takes no joins from any channel.
   await assertProductEnabled(supabase, tenantId, "queue")
+  // A caller-supplied location must be a live location of THIS tenant before anything is counted or written.
+  if (locationId) await assertLocationUsable(supabase, tenantId, locationId)
 
   // Primary first, repeats dropped; empty when the walk-in picked nothing.
   const chosenServices = service ? dedupeServices([service, ...extraServices]) : []
@@ -836,7 +890,7 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
 
   // Walk-in limit (Queue rules > Maximum queue size). Before the ticket number is
   // allocated so a full queue never burns numbers.
-  await assertQueueNotFull(supabase, tenantId)
+  await assertQueueNotFull(supabase, tenantId, locationId)
 
   // Same minimal (phone-only) customer creation as booking.ts's
   // createBooking() — queueing isn't gated behind full registration
@@ -844,10 +898,13 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
   const customer = await ensureCustomer(tenantId, phone)
   const joinedAt = new Date().toISOString()
 
-  const timezone = await getTenantTimezone(supabase, tenantId)
+  const timezone = await getTenantTimezone(supabase, tenantId, locationId)
   const ticketDate = todayInTimezone(timezone)
 
+  // Ticket numbers restart per location per day (the default location keeps the tenant's original counter).
+  // Without a location the call is exactly what it was before locations existed.
   const { data: ticketNumber, error: ticketError } = await supabase.rpc("next_queue_ticket_number", {
+    ...(locationId ? { p_location_id: locationId } : {}),
     p_tenant_id: tenantId,
     p_ticket_date: ticketDate,
   })
@@ -866,6 +923,8 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
         status: "waiting",
         joined_at: joinedAt,
         ticket_number: ticketNumber,
+        // Only sent when the caller chose a location; otherwise the database fills in the tenant's default.
+        ...(locationId ? { location_id: locationId } : {}),
       },
     ])
     .select("id")
@@ -895,7 +954,7 @@ export async function joinQueue(tenantId: string, params: JoinQueueParams): Prom
     }
   }
 
-  const simulation = await getQueueSimulation(tenantId)
+  const simulation = await getQueueSimulation(tenantId, locationId)
   const own = simulation.get(inserted.id)
 
   // Fallbacks below only matter if the simulation somehow doesn't contain

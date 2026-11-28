@@ -143,6 +143,7 @@ import type { ConversationState } from "@/lib/services/state"
 
 import { ensureCustomer, updateCustomer, type Customer } from "@/lib/services/tenant-customer"
 import { getBookableServices, type CatalogService } from "@/lib/services/shared/services-catalog"
+import { assertLocationUsable, getStaffIdsForLocation } from "@/lib/services/shared/locations"
 import { queueService } from "@/lib/services/queue"
 import {
   DEFAULT_BOOKING_NUMBER_PREFIX,
@@ -425,14 +426,22 @@ interface ActiveStaff {
   name: string
 }
 
-async function getActiveStaff(supabase: SupabaseClient, tenantId: string): Promise<ActiveStaff[]> {
+/**
+ * The tenant's active staff. With `locationId`, only those assigned to that
+ * location (staff_locations); without it, everyone, exactly as before
+ * locations existed. A staff member can work at several locations.
+ */
+async function getActiveStaff(supabase: SupabaseClient, tenantId: string, locationId?: string): Promise<ActiveStaff[]> {
   const { data, error } = await supabase
     .from("staff")
     .select("id, name")
     .eq("tenant_id", tenantId)
     .eq("active", true)
   if (error) throw new Error(`Failed to load staff: ${error.message}`)
-  return data ?? []
+  const everyone = data ?? []
+  if (!locationId) return everyone
+  const here = new Set(await getStaffIdsForLocation(supabase, tenantId, locationId))
+  return everyone.filter((member) => here.has(member.id))
 }
 
 /**
@@ -559,9 +568,15 @@ interface DayWindow {
  * three agree by construction instead of three separate calculations
  * that could drift apart.
  */
-async function resolveDayWindow(supabase: SupabaseClient, tenantId: string, dateISO: string): Promise<DayWindow> {
-  const timezone = await getTenantTimezone(supabase, tenantId)
-  const hours = await getBusinessHoursForDate(supabase, tenantId, dateISO)
+async function resolveDayWindow(
+  supabase: SupabaseClient,
+  tenantId: string,
+  dateISO: string,
+  /** The location's own timezone and opening hours apply when it has them; otherwise the tenant's. */
+  locationId?: string,
+): Promise<DayWindow> {
+  const timezone = await getTenantTimezone(supabase, tenantId, locationId)
+  const hours = await getBusinessHoursForDate(supabase, tenantId, dateISO, locationId)
 
   if (hours.isClosed || !hours.openTime || !hours.closeTime) {
     return { timezone, hours, dayOpenUTC: null, dayCloseUTC: null }
@@ -599,14 +614,16 @@ export async function getAvailableSlots(
   forStaff = false,
   /** A repeating series staff are adding: dates beyond "how far ahead customers can book" are fine. */
   ignoreAdvanceWindow = false,
+  /** Only this location's staff (and timezone) are considered. Omit for the whole tenant, as before. */
+  locationId?: string,
 ): Promise<BookingSlot[]> {
   const supabase = getClientOrThrow()
   await assertProductEnabled(supabase, tenantId, "booking")
 
   const [activeStaff, bookingSettings, dayWindow] = await Promise.all([
-    getActiveStaff(supabase, tenantId),
+    getActiveStaff(supabase, tenantId, locationId),
     getBookingSettings(supabase, tenantId),
-    resolveDayWindow(supabase, tenantId, dateISO),
+    resolveDayWindow(supabase, tenantId, dateISO, locationId),
   ])
 
   // A requested staff member that is not in this tenant's ACTIVE list leaves nobody: no slots.
@@ -675,10 +692,17 @@ async function claimStaffForSlot(
   durationMinutes: number,
   /** Rescheduling: ignore the booking being moved, and keep the customer with
    *  the same staff member when that person is free at the new time. */
-  options: { excludeBookingId?: string; preferStaffId?: string; excludeStaffIds?: string[]; requireStaffId?: string } = {},
+  options: {
+    excludeBookingId?: string
+    preferStaffId?: string
+    excludeStaffIds?: string[]
+    requireStaffId?: string
+    /** Only staff assigned to this location can be claimed. Omit for the whole tenant, as before. */
+    locationId?: string
+  } = {},
 ): Promise<ActiveStaff> {
-  const staff = await getActiveStaff(supabase, tenantId)
-  const dayWindow = await resolveDayWindow(supabase, tenantId, dateISO)
+  const staff = await getActiveStaff(supabase, tenantId, options.locationId)
+  const dayWindow = await resolveDayWindow(supabase, tenantId, dateISO, options.locationId)
 
   const slotStart = new Date(slot.start)
   const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60_000)
@@ -737,10 +761,12 @@ async function assertBookingIsAllowed(
   forStaff = false,
   /** A repeating series staff are adding: dates beyond the advance-booking window are fine. */
   ignoreAdvanceWindow = false,
+  /** The booking's location: its own timezone applies when it has one. Omit for the tenant's. */
+  locationId?: string,
 ): Promise<void> {
   const [bookingSettings, dayWindow] = await Promise.all([
     getBookingSettings(supabase, tenantId),
-    resolveDayWindow(supabase, tenantId, dateISO),
+    resolveDayWindow(supabase, tenantId, dateISO, locationId),
   ])
 
   if (!dayWindow.dayOpenUTC || !dayWindow.dayCloseUTC) {
@@ -879,6 +905,10 @@ export interface CreateBookingParams {
   staffCreated?: boolean
   /** Bookings added together as one repeating series share this id. Only with staffCreated. */
   seriesId?: string
+  /** The location this booking is for. Must be a usable location of the tenant (else LOCATION_NOT_AVAILABLE).
+   *  Omit it and the database puts the booking in the tenant's default location; availability and staff
+   *  are then considered tenant-wide, exactly as before locations existed. */
+  locationId?: string
 }
 
 /** What the customer pays, when the booking is waiting for payment. */
@@ -936,6 +966,8 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   const supabase = getClientOrThrow()
   // Booking is a per-shop switch (tenant_modules); a shop without it takes no bookings from any channel.
   await assertProductEnabled(supabase, tenantId, "booking")
+  // A caller-supplied location must be a live location of THIS tenant before anything is claimed or written.
+  if (params.locationId) await assertLocationUsable(supabase, tenantId, params.locationId)
 
   // Primary first, repeats dropped. Everything below uses this list, so the
   // length check, the summed duration and the link rows can't disagree.
@@ -960,7 +992,16 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
   await assertWithinVisitLimit(supabase, tenantId)
 
   const staffCreated = params.staffCreated === true
-  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, totalDurationMinutes, staffCreated, staffCreated && !!params.seriesId)
+  await assertBookingIsAllowed(
+    supabase,
+    tenantId,
+    dateISO,
+    slot,
+    totalDurationMinutes,
+    staffCreated,
+    staffCreated && !!params.seriesId,
+    params.locationId,
+  )
 
   // Does staff have to approve this booking first? Only bookings customers make themselves.
   const needsApproval = !staffCreated && params.payment === "auto" && (await getBookingSettings(supabase, tenantId)).requireApproval
@@ -997,6 +1038,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
 
   let staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes, {
     requireStaffId: params.requestedStaffId,
+    locationId: params.locationId,
   })
 
   // Minimal (phone-only) tenant_customers row if this is a brand-new
@@ -1035,6 +1077,8 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
           booking_reference: bookingReference,
           staff_created: staffCreated,
           series_id: staffCreated ? (params.seriesId ?? null) : null,
+          // Only sent when the caller chose a location; otherwise the database fills in the tenant's default.
+          ...(params.locationId ? { location_id: params.locationId } : {}),
         },
       ])
       .select("id, ticket_number")
@@ -1076,6 +1120,7 @@ export async function createBooking(tenantId: string, params: CreateBookingParam
       staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, totalDurationMinutes, {
         excludeStaffIds: conflicted,
         requireStaffId: params.requestedStaffId,
+        locationId: params.locationId,
       })
       continue
     }
@@ -1282,7 +1327,7 @@ export async function rescheduleBooking(
   const { data: booking, error } = await supabase
     .from("bookings")
     .select(
-      `id, start_time, end_time, staff_id, booking_reference,
+      `id, start_time, end_time, staff_id, booking_reference, location_id,
        services!bookings_service_id_fkey ( name ),
        booking_services ( position, services ( name ) )`,
     )
@@ -1345,11 +1390,14 @@ export async function rescheduleBooking(
     }
   }
 
-  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, durationMinutes)
+  // A booking moves within its own location: that location's timezone and staff apply.
+  const bookingLocationId = (booking.location_id as string | null) ?? undefined
+  await assertBookingIsAllowed(supabase, tenantId, dateISO, slot, durationMinutes, false, false, bookingLocationId)
 
   const staff = await claimStaffForSlot(supabase, tenantId, dateISO, slot, durationMinutes, {
     excludeBookingId: booking.id,
     preferStaffId: booking.staff_id,
+    locationId: bookingLocationId,
   })
 
   const newStart = new Date(slot.start)
@@ -1848,13 +1896,14 @@ async function getDatesOffered(supabase: SupabaseClient, tenantId: string): Prom
  */
 export async function buildDateOptions(
   tenantId: string,
-  /** Staff booking in the admin: today is always offered, even when customers can't book same-day. */
-  options: { forStaff?: boolean } = {},
+  /** Staff booking in the admin: today is always offered, even when customers can't book same-day.
+   *  `locationId`: "today" is worked out in that location's timezone when it has its own. */
+  options: { forStaff?: boolean; locationId?: string } = {},
 ): Promise<Array<{ date: string; label: string }>> {
   const supabase = getClientOrThrow()
 
   const [timezone, bookingSettings, datesOffered] = await Promise.all([
-    getTenantTimezone(supabase, tenantId),
+    getTenantTimezone(supabase, tenantId, options.locationId),
     getBookingSettings(supabase, tenantId),
     getDatesOffered(supabase, tenantId),
   ])
@@ -2376,11 +2425,11 @@ function serviceListReply(
  * The team members a customer may choose between: empty unless the shop allows customer staff choice AND has at
  * least two active people (with one there is nothing to choose). Never throws: any failure means "no picker".
  */
-async function loadStaffOptions(tenantId: string): Promise<ActiveStaff[]> {
+async function loadStaffOptions(tenantId: string, locationId?: string): Promise<ActiveStaff[]> {
   try {
     const supabase = getClientOrThrow()
     if (!(await readAllowCustomerStaffChoice(supabase, tenantId))) return []
-    const staff = await getActiveStaff(supabase, tenantId)
+    const staff = await getActiveStaff(supabase, tenantId, locationId)
     return staff.length >= 2 ? [...staff].sort((a, b) => a.name.localeCompare(b.name)) : []
   } catch (error) {
     console.error("[booking] Could not load staff for the picker", { tenantId, error })

@@ -134,6 +134,9 @@ interface MovableBooking {
   reference: string
   /** The booking's current start (ISO), so the time it already holds is not offered as a "move". Absent in older saved states. */
   startTime?: string
+  /** The booking's location, so the free times offered are that location's. Absent in older saved states
+   *  (and then the whole tenant is searched, as before locations existed). */
+  locationId?: string
 }
 
 interface RescheduleStateData {
@@ -214,7 +217,7 @@ async function loadMovableBookings(tenantId: string, customerId: string): Promis
     supabase
       .from("bookings")
       .select(
-        `id, start_time, end_time, booking_reference,
+        `id, start_time, end_time, booking_reference, location_id,
          services!bookings_service_id_fkey ( name ),
          booking_services ( position, services ( name ) )`,
       )
@@ -277,6 +280,7 @@ async function loadMovableBookings(tenantId: string, customerId: string): Promis
       currentLabel: formatLocal(row.start_time, timezone),
       reference: row.booking_reference,
       startTime: row.start_time,
+      ...(row.location_id ? { locationId: row.location_id as string } : {}),
     })
   }
 
@@ -627,7 +631,7 @@ function bookingListReply(options: Array<RescheduleOption & { booking: MovableBo
  * day isn't blocked by the time it already holds), and without the exact time it already has (that is not a move).
  */
 async function freeSlots(tenantId: string, booking: MovableBooking, date: string): Promise<BookingSlot[]> {
-  const slots = await getAvailableSlots(tenantId, date, booking.durationMinutes, booking.id)
+  const slots = await getAvailableSlots(tenantId, date, booking.durationMinutes, booking.id, undefined, false, false, booking.locationId)
   const current = booking.startTime ? Date.parse(booking.startTime) : null
   return current === null ? slots : slots.filter((s) => Date.parse(s.start) !== current)
 }
