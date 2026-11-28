@@ -254,6 +254,23 @@ const STEPS: Array<{
     ),
   },
   {
+    title: "Publish your landing page (optional, Business plan)",
+    text: (
+      <>
+        Business plan shops get a Booking and Queue landing page: your headline, photos, services, prices and hours,
+        with Book now and Join the queue buttons. See <a href="/demo/docs/website">Your landing page</a>.
+      </>
+    ),
+    items: [
+      "Pick the Booking & Queue template and add your headline, photos and WhatsApp number.",
+      "Preview it, then publish it when you are happy.",
+      "Optional: connect your own domain so the page lives on your own address.",
+    ],
+    where: "Settings, on the Website page.",
+    check: "After publishing, your address opens your landing page, and Book now opens your booking page.",
+    mistake: "Publishing before your services, prices and business hours are set up. The page shows that data, so finish those first.",
+  },
+  {
     title: "Take payments or deposits (optional, Business plan)",
     text: (
       <>
@@ -365,7 +382,7 @@ export default function SetupPage() {
       <nav aria-label="On this page">
         <ul className={styles.jump}>
           <li><a href="#before">Before you start</a></li>
-          <li><a href="#steps">The 16 steps</a></li>
+          <li><a href="#steps">The 17 steps</a></li>
           <li><a href="#go-live">Go-live checklist</a></li>
           <li><a href="#after">After you go live</a></li>
         </ul>
@@ -384,7 +401,7 @@ export default function SetupPage() {
       </div>
 
       <div id="steps" className={styles.block}>
-        <h2>The 16 steps</h2>
+        <h2>The 17 steps</h2>
         <p>Each step says what to do, where to find it, how to check it worked and what people most often get wrong.</p>
         <ol className={styles.steps}>
           {STEPS.map((s) => (
